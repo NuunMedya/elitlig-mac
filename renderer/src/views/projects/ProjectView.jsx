@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ErrorNote, Icon, MenuButton, Modal, OfflineNote, Spinner } from "../../components/ui";
 import { useCommand } from "../../api";
-import { leadStats, leadsToRows, PROJECT_STATUS_TONE, stepStats, stepsToRows } from "../../lib/projectUtils";
+import { kindSettings, leadStats, leadsOfKind, leadsToRows, PROJECT_STATUS_TONE, stepStats, stepsToRows } from "../../lib/projectUtils";
 import { ProjectBadge, Progress, ROLE_LABEL, TOOL_ICONS, label, saveRowsCsv, saveRowsXlsx, useProject } from "./common";
 import Overview from "./Overview";
 import Process from "./Process";
@@ -13,11 +13,13 @@ import Questions from "./Questions";
 import Activity from "./Activity";
 import { ProjectPortfolio } from "./Portfolio";
 import Settings from "./Settings";
+import Budget from "./Budget";
 
 const TABS = [
   { key: "overview", label: "Genel bakış", icon: "overview" },
   { key: "process", label: "Süreç", icon: "list" },
   { key: "leads", label: "Kişiler", icon: "users" },
+  { key: "budget", label: "Bütçe", icon: "wallet" },
   { key: "questions", label: "Sorular", icon: "help" },
   { key: "activity", label: "İletişim", icon: "activity" },
   { key: "portfolio", label: "Portföy", icon: "briefcase" },
@@ -45,11 +47,16 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
     return {
       project: item, settings, meta: data.meta, phases: data.phases, steps: data.steps, leads: data.leads, questions: data.questions,
       activities: data.activities, portfolio: data.portfolio, members: data.members, people: data.people || {},
-      stats: { steps: stepStats(data.steps, data.meta.step_statuses), leads: leadStats(data.leads, settings), open_questions: data.questions.filter((q) => q.status === "open").length },
+      stats: {
+        steps: stepStats(data.steps, data.meta.step_statuses),
+        leads: leadStats(leadsOfKind(data.leads, "customer"), settings),
+        suppliers: leadStats(leadsOfKind(data.leads, "supplier"), kindSettings(settings, "supplier")),
+        open_questions: data.questions.filter((q) => q.status === "open").length,
+      },
       canEdit: Boolean(item.access?.can_edit), isOwner: Boolean(item.access?.is_owner), me, actions,
       openStep, openLead, setTab, go,
       openTool: (tool, step) => {
-        if (["leads", "questions", "portfolio", "activity"].includes(tool)) setToolPanel({ tool, step });
+        if (["leads", "suppliers", "finance", "questions", "portfolio", "activity"].includes(tool)) setToolPanel({ tool, step });
         else if (tool === "accounting") go("ledger");
         else if (tool) go(tool);
       },
@@ -126,7 +133,8 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
         <div className="proj-body" key={tab}>
           {tab === "overview" && <Overview ctx={ctx} />}
           {tab === "process" && <Process ctx={ctx} selectedId={stepId} focusPhase={route.phase} initialFilter={route.processFilter} />}
-          {tab === "leads" && <Leads ctx={ctx} selectedId={leadId} initialFilter={route.leadFilter} />}
+          {tab === "leads" && <Leads ctx={ctx} selectedId={leadId} initialFilter={route.leadFilter} initialKind={route.kind} />}
+          {tab === "budget" && <Budget ctx={ctx} />}
           {tab === "questions" && <Questions ctx={ctx} highlight={route.question} />}
           {tab === "activity" && <Activity ctx={ctx} />}
           {tab === "portfolio" && <ProjectPortfolio ctx={ctx} />}
@@ -144,20 +152,23 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
   );
 }
 
-const PANEL_TITLES = { leads: "Kişiler / CRM", questions: "Soru-cevap", portfolio: "Portföy", activity: "İletişim geçmişi" };
-const PANEL_TABS = { leads: "leads", questions: "questions", portfolio: "portfolio", activity: "activity" };
+const PANEL_TITLES = { leads: "Kişiler / CRM", suppliers: "Tedarik görüşmeleri", finance: "Bütçe / gelir-gider", questions: "Soru-cevap", portfolio: "Portföy", activity: "İletişim geçmişi" };
+const PANEL_TABS = { leads: "leads", suppliers: "leads", finance: "budget", questions: "questions", portfolio: "portfolio", activity: "activity" };
 
 /** Adımın aracı, adımdan çıkmadan büyük bir pencerede açılır. */
 function ToolPanel({ ctx, tool, step, onClose }) {
-  const stage = tool === "leads" && step?.tool_ref ? ctx.settings.lead_stages.find((s) => s.key === step.tool_ref) : null;
+  const stages = tool === "suppliers" ? ctx.settings.supplier_stages : ctx.settings.lead_stages;
+  const stage = ["leads", "suppliers"].includes(tool) && step?.tool_ref ? (stages || []).find((s) => s.key === step.tool_ref) : null;
   return (
     <Modal title={`${PANEL_TITLES[tool]}${step ? ` · ${step.title}` : ""}`} onClose={onClose} width={1180} className="modal--tool"
       footer={<>
         <span className="muted small spacer"><Icon name={TOOL_ICONS[tool]} size={12} /> Adımdan çıkmadan çalışıyorsunuz{stage ? ` · “${stage.label}” aşamasına süzüldü` : ""}. Değişiklikler projeye anında yazılır.</span>
-        <button type="button" className="btn" onClick={() => { onClose(); ctx.setTab(PANEL_TABS[tool]); }}><Icon name="external" size={13} /> Sekmede aç</button>
+        <button type="button" className="btn" onClick={() => { onClose(); ctx.setTab(PANEL_TABS[tool], tool === "suppliers" ? { kind: "supplier" } : tool === "leads" ? { kind: "customer" } : {}); }}><Icon name="external" size={13} /> Sekmede aç</button>
         <button type="button" className="btn btn--primary" onClick={onClose}>Adıma dön</button>
       </>}>
       {tool === "leads" && <Leads ctx={ctx} embedded initialFilter={step?.tool_ref ? { stage: step.tool_ref } : undefined} step={step} />}
+      {tool === "suppliers" && <Leads ctx={ctx} embedded initialKind="supplier" initialFilter={step?.tool_ref ? { stage: step.tool_ref } : undefined} step={step} />}
+      {tool === "finance" && <Budget ctx={ctx} embedded step={step} />}
       {tool === "questions" && <Questions ctx={ctx} embedded step={step} />}
       {tool === "portfolio" && <ProjectPortfolio ctx={ctx} embedded />}
       {tool === "activity" && <Activity ctx={ctx} embedded step={step} />}

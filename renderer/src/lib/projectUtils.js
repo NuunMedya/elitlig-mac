@@ -138,6 +138,50 @@ export const rolePerson = (settings, role, people = {}) => {
 export const stageOf = (settings, key) => (settings?.lead_stages || []).find((s) => s.key === key) || null;
 export const isClosedStage = (settings, key) => { const st = stageOf(settings, key); return Boolean(st?.won || st?.lost); };
 
+/* Görüşme türü: müşteri (satış) ya da tedarik (maliyet). Aşama ve sonuç listeleri türe göre değişir. */
+export const LEAD_KINDS = ["customer", "supplier"];
+export const leadKind = (lead) => (lead?.kind === "supplier" ? "supplier" : "customer");
+/**
+ * Türün aşama / sonuç listeleriyle ayarlar: dönen nesnede lead_stages ve outcomes
+ * o türünkilerdir; böylece stageOf, filterLeads, leadColumns, outcomePreview ve
+ * leadStats iki tür için de aynen çalışır.
+ */
+export function kindSettings(settings, kind) {
+  if (!settings || kind !== "supplier") return settings;
+  return { ...settings, lead_stages: settings.supplier_stages || [], outcomes: settings.supplier_outcomes || [] };
+}
+export const leadsOfKind = (leads = [], kind = "customer") => leads.filter((l) => leadKind(l) === kind);
+export const stageOfLead = (settings, lead) => stageOf(kindSettings(settings, leadKind(lead)), lead?.stage);
+/** Sonucun etiketi (iki türün sonuç listelerinde aranır; iletişim geçmişi için). */
+export const outcomeOf = (settings, key) => (key ? [...(settings?.outcomes || []), ...(settings?.supplier_outcomes || [])].find((o) => o.key === key) || null : null);
+
+const itemKey = (v) => lower(v).replace(/\s+/g, " ").trim();
+/**
+ * Fiyat karşılaştırması: aynı tedarik konusundaki (item) tedarikçilerin
+ * teklifleri, ucuzdan pahalıya. Teklifsizler sonda. En ucuz işaretlenir.
+ * Döner: { item, rows: [{ lead, value, cheapest, diff, ratio }], min, max, quoted }
+ */
+export function supplierQuotes(leads = [], lead, settings = null) {
+  const key = itemKey(lead?.item);
+  if (!key) return { item: "", rows: [], min: null, max: null, quoted: 0 };
+  const lost = new Set((settings?.supplier_stages || []).filter((s) => s.lost).map((s) => s.key));
+  const same = leads.filter((l) => leadKind(l) === "supplier" && itemKey(l.item) === key);
+  const quoted = same.filter((l) => l.value != null && Number.isFinite(Number(l.value)) && !lost.has(l.stage));
+  const values = quoted.map((l) => Number(l.value));
+  const min = values.length ? Math.min(...values) : null;
+  const max = values.length ? Math.max(...values) : null;
+  const rows = [...same].sort((a, b) => {
+    const av = quoted.includes(a) ? Number(a.value) : Infinity;
+    const bv = quoted.includes(b) ? Number(b.value) : Infinity;
+    return av - bv || String(a.name).localeCompare(String(b.name), "tr");
+  }).map((l) => {
+    const has = quoted.includes(l);
+    const value = l.value == null ? null : Number(l.value);
+    return { lead: l, value, cheapest: has && value === min && quoted.length > 1, diff: has && min != null ? Math.round((value - min) * 100) / 100 : null, ratio: has && max ? value / max : 0, excluded: !has && value != null };
+  });
+  return { item: String(lead.item).trim(), rows, min, max, quoted: quoted.length };
+}
+
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 /** Kişinin sonraki aksiyonu: "overdue" | "today" | "upcoming" | null */
 export function leadDueState(lead, now = new Date()) {
@@ -162,7 +206,7 @@ export function filterLeads(leads = [], f = {}, { meId = null, now = new Date(),
     if (f.due === "today" && due !== "today") return false;
     if (f.due === "overdue" && due !== "overdue") return false;
     if (f.due === "none" && (l.next_action_at || (settings && isClosedStage(settings, l.stage)))) return false;
-    if (q && !lower([l.name, l.company, l.title, l.phone, l.email, l.city, l.source, l.note, l.next_action].join(" ")).includes(q)) return false;
+    if (q && !lower([l.name, l.company, l.title, l.phone, l.email, l.city, l.source, l.note, l.next_action, l.item].join(" ")).includes(q)) return false;
     return true;
   });
 }

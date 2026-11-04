@@ -1,6 +1,8 @@
 // Ortak arayüz parçaları: simgeler, pencere (modal), bildirim balonu, boş durum,
 // onay kutusu, sekmeli seçici.
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { cleanMenuItems, menuPosition } from "../lib/menuUtils";
 
 /* --------------------------------- simgeler --------------------------------- */
 // 24×24, çizgi simgeler (lucide benzeri, elle çizildi).
@@ -149,10 +151,25 @@ export function useResult() {
 }
 
 /* ---------------------------------- modal ---------------------------------- */
+// Açık pencerelerin sırası: Escape yalnız en üsttekini kapatır (iç içe pencereler).
+const modalStack = [];
 export function Modal({ title, onClose, children, footer, width = 560, className = "" }) {
   const ref = useRef(null);
+  const idRef = useRef(null);
+  if (!idRef.current) idRef.current = Symbol("modal");
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose?.(); } };
+    const id = idRef.current;
+    modalStack.push(id);
+    return () => { const i = modalStack.lastIndexOf(id); if (i >= 0) modalStack.splice(i, 1); };
+  }, []);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      // Açık bir menü varsa Escape önce menüyü kapatır; iç içe pencerede yalnız üstteki kapanır.
+      if (document.querySelector(".menu__list") || modalStack[modalStack.length - 1] !== idRef.current) return;
+      e.stopPropagation();
+      onClose?.();
+    };
     window.addEventListener("keydown", onKey, true);
     const first = ref.current?.querySelector("input, textarea, select, button.btn--primary");
     first?.focus();
@@ -251,29 +268,94 @@ export const ViewHeader = ({ title, subtitle, icon, children }) => (
   </header>
 );
 
-/** Açılır menü (… düğmesi). items: [{ label, icon, onClick, danger, disabled }] */
-export function MenuButton({ items, label = "Diğer", icon = "more" }) {
+/**
+ * Açılır menü (… düğmesi). items: [{ label, icon, onClick, danger, disabled, hint }] | "-" | falsy
+ *
+ * Liste document.body'ye (portal) sabit konumla çizilir: kartların ve
+ * tabloların overflow:hidden kenarlarında kesilmez. Ekranın altına / sağına
+ * sığmazsa yukarı / sola açılır. Dışarı tıklama, Escape, kaydırma ve pencere
+ * boyutu değişince kapanır; ↑ ↓ Home End ile gezilir.
+ */
+export function MenuButton({ items, label = "Diğer", icon = "more", text, className = "", align = "end", size = 16 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+  const listRef = useRef(null);
+  const list = cleanMenuItems(items);
+
+  const close = useCallback((refocus = false) => {
+    setOpen(false);
+    setPos(null);
+    if (refocus) btnRef.current?.focus();
+  }, []);
+
+  // Açılınca önce görünmez çizilir, ölçülür ve konumlanır (titreme olmaz).
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current || !listRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const m = listRef.current.getBoundingClientRect();
+    const next = menuPosition({ top: r.top, left: r.left, right: r.right, bottom: r.bottom }, { width: m.width, height: m.height }, { width: window.innerWidth, height: window.innerHeight }, { align });
+    const cs = getComputedStyle(btnRef.current);
+    setPos({ ...next, tool: cs.getPropertyValue("--tool").trim(), tool2: cs.getPropertyValue("--tool-2").trim() });
+  }, [open, align, list.length]);
+
   useEffect(() => {
     if (!open) return undefined;
-    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
-    window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
-  }, [open]);
+    const onDown = (e) => { if (!listRef.current?.contains(e.target) && !btnRef.current?.contains(e.target)) close(); };
+    // Açılışın kendisinin tetiklediği kaydırmalar (odak, düzen) menüyü kapatmasın.
+    const openedAt = Date.now();
+    const onScroll = (e) => { if (Date.now() - openedAt > 150 && !listRef.current?.contains(e.target)) close(); };
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); close(true); return; }
+      if (e.key === "Tab") { close(); return; }
+      const buttons = [...(listRef.current?.querySelectorAll("button:not(:disabled)") || [])];
+      if (!buttons.length) return;
+      const i = buttons.indexOf(document.activeElement);
+      let next = null;
+      if (e.key === "ArrowDown") next = buttons[(i + 1) % buttons.length];
+      else if (e.key === "ArrowUp") next = buttons[(i - 1 + buttons.length) % buttons.length];
+      else if (e.key === "Home") next = buttons[0];
+      else if (e.key === "End") next = buttons[buttons.length - 1];
+      if (next) { e.preventDefault(); next.focus(); }
+    };
+    const onResize = () => close();
+    window.addEventListener("mousedown", onDown, true);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("blur", onResize);
+    return () => {
+      window.removeEventListener("mousedown", onDown, true);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("blur", onResize);
+    };
+  }, [open, close]);
+
+  useEffect(() => { if (open && pos) listRef.current?.querySelector("button:not(:disabled)")?.focus({ preventScroll: true }); }, [open, pos]);
+
+  const toggle = (e) => { e.stopPropagation(); if (open) close(); else setOpen(true); };
+  const onTriggerKey = (e) => { if (e.key === "ArrowDown" && !open) { e.preventDefault(); setOpen(true); } };
+
   return (
-    <div className="menu" ref={ref}>
-      <button type="button" className="icon-btn" aria-label={label} title={label} onClick={() => setOpen((v) => !v)}><Icon name={icon} /></button>
-      {open && (
-        <div className="menu__list" role="menu">
-          {items.filter(Boolean).map((item, i) => (item === "-" ? <hr key={i} /> : (
-            <button key={item.label} type="button" role="menuitem" disabled={item.disabled} className={item.danger ? "is-danger" : ""} onClick={() => { setOpen(false); item.onClick(); }}>
-              {item.icon && <Icon name={item.icon} size={14} />}{item.label}
+    <span className={`menu ${className}`} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <button ref={btnRef} type="button" className={text ? "btn btn--sm menu__trigger" : "icon-btn"} aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} onClick={toggle} onKeyDown={onTriggerKey}>
+        <Icon name={icon} size={size} />{text && <span>{text}</span>}{text && <Icon name="chevronDown" size={12} />}
+      </button>
+      {open && createPortal(
+        <div ref={listRef} className={`menu__list ${pos?.placement === "top" ? "is-up" : ""}`} role="menu" aria-label={label}
+          style={pos ? { top: pos.top, left: pos.left, maxHeight: pos.maxHeight, ...(pos.tool ? { "--tool": pos.tool, "--tool-2": pos.tool2 } : {}) } : { top: 0, left: 0, visibility: "hidden" }}
+          onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+          {list.map((item, i) => (item === "-" ? <hr key={`hr${i}`} /> : (
+            <button key={`${item.label}${i}`} type="button" role="menuitem" disabled={item.disabled} title={item.hint} className={item.danger ? "is-danger" : ""} onClick={() => { close(true); item.onClick?.(); }}>
+              {item.icon && <Icon name={item.icon} size={14} />}<span>{item.label}</span>
             </button>
           )))}
-        </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </span>
   );
 }
 

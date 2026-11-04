@@ -73,10 +73,12 @@ export function splitVat(gross, rate) {
   return { gross: amount, net, vat: Math.round((amount - net) * 100) / 100 };
 }
 
-export function filterEntries(entries, { type = "", status = "", category = "", query = "" } = {}) {
+/** account: "" (tümü) | "none" (hesap seçilmemiş) | hesap kimliği */
+export function filterEntries(entries, { type = "", status = "", category = "", query = "", account = "" } = {}) {
   const q = query.trim().toLocaleLowerCase("tr-TR");
   return entries.filter((entry) =>
     (!type || entry.type === type) &&
+    (!account || (account === "none" ? !entry.account_id : String(entry.account_id) === String(account))) &&
     (!status || (status === "overdue" ? isOverdue(entry) : entry.status === status)) &&
     (!category || (entry.category || "Diğer") === category) &&
     (!q || [entry.description, entry.party, entry.category, entry.document_no, entry.note].filter(Boolean).join(" ").toLocaleLowerCase("tr-TR").includes(q))

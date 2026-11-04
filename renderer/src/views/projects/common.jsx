@@ -6,10 +6,12 @@ import { formatMoney } from "../../lib/helpers";
 import { STEP_STATUS_TONE, initials, resolveLink, rowsToBook, sheetToRows } from "../../lib/projectUtils";
 
 export const BASE = "/api/tools/projects";
+/** Proje bütçesi değişti (görüşme kapanışı vb.): Bütçe sekmesi yeniden okur. */
+export const FINANCE_EVENT = "elitlig:project-finance";
 export const money = (v) => formatMoney(v || 0, 0);
 
 export const TOOL_ICONS = {
-  leads: "users", questions: "help", portfolio: "briefcase", activity: "activity", todos: "checkSquare", agenda: "calendar",
+  leads: "users", suppliers: "handshake", finance: "wallet", questions: "help", portfolio: "briefcase", activity: "activity", todos: "checkSquare", agenda: "calendar",
   notes: "note", sheets: "grid", accounting: "wallet", contacts: "user", calc: "calculator", focus: "timer",
 };
 /** Adımın aracı → uygulamadaki görünüm. */
@@ -133,11 +135,28 @@ export function useProject(id, me) {
       if (run(r, `${r.data?.created || 0} kişi eklendi${r.data?.skipped ? `, ${r.data.skipped} kayıt atlandı (aynı telefon/e-posta ya da adsız)` : ""}.`)) { quiet(); return r.data; }
       return null;
     },
-    async winLead(lead, body) {
-      const r = await request({ method: "POST", path: `${base}/leads/${lead.id}/portfolio`, body, queue: false });
-      if (!run(r, "Satış kapandı, portföye eklendi.")) return null;
+    /**
+     * Görüşmeyi kapat: müşteride portföy (+ istenirse gelir kaydı), tedarikte
+     * gider kaydı. body.entry: false | { amount, account_id, status, due_date, ... }
+     */
+    async closeLead(lead, body) {
+      const r = await request({ method: "POST", path: `${base}/leads/${lead.id}/close`, body, queue: false });
+      const supplier = lead.kind === "supplier";
+      const e = r.data?.entry;
+      const parts = [supplier ? "Tedarik tamamlandı" : "Satış kapandı"];
+      if (e) parts.push(`${supplier ? "gidere" : "gelire"} yazıldı (${formatMoney(e.effective, 0)}${e.account_name ? ` · ${e.account_name}` : ""}${e.status === "paid" ? ", hesaba işlendi" : ""})`);
+      if (r.data?.portfolio) parts.push("portföye eklendi");
+      if (!run(r, `${parts.join(", ")}.`)) return null;
       swap("leads", r.data.lead);
-      push("portfolio", r.data.portfolio, true);
+      if (r.data.portfolio) push("portfolio", r.data.portfolio, true);
+      if (e) window.dispatchEvent(new Event(FINANCE_EVENT));
+      quiet();
+      return r.data;
+    },
+    /** Rehber / üye rehberi / portföyden seçilenleri projenin listesine kopyalar. */
+    async importDirectory(body) {
+      const r = await request({ method: "POST", path: `${base}/directory/import`, body, queue: false });
+      if (!run(r, `${r.data?.created || 0} kayıt proje listesine eklendi${r.data?.skipped ? `, ${r.data.skipped} kayıt zaten listede (aynı telefon/e-posta) olduğu için atlandı` : ""}.`)) return null;
       quiet();
       return r.data;
     },

@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Field, Icon, MenuButton, useConfirm, useToast } from "../../components/ui";
 import { post, tempId, useResource } from "../../api";
-import { filterLeads, isStepOverdue, isValidLink, leadDueState, linkLabel, rolePerson, rolesOf } from "../../lib/projectUtils";
+import { filterLeads, isStepOverdue, isValidLink, leadDueState, leadsOfKind, linkLabel, rolePerson, rolesOf } from "../../lib/projectUtils";
 import { relativeTime } from "../../lib/helpers";
 import { ACTIVITY_ICONS, Avatar, BASE, StatusSelect, TOOL_ICONS, TOOL_ROUTES, label, openLink } from "./common";
 import { QuestionItem } from "./Questions";
@@ -36,8 +36,11 @@ export default function StepDrawer({ ctx, step, onClose }) {
   const checklist = step.checklist || [];
   const setChecklist = (next) => update({ checklist: next });
   const tool = step.tool ? meta.tools.find((t) => t.key === step.tool) : null;
-  const toolStage = step.tool === "leads" && step.tool_ref ? settings.lead_stages.find((s) => s.key === step.tool_ref) : null;
-  const toolLeads = step.tool === "leads" ? filterLeads(leads, toolStage ? { stage: toolStage.key } : {}) : [];
+  const crmTool = step.tool === "leads" || step.tool === "suppliers";
+  const toolStages = step.tool === "suppliers" ? settings.supplier_stages || [] : settings.lead_stages;
+  const toolStage = crmTool && step.tool_ref ? toolStages.find((s) => s.key === step.tool_ref) : null;
+  const toolLeads = crmTool ? filterLeads(leadsOfKind(leads, step.tool === "suppliers" ? "supplier" : "customer"), toolStage ? { stage: toolStage.key } : {}) : [];
+  const quoted = step.tool === "suppliers" ? toolLeads.filter((l) => l.value != null).length : 0;
   const toolDue = toolLeads.filter((l) => ["today", "overdue"].includes(leadDueState(l))).length;
   const overdue = isStepOverdue(step);
   const assigneeOptions = useMemo(() => {
@@ -81,10 +84,10 @@ export default function StepDrawer({ ctx, step, onClose }) {
           <span className="tool-card__icon"><Icon name={TOOL_ICONS[tool.key]} size={18} strokeWidth={2} /></span>
           <div className="tool-card__text">
             <strong>{tool.label}{toolStage ? ` · ${toolStage.label}` : ""}</strong>
-            <small>{tool.key === "leads" ? `${toolLeads.length} kişi${toolDue ? ` · ${toolDue} bugün aranacak` : ""}` : tool.key === "questions" ? `${stepQuestions.filter((q) => q.status === "open").length} açık soru bu adımda` : tool.key === "portfolio" ? `${ctx.portfolio.length} kayıt` : tool.key === "activity" ? `${history.length} kayıt bu adımda` : `Araçlar → ${tool.label}`}</small>
+            <small>{tool.key === "leads" ? `${toolLeads.length} kişi${toolDue ? ` · ${toolDue} bugün aranacak` : ""}` : tool.key === "suppliers" ? `${toolLeads.length} tedarikçi · ${quoted} teklif${toolDue ? ` · ${toolDue} bugün dönülecek` : ""}` : tool.key === "finance" ? "Bu adımın gelir / gider kalemleri — ödenince hesaba işlenir" : tool.key === "questions" ? `${stepQuestions.filter((q) => q.status === "open").length} açık soru bu adımda` : tool.key === "portfolio" ? `${ctx.portfolio.length} kayıt` : tool.key === "activity" ? `${history.length} kayıt bu adımda` : `Araçlar → ${tool.label}`}</small>
           </div>
           <button type="button" className="btn btn--primary btn--sm" onClick={() => ctx.openTool(tool.key, step)}><Icon name={tool.internal ? "external" : "chevronRight"} size={13} /> Aracı aç</button>
-          {tool.internal && <button type="button" className="icon-btn" title="Sekmede aç" onClick={() => ctx.setTab({ leads: "leads", questions: "questions", portfolio: "portfolio", activity: "activity" }[tool.key], tool.key === "leads" && toolStage ? { leadFilter: { stage: toolStage.key } } : {})}><Icon name="layers" size={14} /></button>}
+          {tool.internal && <button type="button" className="icon-btn" title="Sekmede aç" onClick={() => ctx.setTab({ leads: "leads", suppliers: "leads", finance: "budget", questions: "questions", portfolio: "portfolio", activity: "activity" }[tool.key], { ...(crmTool ? { kind: tool.key === "suppliers" ? "supplier" : "customer" } : {}), ...(crmTool && toolStage ? { leadFilter: { stage: toolStage.key } } : {}) })}><Icon name="layers" size={14} /></button>}
         </div>
       )}
 
@@ -159,7 +162,7 @@ export default function StepDrawer({ ctx, step, onClose }) {
         <h4>Adımın aracı</h4>
         <div className="form-grid">
           <Field label="Araç"><select value={step.tool || ""} disabled={!canEdit} onChange={(e) => update({ tool: e.target.value || null, tool_ref: null })}><option value="">Yok</option><optgroup label="Proje içinde">{meta.tools.filter((t) => t.internal).map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</optgroup><optgroup label="Araçlar">{meta.tools.filter((t) => !t.internal).map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</optgroup></select></Field>
-          {step.tool === "leads" && <Field label="Kişi aşaması"><select value={step.tool_ref || ""} disabled={!canEdit} onChange={(e) => update({ tool_ref: e.target.value || null })}><option value="">Tüm kişiler</option>{settings.lead_stages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select></Field>}
+          {crmTool && <Field label={step.tool === "suppliers" ? "Tedarik aşaması" : "Kişi aşaması"}><select value={step.tool_ref || ""} disabled={!canEdit} onChange={(e) => update({ tool_ref: e.target.value || null })}><option value="">{step.tool === "suppliers" ? "Tüm tedarikçiler" : "Tüm kişiler"}</option>{toolStages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select></Field>}
           {step.tool && !tool?.internal && TOOL_ROUTES[step.tool] && <p className="muted small span2">“Aracı aç” {tool?.label} aracına geçer.</p>}
         </div>
       </section>

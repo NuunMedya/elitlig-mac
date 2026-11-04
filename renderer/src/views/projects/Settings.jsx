@@ -1,10 +1,15 @@
-// Ayarlar: proje bilgileri, kişi aşamaları, görüşme sonuçları, roller → kişi,
+// Ayarlar: proje bilgileri, bütçe ve muhasebe (varsayılan hesap, hesap
+// yetkilileri), kişi ve tedarik aşamaları / görüşme sonuçları, roller → kişi,
 // listeler, üyeler; şablon olarak kaydet, kopyala, sil / ayrıl.
 import React, { useEffect, useState } from "react";
 import { Field, Icon, Modal, useConfirm } from "../../components/ui";
-import { del, put, request, useResource } from "../../api";
-import { PROJECT_COLORS, PROJECT_ICONS, slugKey } from "../../lib/projectUtils";
-import { Avatar, BASE, PromptDialog, ROLE_LABEL, TagEditor, useRun } from "./common";
+import { del, post, put, request, useResource } from "../../api";
+import { PROJECT_COLORS, PROJECT_ICONS, leadsOfKind, slugKey } from "../../lib/projectUtils";
+import { aclPayload, aclUpsert, projectTeamLevel } from "../../lib/financeUtils";
+import { formatMoney } from "../../lib/helpers";
+import { AccountSelectField, AclEditor } from "../../components/finance";
+import { Avatar, BASE, FINANCE_EVENT, PromptDialog, ROLE_LABEL, TagEditor, useRun } from "./common";
+import { useProjectFinance } from "./Budget";
 
 export default function Settings({ ctx, onDeleted, openProject }) {
   const { canEdit, isOwner } = ctx;
@@ -13,8 +18,11 @@ export default function Settings({ ctx, onDeleted, openProject }) {
       {!canEdit && <div className="notice notice--warn"><Icon name="eye" size={14} /> Bu projeyi yalnız görüntüleyebilirsiniz; ayarları proje sahibi ya da düzenleyiciler değiştirir.</div>}
       <div className="settings-grid">
         <ProjectInfo ctx={ctx} />
+        <FinanceSettings ctx={ctx} />
         <StagesEditor ctx={ctx} />
         <OutcomesEditor ctx={ctx} />
+        <StagesEditor ctx={ctx} kind="supplier" />
+        <OutcomesEditor ctx={ctx} kind="supplier" />
         <RolesEditor ctx={ctx} />
         <ListsEditor ctx={ctx} />
         <Members ctx={ctx} />
@@ -63,9 +71,16 @@ function useDraft(source) {
 }
 const move = (list, i, dir) => { const j = i + dir; if (j < 0 || j >= list.length) return list; const next = [...list]; [next[i], next[j]] = [next[j], next[i]]; return next; };
 
-function StagesEditor({ ctx }) {
-  const { settings, canEdit, actions, leads } = ctx;
-  const [stages, setStages, dirty, reset] = useDraft(settings.lead_stages);
+const KIND_KEYS = {
+  customer: { stages: "lead_stages", outcomes: "outcomes", move: "move_stage_to", title: "Kişi aşamaları", sub: "CRM hunisi ve pano sütunları", icon: "users", noun: "kişi", outTitle: "Görüşme sonuçları", outSub: "Kişide tek tıkla kayıt düğmeleri" },
+  supplier: { stages: "supplier_stages", outcomes: "supplier_outcomes", move: "move_supplier_stage_to", title: "Tedarik aşamaları", sub: "Fiyat al → değerlendir → anlaş", icon: "handshake", noun: "tedarikçi", outTitle: "Tedarik görüşme sonuçları", outSub: "Fiyat istendi, alındı, pazarlık…" },
+};
+
+function StagesEditor({ ctx, kind = "customer" }) {
+  const { settings, canEdit, actions } = ctx;
+  const K = KIND_KEYS[kind];
+  const leads = leadsOfKind(ctx.leads, kind);
+  const [stages, setStages, dirty, reset] = useDraft(settings[K.stages] || []);
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(null);
   const set = (i, patch) => setStages(stages.map((s, j) => (j === i ? { ...s, ...patch } : s)));
@@ -73,23 +88,23 @@ function StagesEditor({ ctx }) {
     setBusy(true);
     // Silinen aşamaya giden görüşme sonuçları da güncellenir (yoksa sonuç kişiyi olmayan aşamaya taşır).
     const keys = new Set(stages.map((s) => s.key));
-    const outcomes = settings.outcomes.map((o) => (!o.stage || keys.has(o.stage) ? o : { ...o, stage: moveTo || undefined }));
-    const r = await actions.updateProject({ settings: { lead_stages: stages, outcomes }, ...(moveTo ? { move_stage_to: moveTo } : {}) });
+    const outcomes = (settings[K.outcomes] || []).map((o) => (!o.stage || keys.has(o.stage) ? o : { ...o, stage: moveTo || undefined }));
+    const r = await actions.updateProject({ settings: { [K.stages]: stages, [K.outcomes]: outcomes }, ...(moveTo ? { [K.move]: moveTo } : {}) });
     setBusy(false);
     if (r?.error?.code === "STAGE_IN_USE") setConflict(r.error.message);
     else if (r?.ok) setConflict(null);
   };
   return (
     <section className="card">
-      <header className="card__head"><h2 className="card__title"><Icon name="users" /> Kişi aşamaları</h2><span className="muted small">CRM hunisi ve pano sütunları</span></header>
+      <header className="card__head"><h2 className="card__title"><Icon name={K.icon} /> {K.title}</h2><span className="muted small">{K.sub}</span></header>
       <ul className="edit-list">
         {stages.map((s, i) => (
           <li key={s.key}>
             <input type="color" value={s.color || "#64748b"} disabled={!canEdit} onChange={(e) => set(i, { color: e.target.value })} aria-label="Renk" />
             <input value={s.label} disabled={!canEdit} onChange={(e) => set(i, { label: e.target.value })} maxLength={40} />
-            <small className="muted edit-list__count">{leads.filter((l) => l.stage === s.key).length} kişi</small>
-            <label className={`flag ${s.won ? "is-won" : ""}`} title="Kazanıldı aşaması"><input type="checkbox" checked={Boolean(s.won)} disabled={!canEdit} onChange={(e) => set(i, { won: e.target.checked || undefined, lost: e.target.checked ? undefined : s.lost })} /> Kazanıldı</label>
-            <label className={`flag ${s.lost ? "is-lost" : ""}`} title="Kaybedildi aşaması"><input type="checkbox" checked={Boolean(s.lost)} disabled={!canEdit} onChange={(e) => set(i, { lost: e.target.checked || undefined, won: e.target.checked ? undefined : s.won })} /> Kayıp</label>
+            <small className="muted edit-list__count">{leads.filter((l) => l.stage === s.key).length} {K.noun}</small>
+            <label className={`flag ${s.won ? "is-won" : ""}`} title={kind === "supplier" ? "Anlaşıldı aşaması" : "Kazanıldı aşaması"}><input type="checkbox" checked={Boolean(s.won)} disabled={!canEdit} onChange={(e) => set(i, { won: e.target.checked || undefined, lost: e.target.checked ? undefined : s.lost })} /> {kind === "supplier" ? "Anlaşıldı" : "Kazanıldı"}</label>
+            <label className={`flag ${s.lost ? "is-lost" : ""}`} title={kind === "supplier" ? "Vazgeçildi aşaması" : "Kaybedildi aşaması"}><input type="checkbox" checked={Boolean(s.lost)} disabled={!canEdit} onChange={(e) => set(i, { lost: e.target.checked || undefined, won: e.target.checked ? undefined : s.won })} /> {kind === "supplier" ? "Vazgeçildi" : "Kayıp"}</label>
             {canEdit && <span className="edit-list__tools">
               <button type="button" className="icon-btn icon-btn--xs" onClick={() => setStages(move(stages, i, -1))} disabled={i === 0} aria-label="Yukarı"><Icon name="chevronUp" size={12} /></button>
               <button type="button" className="icon-btn icon-btn--xs" onClick={() => setStages(move(stages, i, 1))} disabled={i === stages.length - 1} aria-label="Aşağı"><Icon name="chevronDown" size={12} /></button>
@@ -100,36 +115,38 @@ function StagesEditor({ ctx }) {
       </ul>
       {canEdit && stages.length < 20 && <button type="button" className="board__addbtn" onClick={() => setStages([...stages, { key: slugKey("Yeni aşama", stages.map((s) => s.key)), label: "Yeni aşama", color: PROJECT_COLORS[stages.length % PROJECT_COLORS.length] }])}><Icon name="plus" size={13} /> Aşama ekle</button>}
       {canEdit && <SaveBar dirty={dirty} busy={busy} onSave={() => save()} onReset={reset} />}
-      {conflict && <MoveStageDialog message={conflict} stages={stages} onClose={() => setConflict(null)} onConfirm={(to) => save(to)} />}
+      {conflict && <MoveStageDialog message={conflict} stages={stages} noun={K.noun} onClose={() => setConflict(null)} onConfirm={(to) => save(to)} />}
     </section>
   );
 }
 
-function MoveStageDialog({ message, stages, onClose, onConfirm }) {
+function MoveStageDialog({ message, stages, noun = "kişi", onClose, onConfirm }) {
   const [to, setTo] = useState(stages[0]?.key || "");
   return (
-    <Modal title="Silinen aşamada kişiler var" onClose={onClose} width={440} footer={<><button type="button" className="btn" onClick={onClose}>Vazgeç</button><button type="button" className="btn btn--primary" onClick={() => onConfirm(to)}>Taşı ve kaydet</button></>}>
+    <Modal title={`Silinen aşamada ${noun === "kişi" ? "kişiler" : "tedarikçiler"} var`} onClose={onClose} width={440} footer={<><button type="button" className="btn" onClick={onClose}>Vazgeç</button><button type="button" className="btn btn--primary" onClick={() => onConfirm(to)}>Taşı ve kaydet</button></>}>
       <p className="muted">{message}</p>
-      <Field label="Kişiler şu aşamaya taşınsın"><select value={to} onChange={(e) => setTo(e.target.value)}>{stages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select></Field>
+      <Field label={`${noun === "kişi" ? "Kişiler" : "Tedarikçiler"} şu aşamaya taşınsın`}><select value={to} onChange={(e) => setTo(e.target.value)}>{stages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select></Field>
     </Modal>
   );
 }
 
-function OutcomesEditor({ ctx }) {
+function OutcomesEditor({ ctx, kind = "customer" }) {
   const { settings, canEdit, actions } = ctx;
-  const [outcomes, setOutcomes, dirty, reset] = useDraft(settings.outcomes);
+  const K = KIND_KEYS[kind];
+  const stagesList = settings[K.stages] || [];
+  const [outcomes, setOutcomes, dirty, reset] = useDraft(settings[K.outcomes] || []);
   const [busy, setBusy] = useState(false);
   const set = (i, patch) => setOutcomes(outcomes.map((o, j) => (j === i ? { ...o, ...patch } : o)));
-  const save = async () => { setBusy(true); await actions.updateProject({ settings: { outcomes: outcomes.map((o) => ({ ...o, next_days: o.next_days === "" ? null : o.next_days })) } }); setBusy(false); };
+  const save = async () => { setBusy(true); await actions.updateProject({ settings: { [K.outcomes]: outcomes.map((o) => ({ ...o, next_days: o.next_days === "" ? null : o.next_days })) } }); setBusy(false); };
   return (
     <section className="card">
-      <header className="card__head"><h2 className="card__title"><Icon name="zap" /> Görüşme sonuçları</h2><span className="muted small">Kişide tek tıkla kayıt düğmeleri</span></header>
-      <p className="muted small">Her sonuç kişiyi seçilen aşamaya taşır ve sonraki aramayı “gün sonra” saat 10:00'a planlar.</p>
+      <header className="card__head"><h2 className="card__title"><Icon name="zap" /> {K.outTitle}</h2><span className="muted small">{K.outSub}</span></header>
+      <p className="muted small">{kind === "supplier" ? "Her sonuç tedarikçiyi seçilen aşamaya taşır ve sonraki dönüşü planlar. “Fiyat alındı” teklif tutarını sorar." : "Her sonuç kişiyi seçilen aşamaya taşır ve sonraki aramayı “gün sonra” saat 10:00'a planlar."}</p>
       <ul className="edit-list edit-list--outcomes">
         {outcomes.map((o, i) => (
           <li key={o.key}>
             <input value={o.label} disabled={!canEdit} onChange={(e) => set(i, { label: e.target.value })} maxLength={40} aria-label="Sonuç adı" />
-            <select value={o.stage || ""} disabled={!canEdit} onChange={(e) => set(i, { stage: e.target.value || undefined })} aria-label="Aşama"><option value="">Aşama değişmez</option>{settings.lead_stages.map((s) => <option key={s.key} value={s.key}>→ {s.label}</option>)}</select>
+            <select value={o.stage || ""} disabled={!canEdit} onChange={(e) => set(i, { stage: e.target.value || undefined })} aria-label="Aşama"><option value="">Aşama değişmez</option>{stagesList.map((s) => <option key={s.key} value={s.key}>→ {s.label}</option>)}</select>
             <span className="days-input"><input type="number" min={0} max={90} value={o.next_days ?? ""} disabled={!canEdit} onChange={(e) => set(i, { next_days: e.target.value === "" ? undefined : Number(e.target.value) })} placeholder="—" aria-label="Kaç gün sonra" /><small>gün</small></span>
             {canEdit && <span className="edit-list__tools">
               <button type="button" className="icon-btn icon-btn--xs" onClick={() => setOutcomes(move(outcomes, i, -1))} disabled={i === 0} aria-label="Yukarı"><Icon name="chevronUp" size={12} /></button>
@@ -141,6 +158,82 @@ function OutcomesEditor({ ctx }) {
       {canEdit && outcomes.length < 20 && <button type="button" className="board__addbtn" onClick={() => setOutcomes([...outcomes, { key: slugKey("Yeni sonuç", outcomes.map((o) => o.key)), label: "Yeni sonuç", next_days: 1 }])}><Icon name="plus" size={13} /> Sonuç ekle</button>}
       {canEdit && <SaveBar dirty={dirty} busy={busy} onSave={save} onReset={reset} />}
     </section>
+  );
+}
+
+/**
+ * Bütçe ve muhasebe: varsayılan proje hesabı ("Ödendi" yapılan kalemler buraya
+ * işlenir) ve bu hesap(lar)ın yetkilileri — yönetebildiğiniz hesapta yetki
+ * listesi burada da düzenlenir (Muhasebe → Yetkiler ile aynı).
+ */
+function FinanceSettings({ ctx }) {
+  const { project, settings, canEdit, actions } = ctx;
+  const run = useRun();
+  const fin = useProjectFinance(project.id);
+  const all = useResource("/api/finance/accounts", null, { enabled: canEdit });
+  const options = useResource("/api/finance/access-options", null, { enabled: canEdit });
+  const [busy, setBusy] = useState(false);
+  const postable = fin.data?.accounts || [];
+  const defaultId = settings.default_account_id ? String(settings.default_account_id) : "";
+  const linkedIds = new Set([settings.default_account_id, ...(fin.data?.items || []).map((e) => e.account_id)].filter(Boolean).map(Number));
+  const manageable = (all.data?.items || []).filter((a) => linkedIds.has(Number(a.id)) && !a.archived);
+  const canCreateShared = Boolean(all.data?.access?.shared?.manage);
+  const setDefault = async (v) => { setBusy(true); await actions.updateProject({ settings: { default_account_id: v ? Number(v) : null } }); setBusy(false); window.dispatchEvent(new Event(FINANCE_EVENT)); };
+  const createAccount = async () => {
+    setBusy(true);
+    const r = await post("/api/finance/accounts", { scope: "shared", name: `${project.name} hesabı`.slice(0, 80), kind: "kasa", color: project.color, acl: [{ type: "project", id: project.id, level: "post" }] }, { queue: false });
+    if (run(r, "Proje hesabı açıldı; proje ekibi bu hesaba kayıt girebilir.")) {
+      await actions.updateProject({ settings: { default_account_id: r.data.item.id } });
+      all.reload({ quiet: true }); fin.reload({ quiet: true });
+    }
+    setBusy(false);
+  };
+  return (
+    <section className="card card--span2 finance-settings">
+      <header className="card__head"><h2 className="card__title"><Icon name="wallet" /> Bütçe ve muhasebe</h2><span className="muted small">“Ödendi / tahsil edildi” yapılan kalemler hesaba işlenir</span></header>
+      <div className="finance-settings__grid">
+        <div className="finance-settings__default">
+          <AccountSelectField accounts={postable} value={defaultId} onChange={setDefault} disabled={!canEdit || busy} label="Varsayılan proje hesabı" emptyLabel="Seçilmedi (kalemler hesaba işlenmez)"
+            hint="Yeni bütçe kalemleri ve tedarik / satış kapanışları bu hesaba bağlanır. Yalnız kayıt girebildiğiniz hesaplar listelenir." />
+          {canEdit && canCreateShared && <button type="button" className="info-box info-box--btn" disabled={busy} onClick={createAccount}><Icon name="plus" /><div><strong>Bu proje için ortak hesap aç</strong><span className="muted small">“{project.name} hesabı” açılır; yalnız siz, admin ve proje ekibi (kayıt girebilir) görür. Diğer muhasebe yetkilileri görmez.</span></div></button>}
+          {!postable.length && !fin.loading && <p className="muted small"><Icon name="lock" size={12} /> Kayıt girebileceğiniz muhasebe hesabı yok. Muhasebe → Hesaplar'da hesap yöneticisi size ya da proje ekibine yetki verebilir.</p>}
+        </div>
+        <div className="finance-settings__acl">
+          <span className="field__label">Muhasebe yetkilileri</span>
+          {all.error ? <p className="muted small">Hesap yetkilerini yalnız muhasebe hesaplarına erişimi olan yönetim kullanıcıları görür.</p>
+            : manageable.length ? manageable.map((a) => <AccountAclCard key={a.id} account={a} project={project} options={options.data} run={run} onSaved={() => all.reload({ quiet: true })} isDefault={String(a.id) === defaultId} />)
+              : <p className="muted small">{linkedIds.size ? "Bu projenin hesaplarını yönetme yetkiniz yok; yetkileri hesabı yöneten kişi Muhasebe → Hesaplar → Yetkiler'den verir." : "Varsayılan hesap seçince o hesabın yetkililerini buradan yönetebilirsiniz."}</p>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AccountAclCard({ account, project, options, run, onSaved, isDefault }) {
+  const can = account.can_manage;
+  const [acl, setAcl] = useState(account.acl || []);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setAcl(account.acl || []), [JSON.stringify(account.acl || [])]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dirty = JSON.stringify(aclPayload(acl)) !== JSON.stringify(aclPayload(account.acl || []));
+  const team = projectTeamLevel(acl, project.id);
+  const toggleTeam = (on) => setAcl(on ? aclUpsert(acl, { type: "project", id: project.id, level: "post", label: `${project.name} ekibi` }) : acl.filter((e) => !(e.type === "project" && Number(e.id) === Number(project.id))));
+  const save = async () => {
+    setBusy(true);
+    const r = await put(`/api/finance/accounts/${account.id}/access`, { acl: aclPayload(acl) });
+    setBusy(false);
+    if (run(r, `${account.name}: yetkiler kaydedildi.`)) onSaved();
+  };
+  return (
+    <div className="acl-card" style={{ "--ac": account.color || "#7c3aed" }}>
+      <header>
+        <span className="account-chip__icon"><Icon name={account.visibility === "restricted" ? "lock" : "bank"} size={13} /></span>
+        <span><strong>{account.name}</strong><small>{isDefault ? "Varsayılan proje hesabı · " : ""}{account.visibility === "restricted" ? "Yalnız yetkililer görür" : "Kapsam yetkisine göre"} · {formatMoney(account.balance)}</small></span>
+        <span className="spacer" />
+        {can && <label className="toggle"><input type="checkbox" checked={Boolean(team)} onChange={(e) => toggleTeam(e.target.checked)} /> Proje ekibine yetki ver{team ? ` (${team === "view" ? "görür" : team === "post" ? "kayıt girer" : "yönetir"})` : ""}</label>}
+      </header>
+      {can ? <AclEditor value={acl} onChange={setAcl} options={options} compact /> : <p className="muted small">Bu hesabın yetkilerini yalnız hesabı yöneten değiştirir.</p>}
+      {can && <SaveBar dirty={dirty} busy={busy} onSave={save} onReset={() => setAcl(account.acl || [])} />}
+    </div>
   );
 }
 
@@ -176,7 +269,7 @@ function RolesEditor({ ctx }) {
 
 function ListsEditor({ ctx }) {
   const { settings, canEdit, actions } = ctx;
-  const [lists, setLists, dirty, reset] = useDraft({ portfolio_categories: settings.portfolio_categories, lead_sources: settings.lead_sources, question_categories: settings.question_categories });
+  const [lists, setLists, dirty, reset] = useDraft({ portfolio_categories: settings.portfolio_categories, lead_sources: settings.lead_sources, supplier_categories: settings.supplier_categories || [], finance_categories: settings.finance_categories || [], question_categories: settings.question_categories });
   const [busy, setBusy] = useState(false);
   const save = async () => { setBusy(true); await actions.updateProject({ settings: lists }); setBusy(false); };
   return (
@@ -184,6 +277,8 @@ function ListsEditor({ ctx }) {
       <header className="card__head"><h2 className="card__title"><Icon name="tag" /> Listeler</h2></header>
       <Field label="Portföy kategorileri"><TagEditor value={lists.portfolio_categories} disabled={!canEdit} onChange={(v) => setLists({ ...lists, portfolio_categories: v })} /></Field>
       <Field label="Kişi kaynakları"><TagEditor value={lists.lead_sources} disabled={!canEdit} onChange={(v) => setLists({ ...lists, lead_sources: v })} /></Field>
+      <Field label="Tedarik kategorileri"><TagEditor value={lists.supplier_categories} disabled={!canEdit} onChange={(v) => setLists({ ...lists, supplier_categories: v })} /></Field>
+      <Field label="Bütçe (gelir / gider) kategorileri"><TagEditor value={lists.finance_categories} disabled={!canEdit} onChange={(v) => setLists({ ...lists, finance_categories: v })} /></Field>
       <Field label="Soru kategorileri"><TagEditor value={lists.question_categories} disabled={!canEdit} onChange={(v) => setLists({ ...lists, question_categories: v })} /></Field>
       {canEdit && <SaveBar dirty={dirty} busy={busy} onSave={save} onReset={reset} />}
     </section>

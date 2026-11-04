@@ -243,3 +243,46 @@ test("kişi ve adım istatistikleri", () => {
   const ss = stepStats([step(1, { status: "done" }), step(2, { status: "doing" })], [{ key: "done" }, { key: "doing" }, { key: "todo" }], today);
   expect(ss).toMatchObject({ progress: 50, by_status: { done: 1, doing: 1, todo: 0 } });
 });
+
+import { kindSettings, leadKind, leadsOfKind, outcomeOf, stageOfLead, supplierQuotes } from "../src/lib/projectUtils";
+
+const SUP = {
+  ...SETTINGS,
+  supplier_stages: [{ key: "aday", label: "Tedarikçi adayı" }, { key: "fiyat_alindi", label: "Fiyat alındı" }, { key: "anlasildi", label: "Anlaşıldı", won: true }, { key: "vazgecildi", label: "Vazgeçildi", lost: true }],
+  supplier_outcomes: [{ key: "fiyat_alindi", label: "Fiyat alındı", stage: "fiyat_alindi", next_days: 1 }, { key: "uygun_degil", label: "Uygun değil", stage: "vazgecildi" }],
+};
+
+test("tedarik görüşmeleri: türün aşama/sonuç listeleri, süzme ve ön izleme", () => {
+  const leads = [{ id: 1, name: "A", stage: "yeni" }, { id: 2, kind: "supplier", name: "Kupa Dünyası", stage: "aday", item: "Kupa" }];
+  expect(leadKind(leads[0])).toBe("customer");
+  expect(leadsOfKind(leads, "supplier").map((l) => l.id)).toEqual([2]);
+  const ks = kindSettings(SUP, "supplier");
+  expect(ks.lead_stages.map((s) => s.key)).toEqual(["aday", "fiyat_alindi", "anlasildi", "vazgecildi"]);
+  expect(kindSettings(SUP, "customer")).toBe(SUP);
+  expect(stageOfLead(SUP, leads[1]).label).toBe("Tedarikçi adayı");
+  const p = outcomePreview(leads[1], ks, { outcome: "fiyat_alindi" }, now);
+  expect(p.patch.stage).toBe("fiyat_alindi");
+  expect(outcomePreview(leads[1], ks, { outcome: "uygun_degil" }, now).patch).toMatchObject({ stage: "vazgecildi", next_action_at: null });
+  expect(outcomeOf(SUP, "uygun_degil").label).toBe("Uygun değil");
+  expect(outcomeOf(SUP, "ulasildi").label).toBe("Ulaşıldı, görüşüldü");
+  expect(filterLeads(leads, { q: "kupa" }).map((l) => l.id)).toEqual([2]);
+  expect(leadStats(leadsOfKind(leads, "supplier"), ks)).toMatchObject({ total: 1, open: 1, by_stage: { aday: 1 } });
+});
+
+test("fiyat karşılaştırması: aynı konu, ucuzdan pahalıya, en ucuz işaretli, vazgeçilen ve teklifsiz sonda", () => {
+  const leads = [
+    { id: 1, kind: "supplier", name: "Kupa Dünyası", item: "Kupa ve madalya", value: 18500, stage: "fiyat_alindi" },
+    { id: 2, kind: "supplier", name: "Ödül Atölyesi", item: " kupa VE madalya ", value: 16200, stage: "fiyat_alindi" },
+    { id: 3, kind: "supplier", name: "Madalya Plus", item: "Kupa ve madalya", value: null, stage: "aday" },
+    { id: 4, kind: "supplier", name: "Pahalı AŞ", item: "Kupa ve madalya", value: 9000, stage: "vazgecildi" },
+    { id: 5, kind: "supplier", name: "Saha", item: "Tesis", value: 40000, stage: "aday" },
+    { id: 6, name: "Müşteri", item: "Kupa ve madalya", value: 1, stage: "yeni" },
+  ];
+  const q = supplierQuotes(leads, leads[0], SUP);
+  expect(q.rows.map((r) => r.lead.id)).toEqual([2, 1, 3, 4]);
+  expect(q).toMatchObject({ min: 16200, max: 18500, quoted: 2 });
+  expect(q.rows[0]).toMatchObject({ cheapest: true, diff: 0 });
+  expect(q.rows[1]).toMatchObject({ cheapest: false, diff: 2300 });
+  expect(q.rows[3]).toMatchObject({ excluded: true });
+  expect(supplierQuotes(leads, { item: "" }).rows).toEqual([]);
+});

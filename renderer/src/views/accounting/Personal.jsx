@@ -9,13 +9,14 @@ import { formatDate, formatMoney, isoDay } from "../../lib/helpers";
 import { workbookToXlsx } from "../../lib/sheets/xlsxExport";
 import { addr, createEvaluator } from "../../lib/sheets/sheetEngine";
 import { AccountStrip, Kpi } from "./common";
+import { AccountSelectField } from "../../components/finance";
 
 const methodLabel = (key) => METHODS.find((m) => m.key === key)?.label || key;
 
 export default function Personal({ arg, accounts = [], onTransfer, onManageAccounts }) {
   const [period, setPeriod] = useState(() => localStorage.getItem("ledger:period") || "this_month");
   const [custom, setCustom] = useState({ from: "", to: "" });
-  const [filters, setFilters] = useState({ type: "", status: "", category: "", query: "" });
+  const [filters, setFilters] = useState({ type: "", status: "", category: "", query: "", account: "" });
   const [tab, setTab] = useState("entries");
   const [editing, setEditing] = useState(arg === "new" ? { draft: { type: "expense" } } : arg ? { id: arg } : null);
   const searchRef = useRef(null);
@@ -30,6 +31,9 @@ export default function Personal({ arg, accounts = [], onTransfer, onManageAccou
   const quick = totals(shown);
   const categories = useMemo(() => [...new Set(entries.map((e) => e.category || "Diğer"))].sort((a, b) => a.localeCompare(b, "tr")), [entries]);
   const editItem = editing?.id ? entries.find((e) => String(e.id) === String(editing.id)) : null;
+  const accountNames = useMemo(() => new Map(accounts.map((a) => [String(a.id), a.name])), [accounts]);
+  const postable = useMemo(() => accounts.filter((a) => a.can_post), [accounts]);
+  const usedAccounts = useMemo(() => [...new Set(entries.map((e) => e.account_id).filter(Boolean).map(String))], [entries]);
 
   useCommand("new", () => setEditing({ draft: { type: "expense" } }));
   useCommand("find", () => searchRef.current?.focus());
@@ -117,6 +121,13 @@ export default function Personal({ arg, accounts = [], onTransfer, onManageAccou
           <select className="select-sm" value={filters.type} onChange={(e) => setFilters({ ...filters, type: e.target.value })}><option value="">Tüm türler</option><option value="income">Gelir</option><option value="expense">Gider</option></select>
           <select className="select-sm" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}><option value="">Tüm durumlar</option><option value="paid">Ödendi / tahsil edildi</option><option value="pending">Bekleyen</option><option value="overdue">Vadesi geçen</option></select>
           <select className="select-sm" value={filters.category} onChange={(e) => setFilters({ ...filters, category: e.target.value })}><option value="">Tüm kategoriler</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+          {(postable.length > 0 || usedAccounts.length > 0) && (
+            <select className="select-sm" value={filters.account} onChange={(e) => setFilters({ ...filters, account: e.target.value })} aria-label="Hesap">
+              <option value="">Tüm hesaplar</option>
+              <option value="none">Hesap seçilmemiş</option>
+              {[...new Set([...postable.map((a) => String(a.id)), ...usedAccounts])].map((id) => <option key={id} value={id}>{accountNames.get(id) || `Hesap #${id}`}</option>)}
+            </select>
+          )}
         </div>
         {data.loading && !data.data ? <Spinner /> : shown.length ? (
           <div className="table-wrap">
@@ -126,7 +137,7 @@ export default function Personal({ arg, accounts = [], onTransfer, onManageAccou
                 {shown.map((e) => (
                   <tr key={e.id} onDoubleClick={() => setEditing({ id: e.id })} className={isOverdue(e) ? "is-overdue" : ""}>
                     <td>{formatDate(e.entry_date)}</td>
-                    <td><strong>{e.description || "—"}</strong>{e.document_no && <small className="muted"> · {e.document_no}</small>}</td>
+                    <td><strong>{e.description || "—"}</strong>{e.document_no && <small className="muted"> · {e.document_no}</small>}{e.account_id && <span className="pill pill--xs pill--tool ledger-account" title="Bu kayıt hesaba işlenir"><Icon name="bank" size={10} /> {accountNames.get(String(e.account_id)) || `Hesap #${e.account_id}`}</span>}</td>
                     <td>{e.category || "Diğer"}</td>
                     <td>{e.party || ""}</td>
                     <td>
@@ -174,7 +185,7 @@ export default function Personal({ arg, accounts = [], onTransfer, onManageAccou
       {tab === "categories" && <CategoryBars categories={sum?.categories || []} />}
 
       {editing && (editing.draft || editItem) && (
-        <EntryEditor entry={editItem} draft={editing.draft} categories={categories}
+        <EntryEditor entry={editItem} draft={editing.draft} categories={categories} accounts={postable}
           onClose={() => setEditing(null)} onDelete={remove}
           onSaved={() => { setEditing(null); data.reload({ quiet: true }); }} />
       )}
@@ -261,7 +272,7 @@ function CategoryBars({ categories }) {
   );
 }
 
-function EntryEditor({ entry, draft, categories, onClose, onSaved, onDelete }) {
+function EntryEditor({ entry, draft, categories, accounts = [], onClose, onSaved, onDelete }) {
   const result = useResult();
   const src = entry || draft || {};
   const [form, setForm] = useState({
@@ -277,9 +288,11 @@ function EntryEditor({ entry, draft, categories, onClose, onSaved, onDelete }) {
     method: src.method || "cash",
     document_no: src.document_no || "",
     note: src.note || "",
+    account_id: src.account_id ? String(src.account_id) : "",
   });
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const account = accounts.find((a) => String(a.id) === form.account_id);
   const vat = splitVat(form.amount, form.vat_rate);
   const presets = [...new Set([...PRESET_CATEGORIES[form.type], ...categories])];
 
@@ -288,7 +301,7 @@ function EntryEditor({ entry, draft, categories, onClose, onSaved, onDelete }) {
     const amount = parseAmount(form.amount);
     if (!(amount > 0)) return;
     setBusy(true);
-    const body = { ...form, amount, vat_rate: Number(form.vat_rate) || 0, due_date: form.status === "pending" ? form.due_date || null : form.due_date || null };
+    const body = { ...form, amount, vat_rate: Number(form.vat_rate) || 0, due_date: form.due_date || null, account_id: form.account_id ? Number(form.account_id) : null };
     const res = entry ? await patch(`/api/tools/ledger/${entry.id}`, body) : await post("/api/tools/ledger", body, { tempId: tempId() });
     setBusy(false);
     if (result(res, entry ? "Kayıt güncellendi." : "Kayıt eklendi.")) onSaved();
@@ -317,6 +330,9 @@ function EntryEditor({ entry, draft, categories, onClose, onSaved, onDelete }) {
         <Field label="Durum"><select value={form.status} onChange={set("status")}>{Object.entries(STATUS_LABELS_BY_TYPE[form.type]).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
         <Field label="Vade tarihi"><input type="date" value={form.due_date} onChange={set("due_date")} /></Field>
         <Field label="Ödeme yöntemi"><select value={form.method} onChange={set("method")}>{METHODS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}</select></Field>
+        <AccountSelectField accounts={accounts} value={form.account_id} onChange={(v) => setForm({ ...form, account_id: v })} className="span2"
+          emptyLabel="Hesap seçme (ödeme yöntemine bağlı hesaba yansır)"
+          hint={account ? `Ödendi olduğunda yalnız “${account.name}” bakiyesine ${form.type === "income" ? "eklenir" : "düşer"}; ödeme yöntemine bağlı hesapta ikinci kez sayılmaz.` : "Hesap seçmezseniz kayıt, ödeme yöntemine bağlı kişisel hesaba (varsa) yansır."} />
         <Field label="Belge no"><input value={form.document_no} onChange={set("document_no")} placeholder="Fatura / makbuz" /></Field>
         <span />
         <Field label="Not" className="span2"><textarea rows={2} value={form.note} onChange={set("note")} /></Field>

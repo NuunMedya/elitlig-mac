@@ -1,6 +1,6 @@
 // Projeler ana sayfası: proje kartları, Takip ve genel Portföy.
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Empty, ErrorNote, Icon, OfflineNote, Segmented, Spinner, ViewHeader } from "../../components/ui";
+import { Empty, ErrorNote, Icon, MenuButton, OfflineNote, Segmented, Spinner, ViewHeader } from "../../components/ui";
 import { useCommand, useResource } from "../../api";
 import { dueLabel, formatWhen, groupFollowups, PROJECT_STATUS_TONE } from "../../lib/projectUtils";
 import { includesTr } from "../../lib/helpers";
@@ -68,7 +68,7 @@ export default function Home({ section, newProject, nonce, onSection, onOpen, go
         <ErrorNote error={list.error && !list.data ? list.error : null} onRetry={list.reload} />
         {list.loading && !list.data ? <Spinner /> : (
           <div className="proj-grid">
-            {shown.map((p) => <ProjectCard key={p.id} p={p} meta={meta} onOpen={() => onOpen(p.id)} onOpenStep={(stepId) => onOpen(p.id, { tab: "process", step: stepId })} onOpenLeads={() => onOpen(p.id, { tab: "leads", leadFilter: { due: "due" } })} />)}
+            {shown.map((p) => <ProjectCard key={p.id} p={p} meta={meta} onOpen={(extra) => onOpen(p.id, extra)} onOpenStep={(stepId) => onOpen(p.id, { tab: "process", step: stepId })} onOpenLeads={() => onOpen(p.id, { tab: "leads", kind: "customer", leadFilter: { due: "due" } })} />)}
             {archived === "0" && !q && !status && (
               <button type="button" className="proj-card proj-card--new" onClick={() => setCreating(true)}>
                 <span className="proj-card__plus"><Icon name="plus" size={22} /></span>
@@ -93,7 +93,7 @@ function ProjectCard({ p, meta, onOpen, onOpenStep, onOpenLeads }) {
   const s = p.stats;
   const tone = PROJECT_STATUS_TONE[p.status];
   return (
-    <article className="proj-card" style={{ "--pc": p.color }} onClick={onOpen} onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }} tabIndex={0} role="button" aria-label={p.name}>
+    <article className="proj-card" style={{ "--pc": p.color }} onClick={() => onOpen()} onKeyDown={(e) => { if (e.key === "Enter" && e.target === e.currentTarget) onOpen(); }} tabIndex={0} role="button" aria-label={p.name}>
       <header className="proj-card__head">
         <ProjectBadge project={p} size={42} />
         <div>
@@ -101,6 +101,15 @@ function ProjectCard({ p, meta, onOpen, onOpenStep, onOpenLeads }) {
           <small>{[label(meta.project_statuses, p.status), p.end_date ? `bitiş ${new Date(`${p.end_date}T12:00:00`).toLocaleDateString("tr-TR", { day: "numeric", month: "short" })}` : null].filter(Boolean).join(" · ")}</small>
         </div>
         <span className={`pill ${tone ? `pill--${tone}` : ""}`}>{label(meta.project_statuses, p.status)}</span>
+        <MenuButton label="Proje kısayolları" items={[
+          { label: "Süreç", icon: "list", onClick: () => onOpen({ tab: "process" }) },
+          { label: "Müşteri görüşmeleri", icon: "users", onClick: () => onOpen({ tab: "leads", kind: "customer" }) },
+          { label: "Tedarik görüşmeleri", icon: "handshake", onClick: () => onOpen({ tab: "leads", kind: "supplier" }) },
+          { label: "Bütçe", icon: "wallet", onClick: () => onOpen({ tab: "budget" }) },
+          { label: "Portföy", icon: "briefcase", onClick: () => onOpen({ tab: "portfolio" }) },
+          "-",
+          { label: "Ayarlar", icon: "sliders", onClick: () => onOpen({ tab: "settings" }) },
+        ]} />
       </header>
       {p.description && <p className="proj-card__desc">{p.description}</p>}
       <div className="proj-card__progress">
@@ -112,6 +121,7 @@ function ProjectCard({ p, meta, onOpen, onOpenStep, onOpenLeads }) {
         <span title="Açık soru"><Icon name="help" size={12} /> {s.open_questions} soru</span>
         <button type="button" className={s.leads.due ? "is-warn" : ""} title="Bugün aranacak / gecikmiş" onClick={(e) => { e.stopPropagation(); onOpenLeads(); }}><Icon name="phone" size={12} /> {s.leads.due} aranacak</button>
         <span title="Portföy"><Icon name="briefcase" size={12} /> {s.portfolio} portföy</span>
+        {s.finance && (s.finance.estimate_income || s.finance.estimate_expense) ? <button type="button" title="Tahmini net bütçe" className={s.finance.estimate_net < 0 ? "is-alert" : ""} onClick={(e) => { e.stopPropagation(); onOpen({ tab: "budget" }); }}><Icon name="wallet" size={12} /> {money(s.finance.estimate_net)}</button> : null}
       </div>
       {s.next_due && (
         <button type="button" className={`proj-card__next ${s.next_due.overdue ? "is-late" : ""}`} onClick={(e) => { e.stopPropagation(); onOpenStep(s.next_due.id); }}>

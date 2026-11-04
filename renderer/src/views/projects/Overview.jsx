@@ -2,7 +2,7 @@
 // adımlar, bugünkü takipler ve son hareketler.
 import React, { useMemo } from "react";
 import { Empty, Icon } from "../../components/ui";
-import { dayKey, dueLabel, formatWhen, groupStepsByPhase, isStepOverdue, leadDueState, stageOf } from "../../lib/projectUtils";
+import { dayKey, dueLabel, formatWhen, groupStepsByPhase, isStepOverdue, leadDueState, outcomeOf, stageOfLead } from "../../lib/projectUtils";
 import { relativeTime } from "../../lib/helpers";
 import { ACTIVITY_ICONS, Avatar, Progress, StagePill, label, money } from "./common";
 
@@ -70,12 +70,14 @@ export default function Overview({ ctx }) {
             ) : <Empty icon="users" title="Kişi yok" text="Aradığınız ya da arayacağınız kişileri Kişiler sekmesine ekleyin." />}
           </section>
 
+          {project.stats?.finance && <BudgetCard f={project.stats.finance} suppliers={ctx.stats.suppliers} onOpen={() => ctx.setTab("budget")} />}
+
           <section className={`card ${dueLeads.some((l) => leadDueState(l) === "overdue") ? "due-col--alert" : ""}`}>
             <header className="card__head"><h2 className="card__title"><Icon name="phone" /> Bugünkü takipler</h2><span className="muted small">{dueLeads.length}</span></header>
             {dueLeads.length ? dueLeads.slice(0, 7).map((l) => (
               <button key={l.id} type="button" className="fu-row" onClick={() => { ctx.setTab("leads"); ctx.openLead(l.id); }}>
-                <span className="fu-row__main"><strong>{l.name}</strong><small>{[l.company, l.next_action].filter(Boolean).join(" · ")}</small></span>
-                <StagePill stage={stageOf(settings, l.stage)} small />
+                <span className="fu-row__main"><strong>{l.kind === "supplier" ? l.company || l.name : l.name}</strong><small>{[l.kind === "supplier" ? `Tedarik${l.item ? `: ${l.item}` : ""}` : l.company, l.next_action].filter(Boolean).join(" · ")}</small></span>
+                <StagePill stage={stageOfLead(settings, l)} small />
                 <span className={`fu-row__when ${leadDueState(l) === "overdue" ? "text-red" : ""}`}>{formatWhen(l.next_action_at)}</span>
               </button>
             )) : <p className="muted small">Bugün aranacak kimse yok.</p>}
@@ -100,7 +102,7 @@ export default function Overview({ ctx }) {
               {recent.map((a) => {
                 const lead = a.lead_id ? leads.find((l) => l.id === a.lead_id) : null;
                 const step = a.step_id ? steps.find((s) => s.id === a.step_id) : null;
-                const outcome = a.outcome ? settings.outcomes.find((o) => o.key === a.outcome) : null;
+                const outcome = outcomeOf(settings, a.outcome);
                 return (
                   <li key={a.id}>
                     <span className={`tl-icon tl-icon--${a.type}`}><Icon name={ACTIVITY_ICONS[a.type] || "note"} size={12} /></span>
@@ -118,5 +120,24 @@ export default function Overview({ ctx }) {
         </section>
       </div>
     </div>
+  );
+}
+
+function BudgetCard({ f, suppliers, onOpen }) {
+  const max = Math.max(1, f.estimate_income, f.estimate_expense);
+  return (
+    <section className="card ov-budget">
+      <header className="card__head"><h2 className="card__title"><Icon name="wallet" /> Bütçe</h2><button type="button" className="link-btn" onClick={onOpen}>Bütçe →</button></header>
+      <div className="ov-budget__rows">
+        {[["Gelir", f.estimate_income, f.paid_income, "green"], ["Gider", f.estimate_expense, f.paid_expense, "red"]].map(([l, est, paid, tone]) => (
+          <div key={l} className="ov-budget__row">
+            <span>{l}</span>
+            <span className="ov-budget__track"><span className={`bg-${tone}`} style={{ width: `${(est / max) * 100}%`, opacity: 0.3 }} /><span className={`bg-${tone}`} style={{ width: `${(paid / max) * 100}%` }} /></span>
+            <strong>{money(est)}</strong>
+          </div>
+        ))}
+      </div>
+      <small className="muted">Tahmini net <b className={f.estimate_net < 0 ? "text-red" : "text-green"}>{money(f.estimate_net)}</b> · gerçekleşen {money(f.paid_net)}{suppliers?.total ? ` · ${suppliers.total} tedarikçi` : ""}</small>
+    </section>
   );
 }

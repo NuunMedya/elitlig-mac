@@ -6,7 +6,8 @@
 //     önbellekten yanıtlanır (offline: true, savedAt).
 //   - Bağlantı yokken yapılan yazma işlemleri (not, görev, etkinlik, muhasebe
 //     kaydı, kişi; projelerde arama sonucu, not, soru-cevap, adım/kişi
-//     güncellemesi) kuyruğa alınır ve bağlantı gelince sırayla gönderilir.
+//     güncellemesi; hesap hareketi ve proje bütçe kalemi ekleme / ödendi
+//     yapma) kuyruğa alınır ve bağlantı gelince sırayla gönderilir.
 //     Çevrimdışı oluşturulan kaydın geçici kimliği ("tmp_…") gönderim sırasında
 //     sunucunun verdiği gerçek kimlikle değiştirilir.
 "use strict";
@@ -22,7 +23,15 @@ const QUEUEABLE = /^\/api\/(tools\/(notes|events|ledger|contacts)|todos)(\/[\w-]
 // cevaplama, adımın ve kişinin alan güncellemesi. Proje, aşama, adım ve kişi
 // oluşturma / silme bağlantı ister (sıra ve kimlikler sunucuda belirlenir).
 const PROJECT_QUEUEABLE = /^\/api\/tools\/projects\/\d+\/(activities|questions(\/[\w-]+)?|(steps|leads)\/\d+)$/;
-const isQueueable = (method, pathname) => QUEUEABLE.test(pathname) || ((method === "POST" || method === "PATCH") && PROJECT_QUEUEABLE.test(pathname));
+// Gelir / gider kayıtları: hesap hareketi ve proje bütçe kalemi ekleme ve
+// güncelleme (ör. "Ödendi" yapma) kuyruğa alınır; çevrimdışı eklenen kaydın
+// geçici kimliği sonraki düzenlemede eşlenir. Yetki sunucuda gönderim sırasında
+// denetlenir (yetkisizse kayıt "gönderilemedi" listesine düşer). Kayıt silme,
+// hesap / virman / yetki değişikliği, görüşme kapanışı ve rehberden aktarma
+// bağlantı ister.
+const FINANCE_QUEUEABLE = /^\/api\/(finance\/entries|tools\/projects\/\d+\/finance)(\/[\w-]+)?$/;
+const isQueueable = (method, pathname) => QUEUEABLE.test(pathname)
+  || ((method === "POST" || method === "PATCH") && (PROJECT_QUEUEABLE.test(pathname) || FINANCE_QUEUEABLE.test(pathname)));
 const TEMP_ID = /^tmp_[\w-]+$/;
 
 class ApiError extends Error {
@@ -196,4 +205,4 @@ function createApi({ origin, dataDir, fetchImpl, sessionStore, userAgent, timeou
   };
 }
 
-module.exports = { createApi, ApiError, buildUrl, QUEUEABLE, PROJECT_QUEUEABLE, isQueueable };
+module.exports = { createApi, ApiError, buildUrl, QUEUEABLE, PROJECT_QUEUEABLE, FINANCE_QUEUEABLE, isQueueable };

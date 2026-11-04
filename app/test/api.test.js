@@ -92,3 +92,32 @@ test("projeler: iletişim kaydı, soru ve adım/kişi güncellemesi kuyruğa gir
   state.down = false;
   assert.equal((await api.flush()).sent, 1);
 });
+
+test("muhasebe: gelir / gider ekleme ve ödendi yapma kuyruğa girer; silme, yetki ve kapanış bağlantı ister", async () => {
+  const { isQueueable } = require("../api");
+  assert.equal(isQueueable("POST", "/api/finance/entries"), true);
+  assert.equal(isQueueable("PATCH", "/api/finance/entries/14"), true);
+  assert.equal(isQueueable("PATCH", "/api/finance/entries/tmp_x1"), true);
+  assert.equal(isQueueable("POST", "/api/tools/projects/12/finance"), true);
+  assert.equal(isQueueable("PATCH", "/api/tools/projects/12/finance/7"), true);
+  assert.equal(isQueueable("DELETE", "/api/finance/entries/14"), false);
+  assert.equal(isQueueable("DELETE", "/api/tools/projects/12/finance/7"), false);
+  assert.equal(isQueueable("PUT", "/api/finance/accounts/3/access"), false);
+  assert.equal(isQueueable("POST", "/api/finance/accounts"), false);
+  assert.equal(isQueueable("POST", "/api/finance/transfers"), false);
+  assert.equal(isQueueable("POST", "/api/tools/projects/12/leads/9/close"), false);
+  assert.equal(isQueueable("POST", "/api/tools/projects/12/directory/import"), false);
+  let next = 40;
+  const { api, state, calls } = setup((url, init) => (init.method === "POST" ? { status: 201, body: { item: { id: ++next } } } : { body: { item: { id: 41, status: "paid" } } }));
+  state.down = true;
+  // Çevrimdışı eklenen kalem, aynı oturumda "ödendi" yapılır: gönderimde geçici kimlik gerçek kimlikle değişir.
+  assert.equal((await api.request({ method: "POST", path: "/api/tools/projects/12/finance", body: { type: "expense", estimate: 500, status: "planned" }, tempId: "tmp_k1" })).queued, true);
+  assert.equal((await api.request({ method: "PATCH", path: "/api/tools/projects/12/finance/tmp_k1", body: { status: "paid" } })).queued, true);
+  const refused = await api.request({ method: "DELETE", path: "/api/finance/entries/3" });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.offline, true);
+  state.down = false;
+  assert.equal((await api.flush()).sent, 2);
+  assert.equal(calls.at(-1).url, "https://api.test/api/tools/projects/12/finance/41");
+  assert.deepEqual(calls.at(-1).body, { status: "paid" });
+});

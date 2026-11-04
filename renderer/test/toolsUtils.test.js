@@ -75,6 +75,8 @@ describe("ön muhasebe", () => {
     ];
     expect(filterEntries(entries, { query: "yıldız" })).toHaveLength(1);
     expect(filterEntries(entries, { status: "overdue" }).map((e) => e.id)).toEqual([2]);
+    expect(filterEntries([...entries, { id: 3, type: "income", amount: 1, status: "paid", account_id: 7, entry_date: "2026-11-03" }], { account: "7" }).map((e) => e.id)).toEqual([3]);
+    expect(filterEntries([...entries, { id: 3, type: "income", amount: 1, status: "paid", account_id: 7, entry_date: "2026-11-03" }], { account: "none" }).map((e) => e.id)).toEqual([1, 2]);
     expect(totals(entries)).toEqual({ count: 2, income: 500, expense: 200, net: 300 });
     const csv = toCsv(entries);
     expect(csv.startsWith("﻿Tarih;Tür")).toBe(true);

@@ -195,7 +195,7 @@ function StepRow({ s, ctx, active, today, dragging, dropBefore, onDragStart, onD
   const cl = checklistCount(s);
   const qCount = questions.filter((q) => q.step_id === s.id && q.status === "open").length;
   const overdue = isStepOverdue(s, today);
-  const toolStage = s.tool === "leads" && s.tool_ref ? settings.lead_stages.find((x) => x.key === s.tool_ref) : null;
+  const toolStage = (s.tool === "leads" || s.tool === "suppliers") && s.tool_ref ? ((s.tool === "suppliers" ? settings.supplier_stages : settings.lead_stages) || []).find((x) => x.key === s.tool_ref) : null;
   return (
     <li data-step={s.id} className={`srow ${active ? "is-active" : ""} ${dragging ? "is-dragging" : ""} ${dropBefore ? "is-drop-before" : ""} ${["done", "skipped"].includes(s.status) ? `is-${s.status}` : ""} ${["high", "urgent"].includes(s.priority) ? `is-${s.priority}` : ""}`}
       draggable={canEdit} onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(s.id)); onDragStart(); }} onDragEnd={onDragEnd} onDragOver={onDragOver}>

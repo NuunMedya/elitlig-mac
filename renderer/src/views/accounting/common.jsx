@@ -9,7 +9,7 @@ export const money = (v, d = 2) => formatMoney(v, d);
 export const signed = (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${formatMoney(Math.abs(v))}`;
 
 export const ACCOUNT_KINDS = { kasa: { icon: "wallet", label: "Kasa" }, banka: { icon: "bank", label: "Banka" }, kart: { icon: "receipt", label: "Kart" }, pos: { icon: "receipt", label: "POS" }, diger: { icon: "layers", label: "Diğer" } };
-export const SCOPE_LABEL = { personal: "Kişisel", city: "İl", national: "Türkiye geneli" };
+export const SCOPE_LABEL = { personal: "Kişisel", city: "İl", national: "Türkiye geneli", shared: "Ortak / proje" };
 export const ACCOUNT_COLORS = ["#7c3aed", "#059669", "#0284c7", "#e11d48", "#d97706", "#0d9488", "#4f46e5", "#475569"];
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -133,7 +133,7 @@ export const useAccounts = () => useResource("/api/finance/accounts");
 
 /** Kapsama göre gruplanmış hesap seçici seçenekleri. */
 export function AccountSelect({ accounts, value, onChange, exclude, label }) {
-  const groups = useMemo(() => ["personal", "city", "national"].map((scope) => ({ scope, items: accounts.filter((a) => a.scope === scope && a.can_manage && !a.archived && String(a.id) !== String(exclude)) })).filter((g) => g.items.length), [accounts, exclude]);
+  const groups = useMemo(() => ["personal", "city", "national", "shared"].map((scope) => ({ scope, items: accounts.filter((a) => a.scope === scope && a.can_manage && !a.archived && String(a.id) !== String(exclude)) })).filter((g) => g.items.length), [accounts, exclude]);
   return (
     <Field label={label}>
       <select value={value || ""} onChange={(e) => onChange(e.target.value)}>
