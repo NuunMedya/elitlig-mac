@@ -8,7 +8,7 @@ import { formatClock } from "./lib/helpers";
 import logo from "./assets/logo-white.png";
 
 const Today = lazy(() => import("./views/Today"));
-const Todos = lazy(() => import("./views/Todos"));
+const Todos = lazy(() => import("./views/todos/Todos"));
 const Agenda = lazy(() => import("./views/Agenda"));
 const Notes = lazy(() => import("./views/Notes"));
 const Ledger = lazy(() => import("./views/accounting/Accounting"));
@@ -62,6 +62,12 @@ function Shell({ auth }) {
   const [sync, setSync] = useState({ online: true, pending: 0 });
   const [focusState, setFocusState] = useState(null);
   const summary = useResource("/api/todos/summary");
+  useEffect(() => {
+    const refresh = () => summary.reload({ quiet: true });
+    window.addEventListener("elitlig:todos-changed", refresh);
+    const t = setInterval(refresh, 60000);
+    return () => { window.removeEventListener("elitlig:todos-changed", refresh); clearInterval(t); };
+  }, [summary.reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const go = useCallback((key, arg = null) => {
     const [base, sub] = String(key).split(":");
