@@ -4,7 +4,7 @@
 // aynıdır (lib/sheets, testli). Masaüstüne özgü: tam klavye kullanımı, yerel
 // pano, sütun genişliğini sürükleme, Excel/CSV/PDF dosyaları doğrudan diske,
 // otomatik kayıt; aynı anda başkası düzenlerse değişiklikler birleştirilir.
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Field, Icon, MenuButton, Modal, Spinner, useConfirm, useResult, useToast } from "../components/ui";
 import { get, put, request } from "../api";
 import { FUNCTION_LIST, addr, colName, createEvaluator, formatValue, isNumeric, rangeStats, toCsvText } from "../lib/sheets/sheetEngine";
@@ -15,6 +15,10 @@ import {
 import { workbookToXlsx } from "../lib/sheets/xlsxExport";
 import { importFile as readSheetFile } from "../lib/sheets/importFile";
 import { relativeTime } from "../lib/helpers";
+import {
+  acceptFunction, autoSumFormula, canPoint, closeParens, colorSegments, cycleAbsolute, functionContext, functionMatches,
+  guessSumRange, isFormulaText, pointArrow, pointBase, pointInsert, pointLive, scanRefs, signatureParts, wordAt,
+} from "../lib/sheets/formulaEdit";
 
 const ROW_H = 24;
 const HEAD_W = 46;
@@ -23,6 +27,8 @@ const FORMATS = [["general", "Genel"], ["number", "Sayı"], ["money", "Para (₺
 const TEXT_COLORS = ["", "#111827", "#dc2626", "#ea580c", "#16a34a", "#2563eb", "#7c3aed", "#6b7280"];
 const FILL_COLORS = ["", "#fef3c7", "#fee2e2", "#dcfce7", "#dbeafe", "#ede9fe", "#fce7f3", "#f3f4f6"];
 const clone = (o) => JSON.parse(JSON.stringify(o));
+const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const sameSheetName = (a, b) => (a || "").toLocaleLowerCase("tr-TR") === (b || "").toLocaleLowerCase("tr-TR");
 
 export default function SheetEditor({ id, onClose }) {
   const toast = useToast();
@@ -32,7 +38,18 @@ export default function SheetEditor({ id, onClose }) {
   const [book, setBook] = useState(null);
   const [si, setSi] = useState(0);
   const [sel, setSel] = useState({ a: { row: 0, col: 0 }, b: { row: 0, col: 0 } });
-  const [edit, setEdit] = useState(null); // { row, col, value, fromBar }
+  // { row, col, si, value, caret, fromBar, point } — point: formüle işaretlenen son başvuru (formulaEdit)
+  const [edit, setEditState] = useState(null);
+  const editRef = useRef(null);
+  const setEdit = (next) => { editRef.current = next; setEditState(next); };
+  const caretRef = useRef(null);   // çizimden sonra girdiye uygulanacak imleç konumu
+  const cellInputRef = useRef(null);
+  const barInputRef = useRef(null);
+  const cellMirrorRef = useRef(null);
+  const barMirrorRef = useRef(null);
+  const [popPos, setPopPos] = useState(null);
+  const [suggestOff, setSuggestOff] = useState(null);
+  const [fnPick, setFnPick] = useState(0);
   const [saveState, setSaveState] = useState("saved"); // saved | dirty | saving | error | conflict
   const [title, setTitle] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
@@ -163,15 +180,242 @@ export default function SheetEditor({ id, onClose }) {
   const style = (row, col) => sheet?.cells[addr(col, row)]?.s || {};
   const active = sel.b;
 
-  const startEdit = (value, fromBar = false) => { if (!readOnly) setEdit({ row: active.row, col: active.col, value, fromBar }); };
+  const activeInput = () => (editRef.current?.fromBar ? barInputRef.current : cellInputRef.current);
+  /** Girdideki gerçek imleç konumu (yoksa son bilinen). */
+  const caretNow = () => {
+    const ed = editRef.current;
+    const input = activeInput();
+    if (input && document.activeElement === input && input.selectionStart != null) return input.selectionStart;
+    return ed?.caret ?? ed?.value?.length ?? 0;
+  };
+  /** Düzenlemeyi günceller; caret verilirse çizimden sonra girdiye uygulanır. */
+  const updateEdit = (patch, caret = null) => {
+    if (!editRef.current) return;
+    const next = { ...editRef.current, ...patch };
+    if (caret != null) { next.caret = caret; caretRef.current = caret; }
+    setEdit(next);
+  };
+  useLayoutEffect(() => {
+    if (caretRef.current == null || !edit) return;
+    const input = edit.fromBar ? barInputRef.current : cellInputRef.current;
+    if (!input) return;
+    const pos = Math.min(caretRef.current, input.value.length);
+    caretRef.current = null;
+    if (document.activeElement !== input) input.focus({ preventScroll: true });
+    input.setSelectionRange(pos, pos);
+  });
+
+  const startEdit = (value, fromBar = false, { caret = null, point = null } = {}) => {
+    if (readOnly) return;
+    const pos = caret ?? value.length;
+    caretRef.current = pos;
+    setEdit({ row: active.row, col: active.col, si, value, caret: pos, fromBar, point: point ? { ...point, si } : null });
+  };
   const finishEdit = (move = null) => {
-    if (!edit) return;
-    const key = addr(edit.col, edit.row);
-    if ((sheet.cells[key]?.v ?? "") !== edit.value) commit(writeCells(book, si, { [key]: { v: edit.value } }));
+    const ed = editRef.current;
+    if (!ed) return;
     setEdit(null);
+    const target = ed.si ?? si;
+    const current = bookRef.current;
+    const key = addr(ed.col, ed.row);
+    // Kapanmamış parantezler tamamlanır (Excel gibi).
+    const value = isFormulaText(ed.value) ? closeParens(ed.value) : ed.value;
+    if ((current.sheets[target]?.cells[key]?.v ?? "") !== value) commit(writeCells(current, target, { [key]: { v: value } }));
+    // Başka sayfadan başvuru seçilmişse düzenlenen sayfaya dönülür.
+    if (target !== si) setSi(target);
     if (move) moveBy(move.dr, move.dc, false);
     gridRef.current?.focus();
   };
+  const cancelEdit = () => {
+    const ed = editRef.current;
+    setEdit(null);
+    if (ed && ed.si != null && ed.si !== si) setSi(ed.si);
+    gridRef.current?.focus();
+  };
+  // Girdiden çıkınca (başka bir girdiye geçilmediyse) düzenleme işlenir.
+  const onEditBlur = () => setTimeout(() => {
+    if (editRef.current && document.activeElement !== cellInputRef.current && document.activeElement !== barInputRef.current) finishEdit();
+  }, 100);
+
+  /** Düzenlenen formül şu an başvuru alabilir mi (işaretleme kipi)? */
+  const pointingNow = () => {
+    const ed = editRef.current;
+    return Boolean(ed && isFormulaText(ed.value) && canPoint(ed.value, caretNow(), ed.point));
+  };
+
+  /**
+   * Fareyle işaretleme: hücreye / sütun ya da satır başlığına basılınca başvuru
+   * formüle eklenir (Shift: aralık, ⌘: ";" ile yeni başvuru). Seçim değişmez.
+   */
+  const startPoint = (pos, kind, { add = false, extend = false } = {}) => {
+    const ed = editRef.current;
+    if (!ed || !isFormulaText(ed.value)) return false;
+    const caret = caretNow();
+    const sheetName = si !== ed.si ? sheet.name : null;
+    let res = null;
+    let anchor = pos;
+    if (extend) {
+      const base = pointBase(ed.value, caret, ed.point);
+      if (base && base.kind === kind && sameSheetName(base.sheet, sheetName)) {
+        anchor = base.anchor;
+        res = pointInsert(ed.value, caret, base, { anchor, focus: pos, kind, sheet: sheetName });
+      }
+    }
+    if (!res && (add || canPoint(ed.value, caret, ed.point))) {
+      res = pointInsert(ed.value, caret, add ? null : ed.point, { anchor: pos, focus: pos, kind, sheet: sheetName, add });
+    }
+    if (!res) return false;
+    updateEdit({ value: res.text, point: { ...res.point, si } }, res.caret);
+    // Sürükleme: başvuru canlı güncellenir.
+    const onMove = (ev) => {
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const cellEl = el?.closest?.("[data-cell]");
+      let at = null;
+      if (cellEl) { const [rr, cc] = cellEl.dataset.cell.split(":").map(Number); at = { row: rr, col: cc }; }
+      else if (kind !== "cell") {
+        const head = el?.closest?.("[data-colhead],[data-rowhead]");
+        if (head) at = head.dataset.colhead != null ? { row: 0, col: Number(head.dataset.colhead) } : { row: Number(head.dataset.rowhead), col: 0 };
+      }
+      if (!at) return;
+      const cur = editRef.current;
+      if (!cur?.point) return;
+      const focus = kind === "col" ? { row: 0, col: at.col } : kind === "row" ? { row: at.row, col: 0 } : at;
+      if (cur.point.focus.row === focus.row && cur.point.focus.col === focus.col) return;
+      const step = pointInsert(cur.value, cur.point.span.end, cur.point, { anchor, focus, kind, sheet: cur.point.sheet });
+      updateEdit({ value: step.text, point: { ...step.point, si: cur.point.si } }, step.caret);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const input = activeInput();
+      if (input && document.activeElement !== input) { input.focus({ preventScroll: true }); const c = editRef.current?.caret; if (c != null) input.setSelectionRange(c, c); }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return true;
+  };
+
+  /** Hücreyi seçimi değiştirmeden görünür alana kaydırır. */
+  const revealCell = (row, col) => {
+    const el = gridRef.current;
+    if (!el || !sheet) return;
+    const top = row * ROW_H;
+    if (top < el.scrollTop) el.scrollTop = top;
+    else if (top + ROW_H > el.scrollTop + el.clientHeight - ROW_H) el.scrollTop = top - el.clientHeight + ROW_H * 2;
+    let left = 0;
+    for (let c = 0; c < col; c += 1) left += sheet.colW?.[colName(c)] || DEF_W;
+    const w = sheet.colW?.[colName(col)] || DEF_W;
+    if (left < el.scrollLeft) el.scrollLeft = left;
+    else if (left + w + HEAD_W > el.scrollLeft + el.clientWidth) el.scrollLeft = left + w + HEAD_W - el.clientWidth;
+  };
+
+  const onEditKey = (e) => {
+    e.stopPropagation();
+    const ed = editRef.current;
+    if (!ed) return;
+    if (fnSuggestions.length && (e.key === "Tab" || e.key === "Enter")) {
+      e.preventDefault();
+      acceptFn(fnSuggestions[fnPick] || fnSuggestions[0]);
+      return;
+    }
+    if (fnSuggestions.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      setFnPick((p) => clampN(p + (e.key === "ArrowDown" ? 1 : -1), 0, fnSuggestions.length - 1));
+      return;
+    }
+    if (fnSuggestions.length && e.key === "Escape") { e.preventDefault(); setSuggestOff(ed.value); return; }
+    const caret = caretNow();
+    if (e.key === "F4" && isFormulaText(ed.value)) {
+      // $A$1 → A$1 → $A1 → A1
+      e.preventDefault();
+      const res = cycleAbsolute(ed.value, caret);
+      if (!res) return;
+      const live = pointLive(ed.value, caret, ed.point) && ed.point.span.start === res.start;
+      updateEdit({ value: res.text, point: live ? { ...ed.point, span: { start: res.start, end: res.end }, text: res.text } : null }, res.caret);
+      return;
+    }
+    const arrows = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+    if (arrows[e.key] && isFormulaText(ed.value) && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      // Ok tuşlarıyla işaretleme: imleç yerine başvuru hareket eder.
+      const [dr, dc] = arrows[e.key];
+      const otherSheet = si !== ed.si;
+      const res = pointArrow(ed.value, caret, ed.point && ed.point.si === si ? ed.point : null, {
+        origin: otherSheet ? { row: 0, col: 0 } : { row: ed.row, col: ed.col },
+        dr: otherSheet && !ed.point ? 0 : dr,
+        dc: otherSheet && !ed.point ? 0 : dc,
+        extend: e.shiftKey,
+        bounds: { rows: sheet.rows, cols: sheet.cols },
+        sheet: otherSheet ? sheet.name : null,
+      });
+      if (res) {
+        e.preventDefault();
+        updateEdit({ value: res.text, point: { ...res.point, si } }, res.caret);
+        revealCell(res.point.focus.row, res.point.focus.col);
+        return;
+      }
+    }
+    if (e.key === "Enter") { e.preventDefault(); finishEdit({ dr: e.shiftKey ? -1 : 1, dc: 0 }); }
+    else if (e.key === "Tab") { e.preventDefault(); finishEdit({ dr: 0, dc: e.shiftKey ? -1 : 1 }); }
+    else if (e.key === "Escape") { e.preventDefault(); cancelEdit(); }
+  };
+  const onEditChange = (e, fromBar) => {
+    const base = editRef.current || { row: active.row, col: active.col, si, point: null };
+    setEdit({ ...base, fromBar, value: e.target.value, caret: e.target.selectionStart ?? e.target.value.length });
+  };
+  const onEditSelect = (e) => {
+    const ed = editRef.current;
+    const pos = e.target.selectionStart;
+    if (ed && pos != null && pos !== ed.caret && e.target === activeInput()) setEdit({ ...ed, caret: pos });
+  };
+
+  // İşlev önerileri ve bağımsız değişken ipucu.
+  const editCaret = edit ? Math.min(edit.caret ?? edit.value.length, edit.value.length) : 0;
+  const fnWord = (edit && isFormulaText(edit.value) && suggestOff !== edit.value ? wordAt(edit.value, editCaret)?.word : "") || "";
+  const fnSuggestions = useMemo(() => functionMatches(fnWord, 8), [fnWord]);
+  useEffect(() => { setFnPick(0); }, [fnWord]);
+  const acceptFn = (fn) => {
+    const ed = editRef.current;
+    const info = ed && wordAt(ed.value, caretNow());
+    if (!fn || !info) return;
+    const res = acceptFunction(ed.value, caretNow(), info.start, fn.insert || fn.tr);
+    updateEdit({ value: res.text, point: null }, res.caret);
+  };
+  const fnContext = edit && isFormulaText(edit.value) ? functionContext(edit.value, editCaret) : null;
+  // Formüldeki başvurular: ızgarada renkli çerçeve, yazı alanında renkli metin.
+  const editRefs = useMemo(() => (edit && isFormulaText(edit.value) ? scanRefs(edit.value) : []), [edit]);
+  const editSegments = editRefs.length ? colorSegments(edit.value, editRefs) : null;
+  const syncMirror = (e) => {
+    const mirror = e.target === barInputRef.current ? barMirrorRef.current : cellMirrorRef.current;
+    if (mirror) mirror.scrollLeft = e.target.scrollLeft;
+  };
+  // Öneri kutusu etkin girdinin altında (yer yoksa üstünde) açılır.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const input = edit ? activeInput() : null;
+    if (!input) { if (popPos) setPopPos(null); return; }
+    const r = input.getBoundingClientRect();
+    const up = r.bottom + 240 > window.innerHeight && r.top > 240;
+    const next = { left: Math.round(Math.max(8, Math.min(r.left, window.innerWidth - 480))), top: Math.round(up ? r.top - 4 : r.bottom + 4), up };
+    if (!popPos || popPos.left !== next.left || popPos.top !== next.top || popPos.up !== next.up) setPopPos(next);
+  });
+
+  /** Otomatik toplam (Σ, ⌘⇧T, ⌥=): seçimin altına ya da üstteki/soldaki sayılara TOPLA. */
+  const autoSum = () => {
+    if (readOnly || !sheet) return;
+    if (range.r2 > range.r1) {
+      const row = range.r2 + 1;
+      if (row >= sheet.rows) return;
+      const updates = {};
+      for (let c = range.c1; c <= range.c2; c += 1) updates[addr(c, row)] = { v: `=TOPLA(${addr(c, range.r1)}:${addr(c, range.r2)})` };
+      commit(writeCells(book, si, updates));
+      setSel({ a: { row, col: active.col }, b: { row, col: active.col } });
+      return;
+    }
+    const isNum = (r, c) => Boolean(sheet.cells[addr(c, r)]) && isNumeric(evaluator.value(si, addr(c, r)));
+    const { text, caret, point } = autoSumFormula(guessSumRange(isNum, active.row, active.col));
+    startEdit(text, false, { caret, point });
+  };
+
   const moveBy = (dr, dc, extend) => {
     setSel((s) => {
       const b = { row: Math.max(0, Math.min(sheet.rows - 1, s.b.row + dr)), col: Math.max(0, Math.min(sheet.cols - 1, s.b.col + dc)) };
@@ -203,6 +447,7 @@ export default function SheetEditor({ id, onClose }) {
     if (meta && k.toLowerCase() === "i") { e.preventDefault(); toggleStyle("i"); return; }
     if (meta && k.toLowerCase() === "u") { e.preventDefault(); toggleStyle("u"); return; }
     if (meta && k.toLowerCase() === "d") { e.preventDefault(); apply((b) => fill(b, si, range, "down")); return; }
+    if ((meta && e.shiftKey && k.toLowerCase() === "t") || (e.altKey && !meta && (e.code === "Equal" || k === "="))) { e.preventDefault(); autoSum(); return; }
     if (meta && k.toLowerCase() === "a") { e.preventDefault(); setSel({ a: { row: 0, col: 0 }, b: { row: sheet.rows - 1, col: sheet.cols - 1 } }); return; }
     if (meta && k === "ArrowDown") { e.preventDefault(); const u = usedBounds(sheet); setSel({ a: sel.a, b: { row: Math.max(0, u.rows - 1), col: active.col } }); return; }
     if (meta && k === "ArrowUp") { e.preventDefault(); setSel({ a: { row: 0, col: active.col }, b: { row: 0, col: active.col } }); return; }
@@ -324,6 +569,28 @@ export default function SheetEditor({ id, onClose }) {
   const stats = rangeStats((() => { const vals = []; if ((range.r2 - range.r1 + 1) * (range.c2 - range.c1 + 1) <= 20000) eachCell(range, (key) => { if (sheet.cells[key]) vals.push(evaluator.value(si, key)); }); return vals.map((v) => (isNumeric(v) && typeof v === "object" ? v.date : v)); })());
   const inRange = (r, c) => r >= range.r1 && r <= range.r2 && c >= range.c1 && c <= range.c2;
 
+  // Düzenlenen formülün bu sayfadaki başvuruları: renkli çerçeveler; işaretlenen
+  // başvuru kesikli, hareketli çerçeveyle gösterilir.
+  const refBoxes = [];
+  if (edit && editRefs.length) {
+    const live = pointLive(edit.value, editCaret, edit.point) && edit.point.si === si;
+    editRefs.forEach((ref, i) => {
+      const here = ref.sheet ? sameSheetName(ref.sheet, sheet.name) : si === edit.si;
+      if (!here || ref.r1 >= sheet.rows || ref.c1 >= sheet.cols) return;
+      const r2 = Math.min(ref.r2, sheet.rows - 1);
+      const c2 = Math.min(ref.c2, sheet.cols - 1);
+      refBoxes.push({
+        key: `${i}-${ref.start}`,
+        color: ref.color,
+        top: (ref.r1 + 1) * ROW_H,
+        left: HEAD_W + lefts[ref.c1],
+        width: lefts[c2] + widths[c2] - lefts[ref.c1],
+        height: (r2 - ref.r1 + 1) * ROW_H,
+        pointing: live && ref.start === edit.point.span.start,
+      });
+    });
+  }
+
   const startResize = (c, e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -401,6 +668,7 @@ export default function SheetEditor({ id, onClose }) {
           ]} />
           <button type="button" className="btn btn--xs" title="Seçili sütuna göre A→Z" onClick={() => sort(true)}>A→Z</button>
           <button type="button" className="btn btn--xs" title="Seçili sütuna göre Z→A" onClick={() => sort(false)}>Z→A</button>
+          <button type="button" className="btn btn--xs" title="Otomatik toplam (⌘⇧T ya da ⌥=)" onClick={autoSum}>Σ Toplam</button>
           <button type="button" className="btn btn--xs" onClick={() => setFnOpen(true)}>ƒx İşlevler</button>
         </div>
       )}
@@ -408,21 +676,38 @@ export default function SheetEditor({ id, onClose }) {
       <div className="formula-bar">
         <span className="formula-bar__ref">{rangeLabel(range)}</span>
         <span className="formula-bar__fx">ƒx</span>
-        <input value={edit ? edit.value : String(raw(active.row, active.col))} readOnly={readOnly}
-          onFocus={() => { if (!edit) startEdit(String(raw(active.row, active.col)), true); }}
-          onChange={(e) => setEdit({ row: active.row, col: active.col, value: e.target.value, fromBar: true })}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); finishEdit({ dr: 1, dc: 0 }); } if (e.key === "Escape") { setEdit(null); gridRef.current?.focus(); } }}
-          onBlur={() => edit?.fromBar && finishEdit()} placeholder="Değer ya da =formül (örn. =TOPLA(B2:B10))" />
+        <div className="formula-bar__input">
+          <input ref={barInputRef} value={edit ? edit.value : String(raw(active.row, active.col))} readOnly={readOnly}
+            className={edit && editSegments ? "is-colored" : undefined}
+            onFocus={() => {
+              if (readOnly) return;
+              if (!editRef.current) { const v = String(raw(active.row, active.col)); setEdit({ row: active.row, col: active.col, si, value: v, caret: v.length, fromBar: true, point: null }); }
+              else if (!editRef.current.fromBar) setEdit({ ...editRef.current, fromBar: true });
+            }}
+            onChange={(e) => onEditChange(e, true)} onSelect={onEditSelect} onScroll={syncMirror} onKeyDown={onEditKey}
+            onBlur={onEditBlur} spellCheck={false} placeholder="Değer ya da =formül (örn. =TOPLA(B2:B10))" aria-label="Formül çubuğu" />
+          {edit && editSegments && <FormulaMirror className="fx-mirror--bar" segments={editSegments} inputRef={barInputRef} mirrorRef={barMirrorRef} />}
+        </div>
       </div>
 
       <div className="grid" ref={gridRef} tabIndex={0} onKeyDown={onKeyDown} onCopy={onCopy} onCut={(e) => onCopy(e, true)} onPaste={onPaste}
         onScroll={(e) => setScroll({ top: e.currentTarget.scrollTop, left: e.currentTarget.scrollLeft, height: e.currentTarget.clientHeight })}>
         <div className="grid__inner" style={{ width: totalW + HEAD_W, height: (sheet.rows + 1) * ROW_H }}>
+          {refBoxes.length > 0 && (
+            <div className="fx-refs" aria-hidden="true">
+              {refBoxes.map((b) => <div key={b.key} className={`fx-ref${b.pointing ? " is-pointing" : ""}`} style={{ top: b.top, left: b.left, width: b.width, height: b.height, "--ref": b.color }} />)}
+            </div>
+          )}
           <div className="grid__colhead" style={{ width: totalW + HEAD_W, top: scroll.top }}>
             <div className="grid__corner" style={{ width: HEAD_W, left: scroll.left }} onClick={() => setSel({ a: { row: 0, col: 0 }, b: { row: sheet.rows - 1, col: sheet.cols - 1 } })} />
             {widths.map((w, c) => (
               <div key={c} className={`grid__ch ${c >= range.c1 && c <= range.c2 ? "is-sel" : ""}`} style={{ left: HEAD_W + lefts[c], width: w }}
-                onMouseDown={(e) => setSel(e.shiftKey ? { a: sel.a, b: { row: sheet.rows - 1, col: c } } : { a: { row: 0, col: c }, b: { row: sheet.rows - 1, col: c } })}>
+                data-colhead={c}
+                onMouseDown={(e) => {
+                  if (editRef.current && startPoint({ row: 0, col: c }, "col", { add: e.metaKey || e.ctrlKey, extend: e.shiftKey })) { e.preventDefault(); return; }
+                  if (editRef.current) finishEdit();
+                  setSel(e.shiftKey ? { a: sel.a, b: { row: sheet.rows - 1, col: c } } : { a: { row: 0, col: c }, b: { row: sheet.rows - 1, col: c } });
+                }}>
                 {colName(c)}
                 <span className="grid__resize" onMouseDown={(e) => startResize(c, e)} />
               </div>
@@ -431,21 +716,30 @@ export default function SheetEditor({ id, onClose }) {
           {visibleRows.map((r) => (
             <div key={r} className={`grid__row ${sheet.freeze && r === 0 ? "is-frozen" : ""}`} style={{ top: sheet.freeze && r === 0 ? scroll.top + ROW_H : (r + 1) * ROW_H, width: totalW + HEAD_W }}>
               <div className={`grid__rh ${r >= range.r1 && r <= range.r2 ? "is-sel" : ""}`} style={{ width: HEAD_W, left: scroll.left }}
-                onMouseDown={(e) => setSel(e.shiftKey ? { a: sel.a, b: { row: r, col: sheet.cols - 1 } } : { a: { row: r, col: 0 }, b: { row: r, col: sheet.cols - 1 } })}>{r + 1}</div>
+                data-rowhead={r}
+                onMouseDown={(e) => {
+                  if (editRef.current && startPoint({ row: r, col: 0 }, "row", { add: e.metaKey || e.ctrlKey, extend: e.shiftKey })) { e.preventDefault(); return; }
+                  if (editRef.current) finishEdit();
+                  setSel(e.shiftKey ? { a: sel.a, b: { row: r, col: sheet.cols - 1 } } : { a: { row: r, col: 0 }, b: { row: r, col: sheet.cols - 1 } });
+                }}>{r + 1}</div>
               {widths.map((w, c) => {
                 const key = addr(c, r);
                 const cell = sheet.cells[key];
                 const s = cell?.s || {};
                 const value = cell && cell.v !== "" ? evaluator.value(si, key) : null;
                 const text = value == null ? "" : formatValue(value, s);
-                const isActive = active.row === r && active.col === c;
+                const isActive = active.row === r && active.col === c && (!edit || edit.si === si);
                 const align = s.al || (isNumeric(value) && s.f !== "text" ? "right" : typeof value === "boolean" ? "center" : "left");
                 return (
                   <div key={c} className={`grid__cell ${inRange(r, c) ? "is-sel" : ""} ${isActive ? "is-active" : ""} ${value && typeof value === "object" && value.code ? "is-err" : ""}`}
                     style={{ left: HEAD_W + lefts[c], width: w, textAlign: align, fontWeight: s.b ? 700 : undefined, fontStyle: s.i ? "italic" : undefined, textDecoration: s.u ? "underline" : undefined, color: s.c, background: s.bg }}
                     onMouseDown={(e) => {
-                      if (edit) finishEdit();
+                      if (e.button !== 0) return;
                       const p = { row: r, col: c };
+                      if (editRef.current && e.target.closest("input")) return;
+                      // Formül yazarken tıklanan / sürüklenen hücre başvuru olarak eklenir.
+                      if (editRef.current && startPoint(p, "cell", { add: e.metaKey || e.ctrlKey, extend: e.shiftKey })) { e.preventDefault(); return; }
+                      if (editRef.current) finishEdit();
                       setSel((cur) => (e.shiftKey ? { a: cur.a, b: p } : { a: p, b: p }));
                       const onMove = (ev) => {
                         const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.("[data-cell]");
@@ -455,17 +749,13 @@ export default function SheetEditor({ id, onClose }) {
                       window.addEventListener("mousemove", onMove);
                       window.addEventListener("mouseup", onUp);
                     }}
-                    onDoubleClick={() => startEdit(String(raw(r, c)))}
+                    onDoubleClick={() => { if (!editRef.current) startEdit(String(raw(r, c))); }}
                     data-cell={`${r}:${c}`} title={value && typeof value === "object" && value.code ? value.message || value.code : undefined}>
-                    {edit && edit.row === r && edit.col === c && !edit.fromBar ? (
-                      <input autoFocus className="grid__editor" value={edit.value} onChange={(e) => setEdit({ ...edit, value: e.target.value })}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") { e.preventDefault(); finishEdit({ dr: e.shiftKey ? -1 : 1, dc: 0 }); }
-                          else if (e.key === "Tab") { e.preventDefault(); finishEdit({ dr: 0, dc: e.shiftKey ? -1 : 1 }); }
-                          else if (e.key === "Escape") { setEdit(null); gridRef.current?.focus(); }
-                        }}
-                        onBlur={() => finishEdit()} />
-                    ) : text}
+                    {edit && edit.row === r && edit.col === c && !edit.fromBar && edit.si === si ? (<>
+                      <input ref={cellInputRef} autoFocus className={`grid__editor${editSegments ? " is-colored" : ""}`} value={edit.value} spellCheck={false}
+                        onChange={(e) => onEditChange(e, false)} onSelect={onEditSelect} onScroll={syncMirror} onKeyDown={onEditKey} onBlur={onEditBlur} />
+                      {editSegments && <FormulaMirror className="fx-mirror--cell" segments={editSegments} inputRef={cellInputRef} mirrorRef={cellMirrorRef} />}
+                    </>) : text}
                   </div>
                 );
               })}
@@ -478,7 +768,18 @@ export default function SheetEditor({ id, onClose }) {
         <div className="sheet-tabs">
           {book.sheets.map((s, i) => (
             <SheetTab key={i} name={s.name} active={i === si} readOnly={readOnly} canDelete={book.sheets.length > 1}
-              onClick={() => { setSi(i); setSel({ a: { row: 0, col: 0 }, b: { row: 0, col: 0 } }); }}
+              onMouseDown={(e) => { if (editRef.current && isFormulaText(editRef.current.value)) e.preventDefault(); }}
+              onClick={() => {
+                const ed = editRef.current;
+                // Formül yazarken başka sayfaya geçilir; tıklanan hücreler Sayfa2!A1 olarak eklenir.
+                if (ed && isFormulaText(ed.value) && (i === ed.si || pointingNow())) {
+                  if (i !== si) { updateEdit({ fromBar: true }, caretNow()); setSi(i); }
+                  return;
+                }
+                if (ed) finishEdit();
+                setSi(i);
+                setSel({ a: { row: 0, col: 0 }, b: { row: 0, col: 0 } });
+              }}
               onRename={(name) => apply((b) => renameSheet(b, i, name))} onDelete={() => deleteSheet(i)} />
           ))}
           {!readOnly && book.sheets.length < 20 && <button type="button" className="icon-btn" title="Sayfa ekle" onClick={addSheet}><Icon name="plus" /></button>}
@@ -493,13 +794,66 @@ export default function SheetEditor({ id, onClose }) {
         </div>
       </footer>
 
+      {edit && popPos && (fnSuggestions.length > 0 || fnContext) && (
+        <div className="fx-suggest" style={{ left: popPos.left, top: popPos.top, transform: popPos.up ? "translateY(-100%)" : undefined }} role={fnSuggestions.length ? "listbox" : "tooltip"} onMouseDown={(e) => e.preventDefault()}>
+          {fnSuggestions.length > 0 ? fnSuggestions.map((fn, i) => (
+            <button key={fn.en} type="button" role="option" aria-selected={i === fnPick} className={`fx-suggest__item${i === fnPick ? " is-active" : ""}`} onMouseDown={(e) => { e.preventDefault(); acceptFn(fn); }}>
+              <b>{fn.insert}</b><small>{fn.insert === fn.tr ? fn.en : fn.tr}</small><span>{fn.desc}</span>
+            </button>
+          )) : (
+            <div className="fx-suggest__hint">
+              {signatureParts(fnContext.fn, fnContext.argIndex).map((part, i) => (part.active ? <b key={i}>{part.text}</b> : <span key={i}>{part.text}</span>))}
+              <small>{fnContext.fn.desc}</small>
+            </div>
+          )}
+          {fnSuggestions.length > 0 && <div className="fx-suggest__foot">Tab / Enter ile ekle · ↑↓ seç · Esc kapat</div>}
+        </div>
+      )}
+
       {shareOpen && <ShareDialog sheetId={id} shares={meta.shares || []} onClose={() => setShareOpen(false)} onSaved={(shares) => { setMeta((m) => ({ ...m, shares })); setShareOpen(false); }} />}
       {fnOpen && <FunctionHelp onClose={() => setFnOpen(false)} onPick={(fn) => { setFnOpen(false); startEdit(`=${fn}(`, false); }} />}
     </div>
   );
 }
 
-function SheetTab({ name, active, readOnly, canDelete, onClick, onRename, onDelete }) {
+/**
+ * Formül yazılırken başvuruları renkli gösteren katman: girdinin metni saydam
+ * olur, aynı yazı bu katmanda renkli çizilir (imleç ve seçim girdide kalır).
+ */
+function FormulaMirror({ className, segments, inputRef, mirrorRef }) {
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    const mirror = mirrorRef.current;
+    if (!input || !mirror) return;
+    const cs = window.getComputedStyle(input);
+    Object.assign(mirror.style, {
+      left: `${input.offsetLeft}px`,
+      top: `${input.offsetTop}px`,
+      width: `${input.offsetWidth}px`,
+      height: `${input.offsetHeight}px`,
+      lineHeight: `${input.clientHeight}px`,
+      paddingLeft: cs.paddingLeft,
+      paddingRight: cs.paddingRight,
+      borderLeftWidth: cs.borderLeftWidth,
+      borderRightWidth: cs.borderRightWidth,
+      borderTopWidth: cs.borderTopWidth,
+      borderBottomWidth: cs.borderBottomWidth,
+      fontFamily: cs.fontFamily,
+      fontSize: cs.fontSize,
+      fontWeight: cs.fontWeight,
+      letterSpacing: cs.letterSpacing,
+    });
+    mirror.scrollLeft = input.scrollLeft;
+  });
+  return (
+    <div ref={mirrorRef} className={`fx-mirror ${className}`} aria-hidden="true">
+      {segments.map((sg, i) => <span key={i} style={sg.color ? { color: sg.color } : undefined}>{sg.text}</span>)}
+      {"\u00a0\u00a0\u00a0"}
+    </div>
+  );
+}
+
+function SheetTab({ name, active, readOnly, canDelete, onClick, onMouseDown, onRename, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(name);
   useEffect(() => setValue(name), [name]);
@@ -510,7 +864,7 @@ function SheetTab({ name, active, readOnly, canDelete, onClick, onRename, onDele
   }
   return (
     <span className={`sheet-tab ${active ? "is-active" : ""}`}>
-      <button type="button" onClick={onClick} onDoubleClick={() => !readOnly && setEditing(true)} title="Yeniden adlandırmak için çift tıklayın">{name}</button>
+      <button type="button" onMouseDown={onMouseDown} onClick={onClick} onDoubleClick={() => !readOnly && setEditing(true)} title="Yeniden adlandırmak için çift tıklayın">{name}</button>
       {active && !readOnly && canDelete && <button type="button" className="sheet-tab__x" onClick={onDelete} aria-label="Sayfayı sil">×</button>}
     </span>
   );
@@ -565,7 +919,7 @@ function FunctionHelp({ onClose, onPick }) {
   return (
     <Modal title="İşlevler" onClose={onClose} width={560}>
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="İşlev ara (TOPLA, EĞER…)" autoFocus />
-      <p className="muted small">Bağımsız değişkenler noktalı virgülle ayrılır: =EĞER(A1&gt;10; "Çok"; "Az"). İngilizce adlar da çalışır (SUM, IF…).</p>
+      <p className="muted small">Bağımsız değişkenler noktalı virgülle ayrılır: =EĞER(A1&gt;10; "Çok"; "Az"). İngilizce adlar da çalışır (SUM, IF…). Formül yazarken hücreye tıklayın ya da sürükleyin (⇧: aralık, ⌘: yeni başvuru), ok tuşlarıyla da seçebilirsiniz; F4 $ ekler, ⌘⇧T otomatik toplam.</p>
       <ul className="fn-list">{list.map((f) => <li key={f.en}><button type="button" onClick={() => onPick(f.tr)}><strong>{f.tr}</strong><small>{f.en}</small><span>{f.hint}</span></button></li>)}</ul>
     </Modal>
   );

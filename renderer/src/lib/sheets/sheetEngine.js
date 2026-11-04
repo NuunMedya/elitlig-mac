@@ -91,6 +91,8 @@ export const dateToSerial = (date) => Math.round((Date.UTC(date.getFullYear(), d
 /* ------------------------------ sözcükleyici ------------------------------ */
 
 const REF_RE = /^(?:(?:'([^']+)'|([A-Za-zÇĞİÖŞÜçğıöşü_][\wÇĞİÖŞÜçğıöşü]*))!)?(\$?[A-Za-z]{1,2}\$?\d{1,4})(?::(\$?[A-Za-z]{1,2}\$?\d{1,4}))?/;
+// Tam sütun (A:A, $B:$D) ve tam satır (1:1, $3:$9) aralıkları.
+const FULL_RE = /^(?:(?:'([^']+)'|([A-Za-zÇĞİÖŞÜçğıöşü_][\wÇĞİÖŞÜçğıöşü]*))!)?(?:(\$?[A-Za-z]{1,2}):(\$?[A-Za-z]{1,2})|(\$?\d{1,4}):(\$?\d{1,4}))/;
 
 export function tokenize(src) {
   // ";" ayraçlı (Türkçe) formüllerde ya da işlevsiz ifadelerde "1,18" ondalıktır.
@@ -115,6 +117,13 @@ export function tokenize(src) {
       continue;
     }
     const rest = src.slice(i);
+    const full = FULL_RE.exec(rest);
+    if (full && !/^[(\wÇĞİÖŞÜçğıöşü.!]/.test(rest.slice(full[0].length))) {
+      const kind = full[3] ? "col" : "row";
+      tokens.push({ t: "ref", sheet: full[1] || full[2] || null, a: full[3] || full[5], b: full[4] || full[6], kind });
+      i += full[0].length;
+      continue;
+    }
     const num = (commaDecimal ? /^\d+(?:[.,]\d+)?(?:[eE][+-]?\d+)?/ : /^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/).exec(rest);
     if (num && !/^[A-Za-z]/.test(rest)) {
       tokens.push({ t: "num", v: Number(num[0].replace(",", ".")) });
@@ -161,7 +170,7 @@ function parse(tokens) {
     if (!tok) throw ERR.value();
     if (tok.t === "num") return { k: "num", v: tok.v };
     if (tok.t === "str") return { k: "str", v: tok.v };
-    if (tok.t === "ref") return { k: "ref", sheet: tok.sheet, a: tok.a, b: tok.b };
+    if (tok.t === "ref") return { k: "ref", sheet: tok.sheet, a: tok.a, b: tok.b, kind: tok.kind };
     if (tok.t === "op" && (tok.v === "-" || tok.v === "+")) {
       const operand = postfix();
       return tok.v === "-" ? { k: "neg", e: operand } : operand;
@@ -501,9 +510,38 @@ export function createEvaluator(workbook) {
     return result;
   }
 
-  function rangeValues(si, a, b) {
-    const p = parseAddr(a);
-    const q = parseAddr(b);
+  // Tam sütun/satır aralığı sayfanın (dolu bölge dahil) boyutuyla sınırlanır.
+  const extentCache = new Map();
+  const extent = (si) => {
+    if (extentCache.has(si)) return extentCache.get(si);
+    const sh = sheets[si] || {};
+    let rows = Number(sh.rows) || 0;
+    let cols = Number(sh.cols) || 0;
+    for (const key of Object.keys(sh.cells || {})) {
+      const p = parseAddr(key);
+      if (p) { rows = Math.max(rows, p.row + 1); cols = Math.max(cols, p.col + 1); }
+    }
+    const out = { rows: Math.max(rows, 1), cols: Math.max(cols, 1) };
+    extentCache.set(si, out);
+    return out;
+  };
+
+  function rangeValues(si, a, b, kind) {
+    let p;
+    let q;
+    if (kind === "col") {
+      const rows = extent(si).rows;
+      p = { col: colIndex(a), row: 0 };
+      q = { col: colIndex(b), row: rows - 1 };
+    } else if (kind === "row") {
+      const cols = extent(si).cols;
+      p = { col: 0, row: Number(a) - 1 };
+      q = { col: cols - 1, row: Number(b) - 1 };
+      if (p.row < 0 || q.row < 0) throw ERR.ref();
+    } else {
+      p = parseAddr(a);
+      q = parseAddr(b);
+    }
     if (!p || !q) throw ERR.ref();
     const c1 = Math.min(p.col, q.col);
     const c2 = Math.max(p.col, q.col);
@@ -524,7 +562,7 @@ export function createEvaluator(workbook) {
       case "ref": {
         const target = resolveSheet(node.sheet, si);
         const a = node.a.replace(/\$/g, "").toUpperCase();
-        if (node.b) return rangeValues(target, a, node.b.replace(/\$/g, "").toUpperCase());
+        if (node.b) return rangeValues(target, a, node.b.replace(/\$/g, "").toUpperCase(), node.kind);
         const v = value(target, a);
         if (isError(v)) throw v;
         return v;
@@ -589,17 +627,35 @@ export function createEvaluator(workbook) {
 
 /* ---------------------------- referans kaydırma ---------------------------- */
 
-const REF_IN_FORMULA = /("(?:[^"]|"")*")|((?:'[^']+'|[A-Za-zÇĞİÖŞÜçğıöşü_][\wÇĞİÖŞÜçğıöşü]*)!)?(\$?)([A-Za-z]{1,2})(\$?)(\d{1,4})(?![\w(])/g;
+// Gruplar: 1 dizge · 2 sayfa öneki · 3-6 tam sütun ($A:$B) · 7-10 tam satır ($1:$5) · 11-14 hücre ($A$1).
+const REF_IN_FORMULA = /("(?:[^"]|"")*")|((?:'[^']+'|[A-Za-zÇĞİÖŞÜçğıöşü_][\wÇĞİÖŞÜçğıöşü]*)!)?(?:(\$?)([A-Za-z]{1,2}):(\$?)([A-Za-z]{1,2})(?![\w(!])|(\$?)(\d{1,4}):(\$?)(\d{1,4})(?![\w(.!])|(\$?)([A-Za-z]{1,2})(\$?)(\d{1,4})(?![\w(]))/g;
+
+/** Formüldeki her başvuruyu fn ile dönüştürür; dizgeler olduğu gibi kalır. */
+function mapRefs(formula, fn) {
+  return formula.replace(REF_IN_FORMULA, (match, str, sheet, ca1, c1, ca2, c2, ra1, r1, ra2, r2, colAbs, col, rowAbs, row) => {
+    if (str) return str;
+    const prefix = sheet || "";
+    if (c1) return fn({ kind: "col", match, prefix, sheet, ends: [{ abs: ca1, i: colIndex(c1) }, { abs: ca2, i: colIndex(c2) }] });
+    if (r1) return fn({ kind: "row", match, prefix, sheet, ends: [{ abs: ra1, i: Number(r1) - 1 }, { abs: ra2, i: Number(r2) - 1 }] });
+    return fn({ kind: "cell", match, prefix, sheet, colAbs, rowAbs, c: colIndex(col), r: Number(row) - 1 });
+  });
+}
+const fullText = (kind, prefix, ends) => `${prefix}${ends.map((e) => `${e.abs}${kind === "col" ? colName(e.i) : e.i + 1}`).join(":")}`;
 
 /** Formülü kopyalarken göreli başvuruları kaydırır ($ olanlar sabit kalır). */
 export function shiftFormula(formula, dRow, dCol) {
   if (typeof formula !== "string" || !formula.startsWith("=")) return formula;
-  return formula.replace(REF_IN_FORMULA, (match, str, sheet, colAbs, col, rowAbs, row) => {
-    if (str) return str;
-    const c = colAbs ? colIndex(col) : colIndex(col) + dCol;
-    const r = rowAbs ? Number(row) - 1 : Number(row) - 1 + dRow;
+  return mapRefs(formula, (ref) => {
+    if (ref.kind !== "cell") {
+      const d = ref.kind === "col" ? dCol : dRow;
+      const ends = ref.ends.map((e) => ({ abs: e.abs, i: e.abs ? e.i : e.i + d }));
+      if (ends.some((e) => e.i < 0)) return "#BAŞV!";
+      return fullText(ref.kind, ref.prefix, ends);
+    }
+    const c = ref.colAbs ? ref.c : ref.c + dCol;
+    const r = ref.rowAbs ? ref.r : ref.r + dRow;
     if (c < 0 || r < 0) return "#BAŞV!";
-    return `${sheet || ""}${colAbs}${colName(c)}${rowAbs}${r + 1}`;
+    return `${ref.prefix}${ref.colAbs}${colName(c)}${ref.rowAbs}${r + 1}`;
   });
 }
 
@@ -611,13 +667,34 @@ export function shiftFormula(formula, dRow, dCol) {
 export function adjustFormula(formula, axis, at, count, { sameSheet = true, sheetName = "" } = {}) {
   if (typeof formula !== "string" || !formula.startsWith("=")) return formula;
   const lower = sheetName.toLocaleLowerCase("tr-TR");
-  return formula.replace(REF_IN_FORMULA, (match, str, sheet, colAbs, col, rowAbs, row) => {
-    if (str) return str;
-    const refSheet = sheet ? sheet.slice(0, -1).replace(/^'|'$/g, "").toLocaleLowerCase("tr-TR") : null;
+  return mapRefs(formula, (ref) => {
+    const refSheet = ref.sheet ? ref.sheet.slice(0, -1).replace(/^'|'$/g, "").toLocaleLowerCase("tr-TR") : null;
     const affects = refSheet ? refSheet === lower : sameSheet;
-    if (!affects) return match;
-    let c = colIndex(col);
-    let r = Number(row) - 1;
+    if (!affects) return ref.match;
+    if (ref.kind !== "cell") {
+      // Tam sütun/satır: yalnız kendi ekseni etkiler; silinen bölüm aralıktan düşülür.
+      if ((ref.kind === "col") !== (axis === "col")) return ref.match;
+      const [s, e] = ref.ends;
+      let a = s.i;
+      let b = e.i;
+      if (count > 0) {
+        if (a >= at) a += count;
+        if (b >= at) b += count;
+      } else {
+        const gone = -count;
+        const mapIdx = (idx, isEnd) => {
+          if (idx < at) return idx;
+          if (idx >= at + gone) return idx - gone;
+          return isEnd ? at - 1 : at;
+        };
+        a = mapIdx(s.i, false);
+        b = mapIdx(e.i, true);
+        if (b < a) return "#BAŞV!";
+      }
+      return fullText(ref.kind, ref.prefix, [{ abs: s.abs, i: a }, { abs: e.abs, i: b }]);
+    }
+    let c = ref.c;
+    let r = ref.r;
     const idx = axis === "row" ? r : c;
     let nextIdx = idx;
     if (count > 0 && idx >= at) nextIdx = idx + count;
@@ -626,7 +703,7 @@ export function adjustFormula(formula, axis, at, count, { sameSheet = true, shee
       if (idx >= at - count) nextIdx = idx + count;
     }
     if (axis === "row") r = nextIdx; else c = nextIdx;
-    return `${sheet || ""}${colAbs}${colName(c)}${rowAbs}${r + 1}`;
+    return `${ref.prefix}${ref.colAbs}${colName(c)}${ref.rowAbs}${r + 1}`;
   });
 }
 
