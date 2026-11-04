@@ -89,18 +89,13 @@ export function entryTotals(entries = []) {
   return { ...t, estimate_net: r2(t.estimate_income - t.estimate_expense), paid_net: r2(t.paid_income - t.paid_expense), open_income: r2(t.planned_income + t.pending_income), open_expense: r2(t.planned_expense + t.pending_expense) };
 }
 
-/**
- * Hareket listesi süzgeci: { type, status, q, step, match } — status "open" =
- * tahmin + bekleyen; match "any" = maç ücretleri (maça bağlı kalemler), sayı =
- * o maçın kalemleri.
- */
-export function filterFinanceEntries(entries = [], { type = "", status = "", q = "", step = "", match = "" } = {}) {
+/** Hareket listesi süzgeci: { type, status, q } — status "open" = tahmin + bekleyen. */
+export function filterFinanceEntries(entries = [], { type = "", status = "", q = "", step = "" } = {}) {
   const needle = String(q || "").trim().toLocaleLowerCase("tr-TR");
   return entries.filter((e) => (!type || e.type === type)
     && (!status || (status === "open" ? ["planned", "pending"].includes(e.status) : e.status === status))
     && (!step || String(e.step_id) === String(step))
-    && (!match || (match === "any" ? Boolean(e.match_id) : String(e.match_id) === String(match)))
-    && (!needle || [e.description, e.category, e.party, e.document_no, e.note, e.account_name, e.lead_name, e.step_title, e.match_label].filter(Boolean).join(" ").toLocaleLowerCase("tr-TR").includes(needle)));
+    && (!needle || [e.description, e.category, e.party, e.document_no, e.note, e.account_name, e.lead_name, e.step_title].filter(Boolean).join(" ").toLocaleLowerCase("tr-TR").includes(needle)));
 }
 
 /** Bütçe listesi: gelir ve gider ayrı; açıklar (vadeye göre) önce, ödenenler sonra, iptaller en sonda. */

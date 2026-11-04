@@ -1,10 +1,11 @@
 // Saha ve maç planlama: ortak parçalar — API yolu, işlem sarmalayıcısı,
-// takım seçici, iletişim bağlantıları, arama sonucu formu, taşıma hedefi,
-// takım iletişim formu ve takım notları, sağdan açılan panel.
+// takım seçici, iletişim bağlantıları, takım logosu, kaynak / gün / uygunluk
+// rozetleri, kısa görüşme sonucu formu, taşıma hedefi, takım iletişim formu ve
+// takım notları, sağdan açılan panel.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Field, Icon, Modal, openModalCount, useConfirm, useToast } from "../../components/ui";
 import { request } from "../../api";
-import { CALL_OUTCOMES, QUICK_DUES, contactOf, timeAgo, timeLabel, toLocalInput } from "../../lib/planningUtils";
+import { AVAIL, CALL_OUTCOMES, DAY_LABELS, DAY_SHORT, INBOX_SOURCES, QUICK_DUES, callError, contactOf, initials, outcomeMeta, timeAgo, timeLabel, toLocalInput } from "../../lib/planningUtils";
 
 export const A = "/api/match-requests/admin";
 export const NOTES = "/api/admin/team-notes";
@@ -115,37 +116,31 @@ export function ContactLinks({ teams, teamId, compact = false }) {
   );
 }
 
-/** Arama sonucu: sonuç + (tekrar ara için) zaman + not. */
+/** Kısa görüşme sonucu (öneri listelerinde): etiket + (gerekirse) zaman + not. */
 export function CallOutcome({ teamName, busy, onSave, onCancel, compact = false }) {
   const [outcome, setOutcome] = useState("");
   const [note, setNote] = useState("");
   const [at, setAt] = useState("");
-  const needsTime = outcome === "callback";
-  const needsNote = outcome === "note";
-  const ready = outcome && (!needsTime || at) && (!needsNote || note.trim());
+  const meta = outcomeMeta(outcome);
+  const ready = outcome && !callError({ outcome, note, at });
   const submit = async () => {
     if (!ready) return;
-    const saved = await onSave({ outcome, note: note.trim() || undefined, callbackAt: at ? new Date(at).toISOString() : undefined });
+    const saved = await onSave({ outcome, note: note.trim() || undefined, callbackAt: at && meta.date ? new Date(at).toISOString() : undefined, at });
     if (saved !== null) { setOutcome(""); setNote(""); setAt(""); }
   };
   return (
-    <div className={`pl-call ${compact ? "is-compact" : ""}`} role="group" aria-label={`${teamName || "Takım"} arama sonucu`}>
+    <div className={`pl-call ${compact ? "is-compact" : ""}`} role="group" aria-label={`${teamName || "Takım"} görüşme sonucu`}>
       <div className="pl-call__outcomes">
         {CALL_OUTCOMES.map((o) => (
-          <button key={o.value} type="button" className={`outcome-btn pl-out is-${o.tone || "plain"} ${outcome === o.value ? "is-on" : ""}`} aria-pressed={outcome === o.value} onClick={() => setOutcome(outcome === o.value ? "" : o.value)}>
+          <button key={o.value} type="button" className={`pl-out ${outcome === o.value ? "is-on" : ""}`} style={{ "--sc": o.color }} aria-pressed={outcome === o.value} onClick={() => setOutcome(outcome === o.value ? "" : o.value)}>
             <Icon name={o.icon} size={12} /> {o.label}
           </button>
         ))}
       </div>
-      {needsTime && (
-        <div className="chips">
-          {QUICK_DUES.map((d) => { const v = toLocalInput(d.make(new Date())); return <button key={d.key} type="button" className={`chip ${at === v ? "" : "chip--off"}`} onClick={() => setAt(v)}>{d.label}</button>; })}
-          <input type="datetime-local" className="pl-input-sm" value={at} onChange={(e) => setAt(e.target.value)} aria-label="Tekrar arama zamanı" />
-        </div>
-      )}
+      {meta.date && <DuePicker value={at} onChange={setAt} required={meta.date === "required"} />}
       {outcome && (
         <div className="input-with-btn">
-          <input value={note} maxLength={500} autoFocus placeholder={needsNote ? "Notunuz (ör. kaptan değişti, yeni numara…)" : "Kısa not (isteğe bağlı)"} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} aria-label="Arama notu" />
+          <input value={note} maxLength={500} autoFocus placeholder={outcome === "note" ? "Notunuz (ör. kaptan değişti, yeni numara…)" : "Kısa not (isteğe bağlı)"} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} aria-label="Görüşme notu" />
           <button type="button" className="btn btn--sm btn--primary" disabled={busy || !ready} onClick={submit}>Kaydet</button>
           {onCancel && <button type="button" className="btn btn--sm btn--ghost" onClick={onCancel}>Vazgeç</button>}
         </div>
@@ -153,6 +148,56 @@ export function CallOutcome({ teamName, busy, onSave, onCancel, compact = false 
     </div>
   );
 }
+
+/** Tekrar arama / geri dönüş zamanı: hızlı seçimler + tarih-saat. */
+export function DuePicker({ value, onChange, required = false, label }) {
+  return (
+    <div className="pl-due">
+      <span className="pl-due__label"><Icon name="clock" size={11} /> {label || (required ? "Ne zaman aranacak?" : "Ne zaman dönülecek? (isteğe bağlı)")}</span>
+      {QUICK_DUES.map((d) => { const v = toLocalInput(d.make(new Date())); return <button key={d.key} type="button" className={`chip ${value === v ? "" : "chip--off"}`} onClick={() => onChange(v)}>{d.label}</button>; })}
+      <input type="datetime-local" className="pl-input-sm" value={value} onChange={(e) => onChange(e.target.value)} aria-label="Tekrar arama zamanı" />
+      {value && !required && <button type="button" className="link-btn small" onClick={() => onChange("")}>Kaldır</button>}
+    </div>
+  );
+}
+
+/** Takım logosu ya da baş harfleri. */
+export function TeamAvatar({ name, logo, size = 36 }) {
+  const [failed, setFailed] = useState(false);
+  const hue = [...String(name || "")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 7);
+  return (
+    <span className="pl-avatar" style={{ width: size, height: size, "--hue": hue, fontSize: Math.round(size * 0.36) }} aria-hidden="true">
+      {logo && !failed ? <img src={logo} alt="" onError={() => setFailed(true)} /> : initials(name) || <Icon name="team" size={Math.round(size * 0.5)} />}
+    </span>
+  );
+}
+
+/** Talebin kaynağı: Uygulama / Telefon / Havuz / Geri arama … */
+export function SourceBadge({ source, at }) {
+  const m = INBOX_SOURCES[source] || INBOX_SOURCES.phone;
+  return <span className={`pl-source is-${m.tone || "plain"}`} title={m.hint}><Icon name={m.icon} size={11} /> {m.label}{at ? <small>{timeAgo(at)}</small> : null}</span>;
+}
+
+/** Haftanın günleri: istenenler dolu. */
+export function DayChips({ days = [], compact = false }) {
+  return (
+    <span className={`pl-daychips ${compact ? "is-compact" : ""}`} aria-label={days.length ? `Günler: ${days.map((d) => DAY_LABELS[d]).join(", ")}` : "Gün belirtilmedi"}>
+      {[1, 2, 3, 4, 5, 6, 7].map((d) => <i key={d} className={days.includes(d) ? "is-on" : ""} title={DAY_LABELS[d]}>{DAY_SHORT[d].slice(0, compact ? 1 : 3)}</i>)}
+    </span>
+  );
+}
+
+/** Seçenek çipi: gün saat · saha + uygunluk rengi. */
+export function OptionPill({ option, showVenue = true, onClick }) {
+  const a = AVAIL[option.avail] || AVAIL.free;
+  const label = `${DAY_SHORT[option.day] || ""} ${String(option.date || "").slice(8, 10)}.${String(option.date || "").slice(5, 7)} ${timeLabel(option.hour, option.minute)}`;
+  const title = `${option.venue_name || ""} · ${label} · ${a.label}${option.others?.length ? `: ${option.others.map((t) => t.team_name).join(", ")}` : ""}`;
+  const body = <><i className={`pl-dot is-${a.tone}`} /><strong>{label}</strong>{showVenue && option.venue_name ? <small>{option.venue_name}</small> : null}{option.avail === "candidates" || option.avail === "opponent" ? <em>{option.avail === "opponent" ? "rakip hazır" : `${option.others.length} aday`}</em> : option.avail === "taken" ? <em>dolu</em> : null}</>;
+  return onClick ? <button type="button" className={`pl-opt is-${a.tone}`} title={title} onClick={onClick}>{body}</button> : <span className={`pl-opt is-${a.tone}`} title={title}>{body}</span>;
+}
+
+/** Görüşme etiketi (renkli). */
+export const OutcomeTag = ({ outcome, label }) => { const m = outcome ? outcomeMeta(outcome) : CALL_OUTCOMES.find((o) => o.label === label || (label && label.startsWith(o.label))) || { ...outcomeMeta(null), icon: "message" }; return <span className="pl-outtag" style={{ "--sc": m.color }}><Icon name={m.icon} size={10} /> {label || m.label}</span>; };
 
 const timesOf = (venue) => (Array.isArray(venue?.grid?.times) ? venue.grid.times : []);
 /** Başka saate taşıma / tek saate ekleme hedefi: saha + tarih + saat. */

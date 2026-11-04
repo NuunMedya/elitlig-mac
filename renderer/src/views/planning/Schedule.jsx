@@ -1,11 +1,14 @@
-// Program ve sahalar: haftalık program (gün ajandası / hafta haritası; geçmiş
-// haftalar, sistemdeki maçlar, toplu "dolu yap"), saat paneli (havuz,
-// öneriler, eşleştirme → maç), geçmiş saat paneli ve saha formu.
+// Program: saha başına hafta panosu (günler × saatler, renkli büyük hücreler,
+// bugün sütunu, şimdiki saat çizgisi), bütün sahaların tek gün görünümü,
+// haftalık özet, saha sekmelerinde doluluk; toplu "dolu yap", geçmiş haftalar,
+// sistemdeki maçlar. Saat paneli (havuz, öneriler, eşleştirme → maç), geçmiş
+// saat paneli ve saha formu.
 import React, { useEffect, useMemo, useState } from "react";
-import { Field, Icon, useConfirm } from "../../components/ui";
+import { Field, Icon, MenuButton, useConfirm } from "../../components/ui";
 import {
-  DAY_LABELS, DAY_SHORT, MINUTE_OPTIONS, POOL_SOURCE_LABELS, SLOT_MINUTE_OPTIONS, SLOT_STATES, SLOT_STATUS_LABELS, MATCH_SCREENS, buildWeekGrid, canSelectCell, cellKey, cellTitle,
-  dayBulkSets, dayStats, heatText, isPastCell, isPastWithDetail, matchStatusLabel, poolKey, scoreText, slotState, slotSummary, timeAgo, timeLabel,
+  DAY_LABELS, DAY_SHORT, MINUTE_OPTIONS, POOL_SOURCE_LABELS, SLOT_MINUTE_OPTIONS, SLOT_STATES, SLOT_STATUS_LABELS, MATCH_SCREENS, addDays, buildWeekGrid, canSelectCell, cellKey, cellTitle,
+  cellView, dateLabel, dayAcross, dayBulkSets, dayLabel, dayOfIso, dayStats, isPastCell, isPastWithDetail, localIso, matchStatusLabel, poolKey, scoreText, slotState, timeAgo, timeLabel,
+  weekRangeLabel, weekSummary,
 } from "../../lib/planningUtils";
 import { A, CallOutcome, ContactLinks, MoveTargetPicker, SidePanel, Tag, TeamPicker, openSite } from "./shared";
 
@@ -13,163 +16,189 @@ const keyOf = (c) => cellKey(c.date, c.hour, c.minute || 0);
 
 /* ================================ Program ================================ */
 
-export function ScheduleView({ venues, venueId, onVenueChange, board, loading, busy, onWeek, onOpenCell, onBulk, onLinkMatches, onAddTeam, focused, onEditVenues, scoped }) {
-  const [mode, setMode] = useState(() => { try { return localStorage.getItem("planning:schedule") || "day"; } catch { return "day"; } });
+const nowParts = () => { const d = new Date(); return { date: localIso(d), hour: d.getHours(), minute: d.getMinutes() }; };
+const isNowRow = (t, now, slotMinutes = 60) => { const start = t.hour * 60 + (t.minute || 0); const cur = now.hour * 60 + now.minute; return cur >= start && cur < start + slotMinutes; };
+
+export function ProgramView({ venues, venueId, onVenueChange, boards, board, loading, busy, onWeek, onOpenCell, onBulk, onLinkMatches, onAddTeam, focused, onEditVenues }) {
+  const [mode, setMode] = useState(() => { try { return localStorage.getItem("planning:program") === "day" ? "day" : "week"; } catch { return "week"; } });
   const [selecting, setSelecting] = useState(false);
   const [selection, setSelection] = useState(() => new Map());
   const [note, setNote] = useState("");
   const confirm = useConfirm();
+  const now = nowParts();
   const grid = useMemo(() => buildWeekGrid(board), [board]);
   const venue = board?.venue || venues.find((v) => v.public_id === venueId) || null;
   const weeks = board?.weeks || [];
   const wi = weeks.findIndex((w) => w.start === board?.week_start);
   const current = weeks.find((w) => !w.is_past) || null;
   const pastWeek = Boolean(weeks[wi]?.is_past);
+  const weekStart = board?.week_start || "";
   const [dayDate, setDayDate] = useState("");
+  const weekDays = weekStart ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)) : [];
   useEffect(() => {
-    if (grid.days.some((d) => d.date === dayDate)) return;
-    const pick = grid.days.find((d) => d.is_today) || grid.days.find((d) => !d.is_past && d.is_bookable) || grid.days[grid.days.length - 1];
-    setDayDate(pick?.date || "");
-  }, [grid.days, dayDate]);
-  useEffect(() => { if (focused?.date && grid.days.some((d) => d.date === focused.date)) setDayDate(focused.date); }, [focused?.date, grid.days]);
-  useEffect(() => { setSelection(new Map()); }, [venueId, board?.week_start]);
-  const setModeSaved = (m) => { setMode(m); try { localStorage.setItem("planning:schedule", m); } catch { /* yoksay */ } };
-
-  const day = grid.days.find((d) => d.date === dayDate) || null;
-  const dayCells = day ? grid.times.map((t) => grid.cellAt(day, t)) : [];
-  const editableDay = Boolean(day && !day.is_past && day.is_bookable !== false);
-  const sets = dayBulkSets(dayCells);
+    if (weekDays.includes(dayDate)) return;
+    setDayDate(weekDays.includes(now.date) ? now.date : weekDays.find((d) => d >= now.date) || weekDays[0] || "");
+  }, [weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (focused?.date && weekDays.includes(focused.date)) setDayDate(focused.date); }, [focused?.date, weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setSelection(new Map()); }, [venueId, weekStart]);
+  const setModeSaved = (m) => { setMode(m); try { localStorage.setItem("planning:program", m); } catch { /* yoksay */ } };
+  const summary = weekSummary(board);
+  const all = venues.map((v) => ({ venue: v, board: boards[v.public_id] && boards[v.public_id].week_start === weekStart ? boards[v.public_id] : null }));
   const weekExternal = (board?.cells || []).filter((c) => c.external_match && c.status !== "closed" && !isPastCell(c));
   const toggle = (c) => { if (!canSelectCell(c)) return; setSelection((cur) => { const n = new Map(cur); if (n.has(keyOf(c))) n.delete(keyOf(c)); else n.set(keyOf(c), c); return n; }); };
-  const click = (c) => (selecting ? toggle(c) : onOpenCell(c));
+  const click = (c) => (selecting ? toggle(c) : onOpenCell(c, venueId));
   const stop = () => { setSelecting(false); setSelection(new Map()); setNote(""); };
   const bulk = async (list, status, n) => { if (!list.length) return; if ((await onBulk(list, status, n)) !== null) stop(); };
-  const fillDay = async () => {
+  const dayTools = (d) => {
+    const cells = grid.times.map((t) => grid.cellAt(d, t));
+    const sets = dayBulkSets(cells);
     const pooled = sets.free.filter((c) => c.pool_count > 0).length;
-    if (await confirm({ title: "Günü dolu yap", message: `${day.label} ${day.date_label} günündeki ${sets.free.length} boş saat dolu yapılsın mı?${pooled ? ` ${pooled} saatte bekleyen aday var; adaylar başka saate taşınmalı.` : ""}`, confirmLabel: "Dolu yap" })) bulk(sets.free, "closed", "");
+    return [
+      { label: `Günü dolu yap${sets.free.length ? ` (${sets.free.length} saat)` : ""}`, icon: "lock", disabled: !sets.free.length || d.is_past, onClick: async () => { if (await confirm({ title: "Günü dolu yap", message: `${d.label} ${d.date_label} günündeki ${sets.free.length} boş saat dolu yapılsın mı?${pooled ? ` ${pooled} saatte bekleyen aday var; adaylar başka saate taşınmalı.` : ""}`, confirmLabel: "Dolu yap" })) bulk(sets.free, "closed", ""); } },
+      sets.closed.length > 0 && { label: `Dolu saatleri aç (${sets.closed.length})`, icon: "rotate", onClick: () => bulk(sets.closed, "open", "") },
+      sets.external.length > 0 && { label: `Kayıtlı maçları tabloya işle (${sets.external.length})`, icon: "link", onClick: () => onLinkMatches(sets.external) },
+      { label: "Bu günü tüm sahalarda gör", icon: "layers", onClick: () => { setDayDate(d.date); setModeSaved("day"); } },
+    ].filter(Boolean);
   };
   const selected = [...selection.values()];
   const selClosed = selected.filter((c) => c.status === "closed");
   const selOpen = selected.filter((c) => c.status !== "closed");
   const disabledOf = (c) => { const st = slotState(c); return selecting ? !canSelectCell(c) : st === "past" || (st === "played" && !isPastWithDetail(c)); };
+  const isFocus = (c) => focused && focused.date === c.date && Number(focused.hour) === Number(c.hour) && Number(focused.minute || 0) === Number(c.minute || 0);
+  const across = useMemo(() => dayAcross(all.map((x) => x.board).filter(Boolean), dayDate), [boards, dayDate, weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <section className="pl-schedule">
-      <div className="filters pl-bar">
-        <label className="pl-venue-pick"><Icon name="map" size={14} />
-          <select value={venueId} onChange={(e) => onVenueChange(e.target.value)} aria-label="Saha">
-            {venues.map((v) => <option key={v.public_id} value={v.public_id}>{v.name}{v.status !== "active" ? " (pasif)" : ""}</option>)}
-          </select>
-        </label>
+    <section className="pl-program">
+      <div className="pl-venuetabs" role="tablist" aria-label="Sahalar">
+        {all.map(({ venue: v, board: b }) => {
+          const s = b ? weekSummary(b) : null;
+          return (
+            <button key={v.public_id} type="button" role="tab" aria-selected={v.public_id === venueId} className={`pl-venuetab ${v.public_id === venueId ? "is-active" : ""} ${v.status !== "active" ? "is-passive" : ""}`} onClick={() => onVenueChange(v.public_id)}>
+              <span className="pl-venuetab__name"><Icon name="map" size={12} /> {v.name}{v.status !== "active" ? <small> · pasif</small> : null}</span>
+              <span className="pl-venuetab__meta">{s ? <>{s.matches} maç · {s.free} boş{s.candidates ? ` · ${s.candidates} aday` : ""}</> : "…"}</span>
+              <span className="pl-venuetab__bar" title={s ? `Doluluk %${s.occupancy}` : ""}><i style={{ width: `${s?.occupancy || 0}%` }} /><b>%{s?.occupancy ?? "–"}</b></span>
+            </button>
+          );
+        })}
+        {onEditVenues && <button type="button" className="pl-venuetab is-add" onClick={onEditVenues} title="Sahaları düzenle / yeni saha"><Icon name="sliders" size={14} /> <span>Sahalar</span></button>}
+      </div>
+
+      <div className="pl-progbar">
         {weeks.length > 0 && (
-          <div className="pl-pager" role="group" aria-label="Hafta">
-            <button type="button" className="icon-btn" disabled={wi <= 0} onClick={() => onWeek(weeks[wi - 1].start)} aria-label="Önceki hafta"><Icon name="chevronLeft" size={14} /></button>
-            <select className="select-sm" value={board?.week_start || ""} onChange={(e) => onWeek(e.target.value)} aria-label="Hafta seçimi">
+          <div className="pl-weeknav" role="group" aria-label="Hafta">
+            <button type="button" className="icon-btn" disabled={wi <= 0} onClick={() => onWeek(weeks[wi - 1].start)} aria-label="Önceki hafta"><Icon name="chevronLeft" size={15} /></button>
+            <div className="pl-weeknav__label">
+              <strong>{weekStart ? weekRangeLabel(weekStart) : ""}</strong>
+              <small>{pastWeek ? "geçmiş hafta" : weekStart === current?.start ? "bu hafta" : weekStart && current && weekStart > current.start ? `${Math.round((Date.parse(weekStart) - Date.parse(current.start)) / 604800000)} hafta sonra` : ""}</small>
+            </div>
+            <button type="button" className="icon-btn" disabled={wi < 0 || wi >= weeks.length - 1} onClick={() => onWeek(weeks[wi + 1].start)} aria-label="Sonraki hafta"><Icon name="chevronRight" size={15} /></button>
+            <select className="select-sm" value={weekStart} onChange={(e) => onWeek(e.target.value)} aria-label="Hafta seçimi">
               {weeks.map((w) => <option key={w.start} value={w.start}>{w.label}{w.is_past ? " · geçmiş" : w.start === current?.start ? " · bu hafta" : ""}</option>)}
             </select>
-            <button type="button" className="icon-btn" disabled={wi < 0 || wi >= weeks.length - 1} onClick={() => onWeek(weeks[wi + 1].start)} aria-label="Sonraki hafta"><Icon name="chevronRight" size={14} /></button>
-            {current && board?.week_start !== current.start && <button type="button" className="btn btn--xs btn--ghost" onClick={() => onWeek(current.start)}>Bu hafta</button>}
+            {current && weekStart !== current.start && <button type="button" className="btn btn--xs btn--soft" onClick={() => onWeek(current.start)}>Bu hafta</button>}
           </div>
         )}
         <div className="seg seg--sm" role="tablist" aria-label="Program görünümü">
-          <button type="button" className={mode === "day" ? "is-active" : ""} onClick={() => setModeSaved("day")}><Icon name="list" size={13} /> Gün</button>
-          <button type="button" className={mode === "week" ? "is-active" : ""} onClick={() => setModeSaved("week")}><Icon name="grid" size={13} /> Hafta</button>
+          <button type="button" className={mode === "week" ? "is-active" : ""} onClick={() => setModeSaved("week")}><Icon name="grid" size={13} /> Hafta panosu</button>
+          <button type="button" className={mode === "day" ? "is-active" : ""} onClick={() => setModeSaved("day")}><Icon name="layers" size={13} /> Gün · tüm sahalar</button>
         </div>
         {loading && <span className="muted small">yükleniyor…</span>}
         <span className="spacer" />
-        {onEditVenues && <button type="button" className="btn btn--sm btn--ghost" onClick={onEditVenues}><Icon name="sliders" size={13} /> Sahalar</button>}
-        {!pastWeek && venue && <button type="button" className={`btn btn--sm ${selecting ? "btn--soft" : ""}`} aria-pressed={selecting} onClick={() => (selecting ? stop() : setSelecting(true))} title="Birden çok saati seçip tek seferde dolu yapın ya da açın"><Icon name="checkSquare" size={13} /> {selecting ? "Seçimi bitir" : "Saat seç"}</button>}
+        {!pastWeek && venue && mode === "week" && <button type="button" className={`btn btn--sm ${selecting ? "btn--soft" : ""}`} aria-pressed={selecting} onClick={() => (selecting ? stop() : setSelecting(true))} title="Birden çok saati seçip tek seferde dolu yapın ya da açın"><Icon name="checkSquare" size={13} /> {selecting ? "Seçimi bitir" : "Saat seç"}</button>}
         {!pastWeek && venue && onAddTeam && <button type="button" className="btn btn--sm btn--primary" onClick={() => onAddTeam({ venueId })}><Icon name="plus" size={13} /> Takvime takım ekle</button>}
       </div>
-      {scoped && <p className="muted small pl-scope-note"><Icon name="layers" size={11} /> {scoped}</p>}
-      {venue && (
-        <p className="muted small">{venue.open_label} – {venue.close_label} · {venue.slot_minutes} dakikalık saatler{venue.location ? ` · ${venue.location}` : ""}{pastWeek ? " · geçmiş hafta: maçlara tıklayıp ayrıntısını açın" : selecting ? " · seçmek için saatlere tıklayın" : " · bir saate tıklayıp yönetin"}</p>
+
+      {board && (
+        <div className="pl-weeksum">
+          <div className="is-green"><Icon name="ball" size={15} /><strong>{summary.matches}</strong><small>maç bu hafta</small></div>
+          <div className="is-tool"><Icon name="zap" size={15} /><strong>{summary.freePrime}</strong><small>boş prime-time (20–23)</small></div>
+          <div><Icon name="inbox" size={15} /><strong>{summary.free}</strong><small>toplam boş saat</small></div>
+          <div className="is-purple"><Icon name="users" size={15} /><strong>{summary.candidates}</strong><small>bekleyen aday</small></div>
+          <div className="is-amber"><Icon name="clock" size={15} /><strong>{summary.awaiting}</strong><small>rakip bekleyen</small></div>
+          <div className="pl-weeksum__occ"><small>Doluluk</small><span className="pl-occ"><i style={{ width: `${summary.occupancy}%` }} /></span><strong>%{summary.occupancy}</strong></div>
+        </div>
       )}
-      {weekExternal.length > 0 && (
+
+      {weekExternal.length > 0 && mode === "week" && (
         <div className="notice notice--info pl-banner">
           <Icon name="alert" size={14} />
           <span><strong>Bu hafta {weekExternal.length} maç sistemde kayıtlı ama tabloya işlenmemiş.</strong> Bu saatler dolu görünür; tabloya işleyince takımlar saate yazılır ve aynı saati bekleyen talepler kapanır.</span>
           <button type="button" className="btn btn--xs" disabled={busy} onClick={() => onLinkMatches(weekExternal)}><Icon name="link" size={11} /> Hepsini tabloya işle</button>
         </div>
       )}
-      {!venue ? <p className="muted">Saha seçin.</p> : mode === "day" ? (
-        <>
-          <div className="pl-days" role="tablist" aria-label="Gün seçimi">
+
+      {!venue ? <p className="muted">Saha seçin.</p> : mode === "week" ? (
+        <div className="pl-board-wrap">
+          <div className="pl-wboard" style={{ gridTemplateColumns: `64px repeat(${grid.days.length || 1}, minmax(112px, 1fr))` }} role="grid" aria-label={`${venue.name} haftalık program`}>
+            <div className="pl-wboard__corner"><small>{venue.open_label}–{venue.close_label}</small></div>
             {grid.days.map((d) => {
               const s = dayStats(grid, d);
               return (
-                <button key={d.date} type="button" role="tab" aria-selected={d.date === dayDate} className={`pl-daycard ${d.date === dayDate ? "is-active" : ""} ${d.is_past ? "is-past" : ""} ${d.is_today ? "is-today" : ""}`} onClick={() => setDayDate(d.date)}>
-                  <span className="pl-daycard__name">{DAY_SHORT[d.day]}{d.is_today ? " · bugün" : ""}</span>
-                  <strong>{d.date_label}</strong>
-                  <span className="pl-daycard__bar">{s.states.map((st, i) => <i key={i} className={`is-${SLOT_STATES[st].tone}`} />)}</span>
-                  <small>{s.booked ? `${s.booked} maç` : "maç yok"}{s.awaiting ? ` · ${s.awaiting} rakip` : ""}{s.pooled ? ` · ${s.pooled} adaylı` : ""}{s.closed ? ` · ${s.closed} dolu` : ""}</small>
-                </button>
+                <div key={d.date} className={`pl-wboard__day ${d.is_today ? "is-today" : ""} ${d.is_past ? "is-past" : ""}`} role="columnheader">
+                  <div><strong>{DAY_LABELS[d.day]}{d.is_today ? <em> · bugün</em> : null}</strong><small>{d.date_label} · {s.booked} maç{s.pooled ? ` · ${s.pooled} adaylı` : ""}</small></div>
+                  {!d.is_past && !pastWeek && !selecting && <MenuButton label={`${d.label} işlemleri`} icon="more" size={14} items={dayTools(d)} />}
+                </div>
+              );
+            })}
+            {grid.rows.map((row) => {
+              const nowRow = grid.days.some((d) => d.is_today) && isNowRow(row.time, now, venue.slot_minutes || 60);
+              return (
+                <React.Fragment key={timeLabel(row.time.hour, row.time.minute)}>
+                  <div className={`pl-wboard__time ${nowRow ? "is-now" : ""}`} role="rowheader">{timeLabel(row.time.hour, row.time.minute)}{nowRow && <small>şimdi</small>}</div>
+                  {row.cells.map((c, i) => {
+                    const v = cellView(c);
+                    const isSel = selection.has(keyOf(c));
+                    const today = grid.days[i]?.is_today;
+                    return (
+                      <button key={c.date} type="button" className={`pl-wcell is-${v.tone} ${today ? "is-todaycol" : ""} ${nowRow && today ? "is-now" : ""} ${isSel ? "is-selected" : ""} ${isFocus(c) ? "is-focused" : ""}`} disabled={disabledOf(c)} title={v.title} aria-pressed={selecting ? isSel : undefined} onClick={() => click(c)}>
+                        <CellBody v={v} selecting={selecting} selected={isSel} selectable={canSelectCell(c)} />
+                      </button>
+                    );
+                  })}
+                </React.Fragment>
               );
             })}
           </div>
-          {day && editableDay && !selecting && (
-            <div className="row-gap pl-daytools">
-              <span className="muted small"><Icon name="calendar" size={12} /> {day.label} {day.date_label}</span>
-              <button type="button" className="btn btn--xs" disabled={busy || !sets.free.length} onClick={fillDay}><Icon name="lock" size={11} /> Günü dolu yap{sets.free.length ? ` (${sets.free.length})` : ""}</button>
-              {sets.closed.length > 0 && <button type="button" className="btn btn--xs btn--ghost" disabled={busy} onClick={() => bulk(sets.closed, "open", "")}>Dolu saatleri aç ({sets.closed.length})</button>}
-              {sets.external.length > 0 && <button type="button" className="btn btn--xs btn--soft" disabled={busy} onClick={() => onLinkMatches(sets.external)}><Icon name="link" size={11} /> Kayıtlı maçları işle ({sets.external.length})</button>}
-            </div>
-          )}
-          {day ? (
-            <ol className="pl-agenda">
-              {dayCells.map((c) => {
-                const st = slotState(c);
-                const fx = c.fixture || c.external_match;
-                const isSel = selection.has(keyOf(c));
-                const isFocus = focused && focused.date === c.date && focused.hour === c.hour && (focused.minute || 0) === (c.minute || 0);
-                const dis = disabledOf(c);
+          {!grid.days.length && <p className="muted pl-empty">Bu hafta sahanın açık günü yok.</p>}
+        </div>
+      ) : (
+        <div className="pl-dayview">
+          <div className="pl-daypills" role="tablist" aria-label="Gün">
+            {weekDays.map((d) => {
+              const count = all.reduce((sum, x) => sum + (x.board ? (x.board.cells || []).filter((c) => c.date === d && (c.status === "booked" || c.external_match)).length : 0), 0);
+              return <button key={d} type="button" role="tab" aria-selected={d === dayDate} className={`${d === dayDate ? "is-active" : ""} ${d === now.date ? "is-today" : ""} ${d < now.date ? "is-past" : ""}`} onClick={() => setDayDate(d)}><small>{DAY_SHORT[dayOfIso(d)]}</small><strong>{dateLabel(d)}</strong><em>{count ? `${count} maç` : "—"}</em></button>;
+            })}
+          </div>
+          <div className="pl-board-wrap">
+            <div className="pl-wboard is-day" style={{ gridTemplateColumns: `64px repeat(${across.cols.length || 1}, minmax(150px, 1fr))` }}>
+              <div className="pl-wboard__corner"><small>{dayLabel(dayDate)}</small></div>
+              {across.cols.map((col) => <div key={col.venue.public_id} className={`pl-wboard__day ${col.venue.public_id === venueId ? "is-today" : ""}`}><div><strong>{col.venue.name}</strong><small>{col.day ? `${col.venue.open_label}–${col.venue.close_label}` : "bu gün kapalı"}</small></div></div>)}
+              {across.times.map((t) => {
+                const nowRow = dayDate === now.date && isNowRow(t, now, 60);
                 return (
-                  <li key={keyOf(c)}>
-                    <button type="button" className={`pl-slot is-${SLOT_STATES[st].tone} ${isSel ? "is-selected" : ""} ${isFocus ? "is-focused" : ""}`} disabled={dis} aria-pressed={selecting ? isSel : undefined} onClick={() => click(c)}>
-                      <span className="pl-slot__time">{timeLabel(c.hour, c.minute)}</span>
-                      <span className={`pl-slot__state is-${SLOT_STATES[st].tone}`}>{selecting && canSelectCell(c) && <Icon name={isSel ? "checkSquare" : "circle"} size={11} />}{SLOT_STATES[st].label}</span>
-                      <span className="pl-slot__text">{slotSummary(c)}
-                        {fx && !c.is_past ? <em><Icon name="calendar" size={10} /> {c.external_match ? "sistemde kayıtlı" : "fikstürde"}</em> : c.match_id && !c.is_past ? <em><Icon name="calendar" size={10} /> fikstürde</em> : null}
-                        {fx?.league_name && c.is_past ? <em>{fx.league_name}</em> : null}
-                      </span>
-                      {!selecting && !dis && <span className="pl-slot__go">{st === "played" ? "Ayrıntı" : "Yönet"} <Icon name="chevronRight" size={12} /></span>}
-                    </button>
-                  </li>
+                  <React.Fragment key={t.label}>
+                    <div className={`pl-wboard__time ${nowRow ? "is-now" : ""}`}>{t.label}{nowRow && <small>şimdi</small>}</div>
+                    {across.cols.map((col) => {
+                      const c = col.cells.get(t.label);
+                      if (!c) return <span key={col.venue.public_id} className="pl-wcell is-none" />;
+                      const v = cellView(c);
+                      const dis = slotState(c) === "past" || (slotState(c) === "played" && !isPastWithDetail(c));
+                      return <button key={col.venue.public_id} type="button" className={`pl-wcell is-${v.tone} ${nowRow ? "is-now" : ""}`} disabled={dis} title={`${col.venue.name} · ${v.title}`} onClick={() => onOpenCell(c, col.venue.public_id)}><CellBody v={v} /></button>;
+                    })}
+                  </React.Fragment>
                 );
               })}
-            </ol>
-          ) : <p className="muted">Bu hafta sahanın açık günü yok.</p>}
-        </>
-      ) : (
-        <div className="pl-heat-wrap">
-          <table className="pl-heat">
-            <thead><tr><th />{grid.days.map((d) => <th key={d.date} className={d.is_today ? "is-today" : ""}>{DAY_SHORT[d.day]} <small>{d.date_label}</small></th>)}</tr></thead>
-            <tbody>
-              {grid.rows.map((row) => (
-                <tr key={row.time.label || timeLabel(row.time.hour, row.time.minute)}>
-                  <th scope="row">{timeLabel(row.time.hour, row.time.minute)}</th>
-                  {row.cells.map((c) => {
-                    const st = slotState(c);
-                    const isSel = selection.has(keyOf(c));
-                    return (
-                      <td key={c.date}>
-                        <button type="button" className={`pl-heat__cell is-${SLOT_STATES[st].tone} ${isSel ? "is-selected" : ""}`} disabled={disabledOf(c)} title={`${DAY_LABELS[c.day] || ""} ${timeLabel(c.hour, c.minute)} · ${SLOT_STATES[st].label} · ${slotSummary(c)}`} onClick={() => click(c)}>
-                          {isSel ? <Icon name="check" size={12} /> : heatText(c)}
-                        </button>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            </div>
+            {!across.cols.length && <p className="muted pl-empty">Sahaların programı yükleniyor…</p>}
+          </div>
         </div>
       )}
-      {venue && (
-        <div className="legend pl-legend">
-          {(pastWeek ? ["played", "past"] : ["open", "suggested", "pooled", "awaiting", "booked", "external", "stranded", "closed"]).map((k) => <span key={k}><i className={`pl-dot is-${SLOT_STATES[k].tone}`} />{SLOT_STATES[k].label}</span>)}
-        </div>
-      )}
+
+      <div className="legend pl-legend">
+        {(pastWeek ? ["played", "past"] : ["open", "suggested", "pooled", "awaiting", "booked", "external", "stranded", "closed", "past"]).map((k) => <span key={k}><i className={`pl-dot is-${SLOT_STATES[k].tone}`} />{SLOT_STATES[k].label}</span>)}
+        <span className="muted small">{pastWeek ? "Geçmiş hafta: maçlara tıklayıp ayrıntısını açın." : selecting ? "Seçmek için saatlere tıklayın." : "Bir saate tıklayıp yönetin: havuz, öneriler, eşleştirme."}</span>
+      </div>
+
       {selecting && (
         <div className="pl-selectbar" role="region" aria-label="Seçilen saatler">
           <strong>{selected.length ? `${selected.length} saat seçildi` : "Saatlere tıklayarak seçin"}</strong>
@@ -181,6 +210,24 @@ export function ScheduleView({ venues, venueId, onVenueChange, board, loading, b
       )}
     </section>
   );
+}
+
+function CellBody({ v, selecting = false, selected = false, selectable = false }) {
+  if (selecting) return <span className="pl-wcell__sel">{selectable ? <Icon name={selected ? "checkSquare" : "circle"} size={14} /> : null}<small>{v.label}</small></span>;
+  if (v.state === "booked" || v.state === "played" || v.state === "external" || v.state === "stranded") {
+    return (
+      <>
+        <span className="pl-wcell__label">{v.state === "external" ? "Sistemde maç" : v.state === "played" ? (v.score ? "Oynandı" : "Maç") : v.state === "stranded" ? `Dolu · ${v.count} bekliyor` : "Maç"}</span>
+        <span className="pl-wcell__teams"><b>{v.main}</b>{v.score ? <em>{v.score.replace("-", " – ")}</em> : v.sub ? <em>–</em> : null}<b>{v.sub}</b></span>
+      </>
+    );
+  }
+  if (v.state === "pooled") return <><span className="pl-wcell__label">{v.main}</span><span className="pl-wcell__bubbles">{v.chips.map((x, i) => <i key={i}>{x}</i>)}{v.count > v.chips.length && <i className="is-more">+{v.count - v.chips.length}</i>}</span><small className="pl-wcell__sub">{v.sub}</small></>;
+  if (v.state === "awaiting") return <><span className="pl-wcell__label">Rakip aranıyor</span><b className="pl-wcell__main">{v.main}</b>{v.count ? <small className="pl-wcell__sub">{v.count} aday</small> : null}</>;
+  if (v.state === "closed") return <><span className="pl-wcell__label"><Icon name="lock" size={10} /> Dolu</span>{v.sub && <small className="pl-wcell__sub">{v.sub}</small>}</>;
+  if (v.state === "suggested") return <><span className="pl-wcell__label">Boş</span><small className="pl-wcell__sub"><Icon name="users" size={10} /> {v.main}</small></>;
+  if (v.state === "open") return <span className="pl-wcell__free"><Icon name="plus" size={12} /> Boş</span>;
+  return null;
 }
 
 /* ================================ Öneri listesi ================================ */
@@ -425,7 +472,7 @@ const HOURS = Array.from({ length: 24 }, (_, h) => h);
 export const EMPTY_VENUE = { name: "", location: "", description: "", city_id: "", open_hour: 19, open_minute: 0, close_hour: 0, close_minute: 0, slot_minutes: 60, active_days: [...DAYS], status: "active", sort_order: 0 };
 export const venueToForm = (v) => ({ ...EMPTY_VENUE, ...Object.fromEntries(Object.keys(EMPTY_VENUE).map((k) => [k, v[k] ?? EMPTY_VENUE[k]])), active_days: Array.isArray(v.active_days) && v.active_days.length ? v.active_days : [...DAYS] });
 
-export function VenueForm({ form, cities, isNew, busy, onChange, onSave, onCancel, projectName, addToProject, onAddToProject }) {
+export function VenueForm({ form, cities, isNew, busy, onChange, onSave, onCancel }) {
   const set = (k, v) => onChange({ ...form, [k]: v });
   const toggleDay = (d) => set("active_days", form.active_days.includes(d) ? form.active_days.filter((x) => x !== d) : [...form.active_days, d].sort((a, b) => a - b));
   const timeSel = (hk, mk, label) => (
@@ -451,8 +498,7 @@ export function VenueForm({ form, cities, isNew, busy, onChange, onSave, onCance
         <p className="muted small">Seçilen günler ile {timeLabel(form.open_hour, form.open_minute)} – {timeLabel(form.close_hour, form.close_minute)} aralığı {form.slot_minutes} dakikalık dilimlere bölünerek program tablosu oluşur.</p>
       </div>
       <div className="row-gap">
-        {isNew && projectName && <label className="toggle spacer"><input type="checkbox" checked={addToProject} onChange={(e) => onAddToProject(e.target.checked)} /> “{projectName}” projesinin sahalarına ekle</label>}
-        {!(isNew && projectName) && <span className="spacer" />}
+        <span className="spacer" />
         <button type="button" className="btn btn--primary" disabled={busy} onClick={onSave}><Icon name="check" size={13} /> Kaydet</button>
       </div>
     </div>
@@ -460,29 +506,27 @@ export function VenueForm({ form, cities, isNew, busy, onChange, onSave, onCance
 }
 
 /** Saha listesi + form (Sahalar penceresi). */
-export function VenuesPanel({ venues, allVenues, cities, busy, call, onSaved, onPick, projectName, projectVenueIds, onToggleProjectVenue }) {
+export function VenuesPanel({ venues, cities, busy, call, onSaved, onPick }) {
   const confirm = useConfirm();
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_VENUE);
-  const [addToProject, setAddToProject] = useState(true);
-  const list = allVenues || venues;
+  const list = venues;
   const save = async () => {
     if (!form.name.trim()) return call.toast("Saha adı zorunludur.");
     if (!form.city_id) return call.toast("İl seçimi zorunludur.");
     if (!form.active_days.length) return call.toast("En az bir gün seçmelisiniz.");
     const payload = { ...form, city_id: form.city_id || null, city: cities.find((c) => String(c.id) === String(form.city_id))?.name || null, sort_order: Number(form.sort_order) || 0 };
     const res = editing === "new" ? await call.run("POST", `${A}/venues`, payload) : await call.run("PUT", `${A}/venues/${editing}`, payload);
-    if (res) { setEditing(null); onSaved?.(res.item, { isNew: editing === "new", addToProject }); }
+    if (res) { setEditing(null); onSaved?.(res.item, { isNew: editing === "new" }); }
   };
   const remove = async (v) => {
     if (await confirm({ title: "Sahayı sil", message: `“${v.name}” sahası, havuzu, talepleri ve fikstüre yazılmış maçları silinsin mi?`, confirmLabel: "Sil", danger: true })) {
       if (await call.run("DELETE", `${A}/venues/${v.public_id}`)) onSaved?.(null, {});
     }
   };
-  const inProject = (v) => (projectVenueIds || []).map(Number).includes(Number(v.id));
   return (
     <div className="pl-venues">
-      {editing !== null ? <VenueForm form={form} cities={cities} isNew={editing === "new"} busy={busy} onChange={setForm} onSave={save} onCancel={() => setEditing(null)} projectName={projectName} addToProject={addToProject} onAddToProject={setAddToProject} />
+      {editing !== null ? <VenueForm form={form} cities={cities} isNew={editing === "new"} busy={busy} onChange={setForm} onSave={save} onCancel={() => setEditing(null)} />
         : <button type="button" className="btn btn--primary" onClick={() => { setForm(EMPTY_VENUE); setEditing("new"); }}><Icon name="plus" size={13} /> Yeni saha</button>}
       <ul className="pl-venue-list">
         {list.map((v) => (
@@ -492,7 +536,6 @@ export function VenuesPanel({ venues, allVenues, cities, busy, call, onSaved, on
               <small>{[v.city, v.location].filter(Boolean).join(" · ") || "Konum belirtilmedi"} · {v.open_label}–{v.close_label} · {v.slot_minutes} dk · {(v.active_days || []).map((d) => DAY_SHORT[d]).join(", ")}</small>
             </button>
             {v.status !== "active" && <span className="pill">Pasif</span>}
-            {projectVenueIds && <label className="toggle" title="Projenin sahası"><input type="checkbox" checked={inProject(v)} onChange={(e) => onToggleProjectVenue(v, e.target.checked)} /> Projede</label>}
             <button type="button" className="icon-btn icon-btn--xs" title="Düzenle" onClick={() => { setForm(venueToForm(v)); setEditing(v.public_id); }}><Icon name="sliders" size={12} /></button>
             <button type="button" className="icon-btn icon-btn--xs" title="Sil" disabled={busy} onClick={() => remove(v)}><Icon name="trash" size={12} /></button>
           </li>

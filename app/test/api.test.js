@@ -78,12 +78,9 @@ test("projeler: iletişim kaydı, soru ve adım/kişi güncellemesi kuyruğa gir
   assert.equal(isQueueable("PATCH", "/api/tools/projects/12/questions/tmp_ab1"), true);
   assert.equal(isQueueable("PATCH", "/api/tools/projects/12/steps/5"), true);
   assert.equal(isQueueable("PATCH", "/api/tools/projects/12/leads/9"), true);
-  // Projedeki maçın aşaması / kontrol listesi / notu kuyruğa girer; maç bağlama,
-  // ücret yazma, projeden çıkarma ve çağrı merkezi yazmaları bağlantı ister.
-  assert.equal(isQueueable("PATCH", "/api/tools/projects/12/matches/701"), true);
-  assert.equal(isQueueable("DELETE", "/api/tools/projects/12/matches/701"), false);
-  assert.equal(isQueueable("POST", "/api/tools/projects/12/matches/link"), false);
-  assert.equal(isQueueable("POST", "/api/tools/projects/12/matches/701/fees"), false);
+  // Çağrı merkezi yazmaları (görüşme kaydı / düzenlemesi dahil) bağlantı ister.
+  assert.equal(isQueueable("PATCH", "/api/tools/projects/12/matches/701"), false);
+  assert.equal(isQueueable("PATCH", "/api/match-requests/admin/calls/abc"), false);
   assert.equal(isQueueable("POST", "/api/match-requests/admin/venues/abc/slots/pair"), false);
   assert.equal(isQueueable("PATCH", "/api/match-requests/admin/tasks/abc"), false);
   assert.equal(isQueueable("POST", "/api/match-requests/admin/calls"), false);

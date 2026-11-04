@@ -11,7 +11,7 @@ export const FINANCE_EVENT = "elitlig:project-finance";
 export const money = (v) => formatMoney(v || 0, 0);
 
 export const TOOL_ICONS = {
-  matches: "ball", leads: "users", suppliers: "handshake", finance: "wallet", questions: "help", portfolio: "briefcase", activity: "activity", todos: "checkSquare", agenda: "calendar",
+  leads: "users", suppliers: "handshake", finance: "wallet", questions: "help", portfolio: "briefcase", activity: "activity", todos: "checkSquare", agenda: "calendar",
   notes: "note", sheets: "grid", accounting: "wallet", contacts: "user", calc: "calculator", focus: "timer",
 };
 /** Adımın aracı → uygulamadaki görünüm. */

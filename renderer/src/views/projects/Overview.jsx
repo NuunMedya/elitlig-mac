@@ -5,7 +5,6 @@ import { Empty, Icon } from "../../components/ui";
 import { dayKey, dueLabel, formatWhen, groupStepsByPhase, isStepOverdue, leadDueState, outcomeOf, stageOfLead } from "../../lib/projectUtils";
 import { relativeTime } from "../../lib/helpers";
 import { ACTIVITY_ICONS, Avatar, Progress, StagePill, label, money } from "./common";
-import { MatchesOverviewCard, matchesEnabled } from "./Matches";
 
 const STATUS_COLORS = { todo: "#a7a3ba", doing: "#2563eb", waiting: "#d97706", blocked: "#e11d48", done: "#059669", skipped: "#cbd5e1" };
 
@@ -71,7 +70,6 @@ export default function Overview({ ctx }) {
             ) : <Empty icon="users" title="Kişi yok" text="Aradığınız ya da arayacağınız kişileri Kişiler sekmesine ekleyin." />}
           </section>
 
-          {matchesEnabled(settings) && <MatchesOverviewCard ctx={ctx} />}
           {project.stats?.finance && <BudgetCard f={project.stats.finance} suppliers={ctx.stats.suppliers} onOpen={() => ctx.setTab("budget")} />}
 
           <section className={`card ${dueLeads.some((l) => leadDueState(l) === "overdue") ? "due-col--alert" : ""}`}>
