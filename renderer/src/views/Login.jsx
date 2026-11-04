@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Icon } from "../components/ui";
+import logo from "../assets/logo-white.png";
 
 const FEATURES = [
   ["checkSquare", "Yapılacaklar ve maç görevleri"],
@@ -7,6 +8,7 @@ const FEATURES = [
   ["receipt", "Ön muhasebe, cari ve KDV"],
   ["grid", "Formüllü tablolar, Excel içe/dışa aktarma"],
   ["cloudOff", "İnternet yokken de çalışır"],
+  ["bank", "Kasa, banka ve virman"],
 ];
 
 export default function Login({ expired, onSignedIn }) {
@@ -31,9 +33,9 @@ export default function Login({ expired, onSignedIn }) {
     <div className="login">
       <div className="login__drag" />
       <section className="login__brand">
-        <div className="login__logo" aria-hidden="true"><Icon name="ball" size={34} /></div>
-        <h1>Elitlig Araçlar</h1>
-        <p>Lig yönetiminin günlük işleri, Mac'inizde.</p>
+        <img src={logo} alt="Elitlig" />
+        <h1>Lig yönetiminin günlük işleri, Mac'inizde.</h1>
+        <p>Yapılacaklar, maç masası, ajanda, muhasebe, tablolar ve rehber — internet yokken bile.</p>
         <ul>
           {FEATURES.map(([icon, text]) => <li key={text}><Icon name={icon} size={16} />{text}</li>)}
         </ul>

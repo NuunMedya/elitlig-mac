@@ -90,6 +90,7 @@ function createApi({ origin, dataDir, fetchImpl, sessionStore, userAgent, timeou
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: controller.signal,
+        credentials: "omit",
       });
     } catch (error) {
       const err = new ApiError(0, "Sunucuya ulaşılamıyor. İnternet bağlantınızı kontrol edin.", "NETWORK");

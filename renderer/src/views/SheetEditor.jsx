@@ -13,6 +13,7 @@ import {
   normRange, pasteBlock, rangeLabel, renameSheet, shiftAxis, sortRange, styleRange, uniqueSheetName, usedBounds, workbooksDiffer, writeCells,
 } from "../lib/sheets/sheetOps";
 import { workbookToXlsx } from "../lib/sheets/xlsxExport";
+import { importFile as readSheetFile } from "../lib/sheets/importFile";
 import { relativeTime } from "../lib/helpers";
 
 const ROW_H = 24;
@@ -272,6 +273,29 @@ export default function SheetEditor({ id, onClose }) {
     const res = await window.elitlig.files.save(`${title}-${sheet.name}.csv`, toCsvText(rows), [{ name: "CSV", extensions: ["csv"] }]);
     if (res.ok) window.elitlig.files.reveal(res.path);
   };
+  // Excel/CSV dosyasının sayfalarını açık tabloya yeni sekme olarak ekler.
+  const importIntoBook = async () => {
+    const file = await window.elitlig.files.open([{ name: "Excel / CSV", extensions: ["xlsx", "xlsm", "csv", "tsv", "txt"] }]);
+    if (!file.ok) return;
+    try {
+      const { book: incoming, warnings } = await readSheetFile(file.name, file.data);
+      const names = new Set(book.sheets.map((s) => s.name.toLocaleLowerCase("tr-TR")));
+      const added = incoming.sheets.slice(0, 20 - book.sheets.length).map((sh) => {
+        let name = sh.name;
+        let n = 2;
+        while (names.has(name.toLocaleLowerCase("tr-TR"))) { name = `${sh.name.slice(0, 34)} (${n})`; n += 1; }
+        names.add(name.toLocaleLowerCase("tr-TR"));
+        return { ...sh, name };
+      });
+      if (!added.length) { toast("Bir dosyada en fazla 20 sayfa olabilir.", { tone: "error" }); return; }
+      commit({ ...book, sheets: [...book.sheets, ...added] });
+      setSi(book.sheets.length);
+      toast(`${added.length} sayfa eklendi.${warnings.length ? ` Not: ${warnings[0]}` : ""}`, { tone: warnings.length ? "warn" : "success" });
+    } catch (error) {
+      toast(error?.message || "Dosya okunamadı.", { tone: "error" });
+    }
+  };
+
   const printSheet = (pdf) => {
     const html = sheetHtml(sheet, title, displayOf);
     if (pdf) window.elitlig.pdf(html, title, { landscape: usedBounds(sheet).cols > 7 });
@@ -324,12 +348,14 @@ export default function SheetEditor({ id, onClose }) {
     <div className="sheet-editor">
       <header className="sheet-top">
         <button type="button" className="icon-btn" onClick={onClose} title="Tablolar"><Icon name="chevronLeft" /></button>
+        <span className="file-icon"><Icon name="grid" /></span>
         <input className="sheet-title" value={title} readOnly={meta.access !== "owner"} onChange={(e) => setTitle(e.target.value)}
           onBlur={async () => { if (title.trim() && title !== meta.title) { const res = await request({ method: "PATCH", path: `/api/tools/sheets/${id}`, body: { title: title.trim() }, queue: false }); if (result(res)) setMeta((m) => ({ ...m, title: title.trim() })); } }} />
         <span className={`save-state save-state--${saveState}`}>{saveLabel}</span>
         {readOnly && <span className="pill">Yalnız görüntüleme</span>}
         <span className="spacer" />
         {meta.updated_by_name && <span className="muted small">Son: {meta.updated_by_name} · {relativeTime(meta.updatedAt)}</span>}
+        {!readOnly && <button type="button" className="btn btn--sm btn--ghost" onClick={importIntoBook}><Icon name="upload" /> Sayfa içe aktar</button>}
         <MenuButton icon="download" label="Dışa aktar" items={[
           { label: "Excel (.xlsx)", icon: "grid", onClick: exportXlsx },
           { label: "CSV (bu sayfa)", icon: "download", onClick: exportCsv },

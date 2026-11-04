@@ -16,7 +16,7 @@ const Result = ({ label, value, strong }) => (
 export default function Calculators() {
   return (
     <div className="view">
-      <ViewHeader title="Hesap Araçları" subtitle="Sonuçlara tıklayınca panoya kopyalanır." />
+      <ViewHeader icon="calculator" title="Hesap Araçları" subtitle="Sonuçlara tıklayınca panoya kopyalanır." />
       <div className="calc-grid">
         <Calculator />
         <VatCard />

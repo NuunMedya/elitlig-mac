@@ -2,16 +2,17 @@
 // Dönem seçimi, süzgeçler, 12 aylık grafik, kategori dağılımı; CSV, Excel ve
 // PDF olarak dışa aktarma.
 import React, { useMemo, useRef, useState } from "react";
-import { Empty, ErrorNote, Field, Icon, MenuButton, Modal, OfflineNote, Segmented, Spinner, ViewHeader, useConfirm, useResult } from "../components/ui";
-import { del, patch, post, tempId, useCommand, useResource } from "../api";
-import { METHODS, PERIODS, PRESET_CATEGORIES, STATUS_LABELS_BY_TYPE, TYPE_LABELS, VAT_RATES, filterEntries, isOverdue, parseAmount, periodRange, splitVat, toCsv, totals } from "../lib/ledgerUtils";
-import { formatDate, formatMoney, isoDay } from "../lib/helpers";
-import { workbookToXlsx } from "../lib/sheets/xlsxExport";
-import { addr, createEvaluator } from "../lib/sheets/sheetEngine";
+import { Empty, ErrorNote, Field, Icon, MenuButton, Modal, OfflineNote, Segmented, Spinner, ViewHeader, useConfirm, useResult } from "../../components/ui";
+import { del, patch, post, tempId, useCommand, useResource } from "../../api";
+import { METHODS, PERIODS, PRESET_CATEGORIES, STATUS_LABELS_BY_TYPE, TYPE_LABELS, VAT_RATES, filterEntries, isOverdue, parseAmount, periodRange, splitVat, toCsv, totals } from "../../lib/ledgerUtils";
+import { formatDate, formatMoney, isoDay } from "../../lib/helpers";
+import { workbookToXlsx } from "../../lib/sheets/xlsxExport";
+import { addr, createEvaluator } from "../../lib/sheets/sheetEngine";
+import { AccountStrip, Kpi } from "./common";
 
 const methodLabel = (key) => METHODS.find((m) => m.key === key)?.label || key;
 
-export default function Ledger({ arg }) {
+export default function Personal({ arg, accounts = [], onTransfer, onManageAccounts }) {
   const [period, setPeriod] = useState(() => localStorage.getItem("ledger:period") || "this_month");
   const [custom, setCustom] = useState({ from: "", to: "" });
   const [filters, setFilters] = useState({ type: "", status: "", category: "", query: "" });
@@ -75,13 +76,14 @@ export default function Ledger({ arg }) {
   };
 
   return (
-    <div className="view">
-      <ViewHeader title="Ön Muhasebe" subtitle={periodLabel}>
+    <div className="acc-section">
+      <div className="filters">
         <select className="select-sm" value={period} onChange={(e) => setPeriodSaved(e.target.value)} aria-label="Dönem">{PERIODS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}</select>
         {period === "custom" && <>
           <input type="date" className="select-sm" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} aria-label="Başlangıç" />
           <input type="date" className="select-sm" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} aria-label="Bitiş" />
         </>}
+        <span className="spacer" />
         <MenuButton icon="download" label="Dışa aktar" items={[
           { label: "Excel (.xlsx)", icon: "grid", onClick: exportXlsx },
           { label: "CSV (Excel Türkçe)", icon: "download", onClick: exportCsv },
@@ -89,24 +91,25 @@ export default function Ledger({ arg }) {
           { label: "Yazdır", icon: "printer", onClick: () => printReport(false) },
         ]} />
         <button type="button" className="btn btn--green" onClick={() => setEditing({ draft: { type: "income" } })}><Icon name="plus" /> Gelir</button>
-        <button type="button" className="btn btn--primary" onClick={() => setEditing({ draft: { type: "expense" } })}><Icon name="plus" /> Gider</button>
-      </ViewHeader>
+        <button type="button" className="btn btn--red" onClick={() => setEditing({ draft: { type: "expense" } })}><Icon name="plus" /> Gider</button>
+      </div>
+      <AccountStrip accounts={accounts} scope="personal" onTransfer={onTransfer} onManage={onManageAccounts} />
       <OfflineNote offline={data.offline} savedAt={data.savedAt} />
       <ErrorNote error={data.error && !data.data ? data.error : null} onRetry={data.reload} />
 
       {sum && (
         <div className="kpis">
-          <div className="kpi"><span>Gelir</span><strong className="text-green">{formatMoney(sum.income)}</strong></div>
-          <div className="kpi"><span>Gider</span><strong className="text-red">{formatMoney(sum.expense)}</strong></div>
-          <div className="kpi"><span>Net</span><strong className={sum.net >= 0 ? "text-green" : "text-red"}>{formatMoney(sum.net)}</strong></div>
-          <div className="kpi"><span>Bekleyen alacak</span><strong>{formatMoney(sum.receivable)}</strong></div>
-          <div className="kpi"><span>Bekleyen borç</span><strong>{formatMoney(sum.payable)}</strong></div>
-          <div className="kpi"><span>KDV dengesi</span><strong>{formatMoney(sum.vat_balance)}</strong><small>Tahsil {formatMoney(sum.vat_collected, 0)} · Ödenen {formatMoney(sum.vat_paid, 0)}</small></div>
+          <Kpi hero label="Net" value={formatMoney(sum.net)} hint={`${sum.count} kayıt`} icon="trend" />
+          <Kpi label="Gelir" value={formatMoney(sum.income)} tone="green" />
+          <Kpi label="Gider" value={formatMoney(sum.expense)} tone="red" />
+          <Kpi label="Bekleyen alacak" value={formatMoney(sum.receivable)} tone="amber" />
+          <Kpi label="Bekleyen borç" value={formatMoney(sum.payable)} tone="amber" />
+          <Kpi label="KDV dengesi" value={formatMoney(sum.vat_balance)} tone="blue" hint={`Tahsil ${formatMoney(sum.vat_collected, 0)} · Ödenen ${formatMoney(sum.vat_paid, 0)}`} />
           {sum.overdue > 0 && <div className="kpi kpi--alert"><span>Vadesi geçen</span><strong>{sum.overdue} kayıt</strong><small>{formatMoney(sum.overdue_amount)}</small></div>}
         </div>
       )}
 
-      <Segmented value={tab} onChange={setTab} size="sm" options={[{ value: "entries", label: "Kayıtlar", count: shown.length }, { value: "trend", label: "Grafik", icon: "trend" }, { value: "parties", label: "Cari", count: sum?.parties?.length }, { value: "categories", label: "Kategoriler" }]} />
+      <Segmented value={tab} onChange={setTab} size="sm" options={[{ value: "entries", label: "Kayıtlar", count: shown.length }, { value: "due", label: "Vade takibi", icon: "clock", count: entries.filter((e) => e.status === "pending").length }, { value: "trend", label: "Grafik", icon: "trend" }, { value: "parties", label: "Cari", count: sum?.parties?.length }, { value: "categories", label: "Kategoriler" }]} />
 
       {tab === "entries" && (<>
         <div className="filters">
@@ -149,6 +152,7 @@ export default function Ledger({ arg }) {
         ) : <Empty icon="receipt" title="Bu dönemde kayıt yok" text="Gelir ya da gider ekleyin; ⌃⌥N ile her yerden gider yazabilirsiniz." />}
       </>)}
 
+      {tab === "due" && <DueTab entries={entries} onPaid={markPaid} onEdit={(e) => setEditing({ id: e.id })} />}
       {tab === "trend" && <TrendChart trend={data.data?.trend || []} />}
 
       {tab === "parties" && (sum?.parties?.length ? (
@@ -178,6 +182,30 @@ export default function Ledger({ arg }) {
   );
 }
 
+function DueTab({ entries, onPaid, onEdit }) {
+  const pending = entries.filter((e) => e.status === "pending").sort((a, b) => String(a.due_date || "9999").localeCompare(String(b.due_date || "9999")));
+  if (!pending.length) return <Empty icon="check" title="Bekleyen ödeme ya da tahsilat yok" />;
+  const today = isoDay();
+  const groups = [["Vadesi geçen", pending.filter((e) => e.due_date && e.due_date < today)], ["Bu hafta", pending.filter((e) => e.due_date && e.due_date >= today && e.due_date <= isoDay(new Date(Date.now() + 7 * 86400000)))], ["Daha sonra", pending.filter((e) => e.due_date && e.due_date > isoDay(new Date(Date.now() + 7 * 86400000)))], ["Vadesiz", pending.filter((e) => !e.due_date)]];
+  return (
+    <div className="due-columns">
+      {groups.map(([label, list]) => (
+        <section key={label} className={`card due-col ${label === "Vadesi geçen" && list.length ? "due-col--alert" : ""}`}>
+          <h3 className="card__title">{label} <span className="pill">{list.length}</span></h3>
+          {list.map((e) => (
+            <div key={e.id} className="due-item">
+              <button type="button" onClick={() => onEdit(e)}><strong>{e.description || e.party || e.category || "Kayıt"}</strong><small>{e.party ? `${e.party} · ` : ""}{e.due_date ? `vade ${formatDate(e.due_date)}` : "vadesiz"}</small></button>
+              <strong className={e.type === "income" ? "text-green" : "text-red"}>{formatMoney(e.amount, 0)}</strong>
+              <button type="button" className="btn btn--xs btn--soft" onClick={() => onPaid(e)}>{e.type === "income" ? "Tahsil et" : "Öde"}</button>
+            </div>
+          ))}
+          {!list.length && <p className="muted small">Yok.</p>}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 function TrendChart({ trend }) {
   if (!trend.length) return <Empty icon="trend" title="Grafik için veri yok" />;
   const max = Math.max(1, ...trend.flatMap((t) => [t.income, t.expense]));
@@ -195,15 +223,15 @@ function TrendChart({ trend }) {
           const label = new Date(`${t.month}-01T12:00:00`).toLocaleDateString("tr-TR", { month: "short" });
           return (
             <g key={t.month}>
-              <rect x={x + bw * 0.14} y={H - hi} width={bw * 0.34} height={hi} rx="3" className="chart__in"><title>{`${label}: gelir ${formatMoney(t.income)}`}</title></rect>
-              <rect x={x + bw * 0.52} y={H - he} width={bw * 0.34} height={he} rx="3" className="chart__out"><title>{`${label}: gider ${formatMoney(t.expense)}`}</title></rect>
+              <rect x={x + bw * 0.14} y={H - hi} width={bw * 0.34} height={hi} rx="4" fill="#10b981"><title>{`${label}: gelir ${formatMoney(t.income)}`}</title></rect>
+              <rect x={x + bw * 0.52} y={H - he} width={bw * 0.34} height={he} rx="4" fill="#e11d48"><title>{`${label}: gider ${formatMoney(t.expense)}`}</title></rect>
               <text x={x + bw / 2} y={H + 18} textAnchor="middle" className="chart__label">{label}</text>
               <text x={x + bw / 2} y={H + 34} textAnchor="middle" className={`chart__net ${t.net >= 0 ? "is-pos" : "is-neg"}`}>{t.net ? `${t.net > 0 ? "+" : ""}${Math.round(t.net / 1000)}b` : ""}</text>
             </g>
           );
         })}
       </svg>
-      <div className="legend"><span><i className="chart__in" /> Gelir</span><span><i className="chart__out" /> Gider</span><span className="muted">Alttaki sayı: aylık net (bin ₺)</span></div>
+      <div className="legend"><span><i style={{ background: "#10b981" }} /> Gelir</span><span><i style={{ background: "#e11d48" }} /> Gider</span><span className="muted">Alttaki sayı: aylık net (bin ₺)</span></div>
     </div>
   );
 }

@@ -5,12 +5,13 @@ import Palette from "./components/Palette";
 import Login from "./views/Login";
 import { refreshAll, useResource } from "./api";
 import { formatClock } from "./lib/helpers";
+import logo from "./assets/logo-white.png";
 
 const Today = lazy(() => import("./views/Today"));
 const Todos = lazy(() => import("./views/Todos"));
 const Agenda = lazy(() => import("./views/Agenda"));
 const Notes = lazy(() => import("./views/Notes"));
-const Ledger = lazy(() => import("./views/Ledger"));
+const Ledger = lazy(() => import("./views/accounting/Accounting"));
 const Sheets = lazy(() => import("./views/Sheets"));
 const Contacts = lazy(() => import("./views/Contacts"));
 const Calculators = lazy(() => import("./views/Calculators"));
@@ -18,15 +19,15 @@ const Focus = lazy(() => import("./views/Focus"));
 const Account = lazy(() => import("./views/Account"));
 
 export const ROUTES = [
-  { key: "today", label: "Bugün", icon: "sun", view: Today, shortcut: "⌘1" },
-  { key: "todos", label: "Yapılacaklar", icon: "checkSquare", view: Todos, shortcut: "⌘2" },
-  { key: "agenda", label: "Ajanda", icon: "calendar", view: Agenda, shortcut: "⌘3" },
-  { key: "notes", label: "Not Defteri", icon: "note", view: Notes, shortcut: "⌘4" },
-  { key: "ledger", label: "Ön Muhasebe", icon: "receipt", view: Ledger, shortcut: "⌘5" },
-  { key: "sheets", label: "Tablolar", icon: "grid", view: Sheets, shortcut: "⌘6" },
-  { key: "contacts", label: "Rehber", icon: "users", view: Contacts, shortcut: "⌘7" },
-  { key: "calc", label: "Hesap Araçları", icon: "calculator", view: Calculators, shortcut: "⌘8" },
-  { key: "focus", label: "Odak Sayacı", icon: "timer", view: Focus, shortcut: "⌘9" },
+  { key: "today", label: "Bugün", icon: "sun", view: Today, shortcut: "⌘1", group: "Günlük" },
+  { key: "todos", label: "Yapılacaklar", icon: "checkSquare", view: Todos, shortcut: "⌘2", group: "Günlük" },
+  { key: "agenda", label: "Ajanda", icon: "calendar", view: Agenda, shortcut: "⌘3", group: "Günlük" },
+  { key: "notes", label: "Not Defteri", icon: "note", view: Notes, shortcut: "⌘4", group: "Günlük" },
+  { key: "ledger", label: "Muhasebe", icon: "wallet", view: Ledger, shortcut: "⌘5", group: "Finans ve veri" },
+  { key: "sheets", label: "Tablolar", icon: "grid", view: Sheets, shortcut: "⌘6", group: "Finans ve veri" },
+  { key: "contacts", label: "Rehber", icon: "users", view: Contacts, shortcut: "⌘7", group: "Finans ve veri" },
+  { key: "calc", label: "Hesap Araçları", icon: "calculator", view: Calculators, shortcut: "⌘8", group: "Yardımcılar" },
+  { key: "focus", label: "Odak Sayacı", icon: "timer", view: Focus, shortcut: "⌘9", group: "Yardımcılar" },
 ];
 const ROUTE_KEYS = new Set([...ROUTES.map((r) => r.key), "account"]);
 
@@ -110,17 +111,21 @@ function Shell({ auth }) {
     <div className={`shell ${collapsed ? "shell--collapsed" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar__drag" />
+        <div className="sidebar__brand"><img src={logo} alt="Elitlig" /><span>Araçlar</span></div>
         <button type="button" className="sidebar__search" onClick={() => setPalette(true)}>
           <Icon name="search" size={14} /><span>Ara veya komut…</span><Kbd>⌘K</Kbd>
         </button>
         <nav className="sidebar__nav" aria-label="Araçlar">
-          {ROUTES.map((r) => (
-            <button key={r.key} type="button" className={`nav-item ${route === r.key ? "is-active" : ""}`} onClick={() => go(r.key)} title={`${r.label} (${r.shortcut})`}>
-              <Icon name={r.icon} size={17} />
-              <span className="nav-item__label">{r.label}</span>
-              {r.key === "focus" && focusState?.running && <span className="nav-item__timer">{formatClock(focusState.mode === "stopwatch" ? focusState.elapsedMs : focusState.remainingMs)}</span>}
-              {badges[r.key] ? <span className={`nav-item__badge ${s?.overdue ? "is-alert" : ""}`}>{badges[r.key]}</span> : null}
-            </button>
+          {ROUTES.map((r, i) => (
+            <React.Fragment key={r.key}>
+              {(i === 0 || ROUTES[i - 1].group !== r.group) && <div className="sidebar__section">{r.group}</div>}
+              <button type="button" data-tool={r.key} className={`nav-item ${route === r.key ? "is-active" : ""}`} onClick={() => go(r.key)} title={`${r.label} (${r.shortcut})`}>
+                <span className="nav-item__icon"><Icon name={r.icon} size={15} strokeWidth={2} /></span>
+                <span className="nav-item__label">{r.label}</span>
+                {r.key === "focus" && focusState?.running && <span className="nav-item__timer">{formatClock(focusState.mode === "stopwatch" ? focusState.elapsedMs : focusState.remainingMs)}</span>}
+                {badges[r.key] ? <span className={`nav-item__badge ${s?.overdue ? "is-alert" : ""}`}>{badges[r.key]}</span> : null}
+              </button>
+            </React.Fragment>
           ))}
         </nav>
         <div className="sidebar__foot">
@@ -129,11 +134,11 @@ function Shell({ auth }) {
           </button>
           <button type="button" className={`account-btn ${route === "account" ? "is-active" : ""}`} onClick={() => go("account")}>
             <span className="avatar">{(name[0] || "?").toLocaleUpperCase("tr-TR")}</span>
-            <span className="account-btn__text"><strong>{name}</strong><small>{auth.user?.city || "Elitlig"}</small></span>
+            <span className="account-btn__text"><strong>{name}</strong><small>{auth.user?.roleLabel || auth.user?.city || "Elitlig"}</small></span>
           </button>
         </div>
       </aside>
-      <main className="content">
+      <main className="content" data-tool={route}>
         <div className="content__drag" />
         <Suspense fallback={<Spinner />}>
           <View key={route} go={go} arg={routeArg} auth={auth} summary={s} />

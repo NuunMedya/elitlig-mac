@@ -4,8 +4,7 @@ import React, { useMemo, useState } from "react";
 import { Empty, ErrorNote, Icon, MenuButton, Modal, OfflineNote, Spinner, ViewHeader, useConfirm, useResult, useToast } from "../components/ui";
 import { del, patch, post, useCommand, useResource } from "../api";
 import { TEMPLATES } from "../lib/sheets/sheetOps";
-import { XlsxImportError, xlsxToWorkbook } from "../lib/sheets/xlsxImport";
-import { addr, parseCsv } from "../lib/sheets/sheetEngine";
+import { importFile as readSheetFile } from "../lib/sheets/importFile";
 import { includesTr, relativeTime } from "../lib/helpers";
 import SheetEditor from "./SheetEditor";
 
@@ -33,25 +32,30 @@ export default function Sheets({ arg, go }) {
     setOpenId(res.data.item.id);
   };
 
-  const importFile = async () => {
-    const file = await window.elitlig.files.open([{ name: "Excel / CSV", extensions: ["xlsx", "xlsm", "csv", "txt"] }]);
-    if (!file.ok) return;
-    const title = file.name.replace(/\.(xlsx|xlsm|csv|txt)$/i, "");
+  const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const importData = async (name, data) => {
+    setBusy(true);
     try {
-      if (/\.csv$|\.txt$/i.test(file.name)) {
-        const text = new TextDecoder("utf-8").decode(file.data);
-        const rows = parseCsv(text);
-        const cells = {};
-        rows.slice(0, 1000).forEach((row, r) => row.slice(0, 52).forEach((v, c) => { if (v !== "") cells[addr(c, r)] = { v }; }));
-        await create(title, { sheets: [{ name: "Sayfa1", rows: Math.max(100, Math.min(1000, rows.length + 20)), cols: Math.max(26, Math.min(52, Math.max(...rows.map((r) => r.length)))), cells, colW: {} }] });
-      } else {
-        const { workbook, warnings } = await xlsxToWorkbook(file.data);
-        await create(title, workbook);
-        if (warnings?.length) toast(`İçe aktarıldı. Not: ${warnings.slice(0, 2).join(" · ")}`, { tone: "warn", timeout: 7000 });
-      }
+      const { title, book, warnings } = await readSheetFile(name, data);
+      await create(title, book);
+      if (warnings.length) toast(`İçe aktarıldı. Not: ${warnings.slice(0, 2).join(" · ")}`, { tone: "warn", timeout: 8000 });
+      else toast(`“${title}” içe aktarıldı.`, { tone: "success" });
     } catch (error) {
-      toast(error instanceof XlsxImportError ? error.message : "Dosya okunamadı.", { tone: "error" });
+      toast(error?.message || "Dosya okunamadı.", { tone: "error", timeout: 7000 });
+    } finally {
+      setBusy(false);
     }
+  };
+  const importFile = async () => {
+    const file = await window.elitlig.files.open([{ name: "Excel / CSV", extensions: ["xlsx", "xlsm", "csv", "tsv", "txt"] }]);
+    if (file.ok) await importData(file.name, file.data);
+  };
+  const onDrop = async (e) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) await importData(file.name, new Uint8Array(await file.arrayBuffer()));
   };
 
   if (openId) return <SheetEditor id={openId} go={go} onClose={() => { setOpenId(null); list.reload({ quiet: true }); }} />;
@@ -79,10 +83,11 @@ export default function Sheets({ arg, go }) {
   );
 
   return (
-    <div className="view">
-      <ViewHeader title="Tablolar" subtitle="Formüllü hesap tabloları — TOPLA, EĞER, DÜŞEYARA, ETOPLA…">
+    <div className="view" onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }} onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }} onDrop={onDrop}>
+      {dragging && <div className="drop-overlay">Excel ya da CSV dosyasını bırakın</div>}
+      <ViewHeader icon="grid" title="Tablolar" subtitle="Formüllü hesap tabloları — TOPLA, EĞER, DÜŞEYARA, ETOPLA…">
         <div className="search-box"><Icon name="search" size={14} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Dosya ara" /></div>
-        <button type="button" className="btn" onClick={importFile}><Icon name="upload" /> Excel / CSV aç</button>
+        <button type="button" className="btn" onClick={importFile} disabled={busy}><Icon name="upload" /> {busy ? "Aktarılıyor…" : "Excel / CSV içe aktar"}</button>
         <button type="button" className="btn btn--primary" onClick={() => setPicker(true)}><Icon name="plus" /> Yeni tablo</button>
       </ViewHeader>
       <OfflineNote offline={list.offline} savedAt={list.savedAt} />

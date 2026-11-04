@@ -54,7 +54,7 @@ export default function Agenda({ arg, go }) {
 
   return (
     <div className="view view--agenda">
-      <ViewHeader title={titleFor(view, cursor)}>
+      <ViewHeader icon="calendar" title={titleFor(view, cursor)}>
         <div className="btn-group">
           <button type="button" className="icon-btn" onClick={() => setCursor(shiftCursor(view, cursor, -1))} aria-label="Önceki"><Icon name="chevronLeft" /></button>
           <button type="button" className="btn btn--sm" onClick={() => setCursor(new Date())}>Bugün</button>

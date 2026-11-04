@@ -49,17 +49,28 @@ export default function Today({ go, auth }) {
 
   return (
     <div className="view view--today">
-      <header className="today-hero">
-        <div>
+      <header className="hero">
+        <div style={{ position: "relative", zIndex: 1 }}>
           <span className="eyebrow">{now.toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span>
-          <h1>{greeting(now.getHours())}{name ? `, ${name}` : ""}</h1>
-          <p className="muted">
-            {groups.overdue.length ? <><strong className="text-red">{groups.overdue.length} gecikmiş</strong> · </> : null}
-            {groups.today.length} iş bugün · {o?.upcoming?.length ?? 0} etkinlik 7 gün içinde
-          </p>
+          <h1>{greeting(now.getHours())}{name ? `, ${name}` : ""} 👋</h1>
+          <p>{groups.overdue.length ? `${groups.overdue.length} gecikmiş işin var. ` : "Gecikmiş işin yok. "}Bugün {groups.today.length} iş ve 7 gün içinde {o?.upcoming?.length ?? 0} etkinlik seni bekliyor.</p>
+          <div className="hero__stats">
+            <button type="button" className="hero__stat" onClick={() => go("todos")}><strong>{groups.overdue.length + groups.today.length}</strong><span>bugünün işi</span></button>
+            <button type="button" className="hero__stat" onClick={() => go("agenda")}><strong>{o?.upcoming?.length ?? "–"}</strong><span>yaklaşan etkinlik</span></button>
+            <button type="button" className="hero__stat" onClick={() => go("ledger")}><strong>{o?.ledger ? formatMoney(o.ledger.net, 0) : "–"}</strong><span>bu ay net</span></button>
+            <button type="button" className="hero__stat" onClick={() => go("focus")}><strong>{focus?.stats?.minutes || 0} dk</strong><span>bugün odak</span></button>
+          </div>
         </div>
-        <div className="today-hero__clock">{formatTime(now)}</div>
+        <div className="hero__clock">{formatTime(now)}</div>
       </header>
+      <nav className="launcher" aria-label="Araçlar">
+        {[["todos", "checkSquare", "Yapılacaklar", "Görev, pano, maç masası"], ["agenda", "calendar", "Ajanda", "Takvim ve hatırlatmalar"], ["notes", "note", "Not Defteri", "Notlar ve listeler"], ["ledger", "wallet", "Muhasebe", "Hesaplar, maç ve Türkiye geneli"], ["sheets", "grid", "Tablolar", "Formüllü tablolar"], ["contacts", "users", "Rehber", "Üyeler ve kişiler"]].map(([key, icon, label, hint]) => (
+          <button key={key} type="button" data-tool={key} onClick={() => go(key)}>
+            <span className="nav-item__icon"><Icon name={icon} size={15} strokeWidth={2} /></span>
+            <strong>{label}</strong><small>{hint}</small>
+          </button>
+        ))}
+      </nav>
       <OfflineNote offline={overview.offline || todos.offline} savedAt={overview.savedAt || todos.savedAt} />
       <ErrorNote error={overview.error && !overview.data ? overview.error : null} onRetry={overview.reload} />
 

@@ -33,7 +33,7 @@ export default function Focus() {
 
   return (
     <div className="view view--focus">
-      <ViewHeader title="Odak Sayacı" subtitle="Boşluk tuşu başlatır/duraklatır. Sayaç menü çubuğunda da görünür.">
+      <ViewHeader icon="timer" title="Odak Sayacı" subtitle="Boşluk tuşu başlatır/duraklatır. Sayaç menü çubuğunda da görünür.">
         <Segmented value={s.mode} onChange={(mode) => cmd("mode", { mode })} size="sm" options={[{ value: "pomodoro", label: "Pomodoro" }, { value: "timer", label: "Geri sayım" }, { value: "stopwatch", label: "Kronometre" }]} />
         <button type="button" className="icon-btn" title="Süreler" onClick={() => setSettingsOpen((v) => !v)}><Icon name="sliders" /></button>
       </ViewHeader>
