@@ -140,7 +140,11 @@ function TimeGrid({ days, items, today, onOpen, onCreate, onMove }) {
   const scrollRef = useRef(null);
   const { over, bind } = useDropTarget(items, onMove);
   const nowTop = (today.getHours() * 60 + today.getMinutes()) * (HOUR_PX / 60);
-  React.useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = Math.max(0, 7 * HOUR_PX); }, []);
+  // Açılışta 07:00'ye, daha erken etkinlik varsa onun saatine kaydırılır.
+  React.useEffect(() => {
+    const hours = days.flatMap((d) => itemsOnDay(items, d).filter((i) => !i.all_day && sameDay(new Date(i.occurrence_start), d)).map((i) => new Date(i.occurrence_start).getHours()));
+    if (scrollRef.current) scrollRef.current.scrollTop = Math.max(0, Math.min(7, ...hours) * HOUR_PX - 8);
+  }, [days.length, items.length]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="tgrid" style={{ "--cols": days.length }}>
       <div className="tgrid__head">
