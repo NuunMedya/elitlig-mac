@@ -10,6 +10,7 @@
 //   - Her yerden hızlı kayıt penceresi (⌃⌥N): not, görev, etkinlik, gider.
 //   - Ajanda/görev hatırlatmaları macOS bildirimi olarak, pencere kapalıyken de.
 //   - Dock rozeti: bugün ve gecikmiş iş sayısı.
+//   - Projeler (⌘0): süreç, kişiler/CRM, soru-cevap ve portföy.
 "use strict";
 
 const path = require("node:path");
@@ -310,6 +311,7 @@ const ROUTES = [
   ["todos", "Yapılacaklar", "CmdOrCtrl+2"],
   ["agenda", "Ajanda", "CmdOrCtrl+3"],
   ["notes", "Not Defteri", "CmdOrCtrl+4"],
+  ["projects", "Projeler", "CmdOrCtrl+0"],
   ["ledger", "Ön Muhasebe", "CmdOrCtrl+5"],
   ["sheets", "Tablolar", "CmdOrCtrl+6"],
   ["contacts", "Rehber", "CmdOrCtrl+7"],
@@ -383,7 +385,7 @@ function buildMenu() {
         { label: "Yenile", accelerator: "CmdOrCtrl+R", click: () => sendCommand("refresh") },
         { label: "Kenar Çubuğunu Gizle/Göster", accelerator: "CmdOrCtrl+Alt+S", click: () => sendCommand("sidebar") },
         { type: "separator" },
-        { role: "resetZoom", label: "Gerçek Boyut" },
+        { role: "resetZoom", label: "Gerçek Boyut", accelerator: "CmdOrCtrl+Shift+0" },
         { role: "zoomIn", label: "Yakınlaştır" },
         { role: "zoomOut", label: "Uzaklaştır" },
         { role: "togglefullscreen", label: "Tam Ekran" },
@@ -550,7 +552,7 @@ if (!app.requestSingleInstanceLock()) {
       applicationName: config.APP_NAME,
       applicationVersion: app.getVersion(),
       copyright: "© Elitlig",
-      credits: "Yapılacaklar · Ajanda · Not Defteri · Ön Muhasebe · Tablolar · Rehber · Hesap Araçları · Odak Sayacı",
+      credits: "Yapılacaklar · Ajanda · Not Defteri · Projeler · Ön Muhasebe · Tablolar · Rehber · Hesap Araçları · Odak Sayacı",
     });
 
     app.on("activate", () => showMain());

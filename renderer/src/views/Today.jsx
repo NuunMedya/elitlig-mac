@@ -5,6 +5,7 @@ import { Icon, Empty, OfflineNote, ErrorNote, Spinner, useResult } from "../comp
 import { patch, post, tempId, useResource } from "../api";
 import { formatMoney, formatTime, greeting, groupTodos, parseQuickTask, relativeDay, formatDate } from "../lib/helpers";
 import { colorOf } from "../lib/agendaUtils";
+import { dayKey, dueLabel, formatWhen, groupFollowups } from "../lib/projectUtils";
 
 const useClock = () => {
   const [now, setNow] = useState(() => new Date());
@@ -64,7 +65,7 @@ export default function Today({ go, auth }) {
         <div className="hero__clock">{formatTime(now)}</div>
       </header>
       <nav className="launcher" aria-label="Araçlar">
-        {[["todos", "checkSquare", "Yapılacaklar", "Görev, pano, maç masası"], ["agenda", "calendar", "Ajanda", "Takvim ve hatırlatmalar"], ["notes", "note", "Not Defteri", "Notlar ve listeler"], ["ledger", "wallet", "Muhasebe", "Hesaplar, maç ve Türkiye geneli"], ["sheets", "grid", "Tablolar", "Formüllü tablolar"], ["contacts", "users", "Rehber", "Üyeler ve kişiler"]].map(([key, icon, label, hint]) => (
+        {[["todos", "checkSquare", "Yapılacaklar", "Görev, pano, maç masası"], ["agenda", "calendar", "Ajanda", "Takvim ve hatırlatmalar"], ["notes", "note", "Not Defteri", "Notlar ve listeler"], ["projects", "layers", "Projeler", "Süreç, kişiler, portföy"], ["ledger", "wallet", "Muhasebe", "Hesaplar, maç ve Türkiye geneli"], ["sheets", "grid", "Tablolar", "Formüllü tablolar"], ["contacts", "users", "Rehber", "Üyeler ve kişiler"]].map(([key, icon, label, hint]) => (
           <button key={key} type="button" data-tool={key} onClick={() => go(key)}>
             <span className="nav-item__icon"><Icon name={icon} size={15} strokeWidth={2} /></span>
             <strong>{label}</strong><small>{hint}</small>
@@ -103,6 +104,8 @@ export default function Today({ go, auth }) {
             <Empty icon="check" title="Bugün için iş yok" text={groups.upcoming.length ? `Yaklaşan ${groups.upcoming.length} iş var.` : "Yukarıdan hızlıca görev ekleyebilirsiniz."} />
           )}
         </section>
+
+        <ProjectsToday go={go} />
 
         <section className="card">
           <header className="card__head">
@@ -184,5 +187,44 @@ export default function Today({ go, auth }) {
         </section>
       </div>
     </div>
+  );
+}
+
+/** Projelerde bugün: aranacak kişiler, geciken ve bugün biten adımlar. */
+function ProjectsToday({ go }) {
+  const res = useResource("/api/tools/projects/followups", { days: 1 });
+  const fu = useMemo(() => groupFollowups(res.data), [res.data]);
+  if (res.error && !res.data) return null;
+  const today = dayKey();
+  const leads = [...fu.overdueLeads, ...fu.todayLeads];
+  const steps = [...fu.overdueSteps, ...fu.steps.filter((s) => s.due_date && s.due_date <= today)];
+  const rows = [
+    ...leads.map((l) => ({ key: `l${l.id}`, icon: "phone", title: l.name, sub: `${l.project_name} · ${l.stage_label}${l.next_action ? ` · ${l.next_action}` : ""}`, when: fu.overdueLeads.includes(l) ? "Gecikti" : formatWhen(l.next_action_at).replace("Bugün ", ""), late: fu.overdueLeads.includes(l), color: l.project_color, open: () => go("projects", { id: l.project_id, tab: "leads", lead: l.id }) })),
+    ...steps.map((s) => ({ key: `s${s.id}`, icon: "list", title: s.title, sub: s.project_name, when: dueLabel(s.due_date), late: fu.overdueSteps.includes(s), color: s.project_color, open: () => go("projects", { id: s.project_id, tab: "process", step: s.id }) })),
+  ];
+  return (
+    <section className="card today-proj" data-tool="projects">
+      <header className="card__head">
+        <h2 className="card__title"><Icon name="layers" /> Projelerde bugün</h2>
+        <button type="button" className="link-btn" onClick={() => go("projects", { section: "followups" })}>Takip →</button>
+      </header>
+      {res.loading && !res.data ? <Spinner /> : rows.length ? (<>
+        <div className="counts counts--3">
+          <button type="button" onClick={() => go("projects", { section: "followups" })}><strong>{leads.length}</strong><span>aranacak</span></button>
+          <button type="button" onClick={() => go("projects", { section: "followups" })}><strong className={fu.overdueLeads.length + fu.overdueSteps.length ? "text-red" : ""}>{fu.overdueLeads.length + fu.overdueSteps.length}</strong><span>gecikmiş</span></button>
+          <button type="button" onClick={() => go("projects", { section: "followups" })}><strong>{fu.questions.length}</strong><span>açık soru</span></button>
+        </div>
+        <ul className="task-mini">
+          {rows.slice(0, 5).map((r) => (
+            <li key={r.key}>
+              <span className="upcoming__bar" style={{ background: r.color, alignSelf: "stretch" }} />
+              <button type="button" className="task-mini__title" onClick={r.open}><Icon name={r.icon} size={13} className="text-tool" /><span className="today-proj__text"><span>{r.title}</span><small>{r.sub}</small></span></button>
+              <span className={`task-mini__due ${r.late ? "text-red" : ""}`}>{r.when}</span>
+            </li>
+          ))}
+        </ul>
+        {rows.length > 5 && <p className="muted small">+{rows.length - 5} kayıt daha</p>}
+      </>) : <Empty icon="layers" title="Projelerde bugün iş yok" text="Aranacak kişi ya da süresi dolan adım yok." />}
+    </section>
   );
 }

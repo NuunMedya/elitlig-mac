@@ -70,3 +70,25 @@ test("401 oturumu kapatır, hata mesajı arayüze iletilir", async () => {
   assert.equal(res.error.message, "Oturum sona erdi");
   assert.equal(unauthorized.length, 1);
 });
+
+test("projeler: iletişim kaydı, soru ve adım/kişi güncellemesi kuyruğa girer; oluşturma ve silme bağlantı ister", async () => {
+  const { isQueueable } = require("../api");
+  assert.equal(isQueueable("POST", "/api/tools/projects/12/activities"), true);
+  assert.equal(isQueueable("POST", "/api/tools/projects/12/questions"), true);
+  assert.equal(isQueueable("PATCH", "/api/tools/projects/12/questions/tmp_ab1"), true);
+  assert.equal(isQueueable("PATCH", "/api/tools/projects/12/steps/5"), true);
+  assert.equal(isQueueable("PATCH", "/api/tools/projects/12/leads/9"), true);
+  assert.equal(isQueueable("DELETE", "/api/tools/projects/12/leads/9"), false);
+  assert.equal(isQueueable("POST", "/api/tools/projects/12/leads"), false);
+  assert.equal(isQueueable("POST", "/api/tools/projects"), false);
+  assert.equal(isQueueable("PATCH", "/api/tools/projects/12"), false);
+  assert.equal(isQueueable("POST", "/api/tools/projects/12/leads/9/portfolio"), false);
+  const { api, state } = setup(() => ({ status: 201, body: { item: { id: 3 }, lead: null } }));
+  state.down = true;
+  assert.equal((await api.request({ method: "POST", path: "/api/tools/projects/12/activities", body: { lead_id: 9, type: "call", outcome: "ulasilamadi" } })).queued, true);
+  const refused = await api.request({ method: "POST", path: "/api/tools/projects/12/leads", body: { name: "X" } });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.offline, true);
+  state.down = false;
+  assert.equal((await api.flush()).sent, 1);
+});

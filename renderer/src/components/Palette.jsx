@@ -9,6 +9,9 @@ const ACTIONS = [
   { label: "Yeni görev", icon: "plus", route: "todos:new", hint: "Yapılacaklar" },
   { label: "Yeni not", icon: "plus", route: "notes:new", hint: "Not Defteri" },
   { label: "Yeni etkinlik", icon: "plus", route: "agenda:new", hint: "Ajanda" },
+  { label: "Yeni proje", icon: "plus", route: "projects:new", hint: "Projeler" },
+  { label: "Projelerde bugün aranacaklar", icon: "phone", route: "projects", arg: { section: "followups" }, hint: "Projeler · Takip" },
+  { label: "Portföy", icon: "briefcase", route: "projects", arg: { section: "portfolio" }, hint: "Projeler" },
   { label: "Yeni gelir/gider kaydı", icon: "plus", route: "ledger:new", hint: "Ön Muhasebe" },
   { label: "Yeni tablo", icon: "plus", route: "sheets:new", hint: "Tablolar" },
   { label: "Yeni kişi", icon: "plus", route: "contacts:new", hint: "Rehber" },
@@ -33,13 +36,17 @@ export default function Palette({ onClose, go, routes }) {
       get("/api/tools/contacts"),
       get("/api/tools/sheets"),
       get("/api/tools/ledger", {}),
-    ]).then(([todos, notes, contacts, sheets, ledger]) => {
+      get("/api/tools/projects", { archived: "all" }),
+      get("/api/tools/projects/followups", { days: 30 }),
+    ]).then(([todos, notes, contacts, sheets, ledger, projects, follow]) => {
       sources.current = {
         todos: todos.ok ? todos.data?.items || [] : [],
         notes: notes.ok ? notes.data?.items || [] : [],
         contacts: contacts.ok ? contacts.data?.items || [] : [],
         sheets: sheets.ok ? sheets.data?.items || [] : [],
         ledger: ledger.ok ? ledger.data?.items || [] : [],
+        projects: projects.ok ? projects.data?.items || [] : [],
+        leads: follow.ok ? follow.data?.leads || [] : [],
       };
       setContent((c) => [...c]);
     });
@@ -53,6 +60,8 @@ export default function Palette({ onClose, go, routes }) {
     s.notes.filter((n) => includesTr(`${n.title} ${n.body} ${(n.tags || []).join(" ")} ${(n.checklist || []).map((c) => c.text).join(" ")}`, query)).slice(0, 6).forEach((n) => out.push({ label: n.title || (n.body || "Not").slice(0, 60), icon: "note", hint: "Not", route: `notes:${n.id}` }));
     s.contacts.filter((c) => includesTr(`${c.name} ${c.company} ${c.phone} ${c.email} ${c.city}`, query)).slice(0, 6).forEach((c) => out.push({ label: c.name, icon: "user", hint: c.phone || c.company || "Kişi", route: `contacts:${c.id}` }));
     s.sheets.filter((x) => includesTr(x.title, query)).slice(0, 5).forEach((x) => out.push({ label: x.title, icon: "grid", hint: "Tablo", route: `sheets:${x.id}` }));
+    s.projects.filter((p) => includesTr(`${p.name} ${p.description}`, query)).slice(0, 5).forEach((p) => out.push({ label: p.name, icon: "layers", hint: `Proje · %${p.stats?.steps?.progress ?? 0}`, route: "projects", arg: { id: p.id } }));
+    s.leads.filter((l) => includesTr(`${l.name} ${l.company} ${l.phone}`, query)).slice(0, 5).forEach((l) => out.push({ label: l.name, icon: "phone", hint: `${l.project_name} · ${l.stage_label}`, route: "projects", arg: { id: l.project_id, tab: "leads", lead: l.id } }));
     s.ledger.filter((e) => includesTr(`${e.description} ${e.party} ${e.category} ${e.document_no}`, query)).slice(0, 5).forEach((e) => out.push({ label: e.description || e.party || e.category || "Kayıt", icon: "receipt", hint: `${formatDate(e.entry_date)} · ${formatMoney(e.amount)}`, route: `ledger:${e.id}` }));
     setContent(out);
   }, [query]);
@@ -69,7 +78,7 @@ export default function Palette({ onClose, go, routes }) {
     if (!item) return;
     onClose();
     if (item.run) item.run();
-    else go(item.route);
+    else go(item.route, item.arg);
   };
 
   const onKey = (e) => {
@@ -84,7 +93,7 @@ export default function Palette({ onClose, go, routes }) {
       <div className="palette" role="dialog" aria-label="Komut paleti">
         <div className="palette__input">
           <Icon name="search" />
-          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="Araç, komut ya da görev, not, kişi, tablo ara…" aria-label="Ara" />
+          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="Araç, komut ya da görev, not, kişi, proje, tablo ara…" aria-label="Ara" />
           <Kbd>esc</Kbd>
         </div>
         <ul className="palette__list" role="listbox">

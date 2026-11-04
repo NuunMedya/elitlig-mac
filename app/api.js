@@ -5,7 +5,8 @@
 //   - Başarılı her GET yanıtı diske yazılır. Bağlantı yokken aynı istek
 //     önbellekten yanıtlanır (offline: true, savedAt).
 //   - Bağlantı yokken yapılan yazma işlemleri (not, görev, etkinlik, muhasebe
-//     kaydı, kişi) kuyruğa alınır ve bağlantı gelince sırayla gönderilir.
+//     kaydı, kişi; projelerde arama sonucu, not, soru-cevap, adım/kişi
+//     güncellemesi) kuyruğa alınır ve bağlantı gelince sırayla gönderilir.
 //     Çevrimdışı oluşturulan kaydın geçici kimliği ("tmp_…") gönderim sırasında
 //     sunucunun verdiği gerçek kimlikle değiştirilir.
 "use strict";
@@ -16,6 +17,12 @@ const crypto = require("node:crypto");
 const { EventEmitter } = require("node:events");
 
 const QUEUEABLE = /^\/api\/(tools\/(notes|events|ledger|contacts)|todos)(\/[\w-]+)?$/;
+// Projeler: sahada en çok yapılan, sırası önemsiz ve kimliğe bağımlı olmayan
+// yazmalar kuyruğa alınır: iletişim kaydı (arama sonucu, not), soru ekleme ve
+// cevaplama, adımın ve kişinin alan güncellemesi. Proje, aşama, adım ve kişi
+// oluşturma / silme bağlantı ister (sıra ve kimlikler sunucuda belirlenir).
+const PROJECT_QUEUEABLE = /^\/api\/tools\/projects\/\d+\/(activities|questions(\/[\w-]+)?|(steps|leads)\/\d+)$/;
+const isQueueable = (method, pathname) => QUEUEABLE.test(pathname) || ((method === "POST" || method === "PATCH") && PROJECT_QUEUEABLE.test(pathname));
 const TEMP_ID = /^tmp_[\w-]+$/;
 
 class ApiError extends Error {
@@ -128,7 +135,7 @@ function createApi({ origin, dataDir, fetchImpl, sessionStore, userAgent, timeou
         if (method === "GET") {
           const hit = cache ? readCache(key) : null;
           if (hit) return { ok: true, data: hit.data, offline: true, savedAt: hit.savedAt };
-        } else if (queue && QUEUEABLE.test(pathname)) {
+        } else if (queue && isQueueable(method, pathname)) {
           const items = readOutbox();
           items.push({ id: crypto.randomUUID(), method, path: pathname, query, body, tempId: tempId || null, at: new Date().toISOString() });
           writeOutbox(items);
@@ -189,4 +196,4 @@ function createApi({ origin, dataDir, fetchImpl, sessionStore, userAgent, timeou
   };
 }
 
-module.exports = { createApi, ApiError, buildUrl, QUEUEABLE };
+module.exports = { createApi, ApiError, buildUrl, QUEUEABLE, PROJECT_QUEUEABLE, isQueueable };
