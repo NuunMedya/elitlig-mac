@@ -1,0 +1,69 @@
+{
+  "name": "elitlig-araclar",
+  "productName": "Elitlig Araçlar",
+  "version": "1.0.0",
+  "description": "Elitlig Araçlar için Mac masaüstü uygulaması: Yapılacaklar, Ajanda, Not Defteri, Ön Muhasebe, Tablolar, Rehber, Hesap Araçları ve Odak Sayacı.",
+  "main": "src/main.js",
+  "author": "Nuun Medya <nuunmedya@gmail.com>",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "dist": "electron-builder --mac dmg zip --universal --publish never",
+    "dist:arm64": "electron-builder --mac dmg zip --arm64 --publish never",
+    "dist:x64": "electron-builder --mac dmg zip --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.9.2",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "com.elitlig.araclar",
+    "productName": "Elitlig Araçlar",
+    "copyright": "© Elitlig",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "darkModeSupport": true,
+      "artifactName": "Elitlig-Araclar-${version}-${arch}.${ext}",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Elitlig ekip sohbetindeki sesli aramalar için mikrofon kullanılır.",
+        "LSApplicationCategoryType": "public.app-category.productivity"
+      }
+    },
+    "dmg": {
+      "title": "Elitlig Araçlar",
+      "artifactName": "Elitlig-Araclar-${version}.dmg",
+      "contents": [
+        {
+          "x": 150,
+          "y": 190,
+          "type": "file"
+        },
+        {
+          "x": 390,
+          "y": 190,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    },
+    "afterPack": "build/afterPack.js"
+  }
+}
