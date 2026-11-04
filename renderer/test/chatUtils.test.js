@@ -145,7 +145,8 @@ describe("sohbet listesi", () => {
     expect(filterChats(chats, { filter: "groups" }).map((c) => c.id)).toEqual([2]);
     expect(filterChats(chats, { filter: "archive" }).map((c) => c.id)).toEqual([4]);
     expect(filterChats(chats, { q: "kartal" }).map((c) => c.id)).toEqual([3]);
-    expect(chatCounts(chats)).toEqual({ all: 4, unread: 2, groups: 1, archive: 1 });
+    expect(filterChats(chats, { filter: "pinned" }).map((c) => c.id)).toEqual([5, 3]);
+    expect(chatCounts(chats)).toEqual({ all: 4, unread: 2, groups: 1, pinned: 2, archive: 1 });
     expect(unreadTotal(chats)).toBe(5);
   });
   test("gelen mesaj ve sohbet yayını listeye işlenir", () => {

@@ -9,7 +9,7 @@ uygulamada görünür.
 
 | Kısayol | Araç | Uygulamada |
 | --- | --- | --- |
-| ⇧⌘M | **Mesajlar** | WhatsApp düzeninde ekip mesajlaşması: takım başkanları, oyuncular, üyeler ve yönetimdeki arkadaşlarla birebir sohbet ya da karışık gruplar; okundu tikleri, yanıtla, tepki, ilet, yıldızla, sabitle, düzenle, sil; fotoğraf (albüm ve görüntüleyici), belge, sesli mesaj, anket, konum; @bahsetme, taslaklar, sohbette ve tüm sohbetlerde arama; grup ve kişi bilgisi, medya-belgeler-bağlantılar; canlı bağlantı, yazıyor…, çevrimiçi / son görülme; yeni mesajda Mac bildirimi; çevrimdışı yazılan metin bağlantı gelince gider. **Üye mesajları** (messages.view): takım, oyuncu ve üyelerin “ElitLig Yönetimi” sohbetleri ortak gelen kutusu olarak aynı ekranda (Takımlar / Oyuncular / Üyeler), yanıt ElitLig Yönetimi adına; **Kayıtlar** (arama kayıtları, messages.calls_view) |
+| ⇧⌘M | **Mesajlar** | WhatsApp düzeninde ekip mesajlaşması: takım başkanları, oyuncular, üyeler ve yönetimdeki arkadaşlarla birebir sohbet ya da karışık gruplar; okundu tikleri, yanıtla, tepki, ilet, yıldızla, sabitle, düzenle, sil; fotoğraf (albüm ve görüntüleyici), belge, sesli mesaj, anket, konum; yönetim için **hazır içerikler**: günün maçları kartı, “Ben talibim” spiker / reji görev anketi (talip ol, görevlendir), Haftanın Enleri aday anketi; @bahsetme, taslaklar, sohbette ve tüm sohbetlerde arama; grup ve kişi bilgisi, medya-belgeler-bağlantılar; canlı bağlantı, yazıyor…, çevrimiçi / son görülme; yeni mesajda Mac bildirimi; çevrimdışı yazılan metin bağlantı gelince gider. **Üye mesajları** (messages.view): takım, oyuncu ve üyelerin “ElitLig Yönetimi” sohbetleri ortak gelen kutusu olarak aynı ekranda (Takımlar / Oyuncular / Üyeler), yanıt ElitLig Yönetimi adına; **Kayıtlar** (arama kayıtları, messages.calls_view) |
 | ⇧⌘T | **Talepler** | Onay merkezi: profil değişikliği, sahiplenme, yeni üye, transfer, kadro onayı, maç talebi, savunma… kategori sekmeleri (açık talep sayılarıyla), Bekleyen / Bilgilendirme / Sonuçlanan, arama; kartta kim (takım kartı / üye kartı), il, zaman; **Onayla / Reddet** (onay penceresiyle, talep kendiliğinden kapanır), site sayfası düğmeleri, İlgili sayfa, Kapat; yeni talep anında listeye düşer, pencere arka plandaysa Mac bildirimi |
 | ⌘1 | **Bugün** | Bekleyen talepler kartı (kategori kısa yolları), gecikmiş ve bugünkü işler, önümüzdeki 7 gün, bu ayın gelir-gideri, son notlar, odak istatistiği; tek satırda görev ekleme |
 | ⌘2 | **Yapılacaklar** | Web'deki tüm özellikler: Bugün / Yaklaşan / Tüm işler / Bana atananlar / Atadıklarım / Maç görevleri / Ekip takibi / etiket görünümleri; gruplu liste ve sürükle-bırak pano; maç masası (aşamalar, takım iletişimi, WhatsApp ile kadro talebi, gol müziği, maç görevlileri); Haftanın Enleri aday önerisi ve koordinasyonu (oylar, saha dizilimi, kaydet, yayınla); ekibe görev atama, maç görevlendirme, oyuncu/takım/maç bağlama, geri alma |
@@ -123,8 +123,15 @@ Sitedeki ve mobil uygulamadaki sohbetle aynı veridir (`/api/chat/*`). Yönetim 
 arkadaşlarıyla (yönetim), takım başkanlarıyla, oyuncularla ve üyelerle birebir yazışır, bunları
 karıştırarak grup kurar; üyeler yönetimin başlattığı sohbete yanıt verir.
 
-- **Düzen.** Solda sohbet listesi (arama — sohbetlerde ve mesajlarda —, Tümü / Okunmamış / Gruplar /
-  Yıldızlı / Arşiv; sabitlenenler üstte, son mesaj, gönderen, ✓ / ✓✓ / mavi ✓✓, saat, okunmamış rozeti,
+- **Görünüm (2.8).** Güncel WhatsApp masaüstü düzeni, Elitlig renkleriyle: en solda ikon rayı
+  (Sohbetler, Gruplar, Üye mesajları, Yıldızlı, Arşiv; altta Kayıtlar, Ayarlar ve profil), büyük
+  başlıklı liste, yuvarlak arama ve süzgeç hapları (Tümü / Okunmamış / Sabitlenen / Gruplar), ferah
+  satırlar; futbol çizimli sıcak gri sohbet duvarı, kuyruklu pastel balonlar, yüzen yuvarlak yazma
+  çubuğu, mikrofon ↔ gönder dönüşümü, renkli “+” menüsü; açık ve koyu tema (koyuda Elitlig'in
+  patlıcan tonları); dar pencerede liste ↔ sohbet ekranları (geri düğmesi). **Ayarlar**: kimler size
+  yazabilir, engellenenler, kısayollar.
+- **Düzen.** Solda sohbet listesi (arama — sohbetlerde ve mesajlarda —, süzgeçler, arşiv satırı;
+  sabitlenenler üstte, son mesaj, gönderen, ✓ / ✓✓ / mavi ✓✓, saat, okunmamış rozeti,
   “okunmadı” noktası, sessiz simgesi, taslak, yazıyor…, çevrimiçi noktası, takım rozeti); ortada sohbet
   (gün ayraçları, gönderen adı renkli balonlar, yanıt alıntısı — tıklayınca asıl mesaja gider —,
   iletildi / düzenlendi etiketi, tepkiler, fotoğraf albümü, belge, sesli mesaj, anket, konum, sistem
@@ -132,7 +139,8 @@ karıştırarak grup kurar; üyeler yönetimin başlattığı sohbete yanıt ver
 - **Mesaj eylemleri** (üzerine gelince ⌄ ya da sağ tık): tepki (👍❤️😂😮😢🙏), yanıtla, kopyala, ilet
   (çoklu seçim, en çok 5 sohbete), yıldızla, sabitle, düzenle (kendi metin mesajı, 15 dk), bilgi
   (kimler okudu), herkesten sil.
-- **Yazma alanı.** Emoji, ek menüsü (fotoğraf, belge, anket, konum), sesli mesaj kaydı, yanıt ve
+- **Yazma alanı.** Emoji, “+” ek menüsü (fotoğraf, belge, anket, konum, ses kaydı; yönetimde
+  Elitlig içerikleri), sesli mesaj kaydı, yanıt ve
   düzenleme çubuğu, grupta @bahsetme önerisi, Enter gönderir / ⇧Enter yeni satır, ↑ son mesajı
   düzenler; sohbet başına taslak; görsel yapıştırma ve sürükle-bırak (en çok 25 MB).
 - **Yeni sohbet / yeni grup.** Rehber bölümleri: Yönetim, Takım başkanları, Oyuncular, Üyeler
@@ -153,6 +161,26 @@ karıştırarak grup kurar; üyeler yönetimin başlattığı sohbete yanıt ver
   önceki sohbet, Esc paneli kapatır.
 - **Sesli arama** masaüstünde henüz yok (düğme kapalı); aramalar mobil uygulamadan ya da siteden yapılır.
 
+### Hazır içerikler (yönetim hesapları)
+
+“+” menüsündeki **Elitlig içerikleri** bölümünden ya da grup başlığındaki ✨ düğmesinden gönderilir
+(sunucu: `/api/chat/content/*`, `services/chat/chatContent.js`). Üye mesajları ortak kutusunda yoktur.
+
+- **Günün maçları.** Gün seçilir (varsayılan bugün, ‹ › ile önceki / sonraki gün), o günün maçları lige
+  göre gruplu ve hepsi seçili gelir; not eklenir, sağda canlı önizleme. Sohbette fikstür kartı: lig
+  etiketi, saat hapı, takımlar (oynandıysa skor), saha, atanmış görevliler (spiker, reji, hakem…);
+  maça tıklayınca sitede açılır; **Talip anketi aç** aynı maçlarla görev anketini hazırlar.
+- **Ben talibim.** Görevler (spiker, reji, hakem, fotoğrafçı, sağlıkçı) ve maçlar seçilir; başlık,
+  not, son tarih. Kart maça göre gruplu, her görev bir satır: talip olanların avatarları, büyük
+  **Talibim** düğmesi (üzerine gelince **Vazgeç**), görevli atandıysa yeşil rozet. `staff.assign`
+  yetkisi olan **Görevlendir** ile talip olanlardan birini maça yazar (maç ekibine kaydolur); anketi
+  gönderen kapatır / yeniden açar. Değişiklikler herkese canlı yansır.
+- **Haftanın Enleri.** Yapılacaklar'daki aday önerisi akışının aynısı (`todos.assign`): hafta, lig,
+  sezon, tarih aralığı, kategoriler, kadro, son tarih, not. Sohbetteki yönetim ekibine aday öneri
+  kartı, gönderene koordinasyon kartı açılır. Kupa kartında kategoriler, “3/5 öneri geldi” ilerlemesi
+  ve öneren avatarları; **Adaylarını öner** Yapılacaklar'ın öneri düzenleyicisini, koordinatördeki
+  **Önerileri topla** öneri panosunu (kaydet, yayına al) pencerede açar.
+
 ### Üye mesajları (ortak gelen kutusu)
 
 Tek mesajlaşma sistemi: eski “Mesaj Yönetimi” / yönetim gelen kutusu ekranı yerine üyelerin
@@ -160,7 +188,7 @@ Tek mesajlaşma sistemi: eski “Mesaj Yönetimi” / yönetim gelen kutusu ekra
 görünür (yetkiler oturumdaki kullanıcıdan ve açılışta `/api/users/verify`'dan okunur; liste yoksa uçlar
 yoklanır, 403 = erişim yok). Veriler `/api/admin/chat` uçlarından gelir.
 
-- Listenin başında **Üye mesajları** satırı ve süzgeci; alt süzgeçler Takımlar / Oyuncular / Üyeler;
+- Listenin başında **Üye mesajları** satırı ve raydaki bölümü; alt süzgeçler Takımlar / Oyuncular / Üyeler;
   okunmamış üye sohbetleri **Okunmamış** süzgecinde de görünür, aramada da bulunur.
 - Sohbet aynı bölmede açılır: başlıkta takım / oyuncu / üye ve “Üye mesajı” etiketi; yazma alanı
   “ElitLig Yönetimi adına yaz…”; yanıt üyeye ElitLig Yönetimi adıyla gider, balonda yazan yönetici

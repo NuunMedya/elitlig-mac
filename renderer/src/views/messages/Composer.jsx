@@ -1,16 +1,18 @@
-// Mesaj yazma alanı: emoji, ek menüsü (fotoğraf, belge, anket, konum),
+// Mesaj yazma alanı (2.8: yüzen yuvarlak çubuk): emoji, "+" ek menüsü
+// (renkli ızgara: fotoğraf, belge, anket, konum, ses; yönetim için günün
+// maçları, ben talibim, haftanın enleri),
 // sesli mesaj kaydı, yanıt / düzenleme çubuğu, grupta @bahsetme önerisi,
 // Enter gönderir / ⇧Enter yeni satır, sohbet başına taslak, yapıştırılan
 // görseller, "yazıyor" bildirimi.
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../../components/ui";
-import { Avatar, EmojiPicker, PointMenu, anchorOf, chatApi } from "./common";
+import { Avatar, EmojiPicker, anchorOf, chatApi } from "./common";
 import { extractMentions, formatDuration, insertMention, mentionQuery, quoteText } from "../../lib/chatUtils";
 
 const TYPING_EVERY_MS = 2500;
 const TYPING_IDLE_MS = 4000;
 
-export default function Composer({ conv, meId, participants, draft, onDraft, reply, edit, onCancel, onSend, onSaveEdit, onFiles, onPoll, onLocation, onVoice, disabledReason, placeholder, noTyping = false }) {
+export default function Composer({ conv, meId, participants, draft, onDraft, reply, edit, onCancel, onSend, onSaveEdit, onFiles, onPoll, onLocation, onVoice, onContent, attachItems, disabledReason, placeholder, noTyping = false }) {
   const [text, setText] = useState(() => (edit ? edit.body || "" : draft?.text || ""));
   const [emoji, setEmoji] = useState(null);
   const [attach, setAttach] = useState(null);
@@ -22,9 +24,9 @@ export default function Composer({ conv, meId, participants, draft, onDraft, rep
   const recRef = useRef(null);
   const isGroup = conv.type === "group" || conv.type === "team";
 
-  useEffect(() => { if (edit) { setText(edit.body || ""); setTimeout(() => ref.current?.focus(), 0); } }, [edit]);
-  useEffect(() => { if (reply) ref.current?.focus(); }, [reply]);
-  useEffect(() => { ref.current?.focus(); }, [conv.id]);
+  useEffect(() => { if (edit) { setText(edit.body || ""); setTimeout(() => ref.current?.focus({ preventScroll: true }), 0); } }, [edit]);
+  useEffect(() => { if (reply) ref.current?.focus({ preventScroll: true }); }, [reply]);
+  useEffect(() => { ref.current?.focus({ preventScroll: true }); }, [conv.id]);
   // Taslak: düzenleme dışında yazılan metin sohbet başına saklanır.
   useEffect(() => { if (!edit) onDraft?.(text); }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => stopTyping(), [conv.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -66,7 +68,7 @@ export default function Composer({ conv, meId, participants, draft, onDraft, rep
     const next = insertMention(text, mention.start, el.selectionStart, p.name);
     setText(next);
     setMention(null);
-    setTimeout(() => { el.focus(); const at = mention.start + p.name.length + 2; el.setSelectionRange(at, at); }, 0);
+    setTimeout(() => { el.focus({ preventScroll: true }); const at = mention.start + p.name.length + 2; el.setSelectionRange(at, at); }, 0);
   };
   const submit = () => {
     const value = text.trim();
@@ -98,7 +100,7 @@ export default function Composer({ conv, meId, participants, draft, onDraft, rep
     const end = el?.selectionEnd ?? text.length;
     const next = `${text.slice(0, start)}${em}${text.slice(end)}`;
     setText(next);
-    setTimeout(() => { el?.focus(); el?.setSelectionRange(start + em.length, start + em.length); }, 0);
+    setTimeout(() => { el?.focus({ preventScroll: true }); el?.setSelectionRange(start + em.length, start + em.length); }, 0);
   };
 
   /* ----------------------------- sesli mesaj ----------------------------- */
@@ -170,22 +172,57 @@ export default function Composer({ conv, meId, participants, draft, onDraft, rep
         </div>
       ) : (
         <div className="ms-composer">
-          <button type="button" className="icon-btn" title="Emoji" onClick={(e) => setEmoji(anchorOf(e))}><Icon name="smile" size={20} /></button>
-          <button type="button" className="icon-btn" title="Ekle" onClick={(e) => setAttach(anchorOf(e))}><Icon name="paperclip" size={19} /></button>
-          <textarea ref={ref} rows={1} value={text} onChange={onChange} onKeyDown={onKeyDown} onPaste={onPaste} onBlur={() => setTimeout(() => setMention(null), 150)}
-            placeholder={rec?.error || placeholder || "Bir mesaj yazın"} aria-label="Mesaj" spellCheck />
+          <div className="ms-composer__bar">
+            <button type="button" className={`ms-plus ${attach ? "is-open" : ""}`} title="Ekle" aria-expanded={Boolean(attach)} data-act="attach" onClick={() => setAttach((v) => !v)}><Icon name="plus" size={21} strokeWidth={2.2} /></button>
+            <button type="button" className="icon-btn" title="Emoji" onClick={(e) => setEmoji(anchorOf(e))}><Icon name="smile" size={20} /></button>
+            <textarea ref={ref} rows={1} value={text} onChange={onChange} onKeyDown={onKeyDown} onPaste={onPaste} onBlur={() => setTimeout(() => setMention(null), 150)}
+              placeholder={rec?.error || placeholder || "Bir mesaj yazın"} aria-label="Mesaj" spellCheck />
+          </div>
           {text.trim() || edit
-            ? <button type="button" className="ms-send" title={edit ? "Kaydet" : "Gönder (Enter)"} onClick={submit}><Icon name={edit ? "check" : "send"} size={18} strokeWidth={2.2} /></button>
+            ? <button type="button" className="ms-send is-send" title={edit ? "Kaydet" : "Gönder (Enter)"} onClick={submit}><Icon name={edit ? "check" : "send"} size={18} strokeWidth={2.2} /></button>
             : <button type="button" className="ms-send ms-send--mic" title="Sesli mesaj kaydet" onClick={startRec}><Icon name="mic" size={19} strokeWidth={2} /></button>}
         </div>
       )}
       {emoji && <EmojiPicker anchor={emoji} onClose={() => setEmoji(null)} onPick={insertEmoji} />}
-      {attach && <PointMenu at={attach} onClose={() => setAttach(null)} items={[
-        { label: "Fotoğraf", icon: "image", onClick: () => onFiles("images") },
-        { label: "Belge", icon: "file", onClick: () => onFiles("files") },
-        onPoll && { label: "Anket", icon: "poll", onClick: onPoll },
-        onLocation && { label: "Konum", icon: "map", onClick: onLocation },
-      ]} />}
+      {attach && <AttachSheet items={attachItems} onClose={() => setAttach(false)} onPick={(key) => {
+        setAttach(false);
+        if (key === "images" || key === "files") onFiles(key);
+        else if (key === "poll") onPoll?.();
+        else if (key === "location") onLocation?.();
+        else if (key === "voice") startRec();
+        else onContent?.(key);
+      }} />}
+    </div>
+  );
+}
+
+/** "+" menüsü: WhatsApp gibi renkli ızgara; yönetim için Elitlig içerikleri ayrı bölümde. */
+function AttachSheet({ items, onPick, onClose }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const onDown = (e) => { if (!ref.current?.contains(e.target) && !e.target.closest?.(".ms-plus")) onClose(); };
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    window.addEventListener("mousedown", onDown, true);
+    window.addEventListener("keydown", onKey, true);
+    return () => { window.removeEventListener("mousedown", onDown, true); window.removeEventListener("keydown", onKey, true); };
+  }, [onClose]);
+  const tile = (it, i) => (
+    <button key={it.key} type="button" className={`ms-attach-tile ms-attach-tile--${it.tone}`} data-attach={it.key} style={{ animationDelay: `${i * 22}ms` }} onClick={() => onPick(it.key)} title={it.hint || it.label}>
+      <span className="ms-attach-tile__ic"><Icon name={it.icon} size={20} strokeWidth={2} /></span>
+      <span className="ms-attach-tile__label">{it.label}</span>
+    </button>
+  );
+  const base = items?.base || [];
+  const content = items?.content || [];
+  return (
+    <div className="ms-attach" ref={ref} role="menu" aria-label="Ekle">
+      <div className="ms-attach__grid">{base.map(tile)}</div>
+      {content.length > 0 && (
+        <>
+          <h6 className="ms-attach__h"><Icon name="sparkles" size={12} /> Elitlig içerikleri</h6>
+          <div className="ms-attach__grid ms-attach__grid--content">{content.map((it, i) => tile(it, base.length + i))}</div>
+        </>
+      )}
     </div>
   );
 }

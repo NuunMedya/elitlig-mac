@@ -13,19 +13,24 @@
 // aynı sohbet bölmesinde açılır, yanıt ElitLig Yönetimi adına gider.
 // Talepler ve bildirimler sohbete düşmez (Talepler aracı). Arama kayıtları
 // messages.calls_view ile "Kayıtlar" panelindedir.
+//
+// 2.8 görünüm: solda ikon rayı (Sohbetler, Gruplar, Üye mesajları, Yıldızlı,
+// Arşiv, Kayıtlar, Ayarlar), büyük başlıklı liste, yuvarlak arama ve süzgeç
+// hapları; dar pencerede liste ↔ sohbet ekranları.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Empty, Icon, Kbd, Spinner, useConfirm, useResult, useToast } from "../../components/ui";
+import { Empty, Icon, Kbd, MenuButton, Spinner, useConfirm, useResult, useToast } from "../../components/ui";
 import { get, patch, post, request, useCommand, useDebounced, useResource } from "../../api";
 import { Avatar, C, PointMenu, Ticks, chatApi, pointOf } from "./common";
 import ChatPane from "./ChatPane";
 import { ContactPanel, GroupPanel, MediaPanel, SearchPanel, StarredPanel } from "./InfoPanel";
 import { Lightbox, NewChatPanel, NewGroupPanel, ReportModal } from "./Pickers";
-import { CallsPanel } from "./InboxPanels";
+import { CallsPanel, ChatSettingsPanel } from "./InboxPanels";
 import { A, INBOX_KINDS, KIND_LABELS, filterInbox, inboxCounts, inboxThreads, unreadMerged } from "../../lib/inboxUtils";
 import { applyIncoming, chatCounts, chatPreview, createDraftStore, filterChats, isGroupChat, isUnread, listTime, quoteText, tickStatus, upsertChat } from "../../lib/chatUtils";
 import "./messages.css";
 
-const FILTERS = [["all", "Tümü"], ["unread", "Okunmamış"], ["groups", "Gruplar"], ["starred", "Yıldızlı"], ["archive", "Arşiv"]];
+const PILLS = [["all", "Tümü"], ["unread", "Okunmamış"], ["pinned", "Sabitlenen"], ["groups", "Gruplar"]];
+const TITLES = { inbox: "Üye mesajları", starred: "Yıldızlı mesajlar", archive: "Arşiv" };
 const TYPING_TTL = 6000;
 
 export default function Messages({ arg, auth, go }) {
@@ -266,8 +271,17 @@ export default function Messages({ arg, auth, go }) {
   /* ---------------------------------- liste ---------------------------------- */
   const counts = chatCounts(conversations);
   const iCounts = inboxCounts(inboxList);
-  const filters = access.inbox ? [FILTERS[0], ["inbox", "Üye mesajları"], ...FILTERS.slice(1)] : FILTERS;
-  const chipCount = (k) => (k === "inbox" ? iCounts.unread : k === "unread" ? counts.unread + iCounts.unread : counts[k]);
+  // Hapta yalnız okunmamış sayısı (WhatsApp gibi); diğerleri sade.
+  const chipCount = (k) => (k === "unread" ? counts.unread + iCounts.unread : null);
+  const section = ["inbox", "starred", "archive"].includes(filter) ? filter : filter === "groups" ? "groups" : "chats";
+  const chatsUnread = counts.unread;
+  const rail = [
+    { key: "chats", label: "Sohbetler", icon: "message", badge: chatsUnread, go: "all" },
+    { key: "groups", label: "Gruplar", icon: "users", badge: conversations.filter((c) => !c.archived && isGroupChat(c) && isUnread(c)).length, go: "groups" },
+    access.inbox && { key: "inbox", label: "Üye mesajları", icon: "inbox", badge: iCounts.unread, go: "inbox", tone: "inbox" },
+    { key: "starred", label: "Yıldızlı", icon: "star", go: "starred" },
+    { key: "archive", label: "Arşiv", icon: "archive", go: "archive", dot: counts.archive > 0 && conversations.some((c) => c.archived && isUnread(c)) },
+  ].filter(Boolean);
   function shownChats() {
     if (filter === "starred") return [];
     if (filter === "inbox") return filterInbox(inboxList, { kind: inboxKind, q });
@@ -332,20 +346,29 @@ export default function Messages({ arg, auth, go }) {
   const leftBody = () => {
     if (side === "newChat") return <NewChatPanel onClose={() => setSide(null)} onPick={(p) => openDirect(p.user_id)} onNewGroup={() => setSide("newGroup")} />;
     if (side === "newGroup" || side?.kind === "newGroup") return <NewGroupPanel initial={side?.initial} onClose={() => setSide(null)} onCreate={createGroup} />;
+    if (side === "settings") return <ChatSettingsPanel me={me} link={link} onClose={() => setSide(null)} />;
     if (side === "calls") return <CallsPanel onClose={() => setSide(null)} onOpenChat={(id) => { setSide(null); setFilter("inbox"); setActiveId(id); }} />;
     return (
       <>
         <header className="ms-list__head">
-          <h2>Mesajlar</h2>
+          <h2>{TITLES[section] || (section === "groups" ? "Gruplar" : "Sohbetler")}</h2>
           <span className="spacer" />
-          <button type="button" className="icon-btn" title="Yeni sohbet (⌘N)" onClick={() => setSide("newChat")}><Icon name="pencil" size={17} /></button>
-          <button type="button" className="icon-btn" title="Yeni grup (⇧⌘N)" onClick={() => setSide("newGroup")}><Icon name="users" size={17} /></button>
-          {access.calls && <button type="button" className="icon-btn" title="Kayıtlar — yönetim arama kayıtları" data-act="calls" onClick={() => setSide("calls")}><Icon name="phone" size={17} /></button>}
+          <button type="button" className="ms-round" title="Yeni sohbet (⌘N)" data-act="new" onClick={() => setSide("newChat")}><Icon name="pencil" size={16} /></button>
+          <MenuButton label="Diğer" className="ms-round" items={[
+            { label: "Yeni grup", icon: "users", onClick: () => setSide("newGroup") },
+            access.calls && { label: "Kayıtlar (aramalar)", icon: "phone", onClick: () => setSide("calls") },
+            { label: "Tümünü okundu say", icon: "checks", disabled: !counts.unread, onClick: async () => { for (const c of conversations.filter((x) => !x.archived && isUnread(x))) { /* eslint-disable-next-line no-await-in-loop */ const r = await request({ method: "POST", path: `${C}/conversations/${c.id}/read`, body: {}, queue: false }); if (r.ok) onRead(c.id); } } },
+            "-",
+            { label: "Ayarlar", icon: "sliders", onClick: () => setSide("settings") },
+            { label: "Sitede aç", icon: "external", onClick: openInWeb },
+          ].filter(Boolean)} />
         </header>
         <div className="ms-search"><Icon name="search" size={14} /><input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sohbetlerde ve mesajlarda ara" onKeyDown={(e) => e.key === "Escape" && setQ("")} />{q && <button type="button" className="icon-btn icon-btn--xs" onClick={() => setQ("")}><Icon name="x" size={12} /></button>}</div>
-        <div className="ms-chips">
-          {filters.map(([k, l]) => <button key={k} type="button" data-filter={k} className={`${filter === k ? "is-active" : ""} ${k === "inbox" ? "ms-chip--inbox" : ""}`} onClick={() => setFilter(k)}>{l}{k !== "starred" && chipCount(k) ? <span>{chipCount(k)}</span> : null}</button>)}
-        </div>
+        {(section === "chats" || section === "groups") && (
+          <div className="ms-chips" role="tablist" aria-label="Süzgeç">
+            {PILLS.map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={filter === k} data-filter={k} className={filter === k ? "is-active" : ""} onClick={() => setFilter(k)}>{l}{chipCount(k) ? <span>{chipCount(k)}</span> : null}</button>)}
+          </div>
+        )}
         {filter === "inbox" && (
           <div className="ms-subchips" role="tablist" aria-label="Üye mesajları">
             {INBOX_KINDS.map(([k, l]) => <button key={k} type="button" data-kind={k} className={inboxKind === k ? "is-active" : ""} onClick={() => setInboxKind(k)}>{l}{k === "all" ? (inboxList.length ? <em>{inboxList.length}</em> : null) : iCounts[k] ? <span>{iCounts[k]}</span> : null}</button>)}
@@ -371,6 +394,7 @@ export default function Messages({ arg, auth, go }) {
               </div>
             ) : (
               <>
+                {filter === "all" && counts.archive > 0 && !q && <button type="button" className="ms-archived-link ms-archived-link--top" data-act="archive" onClick={() => setFilter("archive")}><span className="ms-archived-link__ic"><Icon name="archive" size={17} /></span> Arşivlenmiş <span>{counts.archive}</span></button>}
                 {filter === "all" && !q && access.inbox && inboxList.length > 0 && (
                   <button type="button" className="ms-inbox-link" data-act="inbox" onClick={() => setFilter("inbox")}>
                     <span className="ms-av ms-av--inbox"><Icon name="inbox" size={20} /></span>
@@ -397,7 +421,6 @@ export default function Messages({ arg, auth, go }) {
                     ))}
                   </div>
                 )}
-                {filter === "all" && counts.archive > 0 && !q && <button type="button" className="ms-archived-link" onClick={() => setFilter("archive")}><Icon name="archive" size={15} /> Arşivlenmiş <span>{counts.archive}</span></button>}
               </>
             )}
         </div>
@@ -421,12 +444,25 @@ export default function Messages({ arg, auth, go }) {
   };
 
   return (
-    <div className={`ms-view ${panel && active ? "has-panel" : ""}`}>
+    <div className={`ms-view ${panel && active ? "has-panel" : ""} ${active ? "has-chat" : ""}`}>
+      <nav className="ms-rail" aria-label="Mesajlar bölümleri">
+        {rail.map((r) => (
+          <button key={r.key} type="button" className={`ms-rail__btn ${section === r.key && !side ? "is-active" : ""} ${r.tone ? `is-${r.tone}` : ""}`} data-rail={r.key} title={r.label} aria-label={r.label} onClick={() => { setSide(null); setFilter(r.go); setQ(""); }}>
+            <Icon name={r.icon} size={20} strokeWidth={section === r.key ? 2.2 : 1.8} />
+            {r.badge > 0 ? <b>{r.badge > 99 ? "99+" : r.badge}</b> : r.dot ? <i /> : null}
+          </button>
+        ))}
+        <span className="spacer" />
+        {access.calls && <button type="button" className={`ms-rail__btn ${side === "calls" ? "is-active" : ""}`} data-rail="calls" title="Kayıtlar — yönetim arama kayıtları" aria-label="Kayıtlar" onClick={() => setSide(side === "calls" ? null : "calls")}><Icon name="phone" size={19} /></button>}
+        <button type="button" className={`ms-rail__btn ${side === "settings" ? "is-active" : ""}`} data-rail="settings" title="Ayarlar" aria-label="Ayarlar" onClick={() => setSide(side === "settings" ? null : "settings")}><Icon name="sliders" size={19} /></button>
+        <span className="ms-rail__me" title={me.name}><Avatar name={me.name} id={me.id} size={34} /></span>
+      </nav>
       <aside className="ms-list">{leftBody()}</aside>
       {active ? (
         <ChatPane key={`${active._inbox ? "i" : "p"}${active.id}`} conv={active} canReply={access.reply !== false} me={me} conversations={conversations} subscribe={subscribe} typing={typing[active.id]} presence={presence} link={link}
           drafts={{ get: drafts.get, set: (id, d) => { drafts.set(id, d); setDraftTick((x) => x + 1); }, clear: (id) => { drafts.clear(id); setDraftTick((x) => x + 1); } }}
-          actions={actions} panel={panel} setPanel={setPanel} jump={jump} onConsumedJump={() => setJump(null)} onRead={onRead} onConvPatch={patchConv} />
+          actions={actions} panel={panel} setPanel={setPanel} jump={jump} onConsumedJump={() => setJump(null)} onRead={onRead} onConvPatch={patchConv}
+          access={access} go={go} onBack={() => setActiveId(null)} />
       ) : (
         <section className="ms-welcome">
           <div className="ms-welcome__art"><Icon name="message" size={54} strokeWidth={1.4} /></div>

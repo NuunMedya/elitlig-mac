@@ -350,6 +350,7 @@ export function filterChats(list, { filter = "all", q = "" } = {}) {
     if (filter === "archive" ? !c.archived : c.archived) return false;
     if (filter === "unread" && !isUnread(c)) return false;
     if (filter === "groups" && !isGroupChat(c)) return false;
+    if (filter === "pinned" && !c.pinned) return false;
     if (!needle) return true;
     const hay = `${c.title} ${c.subtitle || ""} ${c.other_user?.team_name || ""} ${c.other_user?.username || ""} ${c.last_message?.body || ""}`.toLocaleLowerCase("tr-TR");
     return hay.includes(needle);
@@ -360,6 +361,7 @@ export const chatCounts = (list) => ({
   all: (list || []).filter((c) => !c.archived).length,
   unread: (list || []).filter((c) => !c.archived && isUnread(c)).length,
   groups: (list || []).filter((c) => !c.archived && isGroupChat(c)).length,
+  pinned: (list || []).filter((c) => !c.archived && c.pinned).length,
   archive: (list || []).filter((c) => c.archived).length,
 });
 

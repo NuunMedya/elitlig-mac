@@ -1,9 +1,10 @@
 // Mesaj balonu: metin, fotoğraf (albüm), belge, sesli mesaj, anket, konum,
-// sistem satırı; yanıt alıntısı, iletildi / düzenlendi etiketi, saat + tikler,
+// hazır içerik kartları (günün maçları, ben talibim, haftanın enleri), sistem satırı; yanıt alıntısı, iletildi / düzenlendi etiketi, saat + tikler,
 // tepkiler ve üzerine gelince açılan eylem düğmeleri.
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../../components/ui";
 import { Avatar, Ticks, anchorOf, pointOf } from "./common";
+import { AwardCard, MatchesCard, SignupCard } from "./ContentCards";
 import { clockTime, emojiOnlyCount, formatBytes, formatDuration, mediaUrl, parseRich, pollResults, quoteText, reactionSummary, senderColor, tickStatus } from "../../lib/chatUtils";
 
 const openUrl = (url) => window.elitlig.app.openExternal(url);
@@ -124,7 +125,7 @@ function ImageThumb({ m, onOpen, single = true }) {
 }
 
 /* -------------------------------- balon -------------------------------- */
-function BubbleImpl({ item, conv, meId, participants, selecting, selected, highlighted, onAction }) {
+function BubbleImpl({ item, conv, meId, participants, selecting, selected, highlighted, onAction, caps }) {
   const album = item.type === "album" ? item.messages : null;
   const m = album ? album[album.length - 1] : item.message;
   const mine = Boolean(m.sender?.is_me);
@@ -142,6 +143,7 @@ function BubbleImpl({ item, conv, meId, participants, selecting, selected, highl
   const menu = (e, point) => { e.preventDefault(); e.stopPropagation(); onAction("menu", album || m, point ? pointOf(e) : anchorOf(e)); };
   const showName = isGroup && !mine && item.first;
   const media = !m.deleted && (m.kind === "image" || album);
+  const card = !m.deleted && ["matches", "signup", "award_poll"].includes(m.kind);
 
   const body = () => {
     if (m.deleted) return <span className="ms-deleted"><Icon name="ban" size={13} /> {mine ? "Bu mesajı sildiniz" : "Bu mesaj silindi"}{spacer}</span>;
@@ -167,6 +169,9 @@ function BubbleImpl({ item, conv, meId, participants, selecting, selected, highl
       case "audio": return <AudioPlayer m={m} />;
       case "poll": return <PollCard m={m} meId={meId} onVote={(mm, o) => onAction("vote", mm, o)} onVoters={(mm) => onAction("voters", mm)} />;
       case "location": return <LocationCard m={m} />;
+      case "matches": return <MatchesCard m={m} canCompose={caps?.content} onAction={onAction} />;
+      case "signup": return <SignupCard m={m} meId={meId} canAssign={caps?.assign} onAction={onAction} />;
+      case "award_poll": return <AwardCard m={m} conv={conv} meId={meId} onAction={onAction} />;
       case "call": return <span className="ms-call"><Icon name="phone" size={14} /> {m.body || "Sesli arama"}{spacer}</span>;
       default: return <div className={`ms-text ${big ? `ms-text--emoji ms-text--emoji${big}` : ""}`}><RichText text={m.body} participants={participants} meId={meId} />{!big && spacer}</div>;
     }
@@ -178,7 +183,7 @@ function BubbleImpl({ item, conv, meId, participants, selecting, selected, highl
       {selecting && <span className={`ms-check ${isSelected ? "is-on" : ""}`}>{isSelected && <Icon name="check" size={12} strokeWidth={3} />}</span>}
       {isGroup && !mine && <span className="ms-row__av">{item.last ? <Avatar name={m.sender?.name} id={m.sender?.user_id} url={m.sender?.avatar} size={28} /> : null}</span>}
       <div className="ms-bubble-wrap">
-        <div className={`ms-bubble ${media ? "ms-bubble--media" : ""} ${big ? "ms-bubble--bare" : ""} ${m.kind === "audio" ? "ms-bubble--audio" : ""} ${m.kind === "poll" ? "ms-bubble--poll" : ""} ${m._failed ? "is-failed" : ""}`}>
+        <div className={`ms-bubble ${media ? "ms-bubble--media" : ""} ${big ? "ms-bubble--bare" : ""} ${m.kind === "audio" ? "ms-bubble--audio" : ""} ${m.kind === "poll" ? "ms-bubble--poll" : ""} ${card ? `ms-bubble--card ms-bubble--${m.kind}` : ""} ${m._failed ? "is-failed" : ""}`}>
           {conv._inbox && mine && item.first && <div className="ms-sender ms-sender--mgmt">ElitLig Yönetimi{m._admin ? <span className="ms-sender__tag">{m._admin}</span> : null}</div>}
           {showName && <div className="ms-sender" style={{ color: senderColor(m.sender?.user_id) }}>{m.sender?.name}{m.sender?.is_management ? <span className="ms-sender__tag">Yönetim</span> : null}</div>}
           {m.forwarded && !m.deleted && <div className="ms-fwd"><Icon name="forward" size={12} /> İletildi</div>}

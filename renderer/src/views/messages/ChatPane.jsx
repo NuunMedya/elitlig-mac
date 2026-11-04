@@ -6,6 +6,11 @@
 // açılır; mesajlar /api/admin/chat'ten okunur, yanıt ElitLig Yönetimi adına
 // gider, okundu ortak damgadır. Tepki, yıldız, sabitleme, düzenleme, silme
 // ve iletme bu sohbetlerde yoktur (sunucu yönetim görünümünde desteklemez).
+//
+// Hazır içerikler (2.8, yönetim hesapları): "+" menüsünden ya da grup
+// başlığındaki hızlı eylemden günün maçları kartı, "Ben talibim" görev anketi
+// ve Haftanın Enleri anketi gönderilir; talip ol / görevlendir / kapat ve
+// aday önerisi / koordinasyon pencereleri buradan yönetilir.
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon, MenuButton, Spinner, useConfirm, useToast } from "../../components/ui";
 import { del, get, post, put, request, useCommand } from "../../api";
@@ -18,10 +23,12 @@ import {
   markReadUntil, mergeMessages, newClientId, nextVote, pollResults, quoteText,
 } from "../../lib/chatUtils";
 import { A, KIND_LABELS, asInboxMessage } from "../../lib/inboxUtils";
+import { attachOptions, assignChoices, dutyLabel, toggleVolunteer } from "../../lib/chatContent";
+import { AwardForm, AwardTaskModal, MatchesForm, SignupForm } from "./ContentForms";
 
 const PAGE = 40;
 
-export default function ChatPane({ conv, me, conversations, subscribe, typing, presence, link, drafts, actions, panel, setPanel, jump, onConsumedJump, onRead, onConvPatch, canReply = true }) {
+export default function ChatPane({ conv, me, conversations, subscribe, typing, presence, link, drafts, actions, panel, setPanel, jump, onConsumedJump, onRead, onConvPatch, canReply = true, access = {}, onBack, go }) {
   const toast = useToast();
   const confirm = useConfirm();
   const [messages, setMessages] = useState([]);
@@ -37,6 +44,7 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
   const [drag, setDrag] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const [newBelow, setNewBelow] = useState(0);
+  const [assignMenu, setAssignMenu] = useState(null);
   const listRef = useRef(null);
   const keepScroll = useRef(null);
   const stick = useRef(true);
@@ -53,6 +61,9 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
   const inbox = Boolean(conv._inbox);
   const base = inbox ? A : C;
   const norm = useCallback((list) => (inbox ? (list || []).map(asInboxMessage) : list || []), [inbox]);
+  // Hazır içerik yetkileri: yönetim hesabı (content), görevlendirme (staff.assign), haftanın enleri (todos.assign).
+  const caps = useMemo(() => ({ content: Boolean(access.content) && !inbox, assign: Boolean(access.assign) && !inbox, award: Boolean(access.award) && !inbox }), [access.content, access.assign, access.award, inbox]);
+  const attachItems = useMemo(() => attachOptions({ management: caps.content, inbox, canAward: caps.award }), [caps, inbox]);
 
   const patchMsg = useCallback((key, fn) => setMessages((list) => list.map((m) => ((m.id && m.id === key) || m.client_id === key ? { ...m, ...(typeof fn === "function" ? fn(m) : fn) } : m))), []);
 
@@ -186,7 +197,9 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
       const el = listRef.current?.querySelector(`[data-mid="${id}"]`);
       if (el) {
         stick.current = false;
-        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        // Yalnız mesaj akışı kaydırılır (scrollIntoView üst kapları da kaydırıyordu).
+        const box = listRef.current;
+        box.scrollTo({ top: Math.max(0, el.offsetTop - box.clientHeight / 2 + el.offsetHeight / 2), behavior: "smooth" });
         setHighlight(id);
         setTimeout(() => setHighlight(null), 1800);
         return;
@@ -340,6 +353,36 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
     if (res.ok) setMessages((list) => mergeMessages(list, [res.data.message]));
     else { patchMsg(m.id, { meta: m.meta }); toast(res.offline ? "Oy için bağlantı gerekir." : res.error?.message, { tone: "error" }); }
   };
+  /* ----------------------------- hazır içerikler ----------------------------- */
+  const sendContent = async (type, body) => {
+    const res = await request({ method: "POST", path: `${C}/conversations/${conv.id}/content/${type}`, body, queue: false });
+    if (!res.ok) { toast(res.offline ? "Hazır içerik göndermek için bağlantı gerekir." : res.error?.message || "Gönderilemedi.", { tone: "error" }); return false; }
+    const sent = res.data.message;
+    stick.current = true;
+    setMessages((list) => mergeMessages(list, [sent]));
+    onConvPatch(conv.id, { last_message: sent, last_message_at: sent.created_at, marked_unread: false });
+    toast(type === "award" ? "Haftanın Enleri anketi gönderildi; aday öneri kartları açıldı." : type === "signup" ? "Görev anketi gönderildi." : "Maç programı gönderildi.", { tone: "success" });
+    return true;
+  };
+  const signupCall = async (m, path, body, fallbackError) => {
+    const res = await request({ method: "POST", path: `${C}/conversations/${conv.id}/messages/${m.id}/signup${path}`, body, queue: false });
+    if (res.ok && res.data?.message) setMessages((list) => mergeMessages(list, [res.data.message]));
+    else toast(res.offline ? "Bu işlem için bağlantı gerekir." : res.error?.message || fallbackError, { tone: "error" });
+    return res.ok;
+  };
+  const signupToggle = async (m, { slot_id: slotId, on }) => {
+    const before = m.meta;
+    patchMsg(m.id, { meta: { ...m.meta, signup: toggleVolunteer(m.meta.signup, slotId, me, on) } });
+    if (!(await signupCall(m, "", { slot_id: slotId, on }, "Yapılamadı."))) patchMsg(m.id, { meta: before });
+  };
+  const signupAssign = async (m, slotId, userId, name) => {
+    if (await signupCall(m, "/assign", { slot_id: slotId, user_id: userId }, "Görevlendirilemedi.")) toast(userId ? `${name} görevlendirildi; maç ekibine yazıldı.` : "Görev boşaltıldı.", { tone: "success" });
+  };
+  const signupClose = async (m, closed) => {
+    if (closed && !(await confirm({ title: "Anket kapatılsın mı?", message: "Kapanan ankete yeni talip gelmez. İstediğinizde yeniden açabilirsiniz.", confirmLabel: "Anketi kapat" }))) return;
+    if (await signupCall(m, "/close", { closed }, "Yapılamadı.")) toast(closed ? "Anket kapandı." : "Anket yeniden açıldı.", { tone: "success" });
+  };
+
   const images = useMemo(() => messages.filter((m) => m.kind === "image" && !m.deleted), [messages]);
 
   const onAction = useCallback((type, target, extra) => {
@@ -357,6 +400,11 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
       case "vote": vote(m, extra); break;
       case "voters": setModal({ type: "voters", m }); break;
       case "retry": retry(m); break;
+      case "contentForm": setModal({ type: extra.type, initial: extra }); break;
+      case "signupToggle": signupToggle(m, extra); break;
+      case "signupAssignMenu": setAssignMenu({ at: { rect: extra.rect }, m, row: extra.row }); break;
+      case "signupClose": signupClose(m, extra.closed); break;
+      case "awardTask": setModal({ type: "awardTask", kind: extra.kind, id: extra.id, week: m.meta?.award?.week }); break;
       case "select": setSelecting((s) => { const n = new Set(s || []); const on = list.every((x) => n.has(x.id)); list.forEach((x) => (on ? n.delete(x.id) : x.id && n.add(x.id))); return n; }); break;
       default: break;
     }
@@ -412,6 +460,7 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
       onDragLeave={(e) => { if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget)) setDrag(false); }}
       onDrop={(e) => { e.preventDefault(); setDrag(false); if (!disabledReason) takeFiles(e.dataTransfer.files); }}>
       <header className={`ms-chat__head ${inbox ? "is-inbox" : ""}`}>
+        {onBack && <button type="button" className="icon-btn ms-back" aria-label="Sohbetlere dön" onClick={onBack}><Icon name="chevronLeft" size={20} /></button>}
         {inbox ? (
           <div className="ms-chat__who">
             <Avatar name={conv.title} id={conv.entity?.user_id ?? conv.id} url={conv.avatar || conv.entity?.avatar} size={40} group={conv.kind === "team"} />
@@ -442,6 +491,13 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
           <span className="ms-tooltip-wrap" title={conv.can_call ? "Sesli arama masaüstünde henüz yok — Elitlig mobil uygulamasından ya da sitedeki sohbetten arayabilirsiniz." : "Bu sohbette sesli arama yapılamaz."}>
             <button type="button" className="icon-btn" disabled aria-label="Sesli arama"><Icon name="phone" size={18} /></button>
           </span>
+          {caps.content && isGroup && !disabledReason && (
+            <MenuButton label="Hazır içerik gönder" icon="sparkles" className="ms-quick" items={[
+              { label: "Günün maçlarını gönder", icon: "ball", onClick: () => setModal({ type: "matches" }) },
+              { label: "“Ben talibim” görev anketi", icon: "handshake", onClick: () => setModal({ type: "signup" }) },
+              caps.award && { label: "Haftanın Enleri anketi", icon: "trophy", onClick: () => setModal({ type: "award" }) },
+            ].filter(Boolean)} />
+          )}
           <button type="button" className={`icon-btn ${panel?.kind === "search" ? "is-on" : ""}`} title="Mesajlarda ara (⌘F)" onClick={() => setPanel(panel?.kind === "search" ? null : { kind: "search" })}><Icon name="search" size={18} /></button>
           <MenuButton label="Sohbet menüsü" items={[
             { label: isGroup ? "Grup bilgisi" : "Kişi bilgisi", icon: "info", onClick: () => setPanel({ kind: "info" }) },
@@ -477,7 +533,7 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
           {!hasMore && !loading && <div className="ms-encrypt"><Icon name={inbox ? "inbox" : "lock"} size={12} /> {inbox ? "Üyenin ElitLig Yönetimi sohbeti · yanıtlarınız yönetim adına gider. Talepler ve bildirimler burada değil, Talepler'dedir." : "Mesajlar Elitlig sunucusunda saklanır; yalnız sohbetteki kişiler görür."}</div>}
           {loading && !messages.length ? <div className="ms-skel">{[60, 40, 72, 35, 55].map((w, i) => <span key={i} className={i % 2 ? "is-mine" : ""} style={{ width: `${w}%` }} />)}</div> : items.map((it) => (
             it.type === "day" ? <div key={it.key} className="ms-day"><span>{it.label}</span></div>
-              : <Bubble key={it.key} item={it} conv={conv} meId={meId} participants={participants} selecting={Boolean(selecting)} selected={selecting} highlighted={highlight && (it.message?.id === highlight || it.messages?.some((x) => x.id === highlight))} onAction={onAction} />
+              : <Bubble key={it.key} item={it} conv={conv} meId={meId} participants={participants} selecting={Boolean(selecting)} selected={selecting} highlighted={highlight && (it.message?.id === highlight || it.messages?.some((x) => x.id === highlight))} onAction={onAction} caps={caps} />
           ))}
           {!loading && !messages.length && <div className="ms-system"><span>{isGroup ? "Grupta henüz mesaj yok. İlk mesajı siz yazın." : `${conv.title} ile sohbeti başlatın.`}</span></div>}
         </div>
@@ -502,6 +558,7 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
           onDraft={(text) => drafts.set(conv.id, { text, reply: reply ? { id: reply.id, body: quoteText(reply), sender: reply.sender, kind: reply.kind } : null })}
           reply={reply} edit={edit} onCancel={(what) => { if (what === "editLast") { if (lastMine) setEdit(lastMine); return; } setReply(null); setEdit(null); }}
           onSend={sendText} onSaveEdit={saveEdit} onFiles={onFiles} onPoll={inbox ? null : () => setModal({ type: "poll" })} onLocation={inbox ? null : () => setModal({ type: "location" })} onVoice={sendVoice}
+          attachItems={attachItems} onContent={(key) => setModal({ type: key })}
           placeholder={inbox ? "ElitLig Yönetimi adına yaz…" : undefined} noTyping={inbox} />
       )}
 
@@ -512,6 +569,23 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
           </div>
         ) : null} />
       )}
+      {modal?.type === "matches" && <MatchesForm conv={conv} initial={modal.initial} onClose={() => setModal(null)} onSend={sendContent} />}
+      {modal?.type === "signup" && <SignupForm conv={conv} meId={meId} initial={modal.initial} onClose={() => setModal(null)} onSend={sendContent} />}
+      {modal?.type === "award" && <AwardForm conv={conv} meId={meId} onClose={() => setModal(null)} onSend={sendContent} />}
+      {modal?.type === "awardTask" && <AwardTaskModal kind={modal.kind} id={modal.id} week={modal.week} go={go} onClose={() => setModal(null)} />}
+      {assignMenu && (() => {
+        const choices = assignChoices(assignMenu.row);
+        const slot = assignMenu.row.slot;
+        return (
+          <PointMenu at={assignMenu.at} align="end" onClose={() => setAssignMenu(null)} header={<div className="ms-assign-head"><strong>Görevlendir · {slot.duty_label || dutyLabel(slot.duty)}</strong><small>{slot.match?.home} – {slot.match?.away}{slot.match?.time ? ` · ${slot.match.time}` : ""}</small></div>}
+            items={[
+              ...choices.map((c) => ({ label: c.current ? `${c.name} (görevli)` : c.name, icon: c.current ? "check" : "user", disabled: c.current, onClick: () => signupAssign(assignMenu.m, slot.id, c.user_id, c.name) })),
+              !choices.length && { label: "Henüz talip yok", icon: "info", disabled: true },
+              assignMenu.row.assigned && "-",
+              assignMenu.row.assigned && { label: "Görevi boşalt", icon: "x", danger: true, onClick: () => signupAssign(assignMenu.m, slot.id, null) },
+            ]} />
+        );
+      })()}
       {modal?.type === "attach" && <AttachPreview files={modal.files} onClose={() => setModal(null)} onSend={(caption) => sendFiles(modal.files, caption)} />}
       {modal?.type === "poll" && <PollModal onClose={() => setModal(null)} onSend={(p) => sendRich("poll", { poll: p }, `📊 ${p.question}`)} />}
       {modal?.type === "location" && <LocationModal onClose={() => setModal(null)} onSend={(l) => sendRich("location", { location: l }, `📍 ${l.label || l.address}`)} />}
