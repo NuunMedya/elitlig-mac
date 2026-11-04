@@ -1,59 +1,63 @@
-# Elitlig Araçlar — Mac masaüstü uygulaması
+# Elitlig Araçlar — Mac uygulaması
 
-elitlig.com'daki **Araçlar** bölümünün tamamını Mac'te ayrı bir uygulama olarak açar:
+Elitlig yönetim panelindeki **Araçlar** bölümünün Mac için yazılmış bağımsız uygulaması.
+Siteyi bir pencerede açmaz: kendi arayüzü vardır ve Elitlig sunucusuyla doğrudan konuşur.
+Veriler sitedekiyle aynıdır; uygulamada yapılan her değişiklik sitede, sitede yapılan her değişiklik
+uygulamada görünür.
 
-| Kısayol | Araç |
-| --- | --- |
-| ⌘0 | Araçlar Merkezi (bugünün özeti, önümüzdeki 7 gün, hızlı not) |
-| ⌘1 | Yapılacaklar Listesi (görevler, maç görevleri, pano) |
-| ⌘2 | Ajanda ve Takvim |
-| ⌘3 | Not Defteri |
-| ⌘4 | Ön Muhasebe (gelir-gider, KDV, cari, vade, Excel) |
-| ⌘5 | Tablolar (formüllü hesap tabloları, paylaşım, .xlsx içe/dışa aktarma, yazdırma) |
-| ⌘6 | Rehber (kişi/cari kartları ve siteye kaydolan üyelerin canlı rehberi) |
-| ⌘7 | Hesap Araçları |
-| ⌘8 | Odak Sayacı |
+## Araçlar
 
-Uygulama sitenin canlı Araçlar sayfalarını kullanır; bu yüzden sitedeki **tüm özellikler ve
-araçların bağlı olduğu tüm veriler** (görevler, maç görevleri, ajanda, notlar, muhasebe kayıtları,
-paylaşılan tablolar, üye rehberi…) her zaman güncel haliyle gelir. Sitede yapılan her yenilik
-uygulamaya kendiliğinden yansır; uygulamayı güncellemek gerekmez.
+| Kısayol | Araç | Uygulamada |
+| --- | --- | --- |
+| ⌘1 | **Bugün** | Gecikmiş ve bugünkü işler, önümüzdeki 7 gün, bu ayın gelir-gideri, son notlar, odak istatistiği; tek satırda görev ekleme |
+| ⌘2 | **Yapılacaklar** | Gruplu liste, sürükle-bırak pano, atadıklarım; ayrıntı panelinde aşamalar, etiketler, cevap, son tarih; ekibe görev atama; maç görevleri ve paylaşılan tablo kartları |
+| ⌘3 | **Ajanda** | Ay / hafta / gün / liste; etkinliği sürükleyip başka güne taşıma; tekrar eden etkinlikler; son tarihli görevler takvimde; Mac Takvim'ine `.ics` aktarma |
+| ⌘4 | **Not Defteri** | Yazdıkça kaydedilen notlar, işaretlenebilir listeler, renk, etiket, sabitleme, arşiv; Markdown dışa aktarma |
+| ⌘5 | **Ön Muhasebe** | Dönem seçimi, gelir/gider/net, alacak/borç, KDV dengesi, vadesi geçenler; 12 aylık grafik, cari bakiyeler, kategori dağılımı; Excel, CSV, PDF ve yazdırma |
+| ⌘6 | **Tablolar** | Formüllü hesap tablosu (TOPLA, EĞER, DÜŞEYARA, ETOPLA…), çoklu sayfa, biçimlendirme, sıralama, doldurma, satır/sütun işlemleri; Excel/CSV içe ve dışa aktarma; paylaşım ve eşzamanlı düzenlemede otomatik birleştirme |
+| ⌘7 | **Rehber** | Kişi/cari kartları ve siteye kaydolan üyelerin canlı rehberi; tek tıkla arama, WhatsApp, e-posta; Mac Kişiler'e `.vcf` aktarma |
+| ⌘8 | **Hesap Araçları** | Hesap makinesi (geçmişiyle), KDV, yüzde, iskonto zinciri, masraf bölüştürme, taksit, tarih farkı |
+| ⌘9 | **Odak Sayacı** | Pomodoro, geri sayım, kronometre; maç süresi için hızlı geri sayım |
+
+## Web sitesinde olmayan masaüstü özellikleri
+
+- **Bir kez giriş, 3 ay kullanım.** Oturum 90 gün açık kalır. Oturum bilgisi Mac'in Anahtar Zinciri
+  ile şifrelenir; diskte düz metin olarak durmaz.
+- **İnternet yokken de çalışır.** Son görülen veriler diskte saklanır. Bağlantı yokken eklenen not,
+  görev, etkinlik, muhasebe kaydı ve kişiler kuyruğa alınır; bağlantı gelince sırayla gönderilir.
+- **Her yerden hızlı kayıt: ⌃⌥N.** Hangi uygulamada olursanız olun küçük bir pencere açılır:
+  görev, not, etkinlik ya da gider tek satırda kaydedilir. “yarın 14:00 sahayı ara !” gibi yazılan
+  tarih, saat ve öncelik kendiliğinden anlaşılır.
+- **Mac bildirimleri.** Ajanda hatırlatmaları ve zamanı gelen görevler pencere kapalıyken de bildirim olarak gelir.
+- **Menü çubuğu simgesi.** Çalışan odak sayacının kalan süresi, yaklaşan etkinlikler ve açık iş sayısı.
+- **Dock rozeti.** Bugün ve gecikmiş iş sayısı.
+- **Komut paleti: ⌘K.** Araçlara geçiş, hızlı eylemler ve görev, not, kişi, tablo ve muhasebe kayıtlarında arama.
+- **Dosyalar doğrudan Mac'e.** Excel, CSV, PDF, `.ics`, `.vcf` ve Markdown dışa aktarma; Excel ve CSV açma.
 
 ## Kurulum
 
 1. [Releases](../../releases/latest) sayfasından `Elitlig-Araclar-<sürüm>.dmg` dosyasını indirin.
-2. Dosyaya çift tıklayın, açılan pencerede **Elitlig Araçlar** simgesini **Applications** klasörüne sürükleyin.
-3. İlk açılış (uygulama Apple Developer sertifikasıyla imzalı olmadığı için bir kereye mahsus):
-   Uygulamalar klasöründe **Elitlig Araçlar**'a **sağ tıklayın → Aç → Aç**.
-   macOS 15 (Sequoia) ve sonrasında: önce açmayı deneyin, sonra
-   **Sistem Ayarları → Gizlilik ve Güvenlik → "Yine de Aç"** düğmesine basın.
-4. Yönetim hesabınızla giriş yapın.
+2. Dosyayı açın ve **Elitlig Araçlar**'ı **Applications** klasörüne sürükleyin.
+3. Uygulama Apple Developer sertifikasıyla imzalı olmadığı için macOS ilk açılışta engeller. Bir kez şunu yapın:
 
-Apple Silicon (M1–M4) ve Intel Mac'lerde çalışır (evrensel uygulama), macOS 11 ve üzeri.
+   ```bash
+   xattr -cr "/Applications/Elitlig Araclar.app"
+   ```
 
-## Oturum: bir kez giriş, 3 ay kullanım
+   ya da uygulamayı açmayı deneyip **Sistem Ayarları → Gizlilik ve Güvenlik → Yine de Aç**.
+4. Elitlig yönetim hesabınızla giriş yapın.
 
-Uygulama kendini sunucuya `ElitligDesktop/<sürüm>` imiyle tanıtır; sunucu bu girişlere
-**90 günlük** oturum verir (`elitlig-server` → `routes/User.js`, `DESKTOP_SESSION_DAYS`).
-Oturum çerezi ve yerel veriler uygulamanın kalıcı deposunda saklanır; uygulamayı kapatıp
-açsanız da, Mac'i yeniden başlatsanız da 3 ay boyunca yeniden giriş istenmez.
+Apple Silicon ve Intel Mac'lerde çalışır (evrensel uygulama). macOS 12 ve üzeri gerekir.
 
-Oturum yalnız şu durumlarda kapanır: 90 gün dolunca, menüden **Elitlig Araçlar → Oturumu Kapat**
-seçilince, şifre değiştirildiğinde/sıfırlandığında ya da hesap askıya alındığında.
+## Oturum süresi
 
-> Sunucu tarafındaki 90 günlük oturum `elitlig-server` deposundaki değişiklik yayına alındığında
-> etkinleşir. O zamana kadar uygulama çalışır ama oturum sitedeki gibi 24 saat sürer.
-> Süre Heroku'da `DESKTOP_SESSION_DAYS` ayarıyla değiştirilebilir.
+Uygulama girişte sunucuya `client: "desktop"` ve `X-Client-Platform: desktop` gönderir. Sunucu bu
+girişlere 90 günlük jeton verir (`elitlig-server` → `routes/User.js`, `DESKTOP_SESSION_DAYS`).
+Sunucudaki bu değişiklik yayına alınmadan önce jeton 24 saatliktir; uygulama jetonu süresinin
+yarısı geçince yeniler, yine de 24 saatten uzun kapalı kalırsa yeniden giriş ister.
 
-## Masaüstü özellikleri
-
-- Menü çubuğunda **Araçlar** menüsü ve ⌘0–⌘8 kısayolları; Dock simgesine sağ tıklayınca araç listesi.
-- Site menüsü masaüstünde yalnız Araçlar'ı gösterir (`elitlig-client` → `src/utils/desktopApp.js`).
-- Son açık araç ve pencere boyutu hatırlanır.
-- İnternet koparsa bilgi ekranı çıkar; bağlantı gelince kaldığınız sayfa kendiliğinden açılır.
-- WhatsApp, telefon, e-posta ve dış bağlantılar Mac'in varsayılan uygulamasında açılır.
-- Excel dışa aktarmaları İndirilenler'e kaydedilir; yazdırma, bildirimler, sağ tık kopyala/yapıştır çalışır.
-- Kırmızı düğme pencereyi gizler, uygulama Dock'ta açık kalır (Mac alışkanlığı).
+Oturum şu durumlarda kapanır: 90 gün dolunca, **Elitlig Araçlar → Oturumu Kapat** seçilince,
+şifre değiştirildiğinde ya da hesap askıya alındığında.
 
 ## Geliştirme
 
@@ -65,12 +69,24 @@ npm install
 npm start
 ```
 
-Kurulum dosyası (.dmg) macOS'ta üretilir:
+```bash
+npm test
+```
+
+Yapı:
+
+- `app/`: Electron ana süreci. API istemcisi, çevrimdışı önbellek ve kuyruk (`api.js`), oturum
+  (`session.js`), odak sayacı (`focus.js`), bildirimler (`reminders.js`), pencereler, menüler ve
+  menü çubuğu (`main.js`).
+- `renderer/`: React arayüzü (Vite). `renderer/src/lib/sheets` içindeki formül motoru ve Excel
+  dönüştürücüleri web sitesiyle (`elitlig-client`) aynıdır; testleri `renderer/test` altındadır.
+
+Kurulum dosyasını macOS'ta üretmek için:
 
 ```bash
 npm run dist
 ```
 
-Her push'ta GitHub Actions (`.github/workflows/build-mac.yml`) macOS üzerinde evrensel `.dmg`
-ve `.zip` derler, ad-hoc imzalar ve `package.json` sürümüyle adlanan GitHub Release'e yükler.
-Yeni sürüm için `package.json` içindeki `version` alanını artırmak yeterlidir.
+Her push'ta GitHub Actions (`.github/workflows/build-mac.yml`) macOS'ta testleri çalıştırır, evrensel
+`.dmg` ve `.zip` üretir, ad-hoc imzalar, uygulamanın çökmeden açıldığını denetler ve dosyaları
+`package.json` sürümüyle adlanan GitHub Release'e yükler.

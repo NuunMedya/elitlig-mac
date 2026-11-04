@@ -1,0 +1,103 @@
+// Komut paleti (⌘K): araçlara geçiş, hızlı eylemler ve tüm araçlarda arama
+// (görevler, notlar, kişiler, tablolar, muhasebe kayıtları).
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Icon, Kbd } from "./ui";
+import { get, useDebounced } from "../api";
+import { includesTr, formatMoney, formatDate } from "../lib/helpers";
+
+const ACTIONS = [
+  { label: "Yeni görev", icon: "plus", route: "todos:new", hint: "Yapılacaklar" },
+  { label: "Yeni not", icon: "plus", route: "notes:new", hint: "Not Defteri" },
+  { label: "Yeni etkinlik", icon: "plus", route: "agenda:new", hint: "Ajanda" },
+  { label: "Yeni gelir/gider kaydı", icon: "plus", route: "ledger:new", hint: "Ön Muhasebe" },
+  { label: "Yeni tablo", icon: "plus", route: "sheets:new", hint: "Tablolar" },
+  { label: "Yeni kişi", icon: "plus", route: "contacts:new", hint: "Rehber" },
+  { label: "Odak turunu başlat", icon: "play", run: () => window.elitlig.focus.command("start"), hint: "Odak Sayacı" },
+  { label: "Hızlı kayıt penceresi", icon: "zap", run: () => window.elitlig.quick.show(), hint: "⌃⌥N" },
+];
+
+export default function Palette({ onClose, go, routes }) {
+  const [q, setQ] = useState("");
+  const [index, setIndex] = useState(0);
+  const [content, setContent] = useState([]);
+  const query = useDebounced(q, 150);
+  const inputRef = useRef(null);
+  const sources = useRef(null);
+
+  // İçerik araması için veriler bir kez okunur (bağlantı yoksa önbellekten).
+  useEffect(() => {
+    inputRef.current?.focus();
+    Promise.all([
+      get("/api/todos", { view: "mine", status: "all" }),
+      get("/api/tools/notes", { archived: "all" }),
+      get("/api/tools/contacts"),
+      get("/api/tools/sheets"),
+      get("/api/tools/ledger", {}),
+    ]).then(([todos, notes, contacts, sheets, ledger]) => {
+      sources.current = {
+        todos: todos.ok ? todos.data?.items || [] : [],
+        notes: notes.ok ? notes.data?.items || [] : [],
+        contacts: contacts.ok ? contacts.data?.items || [] : [],
+        sheets: sheets.ok ? sheets.data?.items || [] : [],
+        ledger: ledger.ok ? ledger.data?.items || [] : [],
+      };
+      setContent((c) => [...c]);
+    });
+  }, []);
+
+  useEffect(() => {
+    const s = sources.current;
+    if (!s || query.trim().length < 2) { setContent([]); return; }
+    const out = [];
+    s.todos.filter((t) => includesTr(`${t.title} ${t.body}`, query)).slice(0, 6).forEach((t) => out.push({ label: t.title, icon: "checkSquare", hint: t.status === "done" ? "Tamamlandı" : t.dueAt ? formatDate(t.dueAt) : "Yapılacaklar", route: `todos:${t.id}` }));
+    s.notes.filter((n) => includesTr(`${n.title} ${n.body} ${(n.tags || []).join(" ")} ${(n.checklist || []).map((c) => c.text).join(" ")}`, query)).slice(0, 6).forEach((n) => out.push({ label: n.title || (n.body || "Not").slice(0, 60), icon: "note", hint: "Not", route: `notes:${n.id}` }));
+    s.contacts.filter((c) => includesTr(`${c.name} ${c.company} ${c.phone} ${c.email} ${c.city}`, query)).slice(0, 6).forEach((c) => out.push({ label: c.name, icon: "user", hint: c.phone || c.company || "Kişi", route: `contacts:${c.id}` }));
+    s.sheets.filter((x) => includesTr(x.title, query)).slice(0, 5).forEach((x) => out.push({ label: x.title, icon: "grid", hint: "Tablo", route: `sheets:${x.id}` }));
+    s.ledger.filter((e) => includesTr(`${e.description} ${e.party} ${e.category} ${e.document_no}`, query)).slice(0, 5).forEach((e) => out.push({ label: e.description || e.party || e.category || "Kayıt", icon: "receipt", hint: `${formatDate(e.entry_date)} · ${formatMoney(e.amount)}`, route: `ledger:${e.id}` }));
+    setContent(out);
+  }, [query]);
+
+  const items = useMemo(() => {
+    const nav = routes.map((r) => ({ label: r.label, icon: r.icon, route: r.key, hint: r.shortcut }));
+    const base = [...nav, ...ACTIONS].filter((item) => !q.trim() || includesTr(`${item.label} ${item.hint}`, q));
+    return [...base, ...content];
+  }, [q, content, routes]);
+
+  useEffect(() => setIndex(0), [q]);
+
+  const run = (item) => {
+    if (!item) return;
+    onClose();
+    if (item.run) item.run();
+    else go(item.route);
+  };
+
+  const onKey = (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setIndex((i) => Math.min(items.length - 1, i + 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setIndex((i) => Math.max(0, i - 1)); }
+    else if (e.key === "Enter") { e.preventDefault(); run(items[index]); }
+    else if (e.key === "Escape") onClose();
+  };
+
+  return (
+    <div className="palette-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="palette" role="dialog" aria-label="Komut paleti">
+        <div className="palette__input">
+          <Icon name="search" />
+          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="Araç, komut ya da görev, not, kişi, tablo ara…" aria-label="Ara" />
+          <Kbd>esc</Kbd>
+        </div>
+        <ul className="palette__list" role="listbox">
+          {items.map((item, i) => (
+            <li key={`${item.route || item.label}-${i}`} role="option" aria-selected={i === index} className={i === index ? "is-active" : ""} onMouseEnter={() => setIndex(i)} onMouseDown={(e) => { e.preventDefault(); run(item); }}>
+              <Icon name={item.icon} size={15} />
+              <span className="palette__label">{item.label}</span>
+              <span className="palette__hint">{item.hint}</span>
+            </li>
+          ))}
+          {!items.length && <li className="palette__empty">Sonuç yok</li>}
+        </ul>
+      </div>
+    </div>
+  );
+}

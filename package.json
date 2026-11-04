@@ -1,22 +1,28 @@
 {
   "name": "elitlig-araclar",
   "productName": "Elitlig Araclar",
-  "version": "1.0.1",
-  "description": "Elitlig Araçlar için Mac masaüstü uygulaması: Yapılacaklar, Ajanda, Not Defteri, Ön Muhasebe, Tablolar, Rehber, Hesap Araçları ve Odak Sayacı.",
-  "main": "src/main.js",
+  "version": "2.0.0",
+  "description": "Elitlig Araçlar — Mac için bağımsız masaüstü uygulaması: Yapılacaklar, Ajanda, Not Defteri, Ön Muhasebe, Tablolar, Rehber, Hesap Araçları ve Odak Sayacı.",
+  "main": "app/main.js",
   "author": "Nuun Medya <nuunmedya@gmail.com>",
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
-    "start": "electron .",
-    "test": "node --test test/*.test.js",
-    "dist": "electron-builder --mac dmg zip --universal --publish never",
-    "dist:arm64": "electron-builder --mac dmg zip --arm64 --publish never",
-    "dist:x64": "electron-builder --mac dmg zip --x64 --publish never"
+    "dev": "vite --config renderer/vite.config.mjs",
+    "build": "vite build --config renderer/vite.config.mjs",
+    "start": "npm run build && electron .",
+    "test": "vitest run --config renderer/vite.config.mjs && node --test app/test/*.test.js",
+    "dist": "npm run build && electron-builder --mac dmg zip --universal --publish never"
   },
   "devDependencies": {
+    "@vitejs/plugin-react": "4.3.4",
     "electron": "44.9.2",
-    "electron-builder": "26.18.0"
+    "electron-builder": "26.18.0",
+    "jsdom": "^25.0.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "vite": "6.0.7",
+    "vitest": "2.1.8"
   },
   "build": {
     "appId": "com.elitlig.araclar",
@@ -27,7 +33,9 @@
       "buildResources": "build"
     },
     "files": [
-      "src/**/*",
+      "app/**/*",
+      "!app/test/**",
+      "renderer/dist/**/*",
       "package.json"
     ],
     "mac": {

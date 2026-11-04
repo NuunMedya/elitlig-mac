@@ -1,0 +1,56 @@
+// Arayüze açılan köprü. Arayüz Node'a ve ağa doğrudan erişemez; yalnız bu
+// işlevleri kullanır. Jeton arayüze hiç verilmez.
+"use strict";
+
+const { contextBridge, ipcRenderer } = require("electron");
+
+const on = (channel) => (callback) => {
+  const listener = (_event, payload) => callback(payload);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+};
+
+contextBridge.exposeInMainWorld("elitlig", {
+  platform: process.platform,
+  auth: {
+    state: () => ipcRenderer.invoke("auth:state"),
+    login: (username, password) => ipcRenderer.invoke("auth:login", { username, password }),
+    logout: () => ipcRenderer.invoke("auth:logout"),
+    onChange: on("auth:changed"),
+  },
+  request: (opts) => ipcRenderer.invoke("api:request", opts),
+  onDataChanged: on("data:changed"),
+  sync: {
+    status: () => ipcRenderer.invoke("sync:status"),
+    flush: () => ipcRenderer.invoke("sync:flush"),
+    onStatus: on("sync:status"),
+    onDone: on("sync:done"),
+  },
+  focus: {
+    state: () => ipcRenderer.invoke("focus:state"),
+    command: (name, args) => ipcRenderer.invoke("focus:command", name, args),
+    onState: on("focus:state"),
+  },
+  files: {
+    save: (name, data, filters) => ipcRenderer.invoke("file:save", { name, data, filters }),
+    open: (filters) => ipcRenderer.invoke("file:open", { filters }),
+    reveal: (path) => ipcRenderer.invoke("file:reveal", path),
+  },
+  print: (html, title) => ipcRenderer.invoke("print:html", { html, title }),
+  pdf: (html, title, options = {}) => ipcRenderer.invoke("print:html", { html, title, pdf: options }),
+  app: {
+    info: () => ipcRenderer.invoke("app:info"),
+    openExternal: (url) => ipcRenderer.invoke("app:openExternal", url),
+    openWeb: (pathname) => ipcRenderer.invoke("app:openWeb", pathname),
+    notify: (title, body) => ipcRenderer.invoke("app:notify", { title, body }),
+    showMain: (route) => ipcRenderer.invoke("app:showMain", route),
+  },
+  quick: {
+    hide: () => ipcRenderer.invoke("quick:hide"),
+    show: (kind) => ipcRenderer.invoke("quick:show", kind),
+    onOpen: on("quick:open"),
+  },
+  onNavigate: on("navigate"),
+  onCommand: on("command"),
+  onTheme: on("theme"),
+});
