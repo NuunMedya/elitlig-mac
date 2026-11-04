@@ -39,7 +39,8 @@ jobs:
         run: |
           APP=$(ls -d dist/mac-universal/*.app)
           codesign --verify --deep --strict --verbose=2 "$APP"
-          BIN="$APP/Contents/MacOS/$(defaults read "$PWD/$APP/Contents/Info" CFBundleExecutable)"
+          BIN=$(ls "$APP"/Contents/MacOS/* | head -1)
+          echo "Çalıştırılan: $BIN"
           "$BIN" --enable-logging=stderr > launch.log 2>&1 &
           PID=$!
           sleep 25

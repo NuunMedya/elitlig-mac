@@ -1,7 +1,7 @@
 {
   "name": "elitlig-araclar",
-  "productName": "Elitlig Araçlar",
-  "version": "1.0.0",
+  "productName": "Elitlig Araclar",
+  "version": "1.0.1",
   "description": "Elitlig Araçlar için Mac masaüstü uygulaması: Yapılacaklar, Ajanda, Not Defteri, Ön Muhasebe, Tablolar, Rehber, Hesap Araçları ve Odak Sayacı.",
   "main": "src/main.js",
   "author": "Nuun Medya <nuunmedya@gmail.com>",
@@ -20,7 +20,7 @@
   },
   "build": {
     "appId": "com.elitlig.araclar",
-    "productName": "Elitlig Araçlar",
+    "productName": "Elitlig Araclar",
     "copyright": "© Elitlig",
     "directories": {
       "output": "dist",
@@ -40,7 +40,8 @@
       "artifactName": "Elitlig-Araclar-${version}-${arch}.${ext}",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Elitlig ekip sohbetindeki sesli aramalar için mikrofon kullanılır.",
-        "LSApplicationCategoryType": "public.app-category.productivity"
+        "LSApplicationCategoryType": "public.app-category.productivity",
+        "CFBundleDisplayName": "Elitlig Araçlar"
       }
     },
     "dmg": {
@@ -64,6 +65,7 @@
         "height": 380
       }
     },
-    "afterPack": "build/afterPack.js"
+    "afterPack": "build/afterPack.js",
+    "executableName": "Elitlig Araclar"
   }
 }
