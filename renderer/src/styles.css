@@ -181,6 +181,7 @@ p { margin: 0; }
 .view { position: relative; flex: 1; overflow: auto; padding: 40px 32px 36px; display: flex; flex-direction: column; gap: 18px; min-height: 0; animation: viewIn 0.22s ease-out; }
 @keyframes viewIn { from { opacity: 0; transform: translateY(6px); } }
 .view--narrow { max-width: 820px; }
+.view > *, .split__main > *, .todo-main > *, .acc-section > *, .notes-list > *:not(.notes-list__items) { flex-shrink: 0; }
 .view-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; position: relative; z-index: 1; }
 .view-head__badge { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--tool), var(--tool-2)); box-shadow: 0 10px 24px -8px var(--tool); flex: none; }
 .view-head__text { flex: 1; min-width: 200px; }
@@ -705,7 +706,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--tool); width: 
 .fn-list span { color: var(--muted); font-size: 12px; }
 
 /* Hesap */
-.account-card { flex-direction: row; align-items: center; gap: 18px; }
+.profile-card { flex-direction: row; align-items: center; gap: 18px; }
 
 /* -------------------------------------------------------------------------- */
 /* Hızlı kayıt penceresi                                                       */
@@ -966,3 +967,8 @@ html[data-window="quick"] body { background: transparent; --tool: #7c3aed; --too
 .assign-row { border: 1px solid var(--border); border-radius: 12px; padding: 4px 10px; background: var(--surface); }
 .assign-row__head { width: 100%; border: 0; background: none; display: flex; align-items: center; gap: 10px; padding: 6px 0; text-align: left; }
 .assign-row__head > span:nth-child(2) { display: flex; flex-direction: column; }
+
+.todo-nav__item .todo-nav__dot { flex: none; width: 10px; }
+.quickbar { flex-wrap: wrap; }
+.quickbar > input { min-width: 220px; }
+.contact-row__text { display: flex; flex-direction: column; min-width: 0; flex: 1; }

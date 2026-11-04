@@ -10,12 +10,12 @@ uygulamada görünür.
 | Kısayol | Araç | Uygulamada |
 | --- | --- | --- |
 | ⌘1 | **Bugün** | Gecikmiş ve bugünkü işler, önümüzdeki 7 gün, bu ayın gelir-gideri, son notlar, odak istatistiği; tek satırda görev ekleme |
-| ⌘2 | **Yapılacaklar** | Gruplu liste, sürükle-bırak pano, atadıklarım; ayrıntı panelinde aşamalar, etiketler, cevap, son tarih; ekibe görev atama; maç görevleri ve paylaşılan tablo kartları |
+| ⌘2 | **Yapılacaklar** | Web'deki tüm özellikler: Bugün / Yaklaşan / Tüm işler / Bana atananlar / Atadıklarım / Maç görevleri / Ekip takibi / etiket görünümleri; gruplu liste ve sürükle-bırak pano; maç masası (aşamalar, takım iletişimi, WhatsApp ile kadro talebi, gol müziği, maç görevlileri); Haftanın Enleri aday önerisi ve koordinasyonu (oylar, saha dizilimi, kaydet, yayınla); ekibe görev atama, maç görevlendirme, oyuncu/takım/maç bağlama, geri alma |
 | ⌘3 | **Ajanda** | Ay / hafta / gün / liste; etkinliği sürükleyip başka güne taşıma; tekrar eden etkinlikler; son tarihli görevler takvimde; Mac Takvim'ine `.ics` aktarma |
 | ⌘4 | **Not Defteri** | Yazdıkça kaydedilen notlar, işaretlenebilir listeler, renk, etiket, sabitleme, arşiv; Markdown dışa aktarma |
-| ⌘5 | **Ön Muhasebe** | Dönem seçimi, gelir/gider/net, alacak/borç, KDV dengesi, vadesi geçenler; 12 aylık grafik, cari bakiyeler, kategori dağılımı; Excel, CSV, PDF ve yazdırma |
+| ⌘5 | **Muhasebe** | Dört bölüm: **Hesaplar ve Virman** (kasa/banka/kart hesapları, defterlere bağlı canlı bakiye, hesaplar ve defterler arası virman, ekstre); **Ön Muhasebe** (kişisel gelir-gider, KDV, cari, vade takibi, Excel/CSV/PDF); **Maç Muhasebesi** (il defteri: maç maç gelir/gider kutucukları, genel kayıtlar, raporlar, personel ödemeleri, takım tahsilatları, eksikler, ayarlar); **Türkiye Geneli** (illerden tahakkuk, tahsilat, ek kalem, tutar düzeltme, maç başı ücret tarifeleri) |
 | ⌘6 | **Tablolar** | Formüllü hesap tablosu (TOPLA, EĞER, DÜŞEYARA, ETOPLA…), çoklu sayfa, biçimlendirme, sıralama, doldurma, satır/sütun işlemleri; Excel/CSV içe ve dışa aktarma; paylaşım ve eşzamanlı düzenlemede otomatik birleştirme |
-| ⌘7 | **Rehber** | Kişi/cari kartları ve siteye kaydolan üyelerin canlı rehberi; tek tıkla arama, WhatsApp, e-posta; Mac Kişiler'e `.vcf` aktarma |
+| ⌘7 | **Rehber** | Siteye kaydolan üyeler ve elle eklenen kişiler tek listede; Üye / Oyuncu / Takım başkanı / Yönetim / Manuel / Favoriler; üyeye kişisel not ve favori; arama, WhatsApp, e-posta; `.vcf` ve CSV |
 | ⌘8 | **Hesap Araçları** | Hesap makinesi (geçmişiyle), KDV, yüzde, iskonto zinciri, masraf bölüştürme, taksit, tarih farkı |
 | ⌘9 | **Odak Sayacı** | Pomodoro, geri sayım, kronometre; maç süresi için hızlı geri sayım |
 
@@ -48,6 +48,14 @@ uygulamada görünür.
 4. Elitlig yönetim hesabınızla giriş yapın.
 
 Apple Silicon ve Intel Mac'lerde çalışır (evrensel uygulama). macOS 12 ve üzeri gerekir.
+
+## Hesaplar ve virman
+
+Elitlig'in muhasebe sistemlerinde kasa/banka hesabı kavramı yoktu. `elitlig-server`'a eklenen
+`/api/finance` modülü kişisel, il ve Türkiye geneli kapsamlı hesaplar tanımlar. Bir hesap o defterin
+bir ödeme yöntemine (ör. il defterindeki "Nakit") bağlanırsa ödenmiş kayıtlar bakiyeye kendiliğinden
+yansır. Hesaplar arasında (ör. il kasasından merkez banka hesabına) virman yapılır; virmanlar
+defterlerin gelir/gider toplamlarını bozmaz. Bu özellik sunucudaki değişiklik yayına alınınca çalışır.
 
 ## Oturum süresi
 

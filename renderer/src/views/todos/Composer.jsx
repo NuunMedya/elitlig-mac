@@ -147,7 +147,7 @@ export default function Composer({ catalog, task, initial = {}, onClose, onSaved
   return (
     <Modal title={editing ? "Kartı düzenle" : audience === "team" ? "Ekibe görev ata" : "Yeni iş"} onClose={onClose} width={640} footer={<>
       <button type="button" className="btn" onClick={onClose}>Vazgeç</button>
-      <button type="submit" form="todo-composer" className="btn btn--primary" disabled={busy || !valid}>{busy ? "Kaydediliyor…" : editing ? "Kaydet" : audience === "team" ? `${assignees.length || ""} kişiye ata` : "Ekle"}</button>
+      <button type="submit" form="todo-composer" className="btn btn--primary" disabled={busy || !valid}>{busy ? "Kaydediliyor…" : editing ? "Kaydet" : audience === "team" ? (assignees.length ? `${assignees.length} kişiye ata` : "Kişi seçin") : "Ekle"}</button>
     </>}>
       <form id="todo-composer" className="composer" onSubmit={submit}>
         {canAssign && <Segmented value={audience} onChange={setAudience} options={[{ value: "me", label: "Kendim için", icon: "user" }, { value: "team", label: "Ekibe ata", icon: "team" }]} />}

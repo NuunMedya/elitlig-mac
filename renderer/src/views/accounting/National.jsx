@@ -56,7 +56,7 @@ export default function National({ accounts, onTransfer, onManageAccounts }) {
           <Kpi hero label="Toplam alacak" value={money(t.balance)} hint={`${t.debtorCount} il borçlu`} icon="globe" />
           <Kpi label="Dönem tahakkuku" value={money(t.due)} tone="blue" hint={t.adjustment ? `Düzeltme ${money(t.adjustment, 0)}` : `${t.cityCount} il`} />
           <Kpi label="Dönem tahsilatı" value={money(t.paid)} tone="green" />
-          <Kpi label="Oynanan maç" value={t.matchCount} tone="amber" hint={s.defaultRate ? `Genel ücret ${money(s.defaultRate, 0)}` : null} />
+          <Kpi label="Oynanan maç" value={t.matchCount} tone="amber" hint={s.defaultRate ? `Genel ücret ${money(s.defaultRate.fee, 0)} / maç` : null} />
           <Kpi label="Devreden" value={money(t.opening)} />
         </div>
       )}

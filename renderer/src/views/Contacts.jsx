@@ -166,7 +166,7 @@ export default function Contacts({ arg }) {
                 {list.map((r) => (
                   <button type="button" key={r.key} className={`contact-row ${selected === r.key ? "is-active" : ""}`} onClick={() => setSelected(r.key)}>
                     <span className="avatar">{letterOf(r.name)}</span>
-                    <span>
+                    <span className="contact-row__text">
                       <strong>{r.name} {r.favorite && <Icon name="star" size={11} />}</strong>
                       <small>{r.kind === "member" ? r.categories.map((c) => CAT_LABEL[c] || c).join(" · ") : "Manuel"}{r.sub ? ` · ${r.sub}` : ""}</small>
                     </span>

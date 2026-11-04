@@ -21,7 +21,7 @@ export default function Account({ auth }) {
   return (
     <div className="view view--narrow">
       <ViewHeader icon="user" title="Hesap ve oturum" />
-      <section className="card account-card">
+      <section className="card profile-card">
         <span className="avatar avatar--lg">{(user.fullName || user.username || "?")[0].toLocaleUpperCase("tr-TR")}</span>
         <div>
           <h2>{user.fullName || user.username}</h2>
