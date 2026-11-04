@@ -1,11 +1,13 @@
 // Rehber: siteye kaydolan üyeler (canlı, /contacts/directory) ile elle eklenen
 // kişi/cari kartları (/contacts) tek listede — web'deki Rehber'le aynı.
 // Üyeye eklenen kişisel not ve favori, member_user_id'li kartta saklanır.
+// "Takımlar" sekmesi takım bazlı rehberdir (contacts/Teams.jsx).
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Empty, ErrorNote, Field, Icon, MenuButton, Modal, OfflineNote, Spinner, ViewHeader, useConfirm, useResult } from "../components/ui";
+import { Empty, ErrorNote, Field, Icon, MenuButton, Modal, OfflineNote, Segmented, Spinner, ViewHeader, useConfirm, useResult } from "../components/ui";
 import { del, get, patch, post, request, tempId, useCommand, useDebounced, useResource } from "../api";
 import { formatDate, includesTr, letterOf, prettyPhone, toVCard, waNumber } from "../lib/helpers";
-import { toCsvText } from "../lib/sheets/sheetEngine";
+import { groupByTeam, memberTeam, toCsv as toCsvText } from "../lib/teamUtils";
+import Teams from "./contacts/Teams";
 
 const FILTERS = [
   { key: "all", label: "Tümü", icon: "users" },
@@ -17,7 +19,7 @@ const FILTERS = [
   { key: "favorites", label: "Favoriler", icon: "star" },
 ];
 const CAT_LABEL = { uye: "Üye", oyuncu: "Oyuncu", takim_baskani: "Takım başkanı", yonetim: "Yönetim" };
-const SORTS = [["newest", "En yeni"], ["oldest", "En eski"], ["name", "A → Z"], ["name_desc", "Z → A"]];
+const SORTS = [["newest", "En yeni"], ["oldest", "En eski"], ["name", "A → Z"], ["name_desc", "Z → A"], ["team", "Takıma göre"]];
 const openUrl = (url) => window.elitlig.app.openExternal(url);
 
 function ContactActions({ phone, email }) {
@@ -32,10 +34,19 @@ function ContactActions({ phone, email }) {
   );
 }
 
-const memberRow = (m, card) => ({ key: `m${m.id}`, kind: "member", id: m.id, name: m.name, sub: [m.team?.name || m.player?.team, m.city].filter(Boolean).join(" · "), phone: m.phone, email: m.email, city: m.city, createdAt: m.createdAt, categories: m.categories || [], favorite: Boolean(card?.favorite), card, member: m, isNew: m.isNew });
+const memberRow = (m, card) => ({ key: `m${m.id}`, kind: "member", id: m.id, name: m.name, team: memberTeam(m), sub: [m.city].filter(Boolean).join(" · "), phone: m.phone, email: m.email, city: m.city, createdAt: m.createdAt, categories: m.categories || [], favorite: Boolean(card?.favorite), card, member: m, isNew: m.isNew });
 const manualRow = (c) => ({ key: `c${c.id}`, kind: "manual", id: c.id, name: c.name, sub: [c.company, c.title].filter(Boolean).join(" · ") || prettyPhone(c.phone), phone: c.phone, email: c.email, city: c.city, createdAt: c.createdAt, categories: [], favorite: Boolean(c.favorite), card: c });
 
-export default function Contacts({ arg }) {
+export default function Contacts({ arg, go }) {
+  const [tab, setTab] = useState(() => (arg?.tab === "teams" ? "teams" : arg && typeof arg !== "object" ? "people" : localStorage.getItem("contacts:tab") || "people"));
+  useEffect(() => { try { localStorage.setItem("contacts:tab", tab); } catch { /* yoksay */ } }, [tab]);
+  useEffect(() => { if (arg?.tab) setTab(arg.tab); }, [arg]);
+  const tabs = <Segmented value={tab} onChange={setTab} ariaLabel="Rehber görünümü" options={[{ value: "people", label: "Kişiler", icon: "users" }, { value: "teams", label: "Takımlar", icon: "team" }]} />;
+  if (tab === "teams") return <Teams key={`${arg?.teamId || ""}${arg?.q || ""}`} go={go} tabs={tabs} initialTeam={arg?.teamId} initialQuery={arg?.q} />;
+  return <People arg={typeof arg === "object" ? null : arg} go={go} tabs={tabs} onTeam={(teamId, name) => { setTab("teams"); go("contacts", teamId ? { tab: "teams", teamId } : { tab: "teams", q: name }); }} />;
+}
+
+function People({ arg, go, tabs, onTeam }) {
   const result = useResult();
   const confirm = useConfirm();
   const [filter, setFilter] = useState(() => localStorage.getItem("contacts:filter") || "all");
@@ -65,7 +76,7 @@ export default function Contacts({ arg }) {
   const loadMembers = async (page = 1) => {
     if (!wantsMembers && page === 1 && members.error?.status === 403) return;
     setMembers((s) => ({ ...s, loading: true }));
-    const res = await get("/api/tools/contacts/directory", { q: query || undefined, category: def.category, city: city || undefined, has_phone: onlyPhone ? 1 : undefined, new: onlyNew ? 1 : undefined, sort, page, page_size: 60 });
+    const res = await get("/api/tools/contacts/directory", { q: query || undefined, category: def.category, city: city || undefined, has_phone: onlyPhone ? 1 : undefined, new: onlyNew ? 1 : undefined, sort: sort === "team" ? "name" : sort, page, page_size: sort === "team" ? 200 : 60 });
     setMembers((s) => {
       if (!res.ok) return { ...s, loading: false, error: res.error, items: page === 1 ? [] : s.items };
       const d = res.data;
@@ -90,10 +101,11 @@ export default function Contacts({ arg }) {
     else list = members.items.map((m) => memberRow(m, cardByMember.get(Number(m.id))));
     const byName = (a, b) => a.name.localeCompare(b.name, "tr");
     const byDate = (a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
-    return list.sort(sort === "name" ? byName : sort === "name_desc" ? (a, b) => -byName(a, b) : sort === "oldest" ? (a, b) => -byDate(a, b) : byDate);
+    return list.sort(sort === "name" || sort === "team" ? byName : sort === "name_desc" ? (a, b) => -byName(a, b) : sort === "oldest" ? (a, b) => -byDate(a, b) : byDate);
   }, [manualOnly, members.items, favMembers, cardByMember, filter, q, onlyPhone, onlyNew, city, sort]);
 
   const grouped = useMemo(() => {
+    if (sort === "team") return groupByTeam(rows, (r) => r.team || (r.kind === "manual" ? r.card?.company : null));
     const map = new Map();
     for (const r of rows) {
       const key = sort.startsWith("name") ? letterOf(r.name) : r.createdAt ? new Date(r.createdAt).toLocaleDateString("tr-TR", { month: "long", year: "numeric" }) : "Tarihsiz";
@@ -135,6 +147,7 @@ export default function Contacts({ arg }) {
   return (
     <div className="view">
       <ViewHeader icon="users" title="Rehber" subtitle={members.counts ? `${members.counts.all} kayıtlı üye · ${manualOnly.length} manuel kişi${members.counts.new_week ? ` · son 7 günde ${members.counts.new_week} yeni üye` : ""}` : `${manualOnly.length} kişi`}>
+        {tabs}
         <div className="search-box"><Icon name="search" size={14} /><input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ad, telefon, e-posta, takım…" /></div>
         <MenuButton icon="download" label="Dışa aktar" items={[{ label: "Mac Kişiler'e aktar (.vcf)", onClick: () => exportAll("vcf") }, { label: "Excel / CSV", onClick: () => exportAll("csv") }]} />
         <button type="button" className="btn btn--primary" onClick={() => setEditing({})}><Icon name="plus" /> Kişi ekle</button>
@@ -151,7 +164,7 @@ export default function Contacts({ arg }) {
         <select className="select-sm" value={sort} onChange={(e) => setSort(e.target.value)}>{SORTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
         {members.cities?.length > 0 && <select className="select-sm" value={city} onChange={(e) => setCity(e.target.value)}><option value="">Tüm iller</option>{members.cities.map((c) => <option key={c} value={c}>{c}</option>)}</select>}
         <label className="toggle"><input type="checkbox" checked={onlyPhone} onChange={(e) => setOnlyPhone(e.target.checked)} /> Telefonu olanlar</label>
-        {filter !== "manual" && <label className="toggle"><input type="checkbox" checked={onlyNew} onChange={(e) => setOnlyNew(e.target.checked)} /> Son 7 gün</label>}
+        {filter !== "manual" && <label className="toggle"><input type="checkbox" checked={onlyNew} onChange={(e) => setOnlyNew(e.target.checked)} /> Yeni üyeler (7 gün)</label>}
       </div>
       {members.error?.status === 403 && <div className="notice notice--warn"><Icon name="lock" size={14} /> {members.error.message || "Üye rehberini görmek için “Üyeleri görüntüleme” yetkisi gerekir."} Elle eklediğiniz kişiler aşağıda.</div>}
       {members.error && members.error.status !== 403 && <ErrorNote error={members.error} onRetry={() => loadMembers(1)} />}
@@ -162,12 +175,13 @@ export default function Contacts({ arg }) {
           <div className="contacts__scroll">
             {(manual.loading && !manual.data) || (members.loading && !members.items.length && wantsMembers) ? <Spinner /> : grouped.map(([label, list]) => (
               <section key={label}>
-                <h4 className="letter">{label}</h4>
+                <h4 className={`letter ${sort === "team" ? "letter--team" : ""}`}>{label}{sort === "team" && <span>{list.length}</span>}</h4>
                 {list.map((r) => (
                   <button type="button" key={r.key} className={`contact-row ${selected === r.key ? "is-active" : ""}`} onClick={() => setSelected(r.key)}>
                     <span className="avatar">{letterOf(r.name)}</span>
                     <span className="contact-row__text">
                       <strong>{r.name} {r.favorite && <Icon name="star" size={11} />}</strong>
+                      {r.team && sort !== "team" && <span className="team-badge">{r.team}</span>}
                       <small>{r.kind === "member" ? r.categories.map((c) => CAT_LABEL[c] || c).join(" · ") : "Manuel"}{r.sub ? ` · ${r.sub}` : ""}</small>
                     </span>
                     {r.isNew && <span className="pill pill--blue pill--xs">Yeni</span>}
@@ -180,7 +194,7 @@ export default function Contacts({ arg }) {
           </div>
         </aside>
         <section className="contacts__detail">
-          {current ? <Detail row={current} onFav={() => toggleFav(current)} onEdit={() => setEditing(current.kind === "manual" ? current.card : current.card || { name: current.name, phone: current.phone || "", email: current.email || "", city: current.city || "", member_user_id: current.id })}
+          {current ? <Detail row={current} go={go} onTeam={onTeam} onFav={() => toggleFav(current)} onEdit={() => setEditing(current.kind === "manual" ? current.card : current.card || { name: current.name, phone: current.phone || "", email: current.email || "", city: current.city || "", member_user_id: current.id })}
             onDelete={async () => { if (current.kind === "manual" && await confirm({ title: "Kişiyi sil", message: `${current.name} silinsin mi?`, danger: true, confirmLabel: "Sil" }) && result(await del(`/api/tools/contacts/${current.id}`), "Silindi.")) { setSelected(null); reloadAll(); } }} />
             : <Empty icon="user" title="Bir kişi seçin" text="Arayabilir, WhatsApp'tan yazabilir, not ve favori ekleyebilirsiniz." />}
         </section>
@@ -190,7 +204,7 @@ export default function Contacts({ arg }) {
   );
 }
 
-function Detail({ row, onFav, onEdit, onDelete }) {
+function Detail({ row, go, onTeam, onFav, onEdit, onDelete }) {
   const m = row.member;
   const card = row.card;
   return (
@@ -199,9 +213,11 @@ function Detail({ row, onFav, onEdit, onDelete }) {
         <span className="avatar avatar--xl">{letterOf(row.name)}</span>
         <div>
           <h2>{row.name}</h2>
+          {row.team && <button type="button" className="team-badge team-badge--lg" onClick={() => onTeam(m?.team?.id || null, row.team)} title="Takım kartını aç"><Icon name="team" size={13} /> {row.team} <Icon name="chevronRight" size={12} /></button>}
           <p className="muted">{row.kind === "member" ? `@${m.username} · ${row.categories.map((c) => CAT_LABEL[c] || c).join(", ")}` : [card.title, card.company].filter(Boolean).join(" · ") || "Manuel kişi"}</p>
         </div>
         <div className="row-gap">
+          {row.kind === "member" && <button type="button" className="btn btn--sm btn--primary" onClick={() => go("messages", { userId: row.id })}><Icon name="send" size={13} /> Mesaj gönder</button>}
           <button type="button" className={`icon-btn ${row.favorite ? "is-on" : ""}`} title="Favori" onClick={onFav}><Icon name="star" /></button>
           <button type="button" className="btn btn--sm" onClick={onEdit}>{row.kind === "member" ? (card ? "Notu düzenle" : "Not ekle") : "Düzenle"}</button>
           {row.kind === "manual" && <MenuButton items={[{ label: "vCard olarak kaydet", icon: "download", onClick: () => window.elitlig.files.save(`${row.name}.vcf`, toVCard([card]), [{ name: "vCard", extensions: ["vcf"] }]) }, { label: "Sil", icon: "trash", danger: true, onClick: onDelete }]} />}

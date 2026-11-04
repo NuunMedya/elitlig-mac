@@ -36,6 +36,21 @@ contextBridge.exposeInMainWorld("elitlig", {
     open: (filters) => ipcRenderer.invoke("file:open", { filters }),
     reveal: (path) => ipcRenderer.invoke("file:reveal", path),
   },
+  // Mesajlar: socket ana süreçte; olaylar buradan gelir, ekler buradan yüklenir.
+  chat: {
+    status: () => ipcRenderer.invoke("chat:status"),
+    refresh: () => ipcRenderer.invoke("chat:refresh"),
+    onEvent: on("chat:event"),
+    onStatus: on("chat:status"),
+    onUnread: on("chat:unread"),
+    emit: (name, payload) => ipcRenderer.invoke("chat:emit", { name, payload }),
+    setActive: (conversationId) => ipcRenderer.invoke("chat:active", conversationId || null),
+    pending: () => ipcRenderer.invoke("chat:pending"),
+    upload: (kind, file) => ipcRenderer.invoke("chat:upload", { kind, name: file.name, mime: file.mime, data: file.data }),
+    pick: (options) => ipcRenderer.invoke("chat:pick", options || {}),
+    download: (url, name) => ipcRenderer.invoke("chat:download", { url, name }),
+    openFile: (url, name) => ipcRenderer.invoke("chat:openFile", { url, name }),
+  },
   print: (html, title) => ipcRenderer.invoke("print:html", { html, title }),
   pdf: (html, title, options = {}) => ipcRenderer.invoke("print:html", { html, title, pdf: options }),
   app: {
@@ -43,6 +58,7 @@ contextBridge.exposeInMainWorld("elitlig", {
     openExternal: (url) => ipcRenderer.invoke("app:openExternal", url),
     openWeb: (pathname) => ipcRenderer.invoke("app:openWeb", pathname),
     notify: (title, body) => ipcRenderer.invoke("app:notify", { title, body }),
+    focused: () => ipcRenderer.invoke("app:focused"),
     showMain: (route) => ipcRenderer.invoke("app:showMain", route),
   },
   quick: {

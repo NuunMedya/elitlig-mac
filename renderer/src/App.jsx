@@ -8,6 +8,7 @@ import { formatClock } from "./lib/helpers";
 import logo from "./assets/logo-white.png";
 
 const Today = lazy(() => import("./views/Today"));
+const Messages = lazy(() => import("./views/messages/Messages"));
 const Todos = lazy(() => import("./views/todos/Todos"));
 const Agenda = lazy(() => import("./views/Agenda"));
 const Notes = lazy(() => import("./views/Notes"));
@@ -22,6 +23,7 @@ const Account = lazy(() => import("./views/Account"));
 
 export const ROUTES = [
   { key: "today", label: "Bugün", icon: "sun", view: Today, shortcut: "⌘1", group: "Günlük" },
+  { key: "messages", label: "Mesajlar", icon: "message", view: Messages, shortcut: "⇧⌘M", group: "Günlük" },
   { key: "todos", label: "Yapılacaklar", icon: "checkSquare", view: Todos, shortcut: "⌘2", group: "Günlük" },
   { key: "agenda", label: "Ajanda", icon: "calendar", view: Agenda, shortcut: "⌘3", group: "Günlük" },
   { key: "notes", label: "Not Defteri", icon: "note", view: Notes, shortcut: "⌘4", group: "Günlük" },
@@ -65,6 +67,7 @@ function Shell({ auth }) {
   const [collapsed, setCollapsed] = useState(false);
   const [sync, setSync] = useState({ online: true, pending: 0 });
   const [focusState, setFocusState] = useState(null);
+  const [chatUnread, setChatUnread] = useState(0);
   const summary = useResource("/api/todos/summary");
   useEffect(() => {
     const refresh = () => summary.reload({ quiet: true });
@@ -97,6 +100,11 @@ function Shell({ auth }) {
     });
     return () => { offStatus(); offDone(); };
   }, [toast]);
+  // Mesajlar: okunmamış sayısı ana süreçteki sohbet bağlantısından gelir.
+  useEffect(() => {
+    window.elitlig.chat.status().then((st) => setChatUnread(st.unread || 0));
+    return window.elitlig.chat.onUnread((n) => setChatUnread(n || 0));
+  }, []);
   useEffect(() => {
     window.elitlig.focus.state().then(setFocusState);
     return window.elitlig.focus.onState(setFocusState);
@@ -112,7 +120,7 @@ function Shell({ auth }) {
   const current = ROUTES.find((r) => r.key === route);
   const View = route === "account" ? Account : current?.view || Today;
   const s = summary.data;
-  const badges = { todos: s ? (s.overdue || 0) + (s.today || 0) || null : null };
+  const badges = { todos: s ? (s.overdue || 0) + (s.today || 0) || null : null, messages: chatUnread ? (chatUnread > 99 ? "99+" : chatUnread) : null };
   const name = auth.user?.fullName || auth.user?.username || "";
 
   const syncLabel = !sync.online ? "Çevrimdışı" : sync.pending ? `${sync.pending} değişiklik bekliyor` : "Eşitlendi";
@@ -133,7 +141,7 @@ function Shell({ auth }) {
                 <span className="nav-item__icon"><Icon name={r.icon} size={15} strokeWidth={2} /></span>
                 <span className="nav-item__label">{r.label}</span>
                 {r.key === "focus" && focusState?.running && <span className="nav-item__timer">{formatClock(focusState.mode === "stopwatch" ? focusState.elapsedMs : focusState.remainingMs)}</span>}
-                {badges[r.key] ? <span className={`nav-item__badge ${s?.overdue ? "is-alert" : ""}`}>{badges[r.key]}</span> : null}
+                {badges[r.key] ? <span className={`nav-item__badge ${r.key === "messages" ? "is-chat" : s?.overdue ? "is-alert" : ""}`}>{badges[r.key]}</span> : null}
               </button>
             </React.Fragment>
           ))}
@@ -162,7 +170,12 @@ function Shell({ auth }) {
 
 function ShortcutsHelp({ onClose }) {
   const rows = useMemo(() => [
-    ["⌘K", "Komut paleti ve arama"],
+    ["⌘K", "Komut paleti ve arama (sohbetler, kişiler dahil)"],
+    ["⇧⌘M", "Mesajlar"],
+    ["Mesajlar: ⌘N / ⇧⌘N", "Yeni sohbet / yeni grup"],
+    ["Mesajlar: ⌘F", "Sohbette ara"],
+    ["Mesajlar: ⌥⌘↓ / ⌥⌘↑", "Sonraki / önceki sohbet"],
+    ["Mesajlar: Enter / ⇧Enter", "Gönder / yeni satır; ↑ son mesajı düzenler"],
     ["⌃⌥N", "Her yerden hızlı kayıt (uygulama arka plandayken de)"],
     ["⌘N", "Açık araçta yeni kayıt"],
     ["⌘1 … ⌘9", "Araçlar arasında geçiş"],

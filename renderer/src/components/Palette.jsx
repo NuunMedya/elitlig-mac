@@ -1,11 +1,14 @@
 // Komut paleti (⌘K): araçlara geçiş, hızlı eylemler ve tüm araçlarda arama
-// (görevler, notlar, kişiler, tablolar, muhasebe kayıtları).
+// (görevler, notlar, kişiler, tablolar, muhasebe kayıtları, sohbetler ve
+// mesaj gönderilebilecek kişiler).
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Icon, Kbd } from "./ui";
 import { get, useDebounced } from "../api";
 import { includesTr, formatMoney, formatDate } from "../lib/helpers";
 
 const ACTIONS = [
+  { label: "Yeni sohbet", icon: "message", route: "messages:new", hint: "Mesajlar · ⌘N" },
+  { label: "Yeni grup", icon: "users", route: "messages:newGroup", hint: "Mesajlar · ⇧⌘N" },
   { label: "Yeni görev", icon: "plus", route: "todos:new", hint: "Yapılacaklar" },
   { label: "Yeni not", icon: "plus", route: "notes:new", hint: "Not Defteri" },
   { label: "Yeni etkinlik", icon: "plus", route: "agenda:new", hint: "Ajanda" },
@@ -38,7 +41,9 @@ export default function Palette({ onClose, go, routes }) {
       get("/api/tools/ledger", {}),
       get("/api/tools/projects", { archived: "all" }),
       get("/api/tools/projects/followups", { days: 30 }),
-    ]).then(([todos, notes, contacts, sheets, ledger, projects, follow]) => {
+      get("/api/chat/conversations"),
+      get("/api/chat/directory"),
+    ]).then(([todos, notes, contacts, sheets, ledger, projects, follow, chats, people]) => {
       sources.current = {
         todos: todos.ok ? todos.data?.items || [] : [],
         notes: notes.ok ? notes.data?.items || [] : [],
@@ -47,6 +52,8 @@ export default function Palette({ onClose, go, routes }) {
         ledger: ledger.ok ? ledger.data?.items || [] : [],
         projects: projects.ok ? projects.data?.items || [] : [],
         leads: follow.ok ? follow.data?.leads || [] : [],
+        chats: chats.ok ? chats.data?.conversations || [] : [],
+        people: people.ok ? [...(people.data?.staff || []), ...(people.data?.managers || []), ...(people.data?.players || [])] : [],
       };
       setContent((c) => [...c]);
     });
@@ -56,6 +63,17 @@ export default function Palette({ onClose, go, routes }) {
     const s = sources.current;
     if (!s || query.trim().length < 2) { setContent([]); return; }
     const out = [];
+    const chatUsers = new Set();
+    s.chats.filter((c) => includesTr(`${c.title} ${c.subtitle} ${c.other_user?.team_name || ""}`, query)).slice(0, 6).forEach((c) => {
+      if (c.other_user?.user_id) chatUsers.add(Number(c.other_user.user_id));
+      out.push({ label: c.title, icon: "message", hint: `Sohbet${c.unread ? ` · ${c.unread} okunmamış` : ""}${c.other_user?.team_name && c.other_user.team_name !== c.title ? ` · ${c.other_user.team_name}` : ""}`, route: "messages", arg: { conversationId: c.id } });
+    });
+    const seenPeople = new Set();
+    s.people.filter((p) => !chatUsers.has(Number(p.user_id)) && includesTr(`${p.name} ${p.team_name || ""} ${p.username || ""}`, query)).forEach((p) => {
+      if (seenPeople.has(p.user_id) || seenPeople.size >= 6) return;
+      seenPeople.add(p.user_id);
+      out.push({ label: p.name, icon: "user", hint: `Mesaj gönder · ${p.team_name && p.team_name !== p.name ? p.team_name : p.subtitle || ""}`, route: "messages", arg: { userId: p.user_id } });
+    });
     s.todos.filter((t) => includesTr(`${t.title} ${t.body}`, query)).slice(0, 6).forEach((t) => out.push({ label: t.title, icon: "checkSquare", hint: t.status === "done" ? "Tamamlandı" : t.dueAt ? formatDate(t.dueAt) : "Yapılacaklar", route: `todos:${t.id}` }));
     s.notes.filter((n) => includesTr(`${n.title} ${n.body} ${(n.tags || []).join(" ")} ${(n.checklist || []).map((c) => c.text).join(" ")}`, query)).slice(0, 6).forEach((n) => out.push({ label: n.title || (n.body || "Not").slice(0, 60), icon: "note", hint: "Not", route: `notes:${n.id}` }));
     s.contacts.filter((c) => includesTr(`${c.name} ${c.company} ${c.phone} ${c.email} ${c.city}`, query)).slice(0, 6).forEach((c) => out.push({ label: c.name, icon: "user", hint: c.phone || c.company || "Kişi", route: `contacts:${c.id}` }));
@@ -93,7 +111,7 @@ export default function Palette({ onClose, go, routes }) {
       <div className="palette" role="dialog" aria-label="Komut paleti">
         <div className="palette__input">
           <Icon name="search" />
-          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="Araç, komut ya da görev, not, kişi, proje, tablo ara…" aria-label="Ara" />
+          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="Araç, komut ya da sohbet, kişi, görev, not, proje, tablo ara…" aria-label="Ara" />
           <Kbd>esc</Kbd>
         </div>
         <ul className="palette__list" role="listbox">

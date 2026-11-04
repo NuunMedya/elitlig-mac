@@ -9,6 +9,7 @@ uygulamada görünür.
 
 | Kısayol | Araç | Uygulamada |
 | --- | --- | --- |
+| ⇧⌘M | **Mesajlar** | WhatsApp düzeninde ekip mesajlaşması: takım başkanları, oyuncular, üyeler ve yönetimdeki arkadaşlarla birebir sohbet ya da karışık gruplar; okundu tikleri, yanıtla, tepki, ilet, yıldızla, sabitle, düzenle, sil; fotoğraf (albüm ve görüntüleyici), belge, sesli mesaj, anket, konum; @bahsetme, taslaklar, sohbette ve tüm sohbetlerde arama; grup ve kişi bilgisi, medya-belgeler-bağlantılar; canlı bağlantı, yazıyor…, çevrimiçi / son görülme; yeni mesajda Mac bildirimi; çevrimdışı yazılan metin bağlantı gelince gider |
 | ⌘1 | **Bugün** | Gecikmiş ve bugünkü işler, önümüzdeki 7 gün, bu ayın gelir-gideri, son notlar, odak istatistiği; tek satırda görev ekleme |
 | ⌘2 | **Yapılacaklar** | Web'deki tüm özellikler: Bugün / Yaklaşan / Tüm işler / Bana atananlar / Atadıklarım / Maç görevleri / Ekip takibi / etiket görünümleri; gruplu liste ve sürükle-bırak pano; maç masası (aşamalar, takım iletişimi, WhatsApp ile kadro talebi, gol müziği, maç görevlileri); Haftanın Enleri aday önerisi ve koordinasyonu (oylar, saha dizilimi, kaydet, yayınla); ekibe görev atama, maç görevlendirme, oyuncu/takım/maç bağlama, geri alma |
 | ⌘3 | **Ajanda** | Ay / hafta / gün / liste; etkinliği sürükleyip başka güne taşıma; tekrar eden etkinlikler; son tarihli görevler takvimde; Mac Takvim'ine `.ics` aktarma |
@@ -17,7 +18,7 @@ uygulamada görünür.
 | ⇧⌘0 | **Saha ve maç planlama** | Sitedeki Saha ve Maç Planlama (çağrı merkezi) masaüstünde: **Talepler** (uygulamadan, telefonla, saat havuzundan ve geri aramalardan gelen bütün talepler tek listede; kaynak, gün / saat / saha, uygunluk, son görüşme), talep ayrıntısı (mini hafta tablosu, maç kurma, görüşme etiketi ve notu sonradan düzenlenir), **Program** (saha başına hafta panosu, tüm sahalar tek gün, saat paneli), **Takımlar** (il, en çok oynadığı sezon, toplam maç; takım kartı), **Kayıtlar** |
 | ⌘5 | **Muhasebe** | Dört bölüm: **Hesaplar ve Virman** (kasa/banka/kart ve ortak/proje hesapları, hesaba doğrudan gelir/gider — tahmin, bekliyor, ödendi —, defterlere bağlı canlı bakiye, **hesap bazlı yetki** (kullanıcı, rol ya da proje ekibi: görüntüler / kayıt girer / yönetir), hesaplar ve defterler arası virman, ekstre); **Ön Muhasebe** (kişisel gelir-gider, kayıt girerken hesap seçimi, KDV, cari, vade takibi, Excel/CSV/PDF); **Maç Muhasebesi** (il defteri: maç maç gelir/gider kutucukları, genel kayıtlar, raporlar, personel ödemeleri, takım tahsilatları, eksikler, ayarlar); **Türkiye Geneli** (illerden tahakkuk, tahsilat, ek kalem, tutar düzeltme, maç başı ücret tarifeleri) |
 | ⌘6 | **Tablolar** | Formüllü hesap tablosu (TOPLA, EĞER, DÜŞEYARA, ETOPLA…), çoklu sayfa, biçimlendirme, sıralama, doldurma, satır/sütun işlemleri; Excel/CSV içe ve dışa aktarma; paylaşım ve eşzamanlı düzenlemede otomatik birleştirme |
-| ⌘7 | **Rehber** | Siteye kaydolan üyeler ve elle eklenen kişiler tek listede; Üye / Oyuncu / Takım başkanı / Yönetim / Manuel / Favoriler; üyeye kişisel not ve favori; arama, WhatsApp, e-posta; `.vcf` ve CSV |
+| ⌘7 | **Rehber** | **Takımlar**: takım adı öne çıkan takım rehberi (il, lig, sezon, G-B-M, maç sayısı, başkanlar, hesaplı oyuncu / kadro, iletişimi olanlar; il, arama, sıralama), takım kartı (başkanlar, kadro, sezonlar, son ve gelecek maçlar; ara, WhatsApp, e-posta, Mesajlar'da yaz, rehberime ekle, takımla grup kur, takımı `.vcf` / CSV, telefonları kopyala). **Kişiler**: siteye kaydolan üyeler ve elle eklenen kişiler tek listede, takım rozeti ve takıma göre gruplama; Üye / Oyuncu / Takım başkanı / Yönetim / Manuel / Favoriler; üyeye kişisel not ve favori; arama, WhatsApp, e-posta, Mesaj gönder; `.vcf` ve CSV |
 | ⌘8 | **Hesap Araçları** | Hesap makinesi (geçmişiyle), KDV, yüzde, iskonto zinciri, masraf bölüştürme, taksit, tarih farkı |
 | ⌘9 | **Odak Sayacı** | Pomodoro, geri sayım, kronometre; maç süresi için hızlı geri sayım |
 
@@ -32,8 +33,10 @@ uygulamada görünür.
   tarih, saat ve öncelik kendiliğinden anlaşılır.
 - **Mac bildirimleri.** Ajanda hatırlatmaları ve zamanı gelen görevler pencere kapalıyken de bildirim olarak gelir.
 - **Menü çubuğu simgesi.** Çalışan odak sayacının kalan süresi, yaklaşan etkinlikler ve açık iş sayısı.
-- **Dock rozeti.** Bugün ve gecikmiş iş sayısı.
-- **Komut paleti: ⌘K.** Araçlara geçiş, hızlı eylemler ve görev, not, kişi, proje, aranacak kişi, tablo ve muhasebe kayıtlarında arama.
+- **Dock rozeti.** Bugün ve gecikmiş iş sayısı ile okunmamış mesajlar.
+- **Mesaj bildirimleri.** Pencere arka plandayken gelen mesaj Mac bildirimi olarak gelir; tıklayınca
+  sohbet açılır. Sessize alınan sohbetler bildirim göndermez. Menü çubuğu menüsünde okunmamış mesaj sayısı.
+- **Komut paleti: ⌘K.** Araçlara geçiş, hızlı eylemler (yeni sohbet, yeni grup…) ve sohbet, mesaj gönderilecek kişi, görev, not, kişi, proje, aranacak kişi, tablo ve muhasebe kayıtlarında arama.
 - **Dosyalar doğrudan Mac'e.** Excel, CSV, PDF, `.ics`, `.vcf` ve Markdown dışa aktarma; Excel ve CSV açma.
 
 ## Kurulum
@@ -110,6 +113,53 @@ ile aynıdır (`/api/tools/projects`).
   araması ekranda hemen güncellenir); bütçe kalemi ekleme ve “Ödendi” yapma da kuyruğa alınır.
   Proje, aşama, adım ve kişi oluşturma ya da silme, görüşme kapanışı ve rehberden aktarma bağlantı
   ister ve açık bir uyarı verir.
+
+## Mesajlar
+
+Sitedeki ve mobil uygulamadaki sohbetle aynı veridir (`/api/chat/*`). Yönetim hesabı ekip
+arkadaşlarıyla (yönetim), takım başkanlarıyla, oyuncularla ve üyelerle birebir yazışır, bunları
+karıştırarak grup kurar; üyeler yönetimin başlattığı sohbete yanıt verir.
+
+- **Düzen.** Solda sohbet listesi (arama — sohbetlerde ve mesajlarda —, Tümü / Okunmamış / Gruplar /
+  Yıldızlı / Arşiv; sabitlenenler üstte, son mesaj, gönderen, ✓ / ✓✓ / mavi ✓✓, saat, okunmamış rozeti,
+  “okunmadı” noktası, sessiz simgesi, taslak, yazıyor…, çevrimiçi noktası, takım rozeti); ortada sohbet
+  (gün ayraçları, gönderen adı renkli balonlar, yanıt alıntısı — tıklayınca asıl mesaja gider —,
+  iletildi / düzenlendi etiketi, tepkiler, fotoğraf albümü, belge, sesli mesaj, anket, konum, sistem
+  satırları, silinen mesaj); sağda kişi / grup bilgisi, medya-belgeler-bağlantılar, yıldızlılar, arama.
+- **Mesaj eylemleri** (üzerine gelince ⌄ ya da sağ tık): tepki (👍❤️😂😮😢🙏), yanıtla, kopyala, ilet
+  (çoklu seçim, en çok 5 sohbete), yıldızla, sabitle, düzenle (kendi metin mesajı, 15 dk), bilgi
+  (kimler okudu), herkesten sil.
+- **Yazma alanı.** Emoji, ek menüsü (fotoğraf, belge, anket, konum), sesli mesaj kaydı, yanıt ve
+  düzenleme çubuğu, grupta @bahsetme önerisi, Enter gönderir / ⇧Enter yeni satır, ↑ son mesajı
+  düzenler; sohbet başına taslak; görsel yapıştırma ve sürükle-bırak (en çok 25 MB).
+- **Yeni sohbet / yeni grup.** Rehber bölümleri: Yönetim, Takım başkanları, Oyuncular, Üyeler
+  (aramayla); her kişide takım adı öne çıkar. Grupta ad, fotoğraf, açıklama, “yalnız yöneticiler
+  yazar / düzenler”. Rehber → Takımlar'daki **Takımla grup kur** başkanlar ve hesaplı oyuncularla grubu
+  hazırlar.
+- **Grup bilgisi.** Fotoğraf, ad, açıklama, ayarlar, üyeler (grup yöneticisi rozeti), üye ekle /
+  çıkar, yönetici yap, gruptan çık. **Kişi bilgisi:** takım, rol, telefon ve e-posta (üye rehberi
+  yetkisiyle), ara, WhatsApp, e-posta, ortak gruplar, sessize al, engelle, şikayet et.
+- **Canlı bağlantı ana süreçte.** Socket.IO bağlantısı uygulamanın ana sürecinde açılır (jeton
+  arayüze verilmez), kopunca kendiliğinden artan aralıklarla yeniden bağlanır. Bağlantı yokken
+  sohbet listesi 15 sn'de, açık sohbet 6 sn'de bir yenilenir; yeni mesaj bildirimi bu yoklamayla da
+  gelir. Ekler ana süreçten yüklenir; sohbet medyası diskte önbelleklenir ve çevrimdışı da açılır.
+- **Çevrimdışı.** Sohbetler ve son mesajlar önbellekten okunur. Bağlantı yokken yazılan metin mesajı
+  saat simgesiyle kuyruğa alınır ve bağlantı gelince gönderilir (sunucu `client_id` ile çift kaydı
+  önler); tepki, dosya, anket, grup işlemleri bağlantı ister.
+- **Kısayollar.** ⇧⌘M Mesajlar, ⌘N yeni sohbet, ⇧⌘N yeni grup, ⌘F sohbette ara, ⌥⌘↓ / ⌥⌘↑ sonraki /
+  önceki sohbet, Esc paneli kapatır.
+- **Sesli arama** masaüstünde henüz yok (düğme kapalı); aramalar mobil uygulamadan ya da siteden yapılır.
+
+## Rehber: Takımlar
+
+Takım adı öne çıkan takım rehberi (`/api/tools/contacts/teams`): logo, il, lig ve sezon, G-B-M,
+toplam maç, başkanlar (tek tıkla ara / WhatsApp / Mesajlar), iletişimi olan kişi, hesaplı oyuncu / kadro
+sayısı; il çipleri, son bakılan takımlar, il / arama / sıralama (ad, il, üye sayısı, maç sayısı, en
+yeni) ve “iletişimi olanlar” süzgeci. Takım kartında başkanlar, kadro (hesabı olanlar iletişim
+düğmeleriyle, olmayanlar “hesabı yok”), sezonlar, son ve gelecek maçlar; takımı `.vcf` / CSV dışa
+aktarma, telefonları kopyalama, her kişi için WhatsApp, **Takımla grup kur**. Kişiler sekmesinde
+oyuncu ve başkanların takımı rozetle görünür, rozet takım kartını açar; “Takıma göre” sıralama
+listeyi takım takım gruplar.
 
 ## Saha ve maç planlama
 
@@ -215,8 +265,8 @@ npm test
 Yapı:
 
 - `app/`: Electron ana süreci. API istemcisi, çevrimdışı önbellek ve kuyruk (`api.js`), oturum
-  (`session.js`), odak sayacı (`focus.js`), bildirimler (`reminders.js`), pencereler, menüler ve
-  menü çubuğu (`main.js`).
+  (`session.js`), odak sayacı (`focus.js`), bildirimler (`reminders.js`), Mesajlar'ın canlı
+  bağlantısı (`chat.js`, socket.io-client), pencereler, menüler ve menü çubuğu (`main.js`).
 - `renderer/`: React arayüzü (Vite). `renderer/src/lib/sheets` içindeki formül motoru ve Excel
   dönüştürücüleri web sitesiyle (`elitlig-client`) aynıdır; testleri `renderer/test` altındadır.
 

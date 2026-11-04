@@ -10,6 +10,7 @@
 //     yapma) kuyruğa alınır ve bağlantı gelince sırayla gönderilir.
 //     Çevrimdışı oluşturulan kaydın geçici kimliği ("tmp_…") gönderim sırasında
 //     sunucunun verdiği gerçek kimlikle değiştirilir.
+//   - Mesajlar: çevrimdışı yazılan metin mesajı kuyruğa alınır (client_id ile).
 "use strict";
 
 const fs = require("node:fs");
@@ -34,8 +35,16 @@ const PROJECT_QUEUEABLE = /^\/api\/tools\/projects\/\d+\/(activities|questions(\
 // hesap / virman / yetki değişikliği, görüşme kapanışı ve rehberden aktarma
 // bağlantı ister.
 const FINANCE_QUEUEABLE = /^\/api\/(finance\/entries|tools\/projects\/\d+\/finance)(\/[\w-]+)?$/;
-const isQueueable = (method, pathname) => QUEUEABLE.test(pathname)
-  || ((method === "POST" || method === "PATCH") && (PROJECT_QUEUEABLE.test(pathname) || FINANCE_QUEUEABLE.test(pathname)));
+// Mesajlar: bağlantı yokken yazılan METİN mesajı kuyruğa alınır ve saat
+// simgesiyle gösterilir. Sunucu client_id ile çift kaydı önlediğinden yeniden
+// gönderim güvenlidir. Diğer sohbet yazmaları (tepki, düzenleme, dosya, grup
+// işlemleri) bağlantı ister.
+const CHAT_QUEUEABLE = /^\/api\/chat\/conversations\/\d+\/messages$/;
+const isChatQueueable = (method, pathname, body) => method === "POST" && CHAT_QUEUEABLE.test(pathname)
+  && (!body?.kind || body.kind === "text") && Boolean(body?.client_id) && Boolean(String(body?.body || "").trim());
+const isQueueable = (method, pathname, body) => QUEUEABLE.test(pathname)
+  || ((method === "POST" || method === "PATCH") && (PROJECT_QUEUEABLE.test(pathname) || FINANCE_QUEUEABLE.test(pathname)))
+  || isChatQueueable(method, pathname, body);
 const TEMP_ID = /^tmp_[\w-]+$/;
 
 class ApiError extends Error {
@@ -148,7 +157,7 @@ function createApi({ origin, dataDir, fetchImpl, sessionStore, userAgent, timeou
         if (method === "GET") {
           const hit = cache ? readCache(key) : null;
           if (hit) return { ok: true, data: hit.data, offline: true, savedAt: hit.savedAt };
-        } else if (queue && isQueueable(method, pathname)) {
+        } else if (queue && isQueueable(method, pathname, body)) {
           const items = readOutbox();
           items.push({ id: crypto.randomUUID(), method, path: pathname, query, body, tempId: tempId || null, at: new Date().toISOString() });
           writeOutbox(items);
@@ -157,6 +166,36 @@ function createApi({ origin, dataDir, fetchImpl, sessionStore, userAgent, timeou
       }
       return { ok: false, offline: Boolean(error.network), error: { status: error.status, message: error.message, code: error.code, details: error.details } };
     }
+  }
+
+  /**
+   * Dosya yükleme (multipart). Gövde hazır gelir (chat.js buildMultipart);
+   * kuyruğa alınmaz, önbelleğe yazılmaz.
+   */
+  async function upload(pathname, { body, contentType }, { timeout = 180000 } = {}) {
+    const session = sessionStore.load();
+    const headers = { Accept: "application/json", "X-Client-Platform": "desktop", "User-Agent": userAgent, "Content-Type": contentType };
+    if (session?.token) headers.Authorization = `Bearer ${session.token}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    let response;
+    try {
+      response = await fetchImpl(buildUrl(origin, pathname), { method: "POST", headers, body, signal: controller.signal, credentials: "omit" });
+    } catch {
+      setOnline(false);
+      return { ok: false, offline: true, error: { status: 0, message: "Bağlantı yok: dosya gönderilemedi." } };
+    } finally {
+      clearTimeout(timer);
+    }
+    setOnline(true);
+    const text = await response.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { message: text.slice(0, 300) }; }
+    if (!response.ok) {
+      if (response.status === 401 && session?.token) onUnauthorized(data);
+      return { ok: false, error: { status: response.status, message: data?.message || `Yükleme başarısız (${response.status}).`, code: data?.code } };
+    }
+    return { ok: true, data };
   }
 
   /** Kuyruktaki yazmaları sırayla gönderir. Ağ hatasında durur, kalanlar kalır. */
@@ -199,6 +238,8 @@ function createApi({ origin, dataDir, fetchImpl, sessionStore, userAgent, timeou
   return {
     request,
     send,
+    upload,
+    outbox: () => readOutbox(),
     flush,
     events,
     clearCache,
@@ -209,4 +250,4 @@ function createApi({ origin, dataDir, fetchImpl, sessionStore, userAgent, timeou
   };
 }
 
-module.exports = { createApi, ApiError, buildUrl, QUEUEABLE, PROJECT_QUEUEABLE, FINANCE_QUEUEABLE, isQueueable };
+module.exports = { createApi, ApiError, buildUrl, QUEUEABLE, PROJECT_QUEUEABLE, FINANCE_QUEUEABLE, CHAT_QUEUEABLE, isQueueable, isChatQueueable };

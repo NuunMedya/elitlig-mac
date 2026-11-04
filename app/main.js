@@ -11,19 +11,32 @@
 //   - Ajanda/görev hatırlatmaları macOS bildirimi olarak, pencere kapalıyken de.
 //   - Dock rozeti: bugün ve gecikmiş iş sayısı.
 //   - Projeler (⌘0): süreç, kişiler/CRM, soru-cevap ve portföy.
+//   - Mesajlar (⇧⌘M): gerçek-zaman bağlantısı ana süreçte (app/chat.js),
+//     yeni mesaj bildirimi, okunmamış sayısı kenar çubuğunda, Dock'ta ve
+//     menü çubuğunda; ekler (fotoğraf, belge, ses) ana süreçten yüklenir,
+//     sohbet medyası diskte önbelleklenir (elitlig-media://).
 "use strict";
 
 const path = require("node:path");
 const fs = require("node:fs");
 const {
   app, BrowserWindow, Menu, Tray, Notification, shell, ipcMain, dialog, nativeImage, net,
-  globalShortcut, safeStorage, powerMonitor, nativeTheme, screen,
+  globalShortcut, safeStorage, powerMonitor, nativeTheme, screen, protocol,
 } = require("electron");
+const crypto = require("node:crypto");
+const { io: socketIo } = require("socket.io-client");
 const config = require("./config");
 const { createSessionStore, sessionStatus, sessionEndsAt } = require("./session");
 const { createApi } = require("./api");
 const { createFocus, trayTitle } = require("./focus");
 const { createReminders } = require("./reminders");
+const { createChatLink, buildMultipart, mimeOf } = require("./chat");
+
+// Sohbet medyası (fotoğraf, ses, belge) bu şemayla ana süreç üzerinden açılır:
+// diskte önbelleklenir, çevrimdışı da görünür; arayüzün güvenlik politikası
+// dış adreslerden ses/video çalmaya izin vermediği için de gereklidir.
+const MEDIA_SCHEME = "elitlig-media";
+protocol.registerSchemesAsPrivileged([{ scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }]);
 
 app.setName(config.APP_NAME);
 if (process.env.ELITLIG_USER_DATA) app.setPath("userData", process.env.ELITLIG_USER_DATA);
@@ -47,6 +60,8 @@ let sessionStore;
 let api;
 let focus;
 let reminders;
+let chatLink;
+let chatNotes = new Map();
 
 const broadcast = (channel, payload) => {
   for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(channel, payload);
@@ -65,6 +80,7 @@ function authState() {
 }
 
 function signOutLocal(reason) {
+  chatLink?.disconnect();
   sessionStore.clear();
   api.clearCache();
   api.clearOutbox();
@@ -90,7 +106,7 @@ async function login({ username, password }) {
   if (user.isManagement === false) return { ok: false, error: "Araçlar yönetim hesaplarına açıktır." };
   sessionStore.save({ token, user, loginAt: Date.now() });
   broadcast("auth:changed", { signedIn: true });
-  setTimeout(() => { refreshSummary(); reminders.check(); }, 1500);
+  setTimeout(() => { refreshSummary(); reminders.check(); chatLink.connect(); }, 1500);
   return { ok: true, state: authState() };
 }
 
@@ -121,11 +137,18 @@ async function refreshSummary() {
   ]);
   if (summary.ok) {
     trayInfo.summary = summary.data;
-    const due = (summary.data?.overdue || 0) + (summary.data?.today || 0);
-    app.dock?.setBadge(due ? String(due) : "");
+    updateBadge();
   }
   if (overview.ok) trayInfo.upcoming = overview.data?.upcoming || [];
   refreshTray();
+}
+
+/** Dock rozeti: bugün + gecikmiş işler ile okunmamış mesajlar. */
+function updateBadge() {
+  if (!authState().signedIn) { app.dock?.setBadge(""); return; }
+  const s = trayInfo.summary;
+  const total = (s ? (s.overdue || 0) + (s.today || 0) : 0) + (chatLink?.unread() || 0);
+  app.dock?.setBadge(total ? String(total) : "");
 }
 
 function refreshTray() {
@@ -147,6 +170,8 @@ function refreshTray() {
     { type: "separator" },
   ];
   if (signedIn) {
+    const unread = chatLink?.unread() || 0;
+    template.push({ label: unread ? `${unread} okunmamış mesaj` : "Mesajlar", click: () => showMain("messages") });
     template.push({ label: s ? `${s.open || 0} açık iş${s.overdue ? ` · ${s.overdue} gecikmiş` : ""}${s.today ? ` · ${s.today} bugün` : ""}` : "Yapılacaklar", click: () => showMain("todos") });
     template.push({ label: "Yaklaşan", enabled: false }, ...(upcoming.length ? upcoming : [{ label: "Önümüzdeki 7 gün boş", enabled: false }]));
     template.push({ type: "separator" });
@@ -164,6 +189,7 @@ function createTray() {
   const image = nativeImage.createFromPath(path.join(ASSETS, "trayTemplate.png"));
   image.setTemplateImage(true);
   tray = new Tray(image);
+  tray.on("mouse-enter", () => tray.setToolTip(chatLink?.unread() ? `${config.APP_NAME} · ${chatLink.unread()} okunmamış mesaj` : config.APP_NAME));
   tray.setToolTip(config.APP_NAME);
   refreshTray();
 }
@@ -308,6 +334,7 @@ function showQuick(kind) {
 
 const ROUTES = [
   ["today", "Bugün", "CmdOrCtrl+1"],
+  ["messages", "Mesajlar", "CmdOrCtrl+Shift+M"],
   ["todos", "Yapılacaklar", "CmdOrCtrl+2"],
   ["agenda", "Ajanda", "CmdOrCtrl+3"],
   ["notes", "Not Defteri", "CmdOrCtrl+4"],
@@ -355,6 +382,7 @@ function buildMenu() {
       label: "Dosya",
       submenu: [
         { label: "Yeni", accelerator: "CmdOrCtrl+N", click: () => sendCommand("new") },
+        { label: "Yeni Grup (Mesajlar)", accelerator: "Shift+CmdOrCtrl+N", click: () => { showMain("messages"); setTimeout(() => sendCommand("newGroup"), 150); } },
         { label: "Hızlı Kayıt…", accelerator: config.QUICK_SHORTCUT, click: () => showQuick() },
         { type: "separator" },
         { label: "Dışa Aktar…", accelerator: "CmdOrCtrl+E", click: () => sendCommand("export") },
@@ -419,9 +447,64 @@ function registerIpc() {
     const result = await api.request(opts || {});
     if (result.ok && opts?.method && opts.method !== "GET") {
       broadcast("data:changed", { path: opts.path });
-      setTimeout(refreshSummary, 500);
+      if (String(opts.path || "").startsWith("/api/chat/")) chatLink.refreshSoon(800);
+      else setTimeout(refreshSummary, 500);
     }
     return result;
+  });
+
+  /* ------------------------------ Mesajlar ------------------------------ */
+  ipcMain.handle("chat:status", () => chatLink.status());
+  ipcMain.handle("chat:emit", (_e, { name, payload } = {}) => chatLink.emit(name, payload));
+  ipcMain.handle("chat:active", (_e, id) => {
+    chatLink.setActive(id);
+    // Açılan sohbetin bildirimleri Bildirim Merkezi'nden kalkar.
+    if (id && chatNotes.has(Number(id))) { chatNotes.get(Number(id)).forEach((n) => { try { n.close(); } catch { /* yoksay */ } }); chatNotes.delete(Number(id)); }
+  });
+  ipcMain.handle("chat:refresh", () => chatLink.refresh({ detect: false }).then(() => chatLink.status()));
+  ipcMain.handle("chat:pending", () => api.outbox()
+    .filter((i) => i.method === "POST" && /^\/api\/chat\/conversations\/\d+\/messages$/.test(i.path))
+    .map((i) => ({ conversation_id: Number(i.path.split("/")[4]), client_id: i.body?.client_id, body: i.body?.body, reply_to_id: i.body?.reply_to_id || null, mentions: i.body?.mentions || [], at: i.at })));
+  ipcMain.handle("chat:upload", async (_e, { kind, name, mime, data } = {}) => {
+    if (!authState().signedIn) return { ok: false, error: { message: "Oturum açık değil." } };
+    const field = kind === "audio" ? "audio" : "file";
+    const bytes = Buffer.from(data || []);
+    if (!bytes.length) return { ok: false, error: { message: "Dosya boş." } };
+    if (bytes.length > 25 * 1024 * 1024) return { ok: false, error: { message: "Dosya 25 MB'tan büyük olamaz." } };
+    return api.upload(`/api/chat/uploads/${field}`, buildMultipart(field, name || (field === "audio" ? "ses.webm" : "dosya"), mime || mimeOf(name), bytes));
+  });
+  ipcMain.handle("chat:pick", async (event, { images = false } = {}) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      properties: ["openFile", "multiSelections"],
+      filters: images ? [{ name: "Fotoğraflar", extensions: ["jpg", "jpeg", "png", "gif", "webp", "heic"] }] : [{ name: "Tüm dosyalar", extensions: ["*"] }],
+    });
+    if (canceled) return [];
+    return filePaths.slice(0, 10).map((file) => {
+      const size = fs.statSync(file).size;
+      if (size > 25 * 1024 * 1024) return { name: path.basename(file), size, tooLarge: true };
+      const buf = fs.readFileSync(file);
+      return { name: path.basename(file), mime: mimeOf(file), size, data: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength) };
+    });
+  });
+  ipcMain.handle("chat:download", async (event, { url, name } = {}) => {
+    const media = await fetchMedia(String(url || ""));
+    if (!media) return { ok: false, error: { message: "Dosya indirilemedi." } };
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const { canceled, filePath } = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath("downloads"), String(name || "dosya").replace(/[/\\]/g, "_")) });
+    if (canceled || !filePath) return { ok: false };
+    fs.writeFileSync(filePath, media.body);
+    return { ok: true, path: filePath };
+  });
+  ipcMain.handle("chat:openFile", async (_e, { url, name } = {}) => {
+    const media = await fetchMedia(String(url || ""));
+    if (!media) return { ok: false };
+    const dir = path.join(app.getPath("temp"), "Elitlig Mesajlar");
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, String(name || "dosya").replace(/[/\\]/g, "_"));
+    fs.writeFileSync(file, media.body);
+    const error = await shell.openPath(file);
+    return { ok: !error, error: error || null };
   });
   ipcMain.handle("sync:status", () => ({ online: api.isOnline(), pending: api.pending() }));
   ipcMain.handle("sync:flush", () => api.flush());
@@ -470,9 +553,71 @@ function registerIpc() {
   });
   ipcMain.handle("app:openWeb", (_e, pathname) => shell.openExternal(new URL(String(pathname || "/"), config.SITE_ORIGIN).toString()));
   ipcMain.handle("app:notify", (_e, { title, body }) => { if (Notification.isSupported()) new Notification({ title, body }).show(); });
+  ipcMain.handle("app:focused", () => Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()));
   ipcMain.handle("app:showMain", (_e, route) => showMain(route));
   ipcMain.handle("quick:hide", () => quickWindow?.hide());
   ipcMain.handle("quick:show", (_e, kind) => showQuick(kind));
+}
+
+/* ------------------------------ sohbet medyası ------------------------------ */
+
+const mediaDir = () => path.join(dataDir(), "media");
+const MEDIA_CACHE_MAX = 40 * 1024 * 1024;
+
+/** Sohbet ekini getirir: önce disk önbelleği, sonra ağ (yalnız http/https). */
+async function fetchMedia(url) {
+  if (!/^https?:\/\//i.test(url)) return null;
+  const key = crypto.createHash("sha1").update(url).digest("hex");
+  const file = path.join(mediaDir(), key);
+  try {
+    const meta = JSON.parse(fs.readFileSync(`${file}.json`, "utf8"));
+    return { body: fs.readFileSync(file), type: meta.type || "application/octet-stream" };
+  } catch { /* önbellekte yok */ }
+  try {
+    const res = await net.fetch(url, { headers: { "User-Agent": userAgent() } });
+    if (!res.ok) return null;
+    const body = Buffer.from(await res.arrayBuffer());
+    const type = res.headers.get("content-type") || mimeOf(url.split("?")[0]);
+    if (body.length <= MEDIA_CACHE_MAX) {
+      fs.mkdirSync(mediaDir(), { recursive: true });
+      fs.writeFileSync(file, body);
+      fs.writeFileSync(`${file}.json`, JSON.stringify({ url, type, at: Date.now() }));
+    }
+    return { body, type };
+  } catch {
+    return null;
+  }
+}
+
+function registerMediaProtocol() {
+  protocol.handle(MEDIA_SCHEME, async (request) => {
+    const u = new URL(request.url);
+    const target = decodeURIComponent(u.pathname.replace(/^\//, ""));
+    const media = await fetchMedia(target);
+    if (!media) return new Response("", { status: 404 });
+    return new Response(media.body, { status: 200, headers: { "Content-Type": media.type, "Content-Length": String(media.body.length), "Cache-Control": "max-age=31536000" } });
+  });
+}
+
+/** Yeni mesaj bildirimi: pencere odakta değilse, sohbet sessizde değilse. */
+function notifyChat({ conversation, message, muted }) {
+  if (muted || !Notification.isSupported()) return;
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused() && mainWindow.isVisible()) return;
+  const id = Number(conversation?.id || message.conversation_id);
+  const isGroup = ["group", "team"].includes(conversation?.type);
+  const kindText = { image: "📷 Fotoğraf", audio: "🎤 Sesli mesaj", file: `📎 ${message.meta?.file?.name || "Belge"}`, poll: `📊 ${message.meta?.poll?.question || "Anket"}`, location: "📍 Konum" }[message.kind];
+  const text = message.kind === "image" && message.meta?.caption ? `📷 ${message.meta.caption}` : kindText || message.body || "";
+  const n = new Notification({
+    title: isGroup ? conversation.title : message.sender?.name || conversation?.title || "Yeni mesaj",
+    subtitle: isGroup ? message.sender?.name : undefined,
+    body: String(text).slice(0, 180),
+    silent: false,
+  });
+  n.on("click", () => showMain(`messages:${id}`));
+  n.show();
+  const list = chatNotes.get(id) || [];
+  list.push(n);
+  chatNotes.set(id, list.slice(-5));
 }
 
 /* ----------------------------- yaşam döngüsü ----------------------------- */
@@ -500,6 +645,19 @@ if (!app.requestSingleInstanceLock()) {
       timeoutMs: config.REQUEST_TIMEOUT_MS,
       onUnauthorized: () => signOutLocal("expired"),
     });
+    chatLink = createChatLink({
+      origin: config.API_ORIGIN,
+      getToken: () => sessionStore.load()?.token || null,
+      ioFactory: (url, opts) => socketIo(url, opts),
+      api,
+      userAgent: userAgent(),
+      isSignedIn: () => authState().signedIn,
+    });
+    chatLink.events.on("event", (e) => broadcast("chat:event", e));
+    chatLink.events.on("status", (st) => broadcast("chat:status", st));
+    chatLink.events.on("unread", (n) => { broadcast("chat:unread", n); updateBadge(); refreshTray(); });
+    chatLink.events.on("incoming", notifyChat);
+    registerMediaProtocol();
     focus = createFocus({ dataDir: dataDir() });
     reminders = createReminders({
       dataDir: dataDir(),
@@ -517,7 +675,7 @@ if (!app.requestSingleInstanceLock()) {
 
     api.events.on("online", (online) => {
       broadcast("sync:status", { online, pending: api.pending() });
-      if (online) api.flush();
+      if (online) { api.flush(); chatLink?.kick(); }
     });
     api.events.on("outbox", (pending) => broadcast("sync:status", { online: api.isOnline(), pending }));
     api.events.on("synced", (result) => {
@@ -545,15 +703,16 @@ if (!app.requestSingleInstanceLock()) {
     setInterval(() => reminders.check(), 60000);
     setInterval(() => { keepSessionFresh(); refreshSummary(); if (api.pending()) api.flush(); }, 5 * 60000);
     setTimeout(() => { keepSessionFresh(); refreshSummary(); reminders.check(); api.flush(); }, 2000);
+    if (authState().signedIn) chatLink.connect();
 
-    powerMonitor.on("resume", () => { setTimeout(() => { keepSessionFresh(); api.flush(); reminders.check(); refreshSummary(); }, 3000); });
+    powerMonitor.on("resume", () => { setTimeout(() => { keepSessionFresh(); api.flush(); reminders.check(); refreshSummary(); chatLink.kick(); }, 3000); });
     nativeTheme.on("updated", () => broadcast("theme", nativeTheme.shouldUseDarkColors ? "dark" : "light"));
 
     app.setAboutPanelOptions({
       applicationName: config.APP_NAME,
       applicationVersion: app.getVersion(),
       copyright: "© Elitlig",
-      credits: "Yapılacaklar · Ajanda · Not Defteri · Projeler · Ön Muhasebe · Tablolar · Rehber · Hesap Araçları · Odak Sayacı",
+      credits: "Mesajlar · Yapılacaklar · Ajanda · Not Defteri · Projeler · Ön Muhasebe · Tablolar · Rehber · Hesap Araçları · Odak Sayacı",
     });
 
     app.on("activate", () => showMain());
