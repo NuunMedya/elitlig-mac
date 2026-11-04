@@ -1,6 +1,11 @@
 // Açık sohbet: başlık (çevrimiçi / son görülme / yazıyor…), sabitlenmiş mesaj,
 // gün ayraçlı mesaj akışı (yukarı kaydırınca eski mesajlar), mesaj eylemleri,
 // çoklu seçim (ilet, yıldızla, kopyala, sil), sürükle-bırak ekler ve yazma alanı.
+//
+// Üye mesajları (conv._inbox): üyenin "ElitLig Yönetimi" sohbeti aynı bölmede
+// açılır; mesajlar /api/admin/chat'ten okunur, yanıt ElitLig Yönetimi adına
+// gider, okundu ortak damgadır. Tepki, yıldız, sabitleme, düzenleme, silme
+// ve iletme bu sohbetlerde yoktur (sunucu yönetim görünümünde desteklemez).
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon, MenuButton, Spinner, useConfirm, useToast } from "../../components/ui";
 import { del, get, post, put, request, useCommand } from "../../api";
@@ -12,10 +17,11 @@ import {
   QUICK_REACTIONS, albumize, applyReaction, canDelete, canEdit, canForward, groupMessages, isGroupChat, lastSeenLabel,
   markReadUntil, mergeMessages, newClientId, nextVote, pollResults, quoteText,
 } from "../../lib/chatUtils";
+import { A, KIND_LABELS, asInboxMessage } from "../../lib/inboxUtils";
 
 const PAGE = 40;
 
-export default function ChatPane({ conv, me, conversations, subscribe, typing, presence, link, drafts, actions, panel, setPanel, jump, onConsumedJump, onRead, onConvPatch }) {
+export default function ChatPane({ conv, me, conversations, subscribe, typing, presence, link, drafts, actions, panel, setPanel, jump, onConsumedJump, onRead, onConvPatch, canReply = true }) {
   const toast = useToast();
   const confirm = useConfirm();
   const [messages, setMessages] = useState([]);
@@ -44,6 +50,9 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
   const seq = useRef(0);
   const lastRead = useRef(0);
   const olderBusy = useRef(false);
+  const inbox = Boolean(conv._inbox);
+  const base = inbox ? A : C;
+  const norm = useCallback((list) => (inbox ? (list || []).map(asInboxMessage) : list || []), [inbox]);
 
   const patchMsg = useCallback((key, fn) => setMessages((list) => list.map((m) => ((m.id && m.id === key) || m.client_id === key ? { ...m, ...(typeof fn === "function" ? fn(m) : fn) } : m))), []);
 
@@ -54,12 +63,12 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
   };
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await get(`${C}/conversations/${conv.id}/messages`, { limit: PAGE });
+    const res = await get(`${base}/conversations/${conv.id}/messages`, { limit: PAGE });
     if (res.ok) {
       stick.current = true;
-      setMessages(await withPending(res.data.messages || []));
+      setMessages(await withPending(norm(res.data.messages)));
       setHasMore(Boolean(res.data.has_more));
-      if (res.data.conversation) onConvPatch(conv.id, res.data.conversation, { soft: true });
+      if (res.data.conversation && !inbox) onConvPatch(conv.id, res.data.conversation, { soft: true });
     } else setMessages(await withPending([]));
     setOffline(Boolean(res.offline));
     setLoading(false);
@@ -67,29 +76,29 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
 
   /** Son sayfayı yeniden okur: yeni mesajlar, okundu durumları, tepkiler, düzenlemeler. */
   const syncTail = useCallback(async () => {
-    const res = await get(`${C}/conversations/${conv.id}/messages`, { limit: PAGE });
+    const res = await get(`${base}/conversations/${conv.id}/messages`, { limit: PAGE });
     if (!res.ok) return;
     setOffline(Boolean(res.offline));
     setMessages((list) => {
-      const incoming = res.data.messages || [];
+      const incoming = norm(res.data.messages);
       const lastKnown = Math.max(0, ...list.filter((m) => m.id).map((m) => m.id));
       const fresh = incoming.filter((m) => m.id > lastKnown && !m.sender?.is_me).length;
       if (fresh && !stick.current) setNewBelow((n) => n + fresh);
       return mergeMessages(list, incoming);
     });
-  }, [conv.id]);
+  }, [conv.id, base, norm]);
 
   const loadOlder = useCallback(async () => {
     const first = msgsRef.current.find((m) => m.id);
     if (!first || !hasMore) return false;
     const el = listRef.current;
     keepScroll.current = el ? { height: el.scrollHeight, top: el.scrollTop } : null;
-    const res = await get(`${C}/conversations/${conv.id}/messages`, { before: first.id, limit: PAGE });
+    const res = await get(`${base}/conversations/${conv.id}/messages`, { before: first.id, limit: PAGE });
     if (!res.ok) { keepScroll.current = null; return false; }
     setHasMore(Boolean(res.data.has_more));
-    setMessages((list) => mergeMessages(res.data.messages || [], list));
+    setMessages((list) => mergeMessages(norm(res.data.messages), list));
     return true;
-  }, [conv.id, hasMore]);
+  }, [conv.id, hasMore, base, norm]);
 
   useEffect(() => {
     setMessages([]); setReply(draft?.reply || null); setEdit(null); setSelecting(null); setModal(null); setNewBelow(0);
@@ -106,8 +115,8 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
     if (!conv.unread && !conv.marked_unread && lastOther && lastOther.id <= lastRead.current) return;
     lastRead.current = lastOther?.id || 0;
     onRead(conv.id);
-    request({ method: "POST", path: `${C}/conversations/${conv.id}/read`, body: {}, queue: false });
-  }, [conv.id, conv.unread, conv.marked_unread, onRead]);
+    request({ method: "POST", path: `${base}/conversations/${conv.id}/read`, body: {}, queue: false });
+  }, [conv.id, conv.unread, conv.marked_unread, onRead, base]);
   useEffect(() => { if (!loading) markRead(); }, [loading, messages.length, markRead]);
   useEffect(() => {
     const onFocus = () => { lastRead.current = 0; markRead(); };
@@ -121,15 +130,17 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
   useEffect(() => subscribe((name, payload) => {
     if (name === "chat:poll" || name === "sync:done") { syncSoon(100); return; }
     if (Number(payload?.conversation_id) !== Number(conv.id)) return;
+    // Üye yazdı: sunucu yönetime yalnız sohbet kimliğini yollar.
+    if (name === "chat:admin-inbox") { syncSoon(150); return; }
     if (name === "chat:message" && payload.message) {
-      const m = payload.message;
+      const m = inbox ? asInboxMessage(payload.message) : payload.message;
       setMessages((list) => mergeMessages(list, [m]));
       if (!m.sender?.is_me && !stick.current) setNewBelow((n) => n + 1);
       syncSoon(m.reply_to_id || m.kind !== "text" ? 200 : 900);
-    } else if (name === "chat:updated" && payload.message) setMessages((list) => mergeMessages(list, [payload.message]));
+    } else if (name === "chat:updated" && payload.message) setMessages((list) => mergeMessages(list, norm([payload.message])));
     else if (name === "chat:deleted") patchMsg(Number(payload.message_id), { deleted: true, body: null, meta: null, reactions: [] });
     else if (name === "chat:read" && Number(payload.user_id) !== meId) setMessages((list) => markReadUntil(list, payload.read_at || new Date(), { group: isGroup }));
-  }), [subscribe, conv.id, syncSoon, patchMsg, meId, isGroup]);
+  }), [subscribe, conv.id, syncSoon, patchMsg, meId, isGroup, inbox, norm]);
   // Socket yokken açık sohbet daha sık yoklanır.
   useEffect(() => {
     if (link === "connected") return undefined;
@@ -200,11 +211,13 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
     return m;
   };
   const deliver = async (m, body) => {
-    const res = await request({ method: "POST", path: `${C}/conversations/${conv.id}/messages`, body: { ...body, client_id: m.client_id } });
+    // Üye mesajlarında yanıt yönetim adına gider; kuyruğa alınmaz (bağlantı ister).
+    const res = await request({ method: "POST", path: `${base}/conversations/${conv.id}/messages`, body: { ...body, client_id: m.client_id }, ...(inbox ? { queue: false } : {}) });
     if (res.ok && res.queued) { patchMsg(m.client_id, { _pending: false, _queued: true }); return res; }
     if (res.ok && res.data?.message) {
-      setMessages((list) => mergeMessages(list, [{ ...res.data.message, _localUrl: m._localUrl }]));
-      onConvPatch(conv.id, { last_message: res.data.message, last_message_at: res.data.message.created_at, marked_unread: false });
+      const sent = inbox ? asInboxMessage(res.data.message) : res.data.message;
+      setMessages((list) => mergeMessages(list, [{ ...sent, _localUrl: m._localUrl }]));
+      onConvPatch(conv.id, { last_message: sent, last_message_at: sent.created_at, marked_unread: false, ...(inbox ? { unread: 0 } : {}) });
       return res;
     }
     patchMsg(m.client_id, { _pending: false, _failed: true, _error: res.offline ? "Bağlantı yok" : res.error?.message, _body: body });
@@ -332,6 +345,7 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
   const onAction = useCallback((type, target, extra) => {
     const list = Array.isArray(target) ? target : [target];
     const m = list[list.length - 1];
+    if (inbox && ["react", "vote"].includes(type)) return;
     switch (type) {
       case "menu": setMenu({ at: extra, list }); break;
       case "react": setMenu({ at: extra, list, reactOnly: true }); break;
@@ -346,11 +360,18 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
       case "select": setSelecting((s) => { const n = new Set(s || []); const on = list.every((x) => n.has(x.id)); list.forEach((x) => (on ? n.delete(x.id) : x.id && n.add(x.id))); return n; }); break;
       default: break;
     }
-  }, [images, jumpTo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [images, jumpTo, inbox]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const menuItems = (list) => {
     const m = list[list.length - 1];
     const multi = list.length > 1;
+    if (inbox) {
+      return [
+        canReply && !multi && { label: "Yanıtla", icon: "reply", onClick: () => { setEdit(null); setReply(m); } },
+        m.kind === "text" && { label: "Kopyala", icon: "copy", onClick: () => navigator.clipboard.writeText(m.body || "") },
+        { label: "Seç", icon: "checkSquare", onClick: () => setSelecting(new Set(list.map((x) => x.id))) },
+      ];
+    }
     return [
       { label: "Yanıtla", icon: "reply", onClick: () => { setEdit(null); setReply(m); } },
       m.kind === "text" && { label: "Kopyala", icon: "copy", onClick: () => navigator.clipboard.writeText(m.body || "") },
@@ -375,20 +396,31 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
     ? (isGroup ? `${typingNames.join(", ")} yazıyor…` : "yazıyor…")
     : isGroup ? participants.map((p) => (p.is_me ? "Siz" : p.name)).slice(0, 12).join(", ")
       : [lastSeenLabel(presence?.[other?.user_id]), other?.managed_team_id && other.manager_name && other.manager_name !== conv.title ? `${other.manager_name} · takım başkanı` : other?.subtitle || conv.subtitle].filter(Boolean).join(" · ");
-  const disabledReason = conv.blocked_by_me ? "Bu kişiyi engellediniz. Mesaj göndermek için kişi bilgisinden engeli kaldırın."
+  const disabledReason = inbox ? (canReply ? null : "Yönetim adına yazma yetkiniz yok (messages.reply). Mesajları okuyabilirsiniz.")
+    : conv.blocked_by_me ? "Bu kişiyi engellediniz. Mesaj göndermek için kişi bilgisinden engeli kaldırın."
     : conv.can_write === false ? conv.restricted_reason || "Bu sohbete mesaj yazılamaz."
       : conv.only_admins_send && conv.my_role !== "admin" ? "Bu gruba yalnız grup yöneticileri mesaj gönderebilir." : null;
   const pinned = conv.pinned_message_id ? messages.find((m) => m.id === conv.pinned_message_id) : null;
   const selectedList = selecting ? messages.filter((m) => selecting.has(m.id)) : [];
   const lastMine = [...messages].reverse().find((m) => m.sender?.is_me && canEdit(m));
   const isStaff = other?.kind === "staff";
+  const inboxSub = inbox ? [KIND_LABELS[conv.kind] && conv.subtitle && !String(conv.subtitle).startsWith(KIND_LABELS[conv.kind]) ? KIND_LABELS[conv.kind] : null, conv.subtitle].filter(Boolean).join(" · ") : null;
 
   return (
     <section className={`ms-chat ${drag ? "is-drag" : ""}`}
       onDragOver={(e) => { if ([...e.dataTransfer.types].includes("Files") && !disabledReason) { e.preventDefault(); setDrag(true); } }}
       onDragLeave={(e) => { if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget)) setDrag(false); }}
       onDrop={(e) => { e.preventDefault(); setDrag(false); if (!disabledReason) takeFiles(e.dataTransfer.files); }}>
-      <header className="ms-chat__head">
+      <header className={`ms-chat__head ${inbox ? "is-inbox" : ""}`}>
+        {inbox ? (
+          <div className="ms-chat__who">
+            <Avatar name={conv.title} id={conv.entity?.user_id ?? conv.id} url={conv.avatar || conv.entity?.avatar} size={40} group={conv.kind === "team"} />
+            <span className="ms-chat__titles">
+              <strong>{conv.title}<span className="ms-inbox-tag"><Icon name="inbox" size={11} /> Üye mesajı</span></strong>
+              <small>{inboxSub || "ElitLig Yönetimi sohbeti"}</small>
+            </span>
+          </div>
+        ) : (
         <button type="button" className="ms-chat__who" onClick={() => setPanel(panel?.kind === "info" ? null : { kind: "info" })}>
           <Avatar name={conv.title} id={other?.user_id ?? conv.id} url={conv.avatar} size={40} group={isGroup} online={!isGroup && presence?.[other?.user_id]?.online} />
           <span className="ms-chat__titles">
@@ -396,6 +428,16 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
             <small className={typingNames.length ? "is-typing" : ""}>{sub}</small>
           </span>
         </button>
+        )}
+        {inbox ? (
+        <div className="ms-chat__tools">
+          <span className="ms-inbox-note" title="Bu sohbet tüm yönetim ekibinin ortak gelen kutusudur. Yanıtlar üyeye ElitLig Yönetimi adıyla gider; yazan yönetici kayıtta tutulur.">Ortak gelen kutusu</span>
+          <MenuButton label="Sohbet menüsü" items={[
+            { label: "Mesajları seç", icon: "checkSquare", onClick: () => setSelecting(new Set()) },
+            { label: "Sitede aç", icon: "external", onClick: () => window.elitlig.app.openWeb("/yonetim/araclar/mesajlar") },
+          ]} />
+        </div>
+        ) : (
         <div className="ms-chat__tools">
           <span className="ms-tooltip-wrap" title={conv.can_call ? "Sesli arama masaüstünde henüz yok — Elitlig mobil uygulamasından ya da sitedeki sohbetten arayabilirsiniz." : "Bu sohbette sesli arama yapılamaz."}>
             <button type="button" className="icon-btn" disabled aria-label="Sesli arama"><Icon name="phone" size={18} /></button>
@@ -418,6 +460,7 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
             { label: "Sohbeti sil", icon: "trash", danger: true, onClick: () => actions.remove(conv) },
           ]} />
         </div>
+        )}
       </header>
       {pinned || conv.pinned_message_id ? (
         <button type="button" className="ms-pinbar" onClick={() => jumpTo(conv.pinned_message_id)}>
@@ -431,7 +474,7 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
       <div className="ms-chat__scroll" ref={listRef} onScroll={onScroll}>
         <div className="ms-chat__inner">
           {hasMore && <div className="ms-older"><Spinner label="Eski mesajlar…" /></div>}
-          {!hasMore && !loading && <div className="ms-encrypt"><Icon name="lock" size={12} /> Mesajlar Elitlig sunucusunda saklanır; yalnız sohbetteki kişiler görür.</div>}
+          {!hasMore && !loading && <div className="ms-encrypt"><Icon name={inbox ? "inbox" : "lock"} size={12} /> {inbox ? "Üyenin ElitLig Yönetimi sohbeti · yanıtlarınız yönetim adına gider. Talepler ve bildirimler burada değil, Talepler'dedir." : "Mesajlar Elitlig sunucusunda saklanır; yalnız sohbetteki kişiler görür."}</div>}
           {loading && !messages.length ? <div className="ms-skel">{[60, 40, 72, 35, 55].map((w, i) => <span key={i} className={i % 2 ? "is-mine" : ""} style={{ width: `${w}%` }} />)}</div> : items.map((it) => (
             it.type === "day" ? <div key={it.key} className="ms-day"><span>{it.label}</span></div>
               : <Bubble key={it.key} item={it} conv={conv} meId={meId} participants={participants} selecting={Boolean(selecting)} selected={selecting} highlighted={highlight && (it.message?.id === highlight || it.messages?.some((x) => x.id === highlight))} onAction={onAction} />
@@ -448,19 +491,22 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
           <strong>{selecting.size} seçildi</strong>
           <span className="spacer" />
           <button type="button" className="btn btn--sm" disabled={!selectedList.length || !selectedList.every((m) => m.kind === "text")} onClick={() => { navigator.clipboard.writeText(selectedList.map((m) => `[${new Date(m.created_at).toLocaleString("tr-TR")}] ${m.sender?.is_me ? me.name : m.sender?.name}: ${m.body}`).join("\n")); toast("Kopyalandı.", { tone: "success" }); }}><Icon name="copy" size={14} /> Kopyala</button>
+          {!inbox && <>
           <button type="button" className="btn btn--sm" disabled={!selectedList.length} onClick={() => star(selectedList, !selectedList.every((m) => m.starred))}><Icon name="star" size={14} /> Yıldızla</button>
           <button type="button" className="btn btn--sm" disabled={!selectedList.length || !selectedList.every(canDelete)} onClick={() => removeMsgs(selectedList)}><Icon name="trash" size={14} /> Sil</button>
           <button type="button" className="btn btn--sm btn--primary" disabled={!selectedList.length || !selectedList.every(canForward)} onClick={() => setModal({ type: "forward", ids: selectedList.map((m) => m.id) })}><Icon name="forward" size={14} /> İlet</button>
+          </>}
         </div>
       ) : (
         <Composer key={conv.id} conv={conv} meId={meId} participants={participants} draft={draft} disabledReason={disabledReason}
           onDraft={(text) => drafts.set(conv.id, { text, reply: reply ? { id: reply.id, body: quoteText(reply), sender: reply.sender, kind: reply.kind } : null })}
           reply={reply} edit={edit} onCancel={(what) => { if (what === "editLast") { if (lastMine) setEdit(lastMine); return; } setReply(null); setEdit(null); }}
-          onSend={sendText} onSaveEdit={saveEdit} onFiles={onFiles} onPoll={() => setModal({ type: "poll" })} onLocation={() => setModal({ type: "location" })} onVoice={sendVoice} />
+          onSend={sendText} onSaveEdit={saveEdit} onFiles={onFiles} onPoll={inbox ? null : () => setModal({ type: "poll" })} onLocation={inbox ? null : () => setModal({ type: "location" })} onVoice={sendVoice}
+          placeholder={inbox ? "ElitLig Yönetimi adına yaz…" : undefined} noTyping={inbox} />
       )}
 
       {menu && (
-        <PointMenu at={menu.at} onClose={() => setMenu(null)} items={menu.reactOnly ? [] : menuItems(menu.list)} align={menu.list[0]?.sender?.is_me ? "end" : "start"} header={menu.list.length === 1 && !menu.list[0].deleted ? (
+        <PointMenu at={menu.at} onClose={() => setMenu(null)} items={menu.reactOnly ? [] : menuItems(menu.list)} align={menu.list[0]?.sender?.is_me ? "end" : "start"} header={!inbox && menu.list.length === 1 && !menu.list[0].deleted ? (
           <div className="ms-quickreact">
             {QUICK_REACTIONS.map((e) => <button key={e} type="button" className={menu.list[0].reactions?.some((r) => r.mine && r.emoji === e) ? "is-mine" : ""} onClick={() => { setMenu(null); react(menu.list[0], e); }}>{e}</button>)}
           </div>

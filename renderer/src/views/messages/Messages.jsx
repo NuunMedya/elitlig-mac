@@ -6,6 +6,13 @@
 // Gerçek zaman ana süreçteki socket'ten gelir (window.elitlig.chat.onEvent);
 // socket yokken liste ve açık sohbet yoklanır. Çevrimdışıyken son veriler
 // önbellekten okunur, metin mesajları kuyruğa alınır.
+//
+// Üye mesajları (2.7): messages.view yetkisi olan yönetici, üyelerin (takım,
+// oyuncu, üye) "ElitLig Yönetimi" sohbetlerini burada ortak gelen kutusu
+// olarak görür ("Üye mesajları" süzgeci, Takımlar / Oyuncular / Üyeler);
+// aynı sohbet bölmesinde açılır, yanıt ElitLig Yönetimi adına gider.
+// Talepler ve bildirimler sohbete düşmez (Talepler aracı). Arama kayıtları
+// messages.calls_view ile "Kayıtlar" panelindedir.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Empty, Icon, Kbd, Spinner, useConfirm, useResult, useToast } from "../../components/ui";
 import { get, patch, post, request, useCommand, useDebounced, useResource } from "../../api";
@@ -13,6 +20,8 @@ import { Avatar, C, PointMenu, Ticks, chatApi, pointOf } from "./common";
 import ChatPane from "./ChatPane";
 import { ContactPanel, GroupPanel, MediaPanel, SearchPanel, StarredPanel } from "./InfoPanel";
 import { Lightbox, NewChatPanel, NewGroupPanel, ReportModal } from "./Pickers";
+import { CallsPanel } from "./InboxPanels";
+import { A, INBOX_KINDS, KIND_LABELS, filterInbox, inboxCounts, inboxThreads, unreadMerged } from "../../lib/inboxUtils";
 import { applyIncoming, chatCounts, chatPreview, createDraftStore, filterChats, isGroupChat, isUnread, listTime, quoteText, tickStatus, upsertChat } from "../../lib/chatUtils";
 import "./messages.css";
 
@@ -27,6 +36,16 @@ export default function Messages({ arg, auth, go }) {
   const res = useResource(`${C}/conversations`);
   const conversations = useMemo(() => res.data?.conversations || [], [res.data]);
   const setList = useCallback((fn) => res.setData((d) => ({ ...(d || {}), conversations: fn(d?.conversations || []) })), [res.setData]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Üye mesajları (ortak gelen kutusu): yalnız messages.view yetkisiyle.
+  const access = auth.access || {};
+  const inboxRes = useResource(access.inbox ? `${A}/conversations` : null, { limit: 100 }, { enabled: Boolean(access.inbox) });
+  const inboxList = useMemo(() => (access.inbox ? inboxThreads(inboxRes.data?.conversations) : []), [inboxRes.data, access.inbox]);
+  const setInboxList = useCallback((fn) => inboxRes.setData((d) => (d ? { ...d, conversations: fn(d.conversations || []) } : d)), [inboxRes.setData]); // eslint-disable-line react-hooks/exhaustive-deps
+  const inboxReload = useRef(null);
+  inboxReload.current = () => inboxRes.reload({ quiet: true });
+  const inboxTimer = useRef(null);
+  const reloadInboxSoon = (ms = 400) => { clearTimeout(inboxTimer.current); inboxTimer.current = setTimeout(() => inboxReload.current?.(), ms); };
+  const [inboxKind, setInboxKind] = useState("all");
   const [activeId, setActiveId] = useState(() => (/^\d+$/.test(String(arg || "")) ? Number(arg) : null));
   const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
@@ -46,7 +65,7 @@ export default function Messages({ arg, auth, go }) {
   const [, setDraftTick] = useState(0);
   const listeners = useRef(new Set());
   const searchRef = useRef(null);
-  const active = conversations.find((c) => Number(c.id) === Number(activeId)) || null;
+  const active = conversations.find((c) => Number(c.id) === Number(activeId)) || inboxList.find((c) => Number(c.id) === Number(activeId)) || null;
   const query = useDebounced(q, 300);
 
   const subscribe = useCallback((fn) => { listeners.current.add(fn); return () => listeners.current.delete(fn); }, []);
@@ -64,6 +83,15 @@ export default function Messages({ arg, auth, go }) {
     const off = chatApi().onEvent(({ name, payload }) => {
       emitLocal(name, payload);
       const cid = Number(payload?.conversation_id);
+      // Üye mesajları: üye yazdı (yalnız kimlik gelir) ya da yönetim adına yanıt / okundu.
+      if (name === "chat:admin-inbox") { reloadInboxSoon(300); return; }
+      if (payload?.admin) {
+        if (name === "chat:message" && payload.message) {
+          setInboxList((list) => list.map((c) => (Number(c.id) === cid ? { ...c, last_message: payload.message, last_message_at: payload.message.created_at || new Date().toISOString(), unread: 0 } : c)));
+        }
+        reloadInboxSoon(900);
+        return;
+      }
       if (name === "chat:typing") seen(payload.user_id);
       if (name === "chat:message") seen(payload.message?.sender?.user_id);
       if (name === "chat:message" && payload.message) {
@@ -91,9 +119,9 @@ export default function Messages({ arg, auth, go }) {
         setList((list) => list.map((c) => (Number(c.id) === cid && c.last_message?.id === payload.message.id ? { ...c, last_message: { ...c.last_message, ...payload.message } } : c)));
       } else if (name === "chat:deleted") {
         setList((list) => list.map((c) => (Number(c.id) === cid && c.last_message?.id === Number(payload.message_id) ? { ...c, last_message: { ...c.last_message, deleted: true, body: null } } : c)));
-      } else if (name === "chat:poll") res.reload({ quiet: true });
+      } else if (name === "chat:poll") { res.reload({ quiet: true }); reloadInboxSoon(100); }
     });
-    return () => { off(); offStatus(); offSync(); offOnline(); };
+    return () => { off(); offStatus(); offSync(); offOnline(); clearTimeout(inboxTimer.current); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const activeRef = useRef(activeId);
   activeRef.current = activeId;
@@ -153,7 +181,7 @@ export default function Messages({ arg, auth, go }) {
       }
       if (e.metaKey && e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
         e.preventDefault();
-        const list = filterChats(conversations, { filter: filter === "starred" ? "all" : filter, q });
+        const list = shownChats();
         const i = list.findIndex((c) => c.id === activeId);
         const next = list[Math.max(0, Math.min(list.length - 1, i + (e.key === "ArrowDown" ? 1 : -1)))];
         if (next) setActiveId(next.id);
@@ -161,7 +189,7 @@ export default function Messages({ arg, auth, go }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [panel, side, conversations, filter, q, activeId]);
+  }, [panel, side, conversations, inboxList, inboxKind, filter, q, activeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sohbetlerde ve mesajlarda arama.
   useEffect(() => {
@@ -171,13 +199,17 @@ export default function Messages({ arg, auth, go }) {
   useEffect(() => { if (filter === "starred") get(`${C}/starred`).then((r) => setStarred(r.ok ? r.data.items || [] : [])); }, [filter]);
 
   /* ----------------------------- sohbet işlemleri ----------------------------- */
-  const patchConv = useCallback((id, p, { soft = false } = {}) => setList((list) => list.map((c) => {
-    if (Number(c.id) !== Number(id)) return c;
-    if (!soft) return { ...c, ...p };
-    // Mesaj sayfasıyla gelen sohbet özeti kişisel durumu taşır; okunmamış yerelde sıfırlanır.
-    const { unread: _u, ...rest } = p;
-    return { ...c, ...rest, unread: c.unread };
-  })), [setList]);
+  const patchConv = useCallback((id, p, { soft = false } = {}) => {
+    const apply = (list) => list.map((c) => {
+      if (Number(c.id) !== Number(id)) return c;
+      if (!soft) return { ...c, ...p };
+      // Mesaj sayfasıyla gelen sohbet özeti kişisel durumu taşır; okunmamış yerelde sıfırlanır.
+      const { unread: _u, ...rest } = p;
+      return { ...c, ...rest, unread: c.unread };
+    });
+    setList(apply);
+    setInboxList(apply);
+  }, [setList, setInboxList]);
   const onRead = useCallback((id) => patchConv(id, { unread: 0, marked_unread: false }), [patchConv]);
   const setState = async (c, body, ok) => {
     const r = await request({ method: "PATCH", path: `${C}/conversations/${c.id}/state`, body, queue: false });
@@ -233,9 +265,25 @@ export default function Messages({ arg, auth, go }) {
 
   /* ---------------------------------- liste ---------------------------------- */
   const counts = chatCounts(conversations);
-  const shown = filter === "starred" ? [] : filterChats(conversations, { filter, q });
+  const iCounts = inboxCounts(inboxList);
+  const filters = access.inbox ? [FILTERS[0], ["inbox", "Üye mesajları"], ...FILTERS.slice(1)] : FILTERS;
+  const chipCount = (k) => (k === "inbox" ? iCounts.unread : k === "unread" ? counts.unread + iCounts.unread : counts[k]);
+  function shownChats() {
+    if (filter === "starred") return [];
+    if (filter === "inbox") return filterInbox(inboxList, { kind: inboxKind, q });
+    if (filter === "unread" && access.inbox) return unreadMerged(conversations, inboxList, { q });
+    // Aramada üye mesajları da bulunur.
+    if (filter === "all" && q.trim() && access.inbox) return [...filterChats(conversations, { filter, q }), ...filterInbox(inboxList, { q })];
+    return filterChats(conversations, { filter, q });
+  }
+  const shown = shownChats();
+  const openInWeb = () => window.elitlig.app.openWeb("/yonetim/araclar/mesajlar");
+  const inboxRowItems = (c) => [
+    isUnread(c) && { label: "Okundu olarak işaretle", icon: "circle", onClick: () => request({ method: "POST", path: `${A}/conversations/${c.id}/read`, body: {}, queue: false }).then((r) => (r.ok ? onRead(c.id) : toast(r.error?.message || "Yapılamadı.", { tone: "error" }))) },
+    { label: "Sitede aç", icon: "external", onClick: openInWeb },
+  ];
   const typingIn = (c) => Object.values(typing[c.id] || {}).map((t) => t.name).filter(Boolean);
-  const rowItems = (c) => [
+  const rowItems = (c) => (c._inbox ? inboxRowItems(c) : [
     { label: c.archived ? "Arşivden çıkar" : "Sohbeti arşivle", icon: "archive", onClick: () => actions.archive(c) },
     { label: c.muted ? "Bildirimleri aç" : "Sessize al", icon: c.muted ? "bell" : "bellOff", onClick: () => actions.mute(c) },
     !c.archived && { label: c.pinned ? "Sabitlemeyi kaldır" : "Sohbeti sabitle", icon: "pin", onClick: () => actions.pin(c) },
@@ -243,18 +291,20 @@ export default function Messages({ arg, auth, go }) {
     "-",
     c.type === "group" && { label: "Gruptan çık", icon: "logout", danger: true, onClick: () => actions.leave(c) },
     { label: "Sohbeti sil", icon: "trash", danger: true, onClick: () => actions.remove(c) },
-  ];
+  ]);
 
   const chatRow = (c) => {
     const p = chatPreview(c);
+    // Üye mesajlarında ElitLig Yönetimi adına yazılan son yanıt "Yönetim:" ile başlar.
+    if (c._inbox && c.last_message?.sender?.is_management && !p.deleted) p.prefix = "Yönetim: ";
     const who = typingIn(c);
     const draft = Number(c.id) !== Number(activeId) ? drafts.get(c.id) : null;
     const status = tickStatus(c.last_message);
     return (
-      <div role="button" tabIndex={0} className={`ms-item ${Number(c.id) === Number(activeId) ? "is-active" : ""} ${isUnread(c) ? "is-unread" : ""}`} data-cid={c.id}
+      <div role="button" tabIndex={0} className={`ms-item ${Number(c.id) === Number(activeId) ? "is-active" : ""} ${isUnread(c) ? "is-unread" : ""} ${c._inbox ? "is-inbox" : ""}`} data-cid={c.id} data-inbox={c._inbox ? c.kind : undefined}
         onClick={() => { setActiveId(c.id); setSide(null); }} onKeyDown={(e) => e.key === "Enter" && setActiveId(c.id)}
         onContextMenu={(e) => { e.preventDefault(); setRowMenu({ at: pointOf(e), c }); }}>
-        <Avatar name={c.title} id={c.other_user?.user_id ?? c.id} url={c.avatar} size={48} group={isGroupChat(c)} online={c.type === "direct" && presence[c.other_user?.user_id]?.online} />
+        <Avatar name={c.title} id={c.other_user?.user_id ?? c.entity?.user_id ?? c.id} url={c.avatar || c.entity?.avatar} size={48} group={isGroupChat(c) || c.kind === "team"} online={c.type === "direct" && presence[c.other_user?.user_id]?.online} />
         <span className="ms-item__main">
           <span className="ms-item__top">
             <strong>{c.title}</strong>
@@ -271,7 +321,8 @@ export default function Messages({ arg, auth, go }) {
               <button type="button" className="ms-item__chev" aria-label="Sohbet menüsü" onClick={(e) => { e.stopPropagation(); setRowMenu({ at: { rect: e.currentTarget.getBoundingClientRect() }, c }); }}><Icon name="chevronDown" size={15} /></button>
             </span>
           </span>
-          {c.other_user?.team_name && c.other_user.team_name !== c.title ? <span className="ms-item__team">{c.other_user.team_name}</span>
+          {c._inbox ? <span className="ms-item__team ms-item__kind"><b className={`ms-kind ms-kind--${c.kind}`}>{KIND_LABELS[c.kind] || "Üye"}</b>{c.subtitle && c.subtitle !== KIND_LABELS[c.kind] ? String(c.subtitle).replace(/^(Takım|Oyuncu|Üye)\s*·\s*/, "") : ""}</span>
+            : c.other_user?.team_name && c.other_user.team_name !== c.title ? <span className="ms-item__team">{c.other_user.team_name}</span>
             : c.other_user?.managed_team_id && c.other_user.manager_name && c.other_user.manager_name !== c.title ? <span className="ms-item__team ms-item__team--person"><Icon name="award" size={10} /> {c.other_user.manager_name}</span> : null}
         </span>
       </div>
@@ -281,6 +332,7 @@ export default function Messages({ arg, auth, go }) {
   const leftBody = () => {
     if (side === "newChat") return <NewChatPanel onClose={() => setSide(null)} onPick={(p) => openDirect(p.user_id)} onNewGroup={() => setSide("newGroup")} />;
     if (side === "newGroup" || side?.kind === "newGroup") return <NewGroupPanel initial={side?.initial} onClose={() => setSide(null)} onCreate={createGroup} />;
+    if (side === "calls") return <CallsPanel onClose={() => setSide(null)} onOpenChat={(id) => { setSide(null); setFilter("inbox"); setActiveId(id); }} />;
     return (
       <>
         <header className="ms-list__head">
@@ -288,11 +340,17 @@ export default function Messages({ arg, auth, go }) {
           <span className="spacer" />
           <button type="button" className="icon-btn" title="Yeni sohbet (⌘N)" onClick={() => setSide("newChat")}><Icon name="pencil" size={17} /></button>
           <button type="button" className="icon-btn" title="Yeni grup (⇧⌘N)" onClick={() => setSide("newGroup")}><Icon name="users" size={17} /></button>
+          {access.calls && <button type="button" className="icon-btn" title="Kayıtlar — yönetim arama kayıtları" data-act="calls" onClick={() => setSide("calls")}><Icon name="phone" size={17} /></button>}
         </header>
         <div className="ms-search"><Icon name="search" size={14} /><input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sohbetlerde ve mesajlarda ara" onKeyDown={(e) => e.key === "Escape" && setQ("")} />{q && <button type="button" className="icon-btn icon-btn--xs" onClick={() => setQ("")}><Icon name="x" size={12} /></button>}</div>
         <div className="ms-chips">
-          {FILTERS.map(([k, l]) => <button key={k} type="button" className={filter === k ? "is-active" : ""} onClick={() => setFilter(k)}>{l}{k !== "starred" && counts[k] ? <span>{counts[k]}</span> : null}</button>)}
+          {filters.map(([k, l]) => <button key={k} type="button" data-filter={k} className={`${filter === k ? "is-active" : ""} ${k === "inbox" ? "ms-chip--inbox" : ""}`} onClick={() => setFilter(k)}>{l}{k !== "starred" && chipCount(k) ? <span>{chipCount(k)}</span> : null}</button>)}
         </div>
+        {filter === "inbox" && (
+          <div className="ms-subchips" role="tablist" aria-label="Üye mesajları">
+            {INBOX_KINDS.map(([k, l]) => <button key={k} type="button" data-kind={k} className={inboxKind === k ? "is-active" : ""} onClick={() => setInboxKind(k)}>{l}{k === "all" ? (inboxList.length ? <em>{inboxList.length}</em> : null) : iCounts[k] ? <span>{iCounts[k]}</span> : null}</button>)}
+          </div>
+        )}
         {link !== "connected" && (
           <div className={`ms-conn ${!online || res.offline ? "is-offline" : ""}`}>
             <Icon name={!online || res.offline ? "cloudOff" : "refresh"} size={13} />
@@ -313,8 +371,19 @@ export default function Messages({ arg, auth, go }) {
               </div>
             ) : (
               <>
-                {shown.map((c) => <React.Fragment key={c.id}>{chatRow(c)}</React.Fragment>)}
-                {!shown.length && !q && <Empty icon={filter === "archive" ? "archive" : "message"} title={filter === "archive" ? "Arşiv boş" : filter === "unread" ? "Okunmamış sohbet yok" : "Henüz sohbet yok"} text={filter === "all" ? "Takım başkanları, oyuncular, üyeler ya da yönetimdeki arkadaşlarınızla yazışmaya başlayın." : null}
+                {filter === "all" && !q && access.inbox && inboxList.length > 0 && (
+                  <button type="button" className="ms-inbox-link" data-act="inbox" onClick={() => setFilter("inbox")}>
+                    <span className="ms-av ms-av--inbox"><Icon name="inbox" size={20} /></span>
+                    <span className="ms-inbox-link__text"><strong>Üye mesajları</strong><small>{iCounts.unread ? `${iCounts.unread} okunmamış sohbet · takım, oyuncu ve üyeler` : "Takım, oyuncu ve üyelerin ElitLig Yönetimi sohbetleri"}</small></span>
+                    {iCounts.unreadMessages > 0 && <span className="ms-badge">{iCounts.unreadMessages > 99 ? "99+" : iCounts.unreadMessages}</span>}
+                    <Icon name="chevronRight" size={16} />
+                  </button>
+                )}
+                {filter === "inbox" && inboxRes.loading && !inboxRes.data && <div className="ms-skel-list">{Array.from({ length: 6 }, (_, i) => <span key={i}><i /><b /></span>)}</div>}
+                {filter === "inbox" && inboxRes.error && !inboxRes.data && <p className="ms-note">{inboxRes.error.status === 403 ? "Üye mesajlarını görme yetkiniz yok (messages.view)." : inboxRes.error.message || "Üye mesajları alınamadı."}</p>}
+                {shown.map((c) => <React.Fragment key={`${c._inbox ? "i" : "p"}${c.id}`}>{chatRow(c)}</React.Fragment>)}
+                {filter === "inbox" && !shown.length && inboxRes.data && <Empty icon="inbox" title={q ? "Eşleşen üye sohbeti yok" : "Üye mesajı yok"} text="Takım, oyuncu ve üyelerin ElitLig Yönetimi'ne yazdığı mesajlar burada toplanır. Onay bekleyen talepler Talepler'dedir." />}
+                {!shown.length && !q && filter !== "inbox" && <Empty icon={filter === "archive" ? "archive" : "message"} title={filter === "archive" ? "Arşiv boş" : filter === "unread" ? "Okunmamış sohbet yok" : "Henüz sohbet yok"} text={filter === "all" ? "Takım başkanları, oyuncular, üyeler ya da yönetimdeki arkadaşlarınızla yazışmaya başlayın." : null}
                   action={filter === "all" ? <button type="button" className="btn btn--primary" onClick={() => setSide("newChat")}><Icon name="plus" /> Yeni sohbet</button> : null} />}
                 {q && !shown.length && <p className="ms-note">“{q}” ile eşleşen sohbet yok.</p>}
                 {hits?.length > 0 && (
@@ -337,7 +406,7 @@ export default function Messages({ arg, auth, go }) {
   };
 
   const rightPanel = () => {
-    if (!active || !panel) return null;
+    if (!active || !panel || active._inbox) return null;
     const back = panel.from === "info" ? () => setPanel({ kind: "info" }) : null;
     if (panel.kind === "media") return <MediaPanel conv={active} onClose={() => setPanel(null)} onBack={back} onOpenImage={(items, index) => setLightbox({ items: items.map((x) => ({ ...x, meta: { file: { url: x.url } } })), index })} onJump={(id) => setJump({ conversationId: active.id, messageId: id })} />;
     if (panel.kind === "starred") return <StarredPanel conv={active} onClose={() => setPanel(null)} onBack={back} onJump={(id) => setJump({ conversationId: active.id, messageId: id })} />;
@@ -355,7 +424,7 @@ export default function Messages({ arg, auth, go }) {
     <div className={`ms-view ${panel && active ? "has-panel" : ""}`}>
       <aside className="ms-list">{leftBody()}</aside>
       {active ? (
-        <ChatPane key={active.id} conv={active} me={me} conversations={conversations} subscribe={subscribe} typing={typing[active.id]} presence={presence} link={link}
+        <ChatPane key={`${active._inbox ? "i" : "p"}${active.id}`} conv={active} canReply={access.reply !== false} me={me} conversations={conversations} subscribe={subscribe} typing={typing[active.id]} presence={presence} link={link}
           drafts={{ get: drafts.get, set: (id, d) => { drafts.set(id, d); setDraftTick((x) => x + 1); }, clear: (id) => { drafts.clear(id); setDraftTick((x) => x + 1); } }}
           actions={actions} panel={panel} setPanel={setPanel} jump={jump} onConsumedJump={() => setJump(null)} onRead={onRead} onConvPatch={patchConv} />
       ) : (

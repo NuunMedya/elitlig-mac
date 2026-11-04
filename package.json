@@ -1,8 +1,8 @@
 {
   "name": "elitlig-araclar",
   "productName": "Elitlig Araclar",
-  "version": "2.6.0",
-  "description": "Elitlig Araçlar — Mac için bağımsız masaüstü uygulaması: Mesajlar, Yapılacaklar, Ajanda, Not Defteri, Projeler, Saha ve maç planlama, Ön Muhasebe, Tablolar, Rehber, Hesap Araçları ve Odak Sayacı.",
+  "version": "2.7.0",
+  "description": "Elitlig Araçlar — Mac için bağımsız masaüstü uygulaması: Mesajlar (üye mesajları dahil), Talepler, Yapılacaklar, Ajanda, Not Defteri, Projeler, Saha ve maç planlama, Ön Muhasebe, Tablolar, Rehber, Hesap Araçları ve Odak Sayacı.",
   "main": "app/main.js",
   "author": "Nuun Medya <nuunmedya@gmail.com>",
   "license": "UNLICENSED",

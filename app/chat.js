@@ -13,11 +13,20 @@
 //     Dock rozeti, menü çubuğu) ve sessize alınan sohbetleri verir.
 //   - Gelen mesaj (benim değilse, sistem satırı değilse) onIncoming ile
 //     bildirilir; bildirim kararını main.js verir.
+//   - Üye mesajları (ortak gelen kutusu, 2.7): messages.view yetkisi olan
+//     yönetici için üyelerin "ElitLig Yönetimi" sohbetleri de izlenir
+//     (/api/admin/chat). Üye yazınca sunucu yalnız "chat:admin-inbox"
+//     yollar; liste yeniden okunur, yeni mesaj karşılaştırmayla bulunur.
+//     Okunmamış toplamı kişisel + üye mesajlarıdır. Yönetim adına yazılan
+//     yanıtlar (sender.is_management) gelen mesaj sayılmaz.
+//   - "admin:requests" (yeni / sonuçlanan talep) "requests" olayıyla main.js'e
+//     iletilir (Talepler rozeti ve bildirimi).
 "use strict";
 
 const { EventEmitter } = require("node:events");
 
-const FORWARDED_EVENTS = ["chat:message", "chat:conversation", "chat:read", "chat:typing", "chat:deleted", "chat:updated", "call:incoming", "call:ended"];
+const FORWARDED_EVENTS = ["chat:message", "chat:conversation", "chat:read", "chat:typing", "chat:deleted", "chat:updated", "chat:admin-inbox", "admin:requests", "call:incoming", "call:ended"];
+const INBOX_PATH = "/api/admin/chat/conversations";
 const EMITTABLE = new Set(["chat:typing", "chat:read"]);
 const POLL_MS = 15000;
 const DRIFT_MS = 120000;
@@ -31,12 +40,22 @@ function diffIncoming(prev, next) {
   const out = [];
   for (const c of next || []) {
     const m = c.last_message;
-    if (!m || !m.id || m.sender?.is_me || m.kind === "system" || m.deleted) continue;
+    if (!m || !m.id || m.sender?.is_me || m.sender?.is_management || m.kind === "system" || m.deleted) continue;
     const known = prev.get(Number(c.id));
     if (known === undefined ? Number(c.unread) > 0 : Number(m.id) > known) out.push({ conversation: c, message: m });
   }
   return out;
 }
+
+/**
+ * Yönetim sohbet listesinden ortak gelen kutusu: yalnız üyelerin yönetim
+ * sohbetleri (ekip sohbetleri kişisel listede zaten var) ve en az bir gerçek
+ * mesajı olanlar. Son mesajı eski bir talep kartı (kind=notification /
+ * audience=management) olan sohbet de alınmaz: sunucunun yönetim listesi
+ * önizlemeyi last_message_id'den okuduğu için kart gelebiliyor.
+ */
+const isCard = (m) => m?.kind === "notification" || m?.audience === "management";
+const inboxThreads = (list) => (list || []).filter((c) => c && c.type === "management" && c.entity?.kind !== "staff" && c.last_message && !isCard(c.last_message));
 
 /**
  * multipart/form-data gövdesi (tek dosya alanı). Electron'un net.fetch'i
@@ -59,13 +78,21 @@ const MIME = {
 };
 const mimeOf = (name) => MIME[String(name || "").split(".").pop().toLowerCase()] || "application/octet-stream";
 
-function createChatLink({ origin, getToken, ioFactory, api, userAgent, isSignedIn = () => true, timers = { setInterval, clearInterval, setTimeout, clearTimeout }, pollMs = POLL_MS }) {
+function createChatLink({ origin, getToken, ioFactory, api, userAgent, isSignedIn = () => true, inboxEnabled = () => false, timers = { setInterval, clearInterval, setTimeout, clearTimeout }, pollMs = POLL_MS }) {
   const events = new EventEmitter();
   let socket = null;
   let state = "off"; // off | connecting | connected
   let snapshot = null; // Map(conversationId → last message id)
   let conversations = [];
-  let unread = 0;
+  let unread = 0; // kişisel + üye mesajları
+  let personalUnread = 0;
+  let inbox = { list: [], snapshot: null, unread: 0 };
+  let inboxTimer = null;
+  let inboxRefreshing = null;
+  const emitUnread = () => {
+    const total = personalUnread + inbox.unread;
+    if (total !== unread) { unread = total; events.emit("unread", unread); }
+  };
   let active = null;
   let pollTimer = null;
   let driftTimer = null;
@@ -80,10 +107,42 @@ function createChatLink({ origin, getToken, ioFactory, api, userAgent, isSignedI
   };
 
   const muted = (id) => Boolean(conversations.find((c) => Number(c.id) === Number(id))?.muted);
-  const conversation = (id) => conversations.find((c) => Number(c.id) === Number(id)) || null;
+  const conversation = (id) => conversations.find((c) => Number(c.id) === Number(id)) || inbox.list.find((c) => Number(c.id) === Number(id)) || null;
+
+  /** Ortak gelen kutusu: üyelerin yönetim sohbetleri (yetki yoksa boş). */
+  function refreshInbox({ detect = true } = {}) {
+    if (!isSignedIn() || !inboxEnabled()) {
+      if (inbox.list.length || inbox.unread) { inbox = { list: [], snapshot: null, unread: 0 }; emitUnread(); }
+      return Promise.resolve(null);
+    }
+    if (inboxRefreshing) return inboxRefreshing;
+    inboxRefreshing = (async () => {
+      const res = await api.request({ path: INBOX_PATH, query: { limit: 100 } });
+      if (!res.ok || !Array.isArray(res.data?.conversations)) {
+        if (res.error?.status === 403) { inbox = { list: [], snapshot: null, unread: 0 }; emitUnread(); }
+        return null;
+      }
+      const list = inboxThreads(res.data.conversations);
+      const incoming = detect ? diffIncoming(inbox.snapshot, list) : [];
+      inbox = { list, snapshot: new Map(list.map((c) => [Number(c.id), Number(c.last_message?.id) || 0])), unread: unreadTotal(list) };
+      emitUnread();
+      if (!res.offline) {
+        incoming
+          .filter((item) => Number(active) !== Number(item.conversation.id))
+          .forEach((item) => events.emit("incoming", { ...item, inbox: true, muted: false, source: "inbox" }));
+      }
+      return list;
+    })().finally(() => { inboxRefreshing = null; });
+    return inboxRefreshing;
+  }
+  const refreshInboxSoon = (ms = 500, detect = true) => {
+    if (!inboxEnabled()) return;
+    if (inboxTimer) timers.clearTimeout(inboxTimer);
+    inboxTimer = timers.setTimeout(() => { inboxTimer = null; refreshInbox({ detect }); }, ms);
+  };
 
   /** Sohbet listesini okur; okunmamış toplamını ve yoklamadaki yeni mesajları çıkarır. */
-  function refresh({ detect = state !== "connected" } = {}) {
+  function refresh({ detect = state !== "connected", withInbox = true } = {}) {
     if (!isSignedIn()) return Promise.resolve(null);
     if (refreshing) return refreshing;
     refreshing = (async () => {
@@ -93,17 +152,19 @@ function createChatLink({ origin, getToken, ioFactory, api, userAgent, isSignedI
       const incoming = detect ? diffIncoming(snapshot, list) : [];
       conversations = list;
       snapshot = new Map(list.map((c) => [Number(c.id), Number(c.last_message?.id) || 0]));
-      const total = unreadTotal(list);
-      if (total !== unread) { unread = total; events.emit("unread", unread); }
+      personalUnread = unreadTotal(list);
+      emitUnread();
       if (!res.offline) incoming.forEach((item) => events.emit("incoming", { ...item, muted: Boolean(item.conversation.muted), source: "poll" }));
       return list;
     })().finally(() => { refreshing = null; });
+    // Üye mesajlarında yeni mesaj her zaman karşılaştırmayla bulunur (sunucu içerik yollamaz).
+    if (withInbox) refreshInbox({ detect: true });
     return refreshing;
   }
 
   const refreshSoon = (ms = 1200) => {
     if (refreshTimer) timers.clearTimeout(refreshTimer);
-    refreshTimer = timers.setTimeout(() => { refreshTimer = null; refresh({ detect: false }); }, ms);
+    refreshTimer = timers.setTimeout(() => { refreshTimer = null; refresh({ detect: false, withInbox: false }); }, ms);
   };
 
   function schedulePolling() {
@@ -121,6 +182,11 @@ function createChatLink({ origin, getToken, ioFactory, api, userAgent, isSignedI
 
   function onSocketEvent(name, payload) {
     events.emit("event", { name, payload });
+    if (name === "admin:requests") { events.emit("requests", payload || {}); return; }
+    // Üye mesajları: üye yazdı (yalnız sohbet kimliği gelir) ya da bir yönetici
+    // yönetim adına yanıtladı / okudu → liste yeniden okunur.
+    if (name === "chat:admin-inbox") { refreshInboxSoon(400, true); return; }
+    if (payload?.admin && ["chat:message", "chat:read", "chat:updated"].includes(name)) { refreshInboxSoon(700, name === "chat:message" && !payload.message?.sender?.is_management); return; }
     if (name === "chat:message" && payload?.message) {
       const m = payload.message;
       const id = Number(payload.conversation_id);
@@ -128,7 +194,7 @@ function createChatLink({ origin, getToken, ioFactory, api, userAgent, isSignedI
       if (!m.sender?.is_me && m.kind !== "system") {
         const conv = conversation(id);
         events.emit("incoming", { conversation: conv || { id, title: m.sender?.name || "Mesaj", type: "direct" }, message: m, muted: muted(id), source: "socket" });
-        if (Number(active) !== id) { unread += 1; events.emit("unread", unread); }
+        if (Number(active) !== id) { personalUnread += 1; emitUnread(); }
       }
       refreshSoon(conversation(id) ? 2500 : 600);
     } else if (name === "chat:conversation" || name === "chat:deleted") refreshSoon();
@@ -167,6 +233,8 @@ function createChatLink({ origin, getToken, ioFactory, api, userAgent, isSignedI
     snapshot = null;
     conversations = [];
     unread = 0;
+    personalUnread = 0;
+    inbox = { list: [], snapshot: null, unread: 0 };
     state = "off";
     events.emit("status", { state, unread });
     events.emit("unread", 0);
@@ -195,6 +263,9 @@ function createChatLink({ origin, getToken, ioFactory, api, userAgent, isSignedI
     emit,
     refresh,
     refreshSoon,
+    refreshInbox,
+    refreshInboxSoon,
+    inboxUnread: () => inbox.unread,
     setActive: (id) => { active = id ? Number(id) : null; },
     active: () => active,
     status: () => ({ state, unread }),
@@ -204,4 +275,4 @@ function createChatLink({ origin, getToken, ioFactory, api, userAgent, isSignedI
   };
 }
 
-module.exports = { createChatLink, diffIncoming, unreadTotal, buildMultipart, mimeOf, FORWARDED_EVENTS };
+module.exports = { createChatLink, diffIncoming, unreadTotal, inboxThreads, buildMultipart, mimeOf, FORWARDED_EVENTS };

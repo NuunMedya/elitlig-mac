@@ -9,6 +9,7 @@ import logo from "./assets/logo-white.png";
 
 const Today = lazy(() => import("./views/Today"));
 const Messages = lazy(() => import("./views/messages/Messages"));
+const Requests = lazy(() => import("./views/requests/Requests"));
 const Todos = lazy(() => import("./views/todos/Todos"));
 const Agenda = lazy(() => import("./views/Agenda"));
 const Notes = lazy(() => import("./views/Notes"));
@@ -24,6 +25,7 @@ const Account = lazy(() => import("./views/Account"));
 export const ROUTES = [
   { key: "today", label: "Bugün", icon: "sun", view: Today, shortcut: "⌘1", group: "Günlük" },
   { key: "messages", label: "Mesajlar", icon: "message", view: Messages, shortcut: "⇧⌘M", group: "Günlük" },
+  { key: "requests", label: "Talepler", icon: "inbox", view: Requests, shortcut: "⇧⌘T", group: "Günlük", needs: "requests" },
   { key: "todos", label: "Yapılacaklar", icon: "checkSquare", view: Todos, shortcut: "⌘2", group: "Günlük" },
   { key: "agenda", label: "Ajanda", icon: "calendar", view: Agenda, shortcut: "⌘3", group: "Günlük" },
   { key: "notes", label: "Not Defteri", icon: "note", view: Notes, shortcut: "⌘4", group: "Günlük" },
@@ -68,6 +70,7 @@ function Shell({ auth }) {
   const [sync, setSync] = useState({ online: true, pending: 0 });
   const [focusState, setFocusState] = useState(null);
   const [chatUnread, setChatUnread] = useState(0);
+  const [requestsSummary, setRequestsSummary] = useState(null);
   const summary = useResource("/api/todos/summary");
   useEffect(() => {
     const refresh = () => summary.reload({ quiet: true });
@@ -105,6 +108,16 @@ function Shell({ auth }) {
     window.elitlig.chat.status().then((st) => setChatUnread(st.unread || 0));
     return window.elitlig.chat.onUnread((n) => setChatUnread(n || 0));
   }, []);
+  // Talepler: özet ana süreçte; yeni talep gelince (pencere öndeyse) kısa bildirim.
+  useEffect(() => {
+    window.elitlig.requests.summary().then(setRequestsSummary);
+    const offSummary = window.elitlig.requests.onSummary(setRequestsSummary);
+    const offChange = window.elitlig.requests.onChange((p) => {
+      if (!p?.id || readRoute() === "requests" || !document.hasFocus()) return;
+      toast("Yeni talep geldi.", { tone: "info", timeout: 6000, action: { label: "Talepler'i aç", run: () => go(p.category ? `requests:${p.category}` : "requests") } });
+    });
+    return () => { offSummary(); offChange(); };
+  }, [toast, go]);
   useEffect(() => {
     window.elitlig.focus.state().then(setFocusState);
     return window.elitlig.focus.onState(setFocusState);
@@ -117,10 +130,13 @@ function Shell({ auth }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const current = ROUTES.find((r) => r.key === route);
+  const access = auth.access || { requests: true };
+  const routes = ROUTES.filter((r) => !r.needs || access[r.needs]);
+  const current = routes.find((r) => r.key === route);
   const View = route === "account" ? Account : current?.view || Today;
   const s = summary.data;
-  const badges = { todos: s ? (s.overdue || 0) + (s.today || 0) || null : null, messages: chatUnread ? (chatUnread > 99 ? "99+" : chatUnread) : null };
+  const reqTotal = Number(requestsSummary?.total) || 0;
+  const badges = { todos: s ? (s.overdue || 0) + (s.today || 0) || null : null, messages: chatUnread ? (chatUnread > 99 ? "99+" : chatUnread) : null, requests: reqTotal ? (reqTotal > 99 ? "99+" : reqTotal) : null };
   const name = auth.user?.fullName || auth.user?.username || "";
 
   const syncLabel = !sync.online ? "Çevrimdışı" : sync.pending ? `${sync.pending} değişiklik bekliyor` : "Eşitlendi";
@@ -134,14 +150,14 @@ function Shell({ auth }) {
           <Icon name="search" size={14} /><span>Ara veya komut…</span><Kbd>⌘K</Kbd>
         </button>
         <nav className="sidebar__nav" aria-label="Araçlar">
-          {ROUTES.map((r, i) => (
+          {routes.map((r, i) => (
             <React.Fragment key={r.key}>
-              {(i === 0 || ROUTES[i - 1].group !== r.group) && <div className="sidebar__section">{r.group}</div>}
+              {(i === 0 || routes[i - 1].group !== r.group) && <div className="sidebar__section">{r.group}</div>}
               <button type="button" data-tool={r.key} className={`nav-item ${route === r.key ? "is-active" : ""}`} onClick={() => go(r.key)} title={`${r.label} (${r.shortcut})`}>
                 <span className="nav-item__icon"><Icon name={r.icon} size={15} strokeWidth={2} /></span>
                 <span className="nav-item__label">{r.label}</span>
                 {r.key === "focus" && focusState?.running && <span className="nav-item__timer">{formatClock(focusState.mode === "stopwatch" ? focusState.elapsedMs : focusState.remainingMs)}</span>}
-                {badges[r.key] ? <span className={`nav-item__badge ${r.key === "messages" ? "is-chat" : s?.overdue ? "is-alert" : ""}`}>{badges[r.key]}</span> : null}
+                {badges[r.key] ? <span className={`nav-item__badge ${r.key === "messages" ? "is-chat" : r.key === "requests" ? "is-req" : s?.overdue ? "is-alert" : ""}`}>{badges[r.key]}</span> : null}
               </button>
             </React.Fragment>
           ))}
@@ -162,7 +178,7 @@ function Shell({ auth }) {
           <View key={route} go={go} arg={routeArg} auth={auth} summary={s} />
         </Suspense>
       </main>
-      {palette && <Palette onClose={() => setPalette(false)} go={go} routes={ROUTES} />}
+      {palette && <Palette onClose={() => setPalette(false)} go={go} routes={routes} />}
       {shortcuts && <ShortcutsHelp onClose={() => setShortcuts(false)} />}
     </div>
   );
@@ -171,7 +187,8 @@ function Shell({ auth }) {
 function ShortcutsHelp({ onClose }) {
   const rows = useMemo(() => [
     ["⌘K", "Komut paleti ve arama (sohbetler, kişiler dahil)"],
-    ["⇧⌘M", "Mesajlar"],
+    ["⇧⌘M", "Mesajlar (üye mesajları dahil)"],
+    ["⇧⌘T", "Talepler (onay bekleyenler)"],
     ["Mesajlar: ⌘N / ⇧⌘N", "Yeni sohbet / yeni grup"],
     ["Mesajlar: ⌘F", "Sohbette ara"],
     ["Mesajlar: ⌥⌘↓ / ⌥⌘↑", "Sonraki / önceki sohbet"],

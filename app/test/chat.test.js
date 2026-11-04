@@ -5,7 +5,8 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { EventEmitter } = require("node:events");
-const { createChatLink, diffIncoming, buildMultipart, mimeOf, unreadTotal } = require("../chat");
+const { createChatLink, diffIncoming, buildMultipart, mimeOf, unreadTotal, inboxThreads } = require("../chat");
+const { accessFromUser, probeAccess, sameAccess } = require("../access");
 const { createApi, isQueueable } = require("../api");
 
 const conv = (id, extra = {}) => ({ id, title: `S${id}`, type: "direct", unread: 0, muted: false, last_message: { id: id * 10, kind: "text", body: "x", sender: { is_me: false } }, ...extra });
@@ -115,4 +116,85 @@ test("çevrimdışı metin mesajı kuyruğa alınır; dosya mesajı alınmaz", a
   assert.equal(isQueueable("POST", "/api/chat/conversations/5/messages", { body: "x" }), false, "client_id olmadan kuyruk yok");
   const up = await api.upload("/api/chat/uploads/file", buildMultipart("file", "a.png", "image/png", Buffer.from("x")));
   assert.equal(up.offline, true);
+});
+
+test("üye mesajları: okunmamış birleşir, üye yazınca liste okunur ve bildirilir, yönetim yanıtı gelen sayılmaz", async () => {
+  const mg = (id, unread, lastId, extra = {}) => ({ id, type: "management", title: `Takım ${id}`, entity: { kind: "team" }, unread, last_message: { id: lastId, kind: "text", body: "talep", sender: { user_id: 40, is_me: false, is_management: false } }, ...extra });
+  let personal = [conv(1, { unread: 1 })];
+  let inbox = [mg(50, 2, 500), mg(51, 0, 510), { id: 52, type: "management", entity: { kind: "member" }, unread: 0, last_message: null }, { id: 1, type: "direct", entity: { kind: "staff" }, unread: 1, last_message: { id: 10 } }];
+  let inboxAllowed = true;
+  const calls = [];
+  const api = {
+    flush: () => {},
+    request: async ({ path, query }) => {
+      calls.push(path);
+      if (path === "/api/admin/chat/conversations") {
+        assert.equal(query.limit, 100);
+        return inboxAllowed ? { ok: true, data: { conversations: inbox } } : { ok: false, error: { status: 403 } };
+      }
+      return { ok: true, data: { conversations: personal } };
+    },
+  };
+  const timeouts = [];
+  const timers = { setInterval: () => ({}), clearInterval: () => {}, setTimeout: (fn) => { const t = { fn }; timeouts.push(t); return t; }, clearTimeout: (t) => { const i = timeouts.indexOf(t); if (i >= 0) timeouts.splice(i, 1); } };
+  const runTimers = async () => { while (timeouts.length) timeouts.shift().fn(); await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r)); };
+  let socket;
+  const link = createChatLink({ origin: "https://api.test", getToken: () => "T", ioFactory: () => { socket = fakeSocket(); return socket; }, api, timers, inboxEnabled: () => inboxAllowed });
+  const seen = { incoming: [], requests: [] };
+  link.events.on("incoming", (e) => seen.incoming.push(e));
+  link.events.on("requests", (p) => seen.requests.push(p));
+  link.connect();
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(link.inboxUnread(), 2, "yalnız üye sohbetleri sayılır (ekip sohbeti kişisel listede)");
+  assert.equal(link.unread(), 3, "kişisel 1 + üye mesajları 2");
+  assert.equal(link.conversation(50).title, "Takım 50");
+
+  socket.emitServer("chat:ready", {});
+  await new Promise((r) => setImmediate(r));
+  // Üye yazdı: sunucu yalnız kimlik yollar → liste okunur, yeni mesaj bildirilir.
+  inbox = [mg(50, 2, 500), mg(51, 1, 511)];
+  socket.emitServer("chat:admin-inbox", { conversation_id: 51 });
+  await runTimers();
+  assert.deepEqual(seen.incoming.map((i) => [i.conversation.id, i.message.id, i.inbox]), [[51, 511, true]]);
+  assert.equal(link.unread(), 4);
+
+  // Yönetim adına yanıt (başka bir yönetici): gelen mesaj değildir, sayaç sıfırlanır.
+  inbox = [mg(50, 0, 520, { last_message: { id: 520, kind: "text", body: "yanıt", sender: { user_id: null, is_management: true, is_me: false } } }), mg(51, 1, 511)];
+  socket.emitServer("chat:message", { conversation_id: 50, admin: true, message: { id: 520, kind: "text", sender: { user_id: null, is_management: true, is_me: false } } });
+  await runTimers();
+  assert.equal(seen.incoming.length, 1, "yönetim yanıtı bildirilmez");
+  assert.equal(link.unread(), 2);
+
+  // Talepler olayı main.js'e iletilir.
+  socket.emitServer("admin:requests", { id: 77, category: "transfer", type: "TRANSFER_OFFER_NEEDS_APPROVAL" });
+  assert.deepEqual(seen.requests, [{ id: 77, category: "transfer", type: "TRANSFER_OFFER_NEEDS_APPROVAL" }]);
+
+  // Yetki kalkınca (403) üye mesajları sayaçtan düşer.
+  inbox = [mg(50, 5, 530)];
+  inboxAllowed = false;
+  await link.refreshInbox();
+  assert.equal(link.inboxUnread(), 0);
+  assert.equal(link.unread(), 1);
+  assert.ok(calls.includes("/api/admin/chat/conversations"));
+});
+
+test("üye mesajı listesi ve yetkiler", async () => {
+  assert.deepEqual(inboxThreads([{ id: 1, type: "management", entity: { kind: "player" }, last_message: { id: 1 } }, { id: 2, type: "management", last_message: null }, { id: 3, type: "direct", last_message: { id: 3 } }]).map((c) => c.id), [1]);
+  assert.deepEqual(diffIncoming(new Map([[1, 1]]), [{ id: 1, unread: 0, last_message: { id: 2, kind: "text", sender: { is_management: true } } }]), [], "yönetim adına yazılan yanıt gelen sayılmaz");
+
+  const full = accessFromUser({ isManagement: true, permissions: ["messages.view", "messages.reply", "messages.calls_view"] });
+  assert.deepEqual(full, { known: true, inbox: true, reply: true, calls: true, listen: false, requests: true });
+  assert.deepEqual(accessFromUser({ isManagement: true, permissions: [] }), { known: true, inbox: false, reply: false, calls: false, listen: false, requests: true });
+  assert.equal(accessFromUser({ isManagement: true }).known, false, "eski oturum: liste yok");
+  assert.equal(accessFromUser({ isManagement: true }, { inbox: true, calls: false }).inbox, true);
+  assert.equal(accessFromUser(null).requests, false);
+  assert.equal(sameAccess(full, { ...full }), true);
+  assert.equal(sameAccess(full, { ...full, inbox: false }), false);
+
+  const seen = [];
+  const probe = await probeAccess(async (opts) => { seen.push(opts.path); return opts.path.endsWith("/reports") ? { ok: true, data: {} } : { ok: false, error: { status: 403 } }; });
+  assert.deepEqual(probe, { inbox: true, calls: false });
+  assert.deepEqual(seen.sort(), ["/api/admin/chat/calls", "/api/admin/chat/reports"]);
+  assert.equal(await probeAccess(async () => ({ ok: false, offline: true })), null, "bağlantı yoksa bilinmiyor");
 });

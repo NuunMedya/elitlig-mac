@@ -6,6 +6,7 @@ import { patch, post, tempId, useResource } from "../api";
 import { formatMoney, formatTime, greeting, groupTodos, parseQuickTask, relativeDay, formatDate } from "../lib/helpers";
 import { colorOf } from "../lib/agendaUtils";
 import { dayKey, dueLabel, formatWhen, groupFollowups } from "../lib/projectUtils";
+import { topCategories } from "../lib/requestUtils";
 
 const useClock = () => {
   const [now, setNow] = useState(() => new Date());
@@ -105,6 +106,7 @@ export default function Today({ go, auth }) {
           )}
         </section>
 
+        {auth.access?.requests !== false && <RequestsToday go={go} />}
         <ProjectsToday go={go} />
 
         <section className="card">
@@ -187,6 +189,32 @@ export default function Today({ go, auth }) {
         </section>
       </div>
     </div>
+  );
+}
+
+/** Bekleyen talepler: toplam ve en kalabalık kategoriler (Talepler'e kısa yol). */
+function RequestsToday({ go }) {
+  const [summary, setSummary] = useState(null);
+  useEffect(() => {
+    window.elitlig.requests.summary().then(setSummary);
+    return window.elitlig.requests.onSummary(setSummary);
+  }, []);
+  if (summary?.denied) return null;
+  const cats = topCategories(summary, 5);
+  const total = Number(summary?.total) || 0;
+  return (
+    <section className="card today-req" data-tool="requests">
+      <header className="card__head">
+        <h2 className="card__title"><Icon name="inbox" /> Bekleyen talepler</h2>
+        <button type="button" className="link-btn" onClick={() => go("requests")}>Talepler →</button>
+      </header>
+      {!summary ? <Spinner /> : total ? (<>
+        <button type="button" className="today-req__total link-btn" onClick={() => go("requests")}><strong>{total}</strong><span>talep onay bekliyor</span></button>
+        <div className="today-req__cats">
+          {cats.map((c) => <button key={c.key} type="button" data-cat={c.key} onClick={() => go(`requests:${c.key}`)}><Icon name={c.icon} size={13} /> {c.label} <b>{c.open}</b></button>)}
+        </div>
+      </>) : <Empty icon="checks" title="Bekleyen talep yok" text="Takım ve üyelerden gelen onay talepleri burada görünür." />}
+    </section>
   );
 }
 

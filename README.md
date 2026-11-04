@@ -9,8 +9,9 @@ uygulamada görünür.
 
 | Kısayol | Araç | Uygulamada |
 | --- | --- | --- |
-| ⇧⌘M | **Mesajlar** | WhatsApp düzeninde ekip mesajlaşması: takım başkanları, oyuncular, üyeler ve yönetimdeki arkadaşlarla birebir sohbet ya da karışık gruplar; okundu tikleri, yanıtla, tepki, ilet, yıldızla, sabitle, düzenle, sil; fotoğraf (albüm ve görüntüleyici), belge, sesli mesaj, anket, konum; @bahsetme, taslaklar, sohbette ve tüm sohbetlerde arama; grup ve kişi bilgisi, medya-belgeler-bağlantılar; canlı bağlantı, yazıyor…, çevrimiçi / son görülme; yeni mesajda Mac bildirimi; çevrimdışı yazılan metin bağlantı gelince gider |
-| ⌘1 | **Bugün** | Gecikmiş ve bugünkü işler, önümüzdeki 7 gün, bu ayın gelir-gideri, son notlar, odak istatistiği; tek satırda görev ekleme |
+| ⇧⌘M | **Mesajlar** | WhatsApp düzeninde ekip mesajlaşması: takım başkanları, oyuncular, üyeler ve yönetimdeki arkadaşlarla birebir sohbet ya da karışık gruplar; okundu tikleri, yanıtla, tepki, ilet, yıldızla, sabitle, düzenle, sil; fotoğraf (albüm ve görüntüleyici), belge, sesli mesaj, anket, konum; @bahsetme, taslaklar, sohbette ve tüm sohbetlerde arama; grup ve kişi bilgisi, medya-belgeler-bağlantılar; canlı bağlantı, yazıyor…, çevrimiçi / son görülme; yeni mesajda Mac bildirimi; çevrimdışı yazılan metin bağlantı gelince gider. **Üye mesajları** (messages.view): takım, oyuncu ve üyelerin “ElitLig Yönetimi” sohbetleri ortak gelen kutusu olarak aynı ekranda (Takımlar / Oyuncular / Üyeler), yanıt ElitLig Yönetimi adına; **Kayıtlar** (arama kayıtları, messages.calls_view) |
+| ⇧⌘T | **Talepler** | Onay merkezi: profil değişikliği, sahiplenme, yeni üye, transfer, kadro onayı, maç talebi, savunma… kategori sekmeleri (açık talep sayılarıyla), Bekleyen / Bilgilendirme / Sonuçlanan, arama; kartta kim (takım kartı / üye kartı), il, zaman; **Onayla / Reddet** (onay penceresiyle, talep kendiliğinden kapanır), site sayfası düğmeleri, İlgili sayfa, Kapat; yeni talep anında listeye düşer, pencere arka plandaysa Mac bildirimi |
+| ⌘1 | **Bugün** | Bekleyen talepler kartı (kategori kısa yolları), gecikmiş ve bugünkü işler, önümüzdeki 7 gün, bu ayın gelir-gideri, son notlar, odak istatistiği; tek satırda görev ekleme |
 | ⌘2 | **Yapılacaklar** | Web'deki tüm özellikler: Bugün / Yaklaşan / Tüm işler / Bana atananlar / Atadıklarım / Maç görevleri / Ekip takibi / etiket görünümleri; gruplu liste ve sürükle-bırak pano; maç masası (aşamalar, takım iletişimi, WhatsApp ile kadro talebi, gol müziği, maç görevlileri); Haftanın Enleri aday önerisi ve koordinasyonu (oylar, saha dizilimi, kaydet, yayınla); ekibe görev atama, maç görevlendirme, oyuncu/takım/maç bağlama, geri alma |
 | ⌘3 | **Ajanda** | Ay / hafta / gün / liste; etkinliği sürükleyip başka güne taşıma; tekrar eden etkinlikler; son tarihli görevler takvimde; Mac Takvim'ine `.ics` aktarma |
 | ⌘4 | **Not Defteri** | Yazdıkça kaydedilen notlar, işaretlenebilir listeler, renk, etiket, sabitleme, arşiv; Markdown dışa aktarma |
@@ -33,7 +34,9 @@ uygulamada görünür.
   tarih, saat ve öncelik kendiliğinden anlaşılır.
 - **Mac bildirimleri.** Ajanda hatırlatmaları ve zamanı gelen görevler pencere kapalıyken de bildirim olarak gelir.
 - **Menü çubuğu simgesi.** Çalışan odak sayacının kalan süresi, yaklaşan etkinlikler ve açık iş sayısı.
-- **Dock rozeti.** Bugün ve gecikmiş iş sayısı ile okunmamış mesajlar.
+- **Dock rozeti.** Bugün ve gecikmiş iş sayısı, okunmamış mesajlar (üye mesajları dahil) ve bekleyen talepler.
+- **Talep bildirimleri.** Yeni talep gelince (socket “admin:requests”) pencere arka plandaysa Mac bildirimi
+  gelir; tıklayınca Talepler ilgili kategoride açılır. Menü çubuğu menüsünde bekleyen talep sayısı.
 - **Mesaj bildirimleri.** Pencere arka plandayken gelen mesaj Mac bildirimi olarak gelir; tıklayınca
   sohbet açılır. Sessize alınan sohbetler bildirim göndermez. Menü çubuğu menüsünde okunmamış mesaj sayısı.
 - **Komut paleti: ⌘K.** Araçlara geçiş, hızlı eylemler (yeni sohbet, yeni grup…) ve sohbet, mesaj gönderilecek kişi, görev, not, kişi, proje, aranacak kişi, tablo ve muhasebe kayıtlarında arama.
@@ -149,6 +152,41 @@ karıştırarak grup kurar; üyeler yönetimin başlattığı sohbete yanıt ver
 - **Kısayollar.** ⇧⌘M Mesajlar, ⌘N yeni sohbet, ⇧⌘N yeni grup, ⌘F sohbette ara, ⌥⌘↓ / ⌥⌘↑ sonraki /
   önceki sohbet, Esc paneli kapatır.
 - **Sesli arama** masaüstünde henüz yok (düğme kapalı); aramalar mobil uygulamadan ya da siteden yapılır.
+
+### Üye mesajları (ortak gelen kutusu)
+
+Tek mesajlaşma sistemi: eski “Mesaj Yönetimi” / yönetim gelen kutusu ekranı yerine üyelerin
+**ElitLig Yönetimi** sohbetleri de Mesajlar'dadır. Yalnız `messages.view` yetkisi olan yöneticiye
+görünür (yetkiler oturumdaki kullanıcıdan ve açılışta `/api/users/verify`'dan okunur; liste yoksa uçlar
+yoklanır, 403 = erişim yok). Veriler `/api/admin/chat` uçlarından gelir.
+
+- Listenin başında **Üye mesajları** satırı ve süzgeci; alt süzgeçler Takımlar / Oyuncular / Üyeler;
+  okunmamış üye sohbetleri **Okunmamış** süzgecinde de görünür, aramada da bulunur.
+- Sohbet aynı bölmede açılır: başlıkta takım / oyuncu / üye ve “Üye mesajı” etiketi; yazma alanı
+  “ElitLig Yönetimi adına yaz…”; yanıt üyeye ElitLig Yönetimi adıyla gider, balonda yazan yönetici
+  etiketlenir. Okundu ortak damgadır (bir yönetici okuyunca herkeste düşer). Tepki, yıldız, sabitleme,
+  düzenleme, silme ve iletme bu sohbetlerde yoktur; `messages.reply` yetkisi yoksa yalnız okunur.
+- Yalnız gerçek mesajlar: talep ve bildirimler sohbete düşmez (Talepler aracı ve üyenin bildirim merkezi).
+- Okunmamış sayısı kişisel sohbetlerle birleşir (kenar çubuğu, Dock, menü çubuğu); üye yazınca liste
+  canlı güncellenir, pencere arka plandaysa Mac bildirimi gelir.
+- **Kayıtlar** (📞, `messages.calls_view`): üyelerle yönetim arasındaki aramalar; ses kaydı
+  `messages.listen` yetkisiyle dinlenir.
+
+## Talepler
+
+Yönetime gelen talepler artık sohbete mesaj olarak düşmez; Talepler aracında ilgili başlığın altında
+listelenir (`/api/admin/requests`, `/summary`, `/:id/dismiss`).
+
+- **Sekmeler** sunucunun kategorileridir (Profil Değişiklikleri, Sahiplenme ve Yetki, Yeni Üyeler,
+  Transferler, Kadro Onayları, Maç Talepleri, Maç Kadroları, Disiplin, Müsaitlik, Mesajlar, Diğer);
+  açık talep sayısı rozette, açık talebi olmayanlar sonda ve soluk.
+- **Durum:** Bekleyen (onay bekleyen), Bilgilendirme (ör. yeni üye kaydı), Sonuçlanan (kim, ne zaman).
+- **Kart:** kategori simgesi, başlık, açıklama, gönderen (takım → Rehber'de takım kartı, üye → sitede üye
+  kartı), il, zaman. Sunucunun verdiği eylemler: API eylemi (Onayla / Reddet) onay penceresinden sonra
+  çağrılır, sonuç bildirilir, talep sunucuda kapanır ve liste yenilenir; site eylemi (Talebi İncele…)
+  ve **İlgili sayfa** elitlig.com'da açılır; **Kapat** talebi elle sonuçlandırır.
+- **Canlı:** yeni ya da sonuçlanan talep socket'ten gelir (ana süreç iletir); rozet kenar çubuğunda,
+  Dock'ta, menü çubuğunda ve Bugün kartında. Socket yokken özet dakikada bir yoklanır.
 
 ## Rehber: Takımlar
 
@@ -266,7 +304,8 @@ Yapı:
 
 - `app/`: Electron ana süreci. API istemcisi, çevrimdışı önbellek ve kuyruk (`api.js`), oturum
   (`session.js`), odak sayacı (`focus.js`), bildirimler (`reminders.js`), Mesajlar'ın canlı
-  bağlantısı (`chat.js`, socket.io-client), pencereler, menüler ve menü çubuğu (`main.js`).
+  bağlantısı ve üye mesajları (`chat.js`, socket.io-client), yetkiler (`access.js`), pencereler,
+  menüler, menü çubuğu ve Talepler özeti (`main.js`).
 - `renderer/`: React arayüzü (Vite). `renderer/src/lib/sheets` içindeki formül motoru ve Excel
   dönüştürücüleri web sitesiyle (`elitlig-client`) aynıdır; testleri `renderer/test` altındadır.
 

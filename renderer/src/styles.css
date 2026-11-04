@@ -84,6 +84,7 @@
 /* Araç renkleri */
 [data-tool="today"] { --tool: #f97316; --tool-2: #e11d48; }
 [data-tool="messages"] { --tool: #00a884; --tool-2: #0d9488; }
+[data-tool="requests"] { --tool: #0284c7; --tool-2: #7c3aed; }
 [data-tool="todos"] { --tool: #e11d48; --tool-2: #db2777; }
 [data-tool="agenda"] { --tool: #4f46e5; --tool-2: #7c3aed; }
 [data-tool="notes"] { --tool: #d97706; --tool-2: #eab308; }
@@ -159,6 +160,7 @@ p { margin: 0; }
 .nav-item__badge { background: rgba(255, 255, 255, 0.14); color: #fff; border-radius: 10px; padding: 0 7px; font-size: 11px; font-weight: 700; line-height: 18px; }
 .nav-item__badge.is-alert { background: #f43f5e; }
 .nav-item__badge.is-chat { background: #00a884; }
+.nav-item__badge.is-req { background: #0284c7; }
 .nav-item__timer { font: 600 11px var(--mono); color: #e9d5ff; background: rgba(255, 255, 255, 0.1); padding: 1px 6px; border-radius: 6px; }
 .sidebar__foot { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
 .sync-pill { display: flex; align-items: center; gap: 7px; border: 0; background: none; color: var(--side-muted); font-size: 12px; padding: 4px 10px; border-radius: 8px; }
@@ -1690,3 +1692,12 @@ button.team-badge--lg:not(:disabled):hover { background: color-mix(in srgb, var(
 .team-match__line { flex: 1; font-weight: 600; }
 .rec-pill { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 11px; font-weight: 800; color: #fff; }
 .rec-pill--G { background: var(--green); } .rec-pill--B { background: var(--amber); } .rec-pill--M { background: var(--red); }
+
+/* Bugün: bekleyen talepler kartı (2.7) */
+.today-req__cats { display: flex; flex-wrap: wrap; gap: 6px; }
+.today-req__cats button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--surface-2, var(--surface)); border-radius: 9px; padding: 5px 9px; font-size: 12.5px; font-weight: 650; color: var(--text); }
+.today-req__cats button:hover { border-color: var(--tool); }
+.today-req__cats b { font-size: 11px; background: var(--tool); color: #fff; border-radius: 8px; padding: 0 6px; line-height: 16px; }
+.today-req__total { display: flex; align-items: baseline; gap: 8px; }
+.today-req__total strong { font-size: 30px; font-weight: 800; line-height: 1; }
+.today-req__total span { color: var(--muted); }

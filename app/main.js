@@ -15,6 +15,12 @@
 //     yeni mesaj bildirimi, okunmamış sayısı kenar çubuğunda, Dock'ta ve
 //     menü çubuğunda; ekler (fotoğraf, belge, ses) ana süreçten yüklenir,
 //     sohbet medyası diskte önbelleklenir (elitlig-media://).
+//   - Üye mesajları (2.7): messages.view yetkisi olan yönetici için üyelerin
+//     "ElitLig Yönetimi" sohbetleri Mesajlar'da ortak gelen kutusu olarak;
+//     okunmamışları rozete eklenir, yeni üye mesajı bildirim olarak gelir.
+//   - Talepler (⇧⌘T): onay bekleyen talepler (/api/admin/requests); toplam
+//     kenar çubuğunda, Dock'ta ve menü çubuğunda; yeni talep socket'ten
+//     ("admin:requests") gelir, pencere arka plandayken bildirim olur.
 "use strict";
 
 const path = require("node:path");
@@ -31,6 +37,7 @@ const { createApi } = require("./api");
 const { createFocus, trayTitle } = require("./focus");
 const { createReminders } = require("./reminders");
 const { createChatLink, buildMultipart, mimeOf } = require("./chat");
+const { accessFromUser, probeAccess, sameAccess } = require("./access");
 
 // Sohbet medyası (fotoğraf, ses, belge) bu şemayla ana süreç üzerinden açılır:
 // diskte önbelleklenir, çevrimdışı da görünür; arayüzün güvenlik politikası
@@ -62,6 +69,9 @@ let focus;
 let reminders;
 let chatLink;
 let chatNotes = new Map();
+let probedAccess = null;
+let requestsInfo = { total: 0, categories: [] };
+const notifiedRequests = new Set();
 
 const broadcast = (channel, payload) => {
   for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.webContents.send(channel, payload);
@@ -74,13 +84,80 @@ function authState() {
   return {
     signedIn: true,
     user: session.user,
+    access: accessFromUser(session.user, probedAccess),
     loginAt: session.loginAt,
     endsAt: sessionEndsAt(session, { days: config.SESSION_DAYS }),
   };
 }
 
+const currentAccess = () => authState().access || accessFromUser(null);
+
+/**
+ * Oturumdaki kullanıcıyı (yetkiler dahil) sunucudan tazeler: yetki sitede
+ * değişince uygulama yeniden giriş istemeden uyar. Liste gelmezse uçlar
+ * yoklanır (403 = erişim yok).
+ */
+async function refreshUser() {
+  const session = sessionStore.load();
+  if (!session || !authState().signedIn) return;
+  const before = currentAccess();
+  const res = await api.request({ path: "/api/users/verify", cache: false, queue: false });
+  if (res.ok && res.data?.user) sessionStore.save({ ...sessionStore.load(), user: { ...session.user, ...res.data.user } });
+  if (!Array.isArray(sessionStore.load()?.user?.permissions)) {
+    const probe = await probeAccess(api.request);
+    if (probe) probedAccess = probe;
+  }
+  const after = currentAccess();
+  if (!sameAccess(before, after) || (res.ok && JSON.stringify(res.data?.user?.permissions || null) !== JSON.stringify(session.user?.permissions || null))) {
+    broadcast("auth:changed", { signedIn: true, access: after });
+  }
+  chatLink?.refreshInbox({ detect: false });
+}
+
+/* ------------------------------- Talepler ------------------------------- */
+
+/** Talep özeti: kategori başına açık talep (kenar çubuğu, Dock, menü çubuğu, Bugün). */
+async function refreshRequests() {
+  if (!authState().signedIn || !currentAccess().requests) return requestsInfo;
+  const res = await api.request({ path: "/api/admin/requests/summary", cache: true });
+  if (res.ok && res.data) {
+    requestsInfo = { total: Number(res.data.total) || 0, categories: Array.isArray(res.data.categories) ? res.data.categories : [] };
+  } else if (res.error?.status === 403) requestsInfo = { total: 0, categories: [], denied: true };
+  broadcast("requests:summary", requestsInfo);
+  updateBadge();
+  refreshTray();
+  return requestsInfo;
+}
+let requestsTimer = null;
+const refreshRequestsSoon = (ms = 600) => { clearTimeout(requestsTimer); requestsTimer = setTimeout(refreshRequests, ms); };
+
+/** Socket "admin:requests": yeni ({ id, category, type }) ya da sonuçlanan ({ resolved }) talep. */
+async function onRequestsEvent(payload = {}) {
+  broadcast("requests:changed", payload);
+  refreshRequestsSoon(400);
+  const id = Number(payload.id);
+  if (!id || notifiedRequests.has(id)) return;
+  notifiedRequests.add(id);
+  if (notifiedRequests.size > 300) notifiedRequests.delete(notifiedRequests.values().next().value);
+  if (!Notification.isSupported()) return;
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused() && mainWindow.isVisible()) return;
+  const res = await api.request({ path: "/api/admin/requests", query: { status: "all", category: payload.category || undefined, limit: 20 }, cache: false, queue: false });
+  const item = res.ok ? (res.data?.items || []).find((r) => Number(r.id) === id) : null;
+  const category = (requestsInfo.categories || []).find((c) => c.key === (item?.category || payload.category));
+  const n = new Notification({
+    title: `Yeni talep${category?.label ? ` · ${category.label}` : ""}`,
+    subtitle: item?.actor?.name || undefined,
+    body: String(item ? [item.title, item.description].filter(Boolean).join(" — ") : "Talepler'de onay bekleyen yeni bir kayıt var.").slice(0, 180),
+    silent: false,
+  });
+  n.on("click", () => showMain(`requests:${item?.category || payload.category || ""}`));
+  n.show();
+}
+
 function signOutLocal(reason) {
   chatLink?.disconnect();
+  probedAccess = null;
+  requestsInfo = { total: 0, categories: [] };
   sessionStore.clear();
   api.clearCache();
   api.clearOutbox();
@@ -106,7 +183,7 @@ async function login({ username, password }) {
   if (user.isManagement === false) return { ok: false, error: "Araçlar yönetim hesaplarına açıktır." };
   sessionStore.save({ token, user, loginAt: Date.now() });
   broadcast("auth:changed", { signedIn: true });
-  setTimeout(() => { refreshSummary(); reminders.check(); chatLink.connect(); }, 1500);
+  setTimeout(() => { refreshSummary(); reminders.check(); refreshUser().finally(() => { chatLink.connect(); refreshRequests(); }); }, 1500);
   return { ok: true, state: authState() };
 }
 
@@ -143,11 +220,11 @@ async function refreshSummary() {
   refreshTray();
 }
 
-/** Dock rozeti: bugün + gecikmiş işler ile okunmamış mesajlar. */
+/** Dock rozeti: bugün + gecikmiş işler, okunmamış mesajlar (üye mesajları dahil) ve bekleyen talepler. */
 function updateBadge() {
   if (!authState().signedIn) { app.dock?.setBadge(""); return; }
   const s = trayInfo.summary;
-  const total = (s ? (s.overdue || 0) + (s.today || 0) : 0) + (chatLink?.unread() || 0);
+  const total = (s ? (s.overdue || 0) + (s.today || 0) : 0) + (chatLink?.unread() || 0) + (requestsInfo.total || 0);
   app.dock?.setBadge(total ? String(total) : "");
 }
 
@@ -172,6 +249,7 @@ function refreshTray() {
   if (signedIn) {
     const unread = chatLink?.unread() || 0;
     template.push({ label: unread ? `${unread} okunmamış mesaj` : "Mesajlar", click: () => showMain("messages") });
+    if (currentAccess().requests) template.push({ label: requestsInfo.total ? `${requestsInfo.total} bekleyen talep` : "Talepler", click: () => showMain("requests") });
     template.push({ label: s ? `${s.open || 0} açık iş${s.overdue ? ` · ${s.overdue} gecikmiş` : ""}${s.today ? ` · ${s.today} bugün` : ""}` : "Yapılacaklar", click: () => showMain("todos") });
     template.push({ label: "Yaklaşan", enabled: false }, ...(upcoming.length ? upcoming : [{ label: "Önümüzdeki 7 gün boş", enabled: false }]));
     template.push({ type: "separator" });
@@ -335,6 +413,7 @@ function showQuick(kind) {
 const ROUTES = [
   ["today", "Bugün", "CmdOrCtrl+1"],
   ["messages", "Mesajlar", "CmdOrCtrl+Shift+M"],
+  ["requests", "Talepler", "CmdOrCtrl+Shift+T"],
   ["todos", "Yapılacaklar", "CmdOrCtrl+2"],
   ["agenda", "Ajanda", "CmdOrCtrl+3"],
   ["notes", "Not Defteri", "CmdOrCtrl+4"],
@@ -447,14 +526,22 @@ function registerIpc() {
     const result = await api.request(opts || {});
     if (result.ok && opts?.method && opts.method !== "GET") {
       broadcast("data:changed", { path: opts.path });
-      if (String(opts.path || "").startsWith("/api/chat/")) chatLink.refreshSoon(800);
-      else setTimeout(refreshSummary, 500);
+      const p = String(opts.path || "");
+      if (p.startsWith("/api/chat/")) chatLink.refreshSoon(800);
+      else if (p.startsWith("/api/admin/chat/")) chatLink.refreshInboxSoon(600, false);
+      else {
+        setTimeout(refreshSummary, 500);
+        // Onay / ret uçları talebi kendiliğinden kapatır; özet tazelenir.
+        refreshRequestsSoon(700);
+      }
     }
     return result;
   });
 
   /* ------------------------------ Mesajlar ------------------------------ */
   ipcMain.handle("chat:status", () => chatLink.status());
+  ipcMain.handle("requests:summary", () => requestsInfo);
+  ipcMain.handle("requests:refresh", () => refreshRequests());
   ipcMain.handle("chat:emit", (_e, { name, payload } = {}) => chatLink.emit(name, payload));
   ipcMain.handle("chat:active", (_e, id) => {
     chatLink.setActive(id);
@@ -600,10 +687,22 @@ function registerMediaProtocol() {
 }
 
 /** Yeni mesaj bildirimi: pencere odakta değilse, sohbet sessizde değilse. */
-function notifyChat({ conversation, message, muted }) {
+function notifyChat({ conversation, message, muted, inbox = false }) {
   if (muted || !Notification.isSupported()) return;
   if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused() && mainWindow.isVisible()) return;
   const id = Number(conversation?.id || message.conversation_id);
+  if (inbox) {
+    // Üye mesajı (ortak gelen kutusu): başlık üye / takım, alt başlık türü.
+    const kindLabel = { team: "Takım", player: "Oyuncu", member: "Üye" }[conversation?.entity?.kind] || "Üye";
+    const kindText2 = { image: "📷 Fotoğraf", audio: "🎤 Sesli mesaj", file: `📎 ${message.meta?.file?.name || "Belge"}`, location: "📍 Konum" }[message.kind];
+    const n = new Notification({ title: conversation?.title || message.sender?.name || "Üye mesajı", subtitle: `Üye mesajları · ${kindLabel}`, body: String(kindText2 || message.body || "").slice(0, 180), silent: false });
+    n.on("click", () => showMain(`messages:${id}`));
+    n.show();
+    const list = chatNotes.get(id) || [];
+    list.push(n);
+    chatNotes.set(id, list.slice(-5));
+    return;
+  }
   const isGroup = ["group", "team"].includes(conversation?.type);
   const kindText = { image: "📷 Fotoğraf", audio: "🎤 Sesli mesaj", file: `📎 ${message.meta?.file?.name || "Belge"}`, poll: `📊 ${message.meta?.poll?.question || "Anket"}`, location: "📍 Konum" }[message.kind];
   const text = message.kind === "image" && message.meta?.caption ? `📷 ${message.meta.caption}` : kindText || message.body || "";
@@ -652,11 +751,15 @@ if (!app.requestSingleInstanceLock()) {
       api,
       userAgent: userAgent(),
       isSignedIn: () => authState().signedIn,
+      inboxEnabled: () => currentAccess().inbox,
     });
     chatLink.events.on("event", (e) => broadcast("chat:event", e));
     chatLink.events.on("status", (st) => broadcast("chat:status", st));
     chatLink.events.on("unread", (n) => { broadcast("chat:unread", n); updateBadge(); refreshTray(); });
     chatLink.events.on("incoming", notifyChat);
+    chatLink.events.on("requests", onRequestsEvent);
+    // Socket bağlanınca (ve yeniden bağlanınca) talep özeti tazelenir.
+    chatLink.events.on("status", (st) => { if (st.state === "connected") refreshRequestsSoon(300); });
     registerMediaProtocol();
     focus = createFocus({ dataDir: dataDir() });
     reminders = createReminders({
@@ -701,18 +804,21 @@ if (!app.requestSingleInstanceLock()) {
 
     setInterval(() => focus.tick(), 1000);
     setInterval(() => reminders.check(), 60000);
-    setInterval(() => { keepSessionFresh(); refreshSummary(); if (api.pending()) api.flush(); }, 5 * 60000);
-    setTimeout(() => { keepSessionFresh(); refreshSummary(); reminders.check(); api.flush(); }, 2000);
-    if (authState().signedIn) chatLink.connect();
+    setInterval(() => { keepSessionFresh(); refreshSummary(); refreshRequests(); if (api.pending()) api.flush(); }, 5 * 60000);
+    // Socket yokken talep özeti dakikada bir yoklanır.
+    setInterval(() => { if (authState().signedIn && chatLink.status().state !== "connected") refreshRequests(); }, 60000);
+    setInterval(() => refreshUser().catch(() => {}), 6 * 3600000);
+    setTimeout(() => { keepSessionFresh(); refreshSummary(); reminders.check(); api.flush(); refreshRequests(); }, 2000);
+    if (authState().signedIn) refreshUser().catch(() => {}).finally(() => chatLink.connect());
 
-    powerMonitor.on("resume", () => { setTimeout(() => { keepSessionFresh(); api.flush(); reminders.check(); refreshSummary(); chatLink.kick(); }, 3000); });
+    powerMonitor.on("resume", () => { setTimeout(() => { keepSessionFresh(); api.flush(); reminders.check(); refreshSummary(); refreshRequests(); chatLink.kick(); }, 3000); });
     nativeTheme.on("updated", () => broadcast("theme", nativeTheme.shouldUseDarkColors ? "dark" : "light"));
 
     app.setAboutPanelOptions({
       applicationName: config.APP_NAME,
       applicationVersion: app.getVersion(),
       copyright: "© Elitlig",
-      credits: "Mesajlar · Yapılacaklar · Ajanda · Not Defteri · Projeler · Ön Muhasebe · Tablolar · Rehber · Hesap Araçları · Odak Sayacı",
+      credits: "Mesajlar · Talepler · Yapılacaklar · Ajanda · Not Defteri · Projeler · Ön Muhasebe · Tablolar · Rehber · Hesap Araçları · Odak Sayacı",
     });
 
     app.on("activate", () => showMain());

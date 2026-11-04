@@ -51,6 +51,13 @@ contextBridge.exposeInMainWorld("elitlig", {
     download: (url, name) => ipcRenderer.invoke("chat:download", { url, name }),
     openFile: (url, name) => ipcRenderer.invoke("chat:openFile", { url, name }),
   },
+  // Talepler: özet (rozet) ana süreçte tutulur; socket "admin:requests" olayları buradan gelir.
+  requests: {
+    summary: () => ipcRenderer.invoke("requests:summary"),
+    refresh: () => ipcRenderer.invoke("requests:refresh"),
+    onSummary: on("requests:summary"),
+    onChange: on("requests:changed"),
+  },
   print: (html, title) => ipcRenderer.invoke("print:html", { html, title }),
   pdf: (html, title, options = {}) => ipcRenderer.invoke("print:html", { html, title, pdf: options }),
   app: {

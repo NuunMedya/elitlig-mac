@@ -10,7 +10,7 @@ import { extractMentions, formatDuration, insertMention, mentionQuery, quoteText
 const TYPING_EVERY_MS = 2500;
 const TYPING_IDLE_MS = 4000;
 
-export default function Composer({ conv, meId, participants, draft, onDraft, reply, edit, onCancel, onSend, onSaveEdit, onFiles, onPoll, onLocation, onVoice, disabledReason }) {
+export default function Composer({ conv, meId, participants, draft, onDraft, reply, edit, onCancel, onSend, onSaveEdit, onFiles, onPoll, onLocation, onVoice, disabledReason, placeholder, noTyping = false }) {
   const [text, setText] = useState(() => (edit ? edit.body || "" : draft?.text || ""));
   const [emoji, setEmoji] = useState(null);
   const [attach, setAttach] = useState(null);
@@ -44,12 +44,12 @@ export default function Composer({ conv, meId, participants, draft, onDraft, rep
 
   const stopTyping = () => {
     if (typing.current.timer) clearTimeout(typing.current.timer);
-    if (typing.current.last) chatApi().emit("chat:typing", { conversation_id: conv.id, typing: false });
+    if (typing.current.last && !noTyping) chatApi().emit("chat:typing", { conversation_id: conv.id, typing: false });
     typing.current = { last: 0, timer: null };
   };
   const emitTyping = () => {
     const now = Date.now();
-    if (now - typing.current.last > TYPING_EVERY_MS) { typing.current.last = now; chatApi().emit("chat:typing", { conversation_id: conv.id, typing: true }); }
+    if (!noTyping && now - typing.current.last > TYPING_EVERY_MS) { typing.current.last = now; chatApi().emit("chat:typing", { conversation_id: conv.id, typing: true }); }
     if (typing.current.timer) clearTimeout(typing.current.timer);
     typing.current.timer = setTimeout(stopTyping, TYPING_IDLE_MS);
   };
@@ -173,7 +173,7 @@ export default function Composer({ conv, meId, participants, draft, onDraft, rep
           <button type="button" className="icon-btn" title="Emoji" onClick={(e) => setEmoji(anchorOf(e))}><Icon name="smile" size={20} /></button>
           <button type="button" className="icon-btn" title="Ekle" onClick={(e) => setAttach(anchorOf(e))}><Icon name="paperclip" size={19} /></button>
           <textarea ref={ref} rows={1} value={text} onChange={onChange} onKeyDown={onKeyDown} onPaste={onPaste} onBlur={() => setTimeout(() => setMention(null), 150)}
-            placeholder={rec?.error || "Bir mesaj yazın"} aria-label="Mesaj" spellCheck />
+            placeholder={rec?.error || placeholder || "Bir mesaj yazın"} aria-label="Mesaj" spellCheck />
           {text.trim() || edit
             ? <button type="button" className="ms-send" title={edit ? "Kaydet" : "Gönder (Enter)"} onClick={submit}><Icon name={edit ? "check" : "send"} size={18} strokeWidth={2.2} /></button>
             : <button type="button" className="ms-send ms-send--mic" title="Sesli mesaj kaydet" onClick={startRec}><Icon name="mic" size={19} strokeWidth={2} /></button>}
@@ -183,8 +183,8 @@ export default function Composer({ conv, meId, participants, draft, onDraft, rep
       {attach && <PointMenu at={attach} onClose={() => setAttach(null)} items={[
         { label: "Fotoğraf", icon: "image", onClick: () => onFiles("images") },
         { label: "Belge", icon: "file", onClick: () => onFiles("files") },
-        { label: "Anket", icon: "poll", onClick: onPoll },
-        { label: "Konum", icon: "map", onClick: onLocation },
+        onPoll && { label: "Anket", icon: "poll", onClick: onPoll },
+        onLocation && { label: "Konum", icon: "map", onClick: onLocation },
       ]} />}
     </div>
   );

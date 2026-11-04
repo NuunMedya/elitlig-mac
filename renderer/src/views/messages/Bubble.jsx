@@ -179,6 +179,7 @@ function BubbleImpl({ item, conv, meId, participants, selecting, selected, highl
       {isGroup && !mine && <span className="ms-row__av">{item.last ? <Avatar name={m.sender?.name} id={m.sender?.user_id} url={m.sender?.avatar} size={28} /> : null}</span>}
       <div className="ms-bubble-wrap">
         <div className={`ms-bubble ${media ? "ms-bubble--media" : ""} ${big ? "ms-bubble--bare" : ""} ${m.kind === "audio" ? "ms-bubble--audio" : ""} ${m.kind === "poll" ? "ms-bubble--poll" : ""} ${m._failed ? "is-failed" : ""}`}>
+          {conv._inbox && mine && item.first && <div className="ms-sender ms-sender--mgmt">ElitLig Yönetimi{m._admin ? <span className="ms-sender__tag">{m._admin}</span> : null}</div>}
           {showName && <div className="ms-sender" style={{ color: senderColor(m.sender?.user_id) }}>{m.sender?.name}{m.sender?.is_management ? <span className="ms-sender__tag">Yönetim</span> : null}</div>}
           {m.forwarded && !m.deleted && <div className="ms-fwd"><Icon name="forward" size={12} /> İletildi</div>}
           {m.reply_to && !m.deleted && (
@@ -196,7 +197,7 @@ function BubbleImpl({ item, conv, meId, participants, selecting, selected, highl
           </span>
           {!selecting && !m.deleted && m.id && <button type="button" className="ms-bubble__chev" aria-label="Mesaj menüsü" onClick={(e) => menu(e, false)}><Icon name="chevronDown" size={14} strokeWidth={2.4} /></button>}
         </div>
-        {!selecting && !m.deleted && m.id && <button type="button" className="ms-react-btn" title="Tepki ver" onClick={(e) => { e.stopPropagation(); onAction("react", m, anchorOf(e)); }}><Icon name="smile" size={16} /></button>}
+        {!selecting && !m.deleted && m.id && !conv._inbox && <button type="button" className="ms-react-btn" title="Tepki ver" onClick={(e) => { e.stopPropagation(); onAction("react", m, anchorOf(e)); }}><Icon name="smile" size={16} /></button>}
         {m._failed && <button type="button" className="ms-retry" onClick={(e) => { e.stopPropagation(); onAction("retry", m); }}><Icon name="refresh" size={12} /> {m._error || "Gönderilemedi"} · yeniden dene</button>}
         {rs.total > 0 && (
           <button type="button" className={`ms-reacts ${rs.mine ? "is-mine" : ""}`} onClick={(e) => { e.stopPropagation(); onAction("reactions", m); }}>
