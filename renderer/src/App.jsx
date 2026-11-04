@@ -12,6 +12,7 @@ const Todos = lazy(() => import("./views/todos/Todos"));
 const Agenda = lazy(() => import("./views/Agenda"));
 const Notes = lazy(() => import("./views/Notes"));
 const Projects = lazy(() => import("./views/projects/Projects"));
+const Planning = lazy(() => import("./views/Planning"));
 const Ledger = lazy(() => import("./views/accounting/Accounting"));
 const Sheets = lazy(() => import("./views/Sheets"));
 const Contacts = lazy(() => import("./views/Contacts"));
@@ -25,6 +26,7 @@ export const ROUTES = [
   { key: "agenda", label: "Ajanda", icon: "calendar", view: Agenda, shortcut: "⌘3", group: "Günlük" },
   { key: "notes", label: "Not Defteri", icon: "note", view: Notes, shortcut: "⌘4", group: "Günlük" },
   { key: "projects", label: "Projeler", icon: "layers", view: Projects, shortcut: "⌘0", group: "Süreç ve CRM" },
+  { key: "planning", label: "Saha ve maç planlama", icon: "ball", view: Planning, shortcut: "⇧⌘0", group: "Süreç ve CRM" },
   { key: "ledger", label: "Muhasebe", icon: "wallet", view: Ledger, shortcut: "⌘5", group: "Finans ve veri" },
   { key: "sheets", label: "Tablolar", icon: "grid", view: Sheets, shortcut: "⌘6", group: "Finans ve veri" },
   { key: "contacts", label: "Rehber", icon: "users", view: Contacts, shortcut: "⌘7", group: "Finans ve veri" },
@@ -165,6 +167,7 @@ function ShortcutsHelp({ onClose }) {
     ["⌘N", "Açık araçta yeni kayıt"],
     ["⌘1 … ⌘9", "Araçlar arasında geçiş"],
     ["⌘0", "Projeler (süreç, kişiler, portföy)"],
+    ["⇧⌘0", "Saha ve maç planlama (sahalar, program, talepler, takımlar)"],
     ["Projeler: N", "Açık sekmede hızlı ekleme (adım, kişi, soru)"],
     ["⌘F", "Araçta ara"],
     ["⌘R", "Yenile ve eşitle"],

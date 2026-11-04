@@ -13,7 +13,8 @@ uygulamada görünür.
 | ⌘2 | **Yapılacaklar** | Web'deki tüm özellikler: Bugün / Yaklaşan / Tüm işler / Bana atananlar / Atadıklarım / Maç görevleri / Ekip takibi / etiket görünümleri; gruplu liste ve sürükle-bırak pano; maç masası (aşamalar, takım iletişimi, WhatsApp ile kadro talebi, gol müziği, maç görevlileri); Haftanın Enleri aday önerisi ve koordinasyonu (oylar, saha dizilimi, kaydet, yayınla); ekibe görev atama, maç görevlendirme, oyuncu/takım/maç bağlama, geri alma |
 | ⌘3 | **Ajanda** | Ay / hafta / gün / liste; etkinliği sürükleyip başka güne taşıma; tekrar eden etkinlikler; son tarihli görevler takvimde; Mac Takvim'ine `.ics` aktarma |
 | ⌘4 | **Not Defteri** | Yazdıkça kaydedilen notlar, işaretlenebilir listeler, renk, etiket, sabitleme, arşiv; Markdown dışa aktarma |
-| ⌘0 | **Projeler** | Uçtan uca süreç ve satış takibi: hazır şablonlar (Organizasyon sezonu: 19 aşama, 208 adım), tamamen düzenlenebilir aşama ve adımlar, sorumlu rol → kişi eşleme, sonuç/cevap, kontrol listesi, bağlantılar; Kişiler (CRM): müşteri ve **tedarik görüşmeleri** (fiyat al, karşılaştır, anlaş → gidere yaz), tablo ve pano, tek tıkla görüşme sonucu, sonraki arama planı; **Bütçe** (gelir/gider kalemleri tahmin → bekliyor → ödendi, ödenince muhasebe hesabına işlenir); **Rehberden aktarma** (Rehberim, Elitlig üye rehberi, portföy → proje listesi); soru-cevap, iletişim geçmişi, portföy; adımın aracı adımın içinde açılır; Excel'den adım ve kişi aktarma, Excel/CSV dışa aktarma |
+| ⌘0 | **Projeler** | Uçtan uca süreç ve satış takibi: hazır şablonlar (Organizasyon sezonu: 19 aşama, 208 adım), tamamen düzenlenebilir aşama ve adımlar, sorumlu rol → kişi eşleme, sonuç/cevap, kontrol listesi, bağlantılar; Kişiler (CRM): müşteri ve **tedarik görüşmeleri** (fiyat al, karşılaştır, anlaş → gidere yaz), tablo ve pano, tek tıkla görüşme sonucu, sonraki arama planı; **Bütçe** (gelir/gider kalemleri tahmin → bekliyor → ödendi, ödenince muhasebe hesabına işlenir); **Rehberden aktarma** (Rehberim, Elitlig üye rehberi, portföy → proje listesi); soru-cevap, iletişim geçmişi, portföy; **Saha ve maç** (proje sahaları, haftalık program, talepler, takımlar, projenin maçları, maç ücretleri ayrı maç hesabında); adımın aracı adımın içinde açılır; Excel'den adım ve kişi aktarma, Excel/CSV dışa aktarma |
+| ⇧⌘0 | **Saha ve maç planlama** | Sitedeki Saha ve Maç Planlama (çağrı merkezi) masaüstünde: sahalar, haftalık program (gün ajandası / hafta haritası, geçmiş haftalar, toplu “dolu yap”), saat paneli (havuz, öneriler, eşleştir → maç fikstüre), talepler ve görevler panosu, bekleyenler, takım listeleri (yeni kayıtlar, çok maç alanlar…), takım kartı, notlar ve iletişim, arama kayıtları |
 | ⌘5 | **Muhasebe** | Dört bölüm: **Hesaplar ve Virman** (kasa/banka/kart ve ortak/proje hesapları, hesaba doğrudan gelir/gider — tahmin, bekliyor, ödendi —, defterlere bağlı canlı bakiye, **hesap bazlı yetki** (kullanıcı, rol ya da proje ekibi: görüntüler / kayıt girer / yönetir), hesaplar ve defterler arası virman, ekstre); **Ön Muhasebe** (kişisel gelir-gider, kayıt girerken hesap seçimi, KDV, cari, vade takibi, Excel/CSV/PDF); **Maç Muhasebesi** (il defteri: maç maç gelir/gider kutucukları, genel kayıtlar, raporlar, personel ödemeleri, takım tahsilatları, eksikler, ayarlar); **Türkiye Geneli** (illerden tahakkuk, tahsilat, ek kalem, tutar düzeltme, maç başı ücret tarifeleri) |
 | ⌘6 | **Tablolar** | Formüllü hesap tablosu (TOPLA, EĞER, DÜŞEYARA, ETOPLA…), çoklu sayfa, biçimlendirme, sıralama, doldurma, satır/sütun işlemleri; Excel/CSV içe ve dışa aktarma; paylaşım ve eşzamanlı düzenlemede otomatik birleştirme |
 | ⌘7 | **Rehber** | Siteye kaydolan üyeler ve elle eklenen kişiler tek listede; Üye / Oyuncu / Takım başkanı / Yönetim / Manuel / Favoriler; üyeye kişisel not ve favori; arama, WhatsApp, e-posta; `.vcf` ve CSV |
@@ -91,6 +92,27 @@ ile aynıdır (`/api/tools/projects`).
   Varsayılan proje hesabı ve bu hesabın yetkilileri (“Proje ekibine yetki ver” dahil) Ayarlar → Bütçe ve
   muhasebe'den yönetilir; buradan projeye özel ortak hesap da açılır. Bütçe adımları (“Tahmini gider
   bütçesinin hazırlanması”…) Bütçe panelini o adıma süzülmüş açar.
+- **Saha ve maç.** Saha ve maç organizasyonu şablonu (ya da Ayarlar → Saha ve maç planlama) projeye
+  “Saha ve maç” sekmesini açar. Ayarlarda projenin sahaları, ili, ligleri / sezonları, lig maçlarının
+  dahil edilmesi, **maç hesabı** (ayrı muhasebe hesabı; “Bu proje için maç hesabı aç” ortak kasa açar),
+  maç başı **ücret kalemleri** (gelir/gider; maç başı, ev sahibi, deplasman ya da her iki takım) ve maç
+  kontrol listesi seçilir. Sekmenin alt görünümleri:
+  - **Maçlar** — projenin maçları (projeden oluşturulan / bağlanan, proje sahalarının saatlerine yazılan
+    ve proje lig / sezonunun proje tarihlerindeki maçları) haftalara ve günlere gruplu; satırda aşama
+    (Planlandı → Teyit bekleniyor → Teyit edildi → Oynandı / Ertelendi), süzgeçler (zaman, aşama, saha,
+    ücreti yazılmamış, arama). Maç çekmecesi: takımlar, tarih/saat/saha/lig, sitedeki durum ve skor,
+    **Sitede aç** ve maç ekranları, Programda aç, kontrol listesi, not, maç görevlileri, bütçedeki
+    kalemleri ve **Ücretleri bütçeye yaz** (satır satır önizleme, tutar değiştirme, maç hesabı, durum;
+    ikinci kez yazarken onay ister), Projeden çıkar. **Maç oluştur** sitedeki maç oluşturma akışını
+    (iki takım, saha ve saat, lig ve sezon → fikstür) kullanır ve maçı projeye bağlar; **Maç bağla**
+    sitedeki mevcut maçları arar ve bağlar.
+  - **Program, Talepler, Bekleyenler, Takımlar, Kayıtlar** — kenar çubuğundaki Saha ve maç planlama
+    masasının proje sahalarına süzülmüş hâli (“Tüm sahalar” ile kapsam genişler). Saha eklerken saha
+    projeye de eklenebilir; takım listelerinden ve takım kartından takımlar **projenin arama listesine**
+    (Kişiler, kaynak “Takım rehberi”) tek tek ya da toplu aktarılır.
+  Ücret kalemleri Bütçe'de maç adıyla görünür (“Maç ücretleri” süzgeci); “Tahsil edildi / Ödendi” maç
+  hesabının bakiyesine işler. Genel bakışta “Maçlar” kartı (bu hafta, teyit bekleyen, ücreti yazılmamış)
+  durur; adımdaki “Saha ve maç planlama” aracı masayı adımın üstünde, adıma uygun görünümde açar.
 - **Portföy.** “Satışı kapat” kişiyi kazanıldı aşamasına alır, portföye yazar (kategori, tutar) ve
   istenirse bütçeye gelir kaydı açar. Portföy proje içinde ve tüm projelerde (genel) görülür; elle de
   eklenir.
@@ -108,7 +130,32 @@ ile aynıdır (`/api/tools/projects`).
   not, soru ekleme/cevaplama ve adım/kişi güncellemeleri kuyruğa alınır (kişinin aşaması ve sonraki
   araması ekranda hemen güncellenir); bütçe kalemi ekleme ve “Ödendi” yapma da kuyruğa alınır.
   Proje, aşama, adım ve kişi oluşturma ya da silme, görüşme kapanışı ve rehberden aktarma bağlantı
-  ister ve açık bir uyarı verir.
+  ister ve açık bir uyarı verir. Projedeki maçın aşaması, kontrol listesi ve notu kuyruğa alınır; maç oluşturma,
+  maç bağlama, ücretleri bütçeye yazma ve saha ve maç planlama işlemleri (saat, havuz, kart, arama
+  kaydı, takım notu) bağlantı ister; program, kartlar ve takım listeleri son eşitlenen hâliyle okunur.
+
+## Saha ve maç planlama
+
+Sitedeki **/editor/sahalar** (Saha ve Maç Planlama, çağrı merkezi) ekranının masaüstü karşılığı; aynı
+uçları (`/api/match-requests/admin/*`) kullanır, site ekranı olduğu gibi çalışmaya devam eder. Görmek için
+“Sahalar — görüntüle”, işlem yapmak için “Sahalar — yönet” yetkisi gerekir.
+
+- **Program ve sahalar.** Saha seçici, hafta gezgini (geçmiş haftalar dahil), gün ajandası ya da hafta
+  haritası; saat durumları (boş, müsait takım var, aday var, rakip bekleniyor, maç alındı, sistemde maç,
+  dolu…). Sistemde kayıtlı ama tabloya işlenmemiş maçlar tek tıkla ya da toplu işlenir; “Günü dolu yap”,
+  “Saat seç” ile toplu dolu yap / aç. Saat paneli: havuz (iletişim, not, öncelik, taşıma, çıkarma / talebi
+  reddetme), önerilen takımlar (oynama alışkanlığına göre gerekçeli) ve arama sonucu, takım arayıp ekleme,
+  iki takımı lig ve sezonla eşleştirip **maçı oluşturma** (fikstüre yazılır), saati boşaltma. Geçmiş saat
+  paneli skoru ve sitedeki maç ekranlarını açar. Sahalar penceresinde saha ekleme, düzenleme, silme.
+- **Talepler ve görevler.** Maç talebi / görüşme / kişisel not kartları; pano (sürükle-bırak) ya da
+  liste, tür ve tarih süzgeçleri, özet kutucukları, sistem önerileri (karta çevir, gizle, saati aç,
+  havuza ekle). Kart çekmecesi: durum, kartı çevirme, saha tablolarından saat seçenekleri, maç kurucu,
+  ayrıntılar (hatırlatma, öncelik, takım), süreç notları ve zaman çizelgesi, maç görevlileri.
+- **Bekleyenler, Takımlar, Kayıtlar.** Havuzda bekleyen bütün adaylar (taşınması gerekenler);
+  hazır takım listeleri (tüm takımlar, son görüşülenler, yeni kayıtlar, çok maç alanlar, azalanlar,
+  günlere göre, esnek, uzun süredir yok), lig / sezon süzgeci, iletişim bilgisini satırda düzenleme;
+  takım kartı (iletişim, takım notları, görüşme kaydı, geçmiş, oynama alışkanlığı, önerilen saatler,
+  açık kartlar, havuz, talepler, maçlar, müsaitlik); kart hareketleri ve görüşmeler tek akışta.
 
 ## Hesaplar ve virman
 

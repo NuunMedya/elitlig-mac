@@ -100,8 +100,10 @@ const PATHS = {
   command: "M18 3a3 3 0 0 0-3 3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 0 0 0-6z",
 };
 
+// Sunucudaki şablonların (web) simge adları.
+const ALIASES = { futbol: "ball", "futbol-ball": "ball", soccer: "ball" };
 export function Icon({ name, size = 16, className = "", strokeWidth = 1.8, title }) {
-  const d = PATHS[name] || PATHS.more;
+  const d = PATHS[name] || PATHS[ALIASES[name]] || PATHS.more;
   return (
     <svg className={`ic ${className}`} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden={title ? undefined : true} role={title ? "img" : undefined}>
       {title && <title>{title}</title>}
@@ -153,10 +155,14 @@ export function useResult() {
 /* ---------------------------------- modal ---------------------------------- */
 // Açık pencerelerin sırası: Escape yalnız en üsttekini kapatır (iç içe pencereler).
 const modalStack = [];
+/** Açık pencere sayısı: üstüne açılan katmanlar (yan panel) z-index'i buna göre seçer. */
+export const openModalCount = () => modalStack.length;
 export function Modal({ title, onClose, children, footer, width = 560, className = "" }) {
   const ref = useRef(null);
   const idRef = useRef(null);
   if (!idRef.current) idRef.current = Symbol("modal");
+  // İç içe pencereler (ve aradaki yan paneller) sırayla üst üste çizilir.
+  const [depth] = useState(() => modalStack.length);
   useEffect(() => {
     const id = idRef.current;
     modalStack.push(id);
@@ -176,7 +182,7 @@ export function Modal({ title, onClose, children, footer, width = 560, className
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
+    <div className="modal-backdrop" style={depth ? { zIndex: 50 + depth * 2 } : undefined} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
       <div className={`modal ${className}`} style={{ width }} ref={ref} role="dialog" aria-modal="true" aria-label={title}>
         <header className="modal__head">
           <h2>{title}</h2>

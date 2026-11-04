@@ -20,9 +20,15 @@ const { EventEmitter } = require("node:events");
 const QUEUEABLE = /^\/api\/(tools\/(notes|events|ledger|contacts)|todos)(\/[\w-]+)?$/;
 // Projeler: sahada en çok yapılan, sırası önemsiz ve kimliğe bağımlı olmayan
 // yazmalar kuyruğa alınır: iletişim kaydı (arama sonucu, not), soru ekleme ve
-// cevaplama, adımın ve kişinin alan güncellemesi. Proje, aşama, adım ve kişi
-// oluşturma / silme bağlantı ister (sıra ve kimlikler sunucuda belirlenir).
-const PROJECT_QUEUEABLE = /^\/api\/tools\/projects\/\d+\/(activities|questions(\/[\w-]+)?|(steps|leads)\/\d+)$/;
+// cevaplama, adımın ve kişinin alan güncellemesi, projedeki maçın aşaması /
+// kontrol listesi / notu. Proje, aşama, adım ve kişi oluşturma / silme bağlantı
+// ister (sıra ve kimlikler sunucuda belirlenir).
+// Saha ve maç planlama (/api/match-requests/admin: saat, havuz, kart, arama,
+// maç oluşturma), maç bağlama ve maç ücretlerini bütçeye yazma kuyruğa
+// alınmaz: saat ve kart durumları sunucuda birbirine bağlıdır, maç sitede
+// oluşur; bu işlemler çevrimdışıyken açık hata verir. Okumalar (program,
+// kartlar, takım listeleri) önbellekten gelir.
+const PROJECT_QUEUEABLE = /^\/api\/tools\/projects\/\d+\/(activities|questions(\/[\w-]+)?|(steps|leads|matches)\/\d+)$/;
 // Gelir / gider kayıtları: hesap hareketi ve proje bütçe kalemi ekleme ve
 // güncelleme (ör. "Ödendi" yapma) kuyruğa alınır; çevrimdışı eklenen kaydın
 // geçici kimliği sonraki düzenlemede eşlenir. Yetki sunucuda gönderim sırasında

@@ -1,6 +1,8 @@
 // Ayarlar: proje bilgileri, bütçe ve muhasebe (varsayılan hesap, hesap
 // yetkilileri), kişi ve tedarik aşamaları / görüşme sonuçları, roller → kişi,
-// listeler, üyeler; şablon olarak kaydet, kopyala, sil / ayrıl.
+// listeler, üyeler, saha ve maç planlama (proje sahaları, lig / sezon, maç
+// hesabı, maç ücretleri, maç kontrol listesi); şablon olarak kaydet, kopyala,
+// sil / ayrıl.
 import React, { useEffect, useState } from "react";
 import { Field, Icon, Modal, useConfirm } from "../../components/ui";
 import { del, post, put, request, useResource } from "../../api";
@@ -10,6 +12,7 @@ import { formatMoney } from "../../lib/helpers";
 import { AccountSelectField, AclEditor } from "../../components/finance";
 import { Avatar, BASE, FINANCE_EVENT, PromptDialog, ROLE_LABEL, TagEditor, useRun } from "./common";
 import { useProjectFinance } from "./Budget";
+import { parseAmount } from "../../lib/ledgerUtils";
 
 export default function Settings({ ctx, onDeleted, openProject }) {
   const { canEdit, isOwner } = ctx;
@@ -19,6 +22,7 @@ export default function Settings({ ctx, onDeleted, openProject }) {
       <div className="settings-grid">
         <ProjectInfo ctx={ctx} />
         <FinanceSettings ctx={ctx} />
+        <MatchPlanningSettings ctx={ctx} />
         <StagesEditor ctx={ctx} />
         <OutcomesEditor ctx={ctx} />
         <StagesEditor ctx={ctx} kind="supplier" />
@@ -350,6 +354,88 @@ function Danger({ ctx, isOwner, onDeleted, openProject }) {
       </div>
       {dialog === "template" && <PromptDialog title="Şablon olarak kaydet" label="Şablon adı" initial={`${project.name} şablonu`} onClose={() => setDialog(null)} onSubmit={saveTemplate} />}
       {dialog === "duplicate" && <PromptDialog title="Kopyasını oluştur" label="Yeni projenin adı" initial={`${project.name} (kopya)`} confirmLabel="Oluştur" onClose={() => setDialog(null)} onSubmit={duplicate} />}
+    </section>
+  );
+}
+
+/**
+ * Saha ve maç planlama: sekmeyi açar; projenin sahaları (sitedeki saha ve maç
+ * planlama sahaları), ili, ligleri / sezonları, lig maçlarının dahil edilmesi,
+ * maç hesabı (ayrı muhasebe hesabı), maç başı ücretler ve maç kontrol listesi.
+ */
+function MatchPlanningSettings({ ctx }) {
+  const { project, settings, canEdit, actions } = ctx;
+  const run = useRun();
+  const opts = useResource(`${BASE}/match-options`);
+  const fin = useProjectFinance(project.id);
+  const all = useResource("/api/finance/accounts", null, { enabled: canEdit });
+  const src = settings.match_planning || {};
+  const [mp, setMp, dirty, reset] = useDraft({
+    enabled: Boolean(src.enabled), venue_ids: src.venue_ids || [], league_ids: src.league_ids || [], season_ids: src.season_ids || [], city_id: src.city_id || null,
+    account_id: src.account_id || null, include_league_matches: src.include_league_matches !== false,
+    fees: (src.fees || []).map((f) => ({ ...f, amount: f.amount == null ? "" : String(f.amount).replace(".", ",") })), checklist: src.checklist || [],
+  });
+  const [busy, setBusy] = useState(false);
+  const o = opts.data || {};
+  const perPer = o.fee_per || [{ key: "match", label: "Maç başı" }, { key: "home", label: "Ev sahibi takım" }, { key: "away", label: "Deplasman takımı" }, { key: "team", label: "Her iki takım (ayrı ayrı)" }];
+  const toggleId = (key, id) => setMp({ ...mp, [key]: mp[key].map(Number).includes(Number(id)) ? mp[key].filter((x) => Number(x) !== Number(id)) : [...mp[key], Number(id)] });
+  const venues = (o.venues || []).filter((v) => !mp.city_id || !v.city_id || Number(v.city_id) === Number(mp.city_id) || mp.venue_ids.map(Number).includes(Number(v.id)));
+  const leagues = (o.leagues || []).filter((l) => !mp.city_id || !l.city_id || Number(l.city_id) === Number(mp.city_id) || mp.league_ids.map(Number).includes(Number(l.id)));
+  const seasons = (o.seasons || []).filter((s) => (!mp.league_ids.length ? leagues.some((l) => Number(l.id) === Number(s.league_id)) || !s.league_id : mp.league_ids.map(Number).includes(Number(s.league_id))) || mp.season_ids.map(Number).includes(Number(s.id)));
+  const setFee = (i, patchFee) => setMp({ ...mp, fees: mp.fees.map((f, j) => (j === i ? { ...f, ...patchFee } : f)) });
+  const save = async () => {
+    setBusy(true);
+    await actions.updateProject({ settings: { match_planning: { ...mp, fees: mp.fees.map((f) => ({ ...f, amount: f.amount === "" ? 0 : parseAmount(f.amount) || 0 })) } } });
+    setBusy(false);
+  };
+  const createAccount = async () => {
+    setBusy(true);
+    const r = await post("/api/finance/accounts", { scope: "shared", name: `${project.name} maç kasası`.slice(0, 80), kind: "kasa", color: project.color, acl: [{ type: "project", id: project.id, level: "post" }] }, { queue: false });
+    if (run(r, "Maç kasası açıldı; maç ücretleri bu hesaba işlenir.")) {
+      await actions.updateProject({ settings: { match_planning: { account_id: r.data.item.id } } });
+      fin.reload({ quiet: true }); all.reload({ quiet: true });
+    }
+    setBusy(false);
+  };
+  const perms = o.permissions || {};
+  return (
+    <section className="card card--span2 match-settings">
+      <header className="card__head"><h2 className="card__title"><Icon name="ball" /> Saha ve maç planlama</h2><span className="muted small">Sitedeki saha ve maç planlama (çağrı merkezi) bu projede</span></header>
+      <label className="toggle"><input type="checkbox" checked={mp.enabled} disabled={!canEdit} onChange={(e) => setMp({ ...mp, enabled: e.target.checked })} /> <strong>“Saha ve maç” sekmesini aç</strong> — sahalar, program, talepler, takımlar ve projenin maçları</label>
+      {!perms.venues_view && opts.data && <p className="notice notice--warn small"><Icon name="lock" size={12} /> Sahaları ve programı görmek için “Saha ve maç planlama” (venues.view) yetkisi gerekir; projenin maç listesi yetki olmadan da görünür.</p>}
+      {mp.enabled && (
+        <div className="match-settings__grid">
+          <div>
+            <Field label="İl"><select value={mp.city_id || ""} disabled={!canEdit} onChange={(e) => setMp({ ...mp, city_id: e.target.value ? Number(e.target.value) : null })}><option value="">Tüm iller</option>{(o.cities || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+            <span className="field__label">Proje sahaları <small className="muted">({mp.venue_ids.length} seçili)</small></span>
+            <div className="chips match-settings__chips">{venues.map((v) => <button key={v.id} type="button" disabled={!canEdit} className={`chip ${mp.venue_ids.map(Number).includes(Number(v.id)) ? "" : "chip--off"}`} onClick={() => toggleId("venue_ids", v.id)}><Icon name="map" size={10} /> {v.name}{v.city ? ` · ${v.city}` : ""}{v.status !== "active" ? " (pasif)" : ""}</button>)}{!venues.length && <span className="muted small">{opts.loading ? "Yükleniyor…" : "Saha yok; Saha ve maç → Program → Sahalar'dan ekleyin."}</span>}</div>
+            <span className="field__label">Ligler</span>
+            <div className="chips match-settings__chips">{leagues.map((l) => <button key={l.id} type="button" disabled={!canEdit} className={`chip ${mp.league_ids.map(Number).includes(Number(l.id)) ? "" : "chip--off"}`} onClick={() => toggleId("league_ids", l.id)}>{l.name}</button>)}</div>
+            <span className="field__label">Sezonlar</span>
+            <div className="chips match-settings__chips">{seasons.map((s) => <button key={s.id} type="button" disabled={!canEdit} className={`chip ${mp.season_ids.map(Number).includes(Number(s.id)) ? "" : "chip--off"}`} onClick={() => toggleId("season_ids", s.id)}>{[s.league_name, s.name].filter(Boolean).join(" · ")}</button>)}</div>
+            <label className="toggle"><input type="checkbox" checked={mp.include_league_matches} disabled={!canEdit} onChange={(e) => setMp({ ...mp, include_league_matches: e.target.checked })} /> Seçilen lig / sezonun proje tarihlerindeki bütün maçları projeye dahil olsun</label>
+            <AccountSelectField accounts={fin.data?.accounts || []} value={mp.account_id ? String(mp.account_id) : ""} onChange={(v) => setMp({ ...mp, account_id: v ? Number(v) : null })} disabled={!canEdit} label="Maç hesabı (ayrı muhasebe hesabı)" emptyLabel="Varsayılan proje hesabı" hint="Maç ücretleri bu hesaba bağlanır; ödendi / tahsil edildi olunca bakiyeye işlenir." />
+            {canEdit && all.data?.access?.shared?.manage && <button type="button" className="info-box info-box--btn" disabled={busy} onClick={createAccount}><Icon name="plus" /><div><strong>Bu proje için maç hesabı aç</strong><span className="muted small">“{project.name} maç kasası” ortak hesabı açılır ve proje ekibi kayıt girebilir.</span></div></button>}
+          </div>
+          <div>
+            <span className="field__label">Maç ücretleri <small className="muted">(“Ücretleri bütçeye yaz” bu kalemleri yazar)</small></span>
+            <ul className="edit-list fee-list">
+              {mp.fees.map((f, i) => (
+                <li key={f.key || i}>
+                  <input value={f.label} disabled={!canEdit} maxLength={60} onChange={(e) => setFee(i, { label: e.target.value })} aria-label="Kalem adı" />
+                  <select value={f.type} disabled={!canEdit} onChange={(e) => setFee(i, { type: e.target.value })} aria-label="Tür"><option value="income">Gelir</option><option value="expense">Gider</option></select>
+                  <input className="fee-list__amount" inputMode="decimal" value={f.amount} disabled={!canEdit} placeholder="0" onChange={(e) => setFee(i, { amount: e.target.value })} aria-label="Tutar" />
+                  <select value={f.per} disabled={!canEdit} onChange={(e) => setFee(i, { per: e.target.value })} aria-label="Kime">{perPer.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}</select>
+                  {canEdit && <button type="button" className="icon-btn icon-btn--xs" onClick={() => setMp({ ...mp, fees: mp.fees.filter((_, j) => j !== i) })} aria-label="Sil"><Icon name="trash" size={12} /></button>}
+                </li>
+              ))}
+            </ul>
+            {canEdit && mp.fees.length < 20 && <button type="button" className="board__addbtn" onClick={() => setMp({ ...mp, fees: [...mp.fees, { key: slugKey("Yeni ücret", mp.fees.map((f) => f.key)).replace(/-/g, "_"), label: "Yeni ücret", type: "income", amount: "", per: "match" }] })}><Icon name="plus" size={13} /> Ücret kalemi ekle</button>}
+            <Field label="Maç kontrol listesi (her maçta işaretlenir)"><TagEditor value={mp.checklist} disabled={!canEdit} onChange={(v) => setMp({ ...mp, checklist: v })} placeholder="Madde ekle ve ↩" /></Field>
+          </div>
+        </div>
+      )}
+      {canEdit && <SaveBar dirty={dirty} busy={busy} onSave={save} onReset={reset} />}
     </section>
   );
 }

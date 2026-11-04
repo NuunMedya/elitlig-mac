@@ -312,6 +312,7 @@ const ROUTES = [
   ["agenda", "Ajanda", "CmdOrCtrl+3"],
   ["notes", "Not Defteri", "CmdOrCtrl+4"],
   ["projects", "Projeler", "CmdOrCtrl+0"],
+  ["planning", "Saha ve Maç Planlama", "CmdOrCtrl+Shift+0"],
   ["ledger", "Ön Muhasebe", "CmdOrCtrl+5"],
   ["sheets", "Tablolar", "CmdOrCtrl+6"],
   ["contacts", "Rehber", "CmdOrCtrl+7"],

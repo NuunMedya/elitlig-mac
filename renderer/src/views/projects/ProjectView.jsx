@@ -14,11 +14,14 @@ import Activity from "./Activity";
 import { ProjectPortfolio } from "./Portfolio";
 import Settings from "./Settings";
 import Budget from "./Budget";
+import ProjectMatches, { matchesEnabled } from "./Matches";
+import { deskViewForStep } from "../../lib/planningUtils";
 
 const TABS = [
   { key: "overview", label: "Genel bakış", icon: "overview" },
   { key: "process", label: "Süreç", icon: "list" },
   { key: "leads", label: "Kişiler", icon: "users" },
+  { key: "matches", label: "Saha ve maç", icon: "ball", when: (settings) => matchesEnabled(settings) },
   { key: "budget", label: "Bütçe", icon: "wallet" },
   { key: "questions", label: "Sorular", icon: "help" },
   { key: "activity", label: "İletişim", icon: "activity" },
@@ -30,7 +33,8 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
   const me = auth.user?.id;
   const project = useProject(id, me);
   const { data, actions } = project;
-  const tab = TABS.some((t) => t.key === route.tab) ? route.tab : "overview";
+  const tabs = TABS.filter((t) => !t.when || t.when(data?.item?.settings));
+  const tab = tabs.some((t) => t.key === route.tab) ? route.tab : "overview";
   const [stepId, setStepId] = useState(route.step || null);
   const [leadId, setLeadId] = useState(route.lead || null);
   const [toolPanel, setToolPanel] = useState(null); // { tool, step }
@@ -56,7 +60,7 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
       canEdit: Boolean(item.access?.can_edit), isOwner: Boolean(item.access?.is_owner), me, actions,
       openStep, openLead, setTab, go,
       openTool: (tool, step) => {
-        if (["leads", "suppliers", "finance", "questions", "portfolio", "activity"].includes(tool)) setToolPanel({ tool, step });
+        if (["leads", "suppliers", "finance", "questions", "portfolio", "activity", "matches"].includes(tool)) setToolPanel({ tool, step });
         else if (tool === "accounting") go("ledger");
         else if (tool) go(tool);
       },
@@ -123,7 +127,7 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
           ]} />
         </header>
         <nav className="proj-tabs" role="tablist" aria-label="Proje bölümleri">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={tab === t.key ? "is-active" : ""} onClick={() => setTab(t.key)}>
               <Icon name={t.icon} size={14} /> {t.label}{counts[t.key] ? <span className="proj-tabs__count">{counts[t.key]}</span> : null}
             </button>
@@ -134,7 +138,8 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
           {tab === "overview" && <Overview ctx={ctx} />}
           {tab === "process" && <Process ctx={ctx} selectedId={stepId} focusPhase={route.phase} initialFilter={route.processFilter} />}
           {tab === "leads" && <Leads ctx={ctx} selectedId={leadId} initialFilter={route.leadFilter} initialKind={route.kind} />}
-          {tab === "budget" && <Budget ctx={ctx} />}
+          {tab === "matches" && <ProjectMatches ctx={ctx} initialView={route.matchesView} />}
+          {tab === "budget" && <Budget ctx={ctx} initialFilter={route.budgetFilter} />}
           {tab === "questions" && <Questions ctx={ctx} highlight={route.question} />}
           {tab === "activity" && <Activity ctx={ctx} />}
           {tab === "portfolio" && <ProjectPortfolio ctx={ctx} />}
@@ -152,8 +157,8 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
   );
 }
 
-const PANEL_TITLES = { leads: "Kişiler / CRM", suppliers: "Tedarik görüşmeleri", finance: "Bütçe / gelir-gider", questions: "Soru-cevap", portfolio: "Portföy", activity: "İletişim geçmişi" };
-const PANEL_TABS = { leads: "leads", suppliers: "leads", finance: "budget", questions: "questions", portfolio: "portfolio", activity: "activity" };
+const PANEL_TITLES = { matches: "Saha ve maç planlama", leads: "Kişiler / CRM", suppliers: "Tedarik görüşmeleri", finance: "Bütçe / gelir-gider", questions: "Soru-cevap", portfolio: "Portföy", activity: "İletişim geçmişi" };
+const PANEL_TABS = { matches: "matches", leads: "leads", suppliers: "leads", finance: "budget", questions: "questions", portfolio: "portfolio", activity: "activity" };
 
 /** Adımın aracı, adımdan çıkmadan büyük bir pencerede açılır. */
 function ToolPanel({ ctx, tool, step, onClose }) {
@@ -172,6 +177,7 @@ function ToolPanel({ ctx, tool, step, onClose }) {
       {tool === "questions" && <Questions ctx={ctx} embedded step={step} />}
       {tool === "portfolio" && <ProjectPortfolio ctx={ctx} embedded />}
       {tool === "activity" && <Activity ctx={ctx} embedded step={step} />}
+      {tool === "matches" && <ProjectMatches ctx={ctx} embedded initialView={deskViewForStep(step?.title)} />}
     </Modal>
   );
 }

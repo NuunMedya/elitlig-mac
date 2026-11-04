@@ -23,12 +23,12 @@ export function useProjectFinance(projectId, { enabled = true } = {}) {
 
 const leadLabel = (l) => `${l.kind === "supplier" ? "Tedarikçi" : "Kişi"}: ${l.company && l.company !== l.name ? `${l.name} · ${l.company}` : l.name}`;
 
-export default function Budget({ ctx, embedded = false, step = null }) {
+export default function Budget({ ctx, embedded = false, step = null, initialFilter = null }) {
   const { project, settings, canEdit, leads, steps } = ctx;
   const fin = useProjectFinance(project.id);
   const run = useRun();
   const confirm = useConfirm();
-  const [f, setF] = useState({ q: "", status: "", step: step ? String(step.id) : "" });
+  const [f, setF] = useState({ q: "", status: "", step: step ? String(step.id) : "", match: initialFilter?.match || "" });
   const [editing, setEditing] = useState(null); // { entry } | { draft }
   const d = fin.data;
   const items = useMemo(() => d?.items || [], [d]);
@@ -112,6 +112,7 @@ export default function Budget({ ctx, embedded = false, step = null }) {
         <div className="search-box"><Icon name="search" size={14} /><input value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} placeholder="Açıklama, cari, kategori, tedarikçi…" /></div>
         <select className="select-sm" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })} aria-label="Durum"><option value="">Tüm durumlar</option><option value="open">Açık (tahmin + bekleyen)</option><option value="planned">Tahmin</option><option value="pending">Bekliyor</option><option value="paid">Ödendi / tahsil edildi</option><option value="cancelled">İptal</option></select>
         {!embedded && <select className="select-sm" value={f.step} onChange={(e) => setF({ ...f, step: e.target.value })} aria-label="Adım"><option value="">Tüm adımlar</option>{[...new Set(items.map((e) => e.step_id).filter(Boolean))].map((sid) => <option key={sid} value={sid}>{steps.find((s) => s.id === sid)?.title || `Adım #${sid}`}</option>)}</select>}
+        {items.some((e) => e.match_id) && <select className="select-sm" value={f.match === "any" || !f.match ? f.match : "one"} onChange={(e) => setF({ ...f, match: e.target.value === "one" ? f.match : e.target.value })} aria-label="Maç ücretleri"><option value="">Tüm kalemler</option><option value="any">Maç ücretleri</option>{f.match && f.match !== "any" && <option value="one">{items.find((e) => String(e.match_id) === String(f.match))?.match_label || "Seçilen maç"}</option>}</select>}
         {f.step && step && <span className="pill pill--tool"><Icon name="list" size={10} /> {step.title}</span>}
         <span className="spacer" />
         {canEdit && <>
@@ -140,6 +141,7 @@ export default function Budget({ ctx, embedded = false, step = null }) {
                           <strong>{e.description || e.category || (e.type === "income" ? "Gelir" : "Gider")}{e.pending_sync && <span className="pill pill--xs pill--amber budget-row__sync"><Icon name="cloudOff" size={9} /> eşitlenecek</span>}</strong>
                           <small>
                             {[e.category && e.description ? e.category : null, e.lead_name, e.step_title, e.party && e.party !== e.lead_name ? e.party : null].filter(Boolean).join(" · ")}
+                            {e.match_label && <span className="pill pill--xs pill--tool budget-row__match" title="Maç ücreti"><Icon name="ball" size={9} /> {e.match_label}</span>}
                           </small>
                           <span className="budget-row__meta">
                             <EntryStatusPill entry={e} small />

@@ -70,6 +70,10 @@ describe("gelir / gider kayıtları", () => {
     expect(filterFinanceEntries(entries, { status: "open" }).map((e) => e.id)).toEqual([1, 3, 4]);
     expect(filterFinanceEntries(entries, { type: "expense", step: "7" }).map((e) => e.id)).toEqual([3]);
     expect(filterFinanceEntries(entries, { q: "sponsor" }).map((e) => e.id)).toEqual([1]);
+    const withMatch = [...entries, { id: 9, type: "income", status: "pending", amount: 1500, match_id: 701, match_label: "Kartallar – Şimşekler" }, { id: 10, type: "expense", status: "pending", amount: 1200, match_id: 702, match_label: "Yıldızspor – Atletik" }];
+    expect(filterFinanceEntries(withMatch, { match: "any" }).map((e) => e.id)).toEqual([9, 10]);
+    expect(filterFinanceEntries(withMatch, { match: "702" }).map((e) => e.id)).toEqual([10]);
+    expect(filterFinanceEntries(withMatch, { q: "kartallar" }).map((e) => e.id)).toEqual([9]);
     expect(markPaidPatch(entries[0], "2026-11-04")).toMatchObject({ status: "paid", amount: 50000, paid_date: "2026-11-04", effective: 50000 });
   });
 });
