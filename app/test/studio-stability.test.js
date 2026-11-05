@@ -349,18 +349,19 @@ test("yerel kayıt: her çalıştırmada yeni parça (.mkv, -2.mkv); durum local
   assert.equal(res.ok, true);
   const tee1 = children[0].args.at(-1).split(/(?<!\\)\|/);
   assert.equal(tee1.length, 3);
-  const file1 = tee1[1].replace("[f=matroska:onfail=ignore]", "");
+  // tee çıkışında yol "/" ile yazılır (Windows'ta da); karşılaştırmalar yerel biçimde.
+  const file1 = path.normalize(tee1[1].replace("[f=matroska:onfail=ignore]", ""));
   assert.match(path.basename(file1), /^ElitLig-Mac-12-\d{8}-\d{6}\.mkv$/);
   fs.writeFileSync(file1, Buffer.alloc(1234));
   engine.pushChunk(HEADER);
   progress(children[0], 1000);
-  assert.equal(statuses.at(-1).localPath, file1);
+  assert.equal(path.normalize(statuses.at(-1).localPath), file1);
   assert.equal(statuses.at(-1).localBytes, 1234);
   // Yeniden başlatma → ikinci parça.
   children[0].emit("exit", 1, null);
   await tick();
   timers.runNext(2000);
-  const file2 = children[1].args.at(-1).split(/(?<!\\)\|/)[1].replace("[f=matroska:onfail=ignore]", "");
+  const file2 = path.normalize(children[1].args.at(-1).split(/(?<!\\)\|/)[1].replace("[f=matroska:onfail=ignore]", ""));
   assert.equal(file2, file1.replace(/\.mkv$/, "-2.mkv"));
   fs.writeFileSync(file2, Buffer.alloc(100));
   engine.pushChunk(HEADER);
@@ -370,11 +371,11 @@ test("yerel kayıt: her çalıştırmada yeni parça (.mkv, -2.mkv); durum local
   assert.equal(statuses.at(-1).state, "stopped");
   assert.equal(statuses.at(-1).localRemux, "remuxing");
   await tick(); await tick(); await tick();
-  assert.deepEqual(remuxCalls[0].parts, [file1, file2]);
-  assert.equal(remuxCalls[0].outFile, file1.replace(/\.mkv$/, ".mp4"));
+  assert.deepEqual(remuxCalls[0].parts.map((x) => path.normalize(x)), [file1, file2]);
+  assert.equal(path.normalize(remuxCalls[0].outFile), file1.replace(/\.mkv$/, ".mp4"));
   assert.equal(locals.at(-1).state, "done");
   assert.equal(statuses.at(-1).localRemux, "done");
-  assert.equal(statuses.at(-1).localPath, file1.replace(/\.mkv$/, ".mp4"));
+  assert.equal(path.normalize(statuses.at(-1).localPath), file1.replace(/\.mkv$/, ".mp4"));
 });
 
 test("yerel kayıt: klasöre yazılamazsa başlamaz; dosya adı Türkçe karakterden arınır", async () => {
