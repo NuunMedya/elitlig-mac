@@ -1,6 +1,6 @@
 import { BUG, bugLayout, bugPlacement, clockText, drawReplayBadge, drawScoreBug, lowerColor, periodLabel, replayBadgeLayout, teamShortCode } from "../src/lib/studio/scorebug";
 import { addLayer, addScene, addSource, defaultConfig, duplicateScene, fitRect, layerRect, loadConfig, moveLayer, moveScene, normalizeConfig, removeScene, removeSource, renameScene, resolveCameraDevice, saveConfig, sourceUsage, STORAGE_KEY, updateLayer } from "../src/lib/studio/layouts";
-import { HALF_MS, bugEventOf, controlSteps, eventBody, eventSide, isGoalCode, livePhase, matchOptionLabel, normalizeMatchStatus, primaryControl, scoreFromEvents, shiftDay, sortEvents, timerNowMs, toSquad } from "../src/lib/studio/match";
+import { HALF_MS, buildMatchOptions, normalizeListMatch, bugEventOf, controlSteps, eventBody, eventSide, isGoalCode, livePhase, matchOptionLabel, normalizeMatchStatus, primaryControl, scoreFromEvents, shiftDay, sortEvents, timerNowMs, toSquad } from "../src/lib/studio/match";
 import { clipPlayable, clipStatusLabel, elapsedText, ingestUrl, isEncoding, isRtmpUrl, joinRtmp, keyAction, pickMimeType, presetOf, recorderBitsPerSecond, replayEvent, reusableStream, statusPill, streamStatusLabel } from "../src/lib/studio/broadcast";
 import { fallbackDue, gainValue, levelFromSamples, previewSize, transitionProgress } from "../src/lib/studio/compose";
 
@@ -391,5 +391,43 @@ describe("karıştırıcı yardımcıları", () => {
     expect(gainValue(100, false)).toBe(1);
     expect(gainValue(100, true)).toBe(0);
     expect(gainValue(400, false)).toBe(1.5);
+  });
+});
+
+describe("maç seçici", () => {
+  const day = "2026-11-05";
+  it("canlı maçlar gün ne olursa olsun en üstte, günün maçları saate göre", () => {
+    const { live, ofDay } = buildMatchOptions({
+      day,
+      dayItems: [
+        { id: 2, date: day, time: "21:00", home: "Ankara Gençlikspor", away: "Karadeniz FK" },
+        { id: 1, date: day, time: "19:00", home: "A", away: "B" },
+      ],
+      listItems: [
+        { id: 9, date: "2026-11-04", match_time: "22:00:00", first_team_name: "X", second_team_name: "Y", mac_durumu: "canli" },
+        { id: 2, date: day, mac_durumu: "canli" },
+        { id: 5, date: "2026-11-03", mac_durumu: "yayinlanmis" },
+      ],
+    });
+    expect(live.map((m) => m.id)).toEqual([2, 9]);
+    expect(live[0].home).toBe("Ankara Gençlikspor");
+    expect(ofDay.map((m) => m.id)).toEqual([1]);
+  });
+  it("günün maçları ucu boşken genel listeden o gün süzülür", () => {
+    const { live, ofDay } = buildMatchOptions({
+      day,
+      dayItems: [],
+      listItems: [
+        { id: 3, date: `${day}T00:00:00.000Z`, match_time: "20:30:00", first_team_name: "C", second_team_name: "D", mac_durumu: "zamanlanmis" },
+        { id: 4, date: "2026-11-06", first_team_name: "E", second_team_name: "F" },
+      ],
+    });
+    expect(live).toEqual([]);
+    expect(ofDay.map((m) => m.id)).toEqual([3]);
+    expect(matchOptionLabel(ofDay[0])).toBe("C – D · 20:30");
+  });
+  it("geçersiz satır atlanır", () => {
+    expect(normalizeListMatch(null)).toBeNull();
+    expect(normalizeListMatch({})).toBeNull();
   });
 });

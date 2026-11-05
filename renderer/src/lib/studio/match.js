@@ -258,3 +258,45 @@ export const shiftDay = (day, n) => {
   const [y, m, d] = String(day).split("-").map(Number);
   return isoDay(new Date(y, m - 1, d + n));
 };
+
+/**
+ * GET /maclar satırını seçicinin biçimine çevirir
+ * ({ id, date, time, home, away, field, status }).
+ */
+export function normalizeListMatch(m) {
+  if (!m || m.id == null) return null;
+  return {
+    id: Number(m.id),
+    date: String(m.date ?? m.match_date ?? "").slice(0, 10) || null,
+    time: m.time ?? m.match_time ?? null,
+    home: m.home ?? m.first_team_name ?? null,
+    away: m.away ?? m.second_team_name ?? null,
+    field: m.field ?? m.match_field ?? null,
+    status: normalizeMatchStatus(m.status ?? m.mac_durumu),
+  };
+}
+
+/**
+ * Seçicinin listesi: canlı maçlar en üstte (gün ne olursa olsun), sonra seçilen
+ * günün maçları saate göre. Aynı maç iki kaynaktan gelirse bir kez yazılır.
+ */
+export function buildMatchOptions({ day, dayItems = [], listItems = [] }) {
+  const byId = new Map();
+  const add = (raw) => {
+    const m = normalizeListMatch(raw);
+    if (!m) return;
+    const prev = byId.get(m.id);
+    if (!prev) { byId.set(m.id, m); return; }
+    // İlk kaynağın dolu alanları korunur, boş olanlar ikinciden tamamlanır.
+    const merged = { ...prev };
+    Object.keys(m).forEach((k) => { if (merged[k] == null) merged[k] = m[k]; });
+    byId.set(m.id, merged);
+  };
+  dayItems.forEach(add);
+  listItems.forEach(add);
+  const all = [...byId.values()];
+  const live = sortDayMatches(all.filter((m) => m.status === "canli"));
+  const liveIds = new Set(live.map((m) => m.id));
+  const ofDay = sortDayMatches(all.filter((m) => !liveIds.has(m.id) && m.date === day));
+  return { live, ofDay };
+}
