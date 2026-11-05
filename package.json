@@ -1,8 +1,8 @@
 {
   "name": "elitlig-araclar",
   "productName": "Elitlig Araclar",
-  "version": "2.8.0",
-  "description": "Elitlig Araçlar — Mac için bağımsız masaüstü uygulaması: Mesajlar (üye mesajları dahil), Talepler, Yapılacaklar, Ajanda, Not Defteri, Projeler, Saha ve maç planlama, Ön Muhasebe, Tablolar, Rehber, Hesap Araçları ve Odak Sayacı.",
+  "version": "2.9.0",
+  "description": "Elitlig Araçlar — Mac için bağımsız masaüstü uygulaması: Yayın Stüdyosu (kamera, ekran ve skorbordla YouTube/RTMP canlı yayın, gol klipleri), Mesajlar (üye mesajları dahil), Talepler, Yapılacaklar, Ajanda, Not Defteri, Projeler, Saha ve maç planlama, Ön Muhasebe, Tablolar, Rehber, Hesap Araçları ve Odak Sayacı.",
   "main": "app/main.js",
   "author": "Nuun Medya <nuunmedya@gmail.com>",
   "license": "UNLICENSED",
@@ -12,7 +12,8 @@
     "build": "vite build --config renderer/vite.config.mjs",
     "start": "npm run build && electron .",
     "test": "vitest run --config renderer/vite.config.mjs && node --test app/test/*.test.js",
-    "dist": "npm run build && electron-builder --mac dmg zip --universal --publish never"
+    "dist": "npm run build && npm run ffmpeg && electron-builder --mac dmg zip --universal --publish never",
+    "ffmpeg": "node build/fetch-ffmpeg.js"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "4.3.4",
@@ -46,8 +47,19 @@
       "gatekeeperAssess": false,
       "darkModeSupport": true,
       "artifactName": "Elitlig-Araclar-${version}-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "build/ffmpeg/${arch}",
+          "to": "ffmpeg",
+          "filter": [
+            "ffmpeg",
+            "LICENSE.txt"
+          ]
+        }
+      ],
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Elitlig ekip sohbetindeki sesli aramalar için mikrofon kullanılır.",
+        "NSCameraUsageDescription": "Yayın Stüdyosu'nda kamera görüntüsünü canlı yayına almak için kamera kullanılır.",
+        "NSMicrophoneUsageDescription": "Elitlig ekip sohbetindeki sesli aramalar ve Yayın Stüdyosu'ndaki canlı yayın sesi için mikrofon kullanılır.",
         "LSApplicationCategoryType": "public.app-category.productivity",
         "CFBundleDisplayName": "Elitlig Araçlar"
       }

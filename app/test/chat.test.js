@@ -184,8 +184,8 @@ test("üye mesajı listesi ve yetkiler", async () => {
   assert.deepEqual(diffIncoming(new Map([[1, 1]]), [{ id: 1, unread: 0, last_message: { id: 2, kind: "text", sender: { is_management: true } } }]), [], "yönetim adına yazılan yanıt gelen sayılmaz");
 
   const full = accessFromUser({ isManagement: true, permissions: ["messages.view", "messages.reply", "messages.calls_view"] });
-  assert.deepEqual(full, { known: true, inbox: true, reply: true, calls: true, listen: false, requests: true, content: true, assign: false, award: false });
-  assert.deepEqual(accessFromUser({ isManagement: true, permissions: [] }), { known: true, inbox: false, reply: false, calls: false, listen: false, requests: true, content: true, assign: false, award: false });
+  assert.deepEqual(full, { known: true, inbox: true, reply: true, calls: true, listen: false, requests: true, content: true, assign: false, award: false, live: false });
+  assert.deepEqual(accessFromUser({ isManagement: true, permissions: [] }), { known: true, inbox: false, reply: false, calls: false, listen: false, requests: true, content: true, assign: false, award: false, live: false });
   const crew = accessFromUser({ isManagement: true, permissions: ["staff.assign", "todos.assign"] });
   assert.equal(crew.assign && crew.award && crew.content, true, "görevlendirme ve haftanın enleri yetkisi");
   assert.equal(accessFromUser({ isManagement: false, permissions: ["staff.assign"] }).assign, false, "üye hesabında hazır içerik yok");

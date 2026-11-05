@@ -30,6 +30,13 @@ jobs:
       - name: Testler
         run: npm test
 
+      # Yayın Stüdyosu: ffmpeg (arm64 + x64) build/fetch-ffmpeg.js ile indirilir; önbellekte tutulur.
+      - name: ffmpeg önbelleği
+        uses: actions/cache@v4
+        with:
+          path: build/ffmpeg
+          key: ffmpeg-${{ hashFiles('build/fetch-ffmpeg.js') }}
+
       - name: Derle (.dmg + .zip, universal)
         run: npm run dist
         env:
@@ -47,6 +54,36 @@ jobs:
           if kill -0 $PID 2>/dev/null; then echo "Uygulama çalışıyor"; kill $PID; else echo "UYGULAMA ÇÖKTÜ"; cat launch.log; exit 1; fi
           grep -iE "error|fatal|crash" launch.log | head -40 || true
           ls ~/Library/Logs/DiagnosticReports 2>/dev/null | head || true
+
+      - name: Yayın Stüdyosu ffmpeg testi (paketli ikili)
+        run: |
+          APP=$(ls -d dist/mac-universal/*.app)
+          FF="$APP/Contents/Resources/ffmpeg/ffmpeg"
+          test -x "$FF" || { echo "ffmpeg pakette yok: $FF"; exit 1; }
+          lipo -info "$FF"
+          lipo -info "$FF" | grep -q "x86_64" && lipo -info "$FF" | grep -q "arm64" || { echo "ffmpeg universal değil"; exit 1; }
+          codesign --verify --strict --verbose=2 "$FF"
+          "$FF" -hide_banner -version | head -1
+          "$FF" -hide_banner -encoders | grep -E " (h264_videotoolbox|libx264|aac) "
+          "$FF" -hide_banner -muxers | grep -E " (tee|segment|flv) "
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then arch -x86_64 "$FF" -hide_banner -version | head -1; else echo "::warning::Rosetta yok, x86_64 dilimi çalıştırılamadı"; fi
+          T=$(mktemp -d)
+          encode() {
+            ENC="$1"; shift
+            mkdir -p "$T/$ENC"
+            ( cd "$T/$ENC" && "$FF" -hide_banner -nostdin -loglevel warning -y \
+              -f lavfi -i testsrc2=size=1280x720:rate=30 -f lavfi -i sine=frequency=440:sample_rate=48000 -t 3 \
+              -map 0:v -map 1:a -vf format=yuv420p -c:v "$ENC" "$@" -b:v 3000k -maxrate 3000k -bufsize 6000k -g 60 \
+              -force_key_frames "expr:gte(t,n_forced*2)" -c:a aac -b:a 160k -ar 44100 -ac 2 -flags +global_header \
+              -f tee "[f=flv:onfail=ignore]out.flv|[f=segment:segment_time=2:segment_format=mpegts:reset_timestamps=1:segment_list=list.csv:segment_list_type=csv]seg%05d.ts" ) || return 1
+            ls -la "$T/$ENC"; cat "$T/$ENC/list.csv"
+            test -s "$T/$ENC/out.flv" && test -s "$T/$ENC/seg00000.ts"
+          }
+          encode libx264 -preset veryfast
+          if encode h264_videotoolbox -allow_sw 1 -realtime 1; then echo "VideoToolbox: tamam"; else echo "::warning::h264_videotoolbox bu çalıştırıcıda açılamadı (uygulama libx264'e geçer)"; fi
+          ELITLIG_FFMPEG="$FF" ELITLIG_STUDIO_ENCODER=libx264 node --test app/test/studio-integration.test.js
+          ELITLIG_FFMPEG="$FF" ELITLIG_STUDIO_ENCODER=h264_videotoolbox node --test app/test/studio-integration.test.js || echo "::warning::VideoToolbox uçtan uca testi başarısız"
+          ELITLIG_FFMPEG="$FF" node --test app/test/studio-integration.test.js
 
       - name: Sürüm bilgisi
         id: version
@@ -78,4 +115,4 @@ jobs:
                (macOS 15'te: Sistem Ayarları → Gizlilik ve Güvenlik → **Yine de Aç**).
             4. Yönetim hesabınızla bir kez giriş yapın; oturum 3 ay boyunca açık kalır.
 
-            Apple Silicon (M1/M2/M3/M4) ve Intel Mac'lerde çalışır. macOS 11 ve üzeri.
+            Apple Silicon (M1/M2/M3/M4) ve Intel Mac'lerde çalışır. macOS 12 ve üzeri.
