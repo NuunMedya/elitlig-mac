@@ -209,7 +209,9 @@ jobs:
             ls -la "$T/$ENC"; cat "$T/$ENC/list.csv"
             test -s "$T/$ENC/out.flv" && test -s "$T/$ENC/seg00000.ts" || return 1
             # H.264 seviyesi (720p30 → 4.1 → level_idc 41) akışa yazılmış olmalı.
-            LEVEL=$("$FF" -hide_banner -nostdin -loglevel verbose -i "$T/$ENC/out.flv" -map 0:v -c copy -bsf:v trace_headers -frames:v 1 -f null - 2>&1 | tr -d '\r' | grep -m1 -oE "level_idc +[0-9]+ += +[0-9]+" | grep -oE "[0-9]+$")
+            # Çıktı önce değişkene alınır: grep -m1 boruyu erken kapatınca ffmpeg SIGPIPE (141) ile düşmesin.
+            TRACE=$("$FF" -hide_banner -nostdin -loglevel verbose -i "$T/$ENC/out.flv" -map 0:v -c copy -bsf:v trace_headers -frames:v 1 -f null - 2>&1 | tr -d '\r' || true)
+            LEVEL=$(printf '%s\n' "$TRACE" | grep -oE "level_idc +[0-9]+ += +[0-9]+" | head -n1 | grep -oE "[0-9]+$" || true)
             echo "$ENC: level_idc=$LEVEL"
             test "$LEVEL" = "41"
           }
