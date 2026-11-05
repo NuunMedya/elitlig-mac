@@ -58,6 +58,28 @@ contextBridge.exposeInMainWorld("elitlig", {
     onSummary: on("requests:summary"),
     onChange: on("requests:changed"),
   },
+  // Yayın Stüdyosu: ffmpeg ana süreçte; arayüz MediaRecorder parçalarını pushChunk ile yollar.
+  studio: {
+    info: () => ipcRenderer.invoke("studio:info"),
+    mediaAccess: () => ipcRenderer.invoke("studio:mediaAccess"),
+    requestMediaAccess: (kind) => ipcRenderer.invoke("studio:requestMediaAccess", kind),
+    listScreens: () => ipcRenderer.invoke("studio:listScreens"),
+    selectScreen: (id) => ipcRenderer.invoke("studio:selectScreen", id),
+    start: (opts) => ipcRenderer.invoke("studio:start", opts),
+    // Yanıtsız, sık çağrılır: ArrayBuffer ya da Uint8Array (Blob değil: önce blob.arrayBuffer()).
+    pushChunk: (data) => {
+      const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : null;
+      if (bytes && bytes.byteLength) ipcRenderer.send("studio:chunk", bytes);
+    },
+    stop: () => ipcRenderer.invoke("studio:stop"),
+    onStatus: on("studio:status"),
+    onRestartRecorder: on("studio:restartRecorder"),
+    saveClip: (opts) => ipcRenderer.invoke("studio:saveClip", opts || {}),
+    listClips: () => ipcRenderer.invoke("studio:listClips"),
+    deleteClip: (name) => ipcRenderer.invoke("studio:deleteClip", name),
+    uploadClip: (opts) => ipcRenderer.invoke("studio:uploadClip", opts || {}),
+    revealClip: (name) => ipcRenderer.invoke("studio:revealClip", name),
+  },
   print: (html, title) => ipcRenderer.invoke("print:html", { html, title }),
   pdf: (html, title, options = {}) => ipcRenderer.invoke("print:html", { html, title, pdf: options }),
   app: {

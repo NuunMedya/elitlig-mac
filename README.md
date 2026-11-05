@@ -304,6 +304,37 @@ defterlerin gelir/gider toplamlarını bozmaz. Bu özellik sunucudaki değişikl
 - **Çevrimdışı.** Hesap hareketi ekleme ve “Ödendi” yapma kuyruğa alınır; hesap açma, virman, yetki
   değişikliği ve kayıt silme bağlantı ister.
 
+## Yayın Stüdyosu
+
+Maçı Mac'ten canlı yayınlama (OBS benzeri): kameralar, ekran / pencere, skorbord ve tekrar tek bir
+program görüntüsünde birleşir, YouTube'a (ya da herhangi bir RTMP / RTMPS sunucusuna) gider; gol
+anında son ~10 saniye klip olarak kaydedilip oyuncunun profiline yüklenir. Yetki: `matches.live`.
+
+- **Akış.** Arayüz programı `<canvas>`'ta oluşturur ve MediaRecorder ile (H.264/Opus Matroska ya da
+  WebM) 250 ms'lik parçalar halinde ana sürece yollar. Ana süreçteki **ffmpeg** bunu yeniden kodlar:
+  H.264 (VideoToolbox donanım kodlayıcı; açılamazsa x264), 2 sn'de bir anahtar kare, sabit bit hızı,
+  AAC 160 kbps 44,1 kHz stereo. Tek süreçte iki çıkış: FLV → RTMP(S) ve 2 sn'lik MPEG-TS parça halkası
+  (son ~40 sn, geçici klasörde). Yayın adresi olmadan **yalnız kayıt** (prova) da çalışır.
+- **Bağlantı.** Durum: hazırlanıyor → bağlanıyor → yayında (ya da kayıtta). RTMP koparsa 2, 4, 8, 16,
+  16 sn arayla 5 kez yeniden bağlanılır, sonra hata Türkçe gösterilir (bağlantı reddedildi, zaman
+  aşımı, adres bulunamadı, yayın anahtarı, RTMPS, kodlayıcı). Yayın sürerken ekran uykuya geçmez.
+- **YouTube.** Yayın adresi YouTube Studio'daki sunucu + anahtardır:
+  `rtmp://a.rtmp.youtube.com/live2/<anahtar>` ya da `rtmps://a.rtmps.youtube.com:443/live2/<anahtar>`
+  (sunucu uçları: `elitlig-server/docs/youtube-canli-yayin.md`).
+- **Gol klipleri.** Klip parça halkasından yeniden kodlamadan MP4'e birleştirilir
+  (`~/Library/Application Support/Elitlig Araclar/clips`, 24 saatten eskiler açılışta silinir),
+  uygulamada `elitlig-studio://` adresiyle oynatılır ve
+  `POST /api/admin/live-streams/matches/:id/clips?event_id=` ile gol olayına bağlanarak yüklenir
+  (en çok 40 MB; ağ hatasında bir kez yeniden denenir).
+- **İzinler.** İlk kullanımda macOS kamera ve mikrofon izni ister; ekran / pencere paylaşımı için
+  **Sistem Ayarları → Gizlilik ve Güvenlik → Ekran ve Sistem Sesi Kaydı**'nda Elitlig Araçlar açılmalıdır.
+- **ffmpeg uygulamayla gelir.** `build/fetch-ffmpeg.js` FFmpeg 7.1.1'in statik arm64 ve x86_64
+  derlemelerini (Martin Riedl FFmpeg Build Server, GPLv3, SHA-256 doğrulamalı) `build/ffmpeg/`'e
+  indirir; electron-builder her mimariye kendisininkini koyar, universal birleştirme ikisini tek
+  ikiliye (`Contents/Resources/ffmpeg/ffmpeg`) çevirir. CI paketli ikiliyle 3 sn'lik sentetik
+  kodlama ve uçtan uca klip testi yapar. Geliştirmede `ELITLIG_FFMPEG=/yol/ffmpeg` ya da Homebrew
+  ffmpeg'i kullanılır. Lisans metni: `Contents/Resources/ffmpeg/LICENSE.txt`.
+
 ## Oturum süresi
 
 Uygulama girişte sunucuya `client: "desktop"` ve `X-Client-Platform: desktop` gönderir. Sunucu bu
@@ -333,7 +364,8 @@ Yapı:
 - `app/`: Electron ana süreci. API istemcisi, çevrimdışı önbellek ve kuyruk (`api.js`), oturum
   (`session.js`), odak sayacı (`focus.js`), bildirimler (`reminders.js`), Mesajlar'ın canlı
   bağlantısı ve üye mesajları (`chat.js`, socket.io-client), yetkiler (`access.js`), pencereler,
-  menüler, menü çubuğu ve Talepler özeti (`main.js`).
+  menüler, menü çubuğu ve Talepler özeti (`main.js`), Yayın Stüdyosu motoru (`studio/`: ffmpeg
+  ikilisi ve komutları `ffmpeg.js`, süreç / yeniden bağlanma `engine.js`, klipler `clips.js`).
 - `renderer/`: React arayüzü (Vite). `renderer/src/lib/sheets` içindeki formül motoru ve Excel
   dönüştürücüleri web sitesiyle (`elitlig-client`) aynıdır; testleri `renderer/test` altındadır.
 
@@ -344,5 +376,6 @@ npm run dist
 ```
 
 Her push'ta GitHub Actions (`.github/workflows/build-mac.yml`) macOS'ta testleri çalıştırır, evrensel
-`.dmg` ve `.zip` üretir, ad-hoc imzalar, uygulamanın çökmeden açıldığını denetler ve dosyaları
+`.dmg` ve `.zip` üretir, ad-hoc imzalar, uygulamanın çökmeden açıldığını ve paketli ffmpeg'in
+(universal, VideoToolbox / x264, tee + segment) çalıştığını denetler ve dosyaları
 `package.json` sürümüyle adlanan GitHub Release'e yükler.

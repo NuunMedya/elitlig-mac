@@ -9,23 +9,24 @@
 //   content — Mesajlar'da hazır içerikler (günün maçları, ben talibim): yönetim hesapları
 //   assign  — "Ben talibim" anketinde talip olanı maça görevlendirme: staff.assign
 //   award   — Haftanın Enleri anketi (aday öneri kartları açar): todos.assign
+//   live    — Yayın Stüdyosu (canlı yayın, gol klibi yükleme): matches.live
 //
 // Liste oturumda yoksa (eski oturum) "known: false" döner; ana süreç bu
 // durumda uçları yoklar ve 403'ü "erişim yok" sayar (probeAccess).
 "use strict";
 
-const PERMS = Object.freeze({ inbox: "messages.view", reply: "messages.reply", calls: "messages.calls_view", listen: "messages.listen", assign: "staff.assign", award: "todos.assign" });
+const PERMS = Object.freeze({ inbox: "messages.view", reply: "messages.reply", calls: "messages.calls_view", listen: "messages.listen", assign: "staff.assign", award: "todos.assign", live: "matches.live" });
 
 function accessFromUser(user, probed = null) {
   const list = Array.isArray(user?.permissions) ? user.permissions : null;
   const requests = Boolean(user) && user.isManagement !== false;
   if (!list) {
     const p = probed || {};
-    // Liste yoksa görevlendirme / haftanın enleri düğmeleri gösterilir; sunucu yetkiyi denetler.
-    return { known: Boolean(probed), inbox: Boolean(p.inbox), reply: Boolean(p.inbox), calls: Boolean(p.calls), listen: Boolean(p.calls), requests, content: requests, assign: requests, award: requests };
+    // Liste yoksa görevlendirme / haftanın enleri / yayın stüdyosu gösterilir; sunucu yetkiyi denetler.
+    return { known: Boolean(probed), inbox: Boolean(p.inbox), reply: Boolean(p.inbox), calls: Boolean(p.calls), listen: Boolean(p.calls), requests, content: requests, assign: requests, award: requests, live: requests };
   }
   const has = (key) => list.includes(key) || list.includes("*");
-  return { known: true, inbox: has(PERMS.inbox), reply: has(PERMS.reply), calls: has(PERMS.calls), listen: has(PERMS.listen), requests, content: requests, assign: requests && has(PERMS.assign), award: requests && has(PERMS.award) };
+  return { known: true, inbox: has(PERMS.inbox), reply: has(PERMS.reply), calls: has(PERMS.calls), listen: has(PERMS.listen), requests, content: requests, assign: requests && has(PERMS.assign), award: requests && has(PERMS.award), live: has(PERMS.live) };
 }
 
 /**
@@ -43,6 +44,6 @@ async function probeAccess(request) {
   return { inbox: Boolean(reports.ok), calls: Boolean(calls.ok) };
 }
 
-const sameAccess = (a, b) => ["known", "inbox", "reply", "calls", "listen", "requests", "content", "assign", "award"].every((k) => Boolean(a?.[k]) === Boolean(b?.[k]));
+const sameAccess = (a, b) => ["known", "inbox", "reply", "calls", "listen", "requests", "content", "assign", "award", "live"].every((k) => Boolean(a?.[k]) === Boolean(b?.[k]));
 
 module.exports = { accessFromUser, probeAccess, sameAccess, PERMS };

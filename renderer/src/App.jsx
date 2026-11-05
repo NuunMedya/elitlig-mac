@@ -1,10 +1,11 @@
 // Uygulama kabuğu: giriş kontrolü, kenar çubuğu, görünümler, komut paleti.
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmProvider, Icon, Kbd, Modal, Spinner, useToast } from "./components/ui";
 import Palette from "./components/Palette";
 import Login from "./views/Login";
 import { refreshAll, useResource } from "./api";
 import { formatClock } from "./lib/helpers";
+import { canLeave } from "./lib/leaveGuard";
 import logo from "./assets/logo-white.png";
 
 const Today = lazy(() => import("./views/Today"));
@@ -21,6 +22,7 @@ const Contacts = lazy(() => import("./views/Contacts"));
 const Calculators = lazy(() => import("./views/Calculators"));
 const Focus = lazy(() => import("./views/Focus"));
 const Account = lazy(() => import("./views/Account"));
+const Studio = lazy(() => import("./views/studio/Studio"));
 
 export const ROUTES = [
   { key: "today", label: "Bugün", icon: "sun", view: Today, shortcut: "⌘1", group: "Günlük" },
@@ -31,6 +33,7 @@ export const ROUTES = [
   { key: "notes", label: "Not Defteri", icon: "note", view: Notes, shortcut: "⌘4", group: "Günlük" },
   { key: "projects", label: "Projeler", icon: "layers", view: Projects, shortcut: "⌘0", group: "Süreç ve CRM" },
   { key: "planning", label: "Saha ve maç planlama", icon: "ball", view: Planning, shortcut: "⇧⌘0", group: "Süreç ve CRM" },
+  { key: "studio", label: "Yayın Stüdyosu", icon: "broadcast", view: Studio, shortcut: "⇧⌘Y", group: "Süreç ve CRM", needs: "live" },
   { key: "ledger", label: "Muhasebe", icon: "wallet", view: Ledger, shortcut: "⌘5", group: "Finans ve veri" },
   { key: "sheets", label: "Tablolar", icon: "grid", view: Sheets, shortcut: "⌘6", group: "Finans ve veri" },
   { key: "contacts", label: "Rehber", icon: "users", view: Contacts, shortcut: "⌘7", group: "Finans ve veri" },
@@ -63,6 +66,8 @@ export default function App() {
 function Shell({ auth }) {
   const toast = useToast();
   const [route, setRoute] = useState(readRoute);
+  const routeRef = useRef(route);
+  routeRef.current = route;
   const [routeArg, setRouteArg] = useState(null);
   const [palette, setPalette] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
@@ -79,9 +84,11 @@ function Shell({ auth }) {
     return () => { window.removeEventListener("elitlig:todos-changed", refresh); clearInterval(t); };
   }, [summary.reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const go = useCallback((key, arg = null) => {
+  const go = useCallback(async (key, arg = null) => {
     const [base, sub] = String(key).split(":");
     if (!ROUTE_KEYS.has(base)) return;
+    // Açık görünüm çıkışı onaya bağlamış olabilir (ör. yayın sürerken stüdyo).
+    if (base !== routeRef.current && !(await canLeave())) return;
     setRoute(base);
     setRouteArg(sub || arg || null);
     try { localStorage.setItem("route", base); } catch { /* yoksay */ }
@@ -131,7 +138,9 @@ function Shell({ auth }) {
   }, []);
 
   const access = auth.access || { requests: true };
-  const routes = ROUTES.filter((r) => !r.needs || access[r.needs]);
+  // Yetki listesi eski oturumda "live" alanını taşımıyorsa yönetim hesaplarına açık (sunucu yine denetler).
+  const allowed = (key) => (key === "live" && access.live === undefined ? Boolean(access.requests) : Boolean(access[key]));
+  const routes = ROUTES.filter((r) => !r.needs || allowed(r.needs));
   const current = routes.find((r) => r.key === route);
   const View = route === "account" ? Account : current?.view || Today;
   const s = summary.data;
@@ -198,6 +207,11 @@ function ShortcutsHelp({ onClose }) {
     ["⌘1 … ⌘9", "Araçlar arasında geçiş"],
     ["⌘0", "Projeler (süreç, kişiler, portföy)"],
     ["⇧⌘0", "Saha ve maç planlama (sahalar, program, talepler, takımlar)"],
+    ["⇧⌘Y", "Yayın Stüdyosu (canlı yayın, reji, gol klipleri)"],
+    ["Stüdyo: M / R", "Mikrofonu aç-kapat / son golün tekrarı"],
+    ["Stüdyo: 1 … 9", "Sahneyi önizlemeye al (çift tık: yayına ver)"],
+    ["Stüdyo: Boşluk / Enter", "Önizlemeyi yayına geçir"],
+    ["Stüdyo: G sonra H / A", "Ev sahibi / deplasman golü"],
     ["Projeler: N", "Açık sekmede hızlı ekleme (adım, kişi, soru)"],
     ["⌘F", "Araçta ara"],
     ["⌘R", "Yenile ve eşitle"],

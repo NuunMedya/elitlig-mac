@@ -21,6 +21,10 @@
 //   - Talepler (⇧⌘T): onay bekleyen talepler (/api/admin/requests); toplam
 //     kenar çubuğunda, Dock'ta ve menü çubuğunda; yeni talep socket'ten
 //     ("admin:requests") gelir, pencere arka plandayken bildirim olur.
+//   - Yayın Stüdyosu (2.9): arayüzün <canvas> programı MediaRecorder ile buraya
+//     akar; ffmpeg (uygulamayla gelir) yeniden kodlayıp RTMP(S)'ye (YouTube)
+//     ve 2 sn'lik klip halkasına yazar; gol klipleri MP4 olarak kaydedilip
+//     sunucuya yüklenir (app/studio/). Kamera / mikrofon / ekran izinleri.
 "use strict";
 
 const path = require("node:path");
@@ -28,6 +32,7 @@ const fs = require("node:fs");
 const {
   app, BrowserWindow, Menu, Tray, Notification, shell, ipcMain, dialog, nativeImage, net,
   globalShortcut, safeStorage, powerMonitor, nativeTheme, screen, protocol,
+  session: electronSession, systemPreferences, desktopCapturer, powerSaveBlocker,
 } = require("electron");
 const crypto = require("node:crypto");
 const { io: socketIo } = require("socket.io-client");
@@ -38,12 +43,18 @@ const { createFocus, trayTitle } = require("./focus");
 const { createReminders } = require("./reminders");
 const { createChatLink, buildMultipart, mimeOf } = require("./chat");
 const { accessFromUser, probeAccess, sameAccess } = require("./access");
+const { registerStudio, STUDIO_SCHEME } = require("./studio");
 
 // Sohbet medyası (fotoğraf, ses, belge) bu şemayla ana süreç üzerinden açılır:
 // diskte önbelleklenir, çevrimdışı da görünür; arayüzün güvenlik politikası
 // dış adreslerden ses/video çalmaya izin vermediği için de gereklidir.
 const MEDIA_SCHEME = "elitlig-media";
-protocol.registerSchemesAsPrivileged([{ scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }]);
+// Yayın Stüdyosu klipleri (userData/clips) elitlig-studio://clips/<ad> ile,
+// Range destekli oynatılır; yalnız klip klasöründeki dosyalar sunulur.
+protocol.registerSchemesAsPrivileged([
+  { scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
+  { scheme: STUDIO_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true } },
+]);
 
 app.setName(config.APP_NAME);
 if (process.env.ELITLIG_USER_DATA) app.setPath("userData", process.env.ELITLIG_USER_DATA);
@@ -68,6 +79,7 @@ let api;
 let focus;
 let reminders;
 let chatLink;
+let studio;
 let chatNotes = new Map();
 let probedAccess = null;
 let requestsInfo = { total: 0, categories: [] };
@@ -277,6 +289,14 @@ function createTray() {
 const STATE_FILE = () => path.join(dataDir(), "window-state.json");
 const readWinState = () => { try { return JSON.parse(fs.readFileSync(STATE_FILE(), "utf8")); } catch { return {}; } };
 const writeWinState = (patch) => { try { fs.writeFileSync(STATE_FILE(), JSON.stringify({ ...readWinState(), ...patch })); } catch { /* yoksay */ } };
+
+/** Adres uygulamanın kendi arayüzü mü (paketli: file://, geliştirme: ELITLIG_RENDERER_URL)? */
+const isOwnUrl = (url) => {
+  const s = String(url || "");
+  if (s.startsWith("file:")) return true;
+  if (!DEV_URL) return false;
+  try { return new URL(s).origin === new URL(DEV_URL).origin; } catch { return false; }
+};
 
 const loadRenderer = (win, hash = "") => {
   if (DEV_URL) return win.loadURL(`${DEV_URL}${hash ? `#${hash}` : ""}`);
@@ -761,6 +781,12 @@ if (!app.requestSingleInstanceLock()) {
     // Socket bağlanınca (ve yeniden bağlanınca) talep özeti tazelenir.
     chatLink.events.on("status", (st) => { if (st.state === "connected") refreshRequestsSoon(300); });
     registerMediaProtocol();
+    studio = registerStudio({
+      ipcMain, api, broadcast, app, electronSession, systemPreferences, desktopCapturer, powerSaveBlocker, protocol, shell,
+      isOwnUrl,
+      isSignedIn: () => authState().signedIn,
+      log: (...args) => { if (!app.isPackaged || process.env.ELITLIG_STUDIO_DEBUG) console.log(...args); },
+    });
     focus = createFocus({ dataDir: dataDir() });
     reminders = createReminders({
       dataDir: dataDir(),
@@ -825,7 +851,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on("before-quit", () => { quitting = true; });
-  app.on("will-quit", () => globalShortcut.unregisterAll());
+  app.on("will-quit", () => { globalShortcut.unregisterAll(); studio?.dispose(); });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
   app.on("web-contents-created", (_e, contents) => contents.on("will-attach-webview", (event) => event.preventDefault()));
 }
