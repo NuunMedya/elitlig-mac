@@ -58,7 +58,8 @@ jobs:
       - name: Yayın Stüdyosu ffmpeg testi (paketli ikili)
         run: |
           APP=$(ls -d dist/mac-universal/*.app)
-          FF="$APP/Contents/Resources/ffmpeg/ffmpeg"
+          # Mutlak yol: kodlama testi başka bir klasörde (cd) çalışır.
+          FF="$PWD/$APP/Contents/Resources/ffmpeg/ffmpeg"
           test -x "$FF" || { echo "ffmpeg pakette yok: $FF"; exit 1; }
           lipo -info "$FF"
           lipo -info "$FF" | grep -q "x86_64" && lipo -info "$FF" | grep -q "arm64" || { echo "ffmpeg universal değil"; exit 1; }
