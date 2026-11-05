@@ -1,4 +1,4 @@
-# Elitlig Araçlar — Mac uygulaması
+# Elitlig Araçlar — Mac ve Windows uygulaması
 
 Elitlig yönetim panelindeki **Araçlar** bölümünün Mac için yazılmış bağımsız uygulaması.
 Siteyi bir pencerede açmaz: kendi arayüzü vardır ve Elitlig sunucusuyla doğrudan konuşur.
@@ -44,6 +44,8 @@ uygulamada görünür.
 
 ## Kurulum
 
+### Mac
+
 1. [Releases](../../releases/latest) sayfasından `Elitlig-Araclar-<sürüm>.dmg` dosyasını indirin.
 2. Dosyayı açın ve **Elitlig Araçlar**'ı **Applications** klasörüne sürükleyin.
 3. Uygulama Apple Developer sertifikasıyla imzalı olmadığı için macOS ilk açılışta engeller. Bir kez şunu yapın:
@@ -56,6 +58,28 @@ uygulamada görünür.
 4. Elitlig yönetim hesabınızla giriş yapın.
 
 Apple Silicon ve Intel Mac'lerde çalışır (evrensel uygulama). macOS 12 ve üzeri gerekir.
+
+### Windows
+
+1. [Releases](../../releases/latest) sayfasından `Elitlig-Araclar-Setup-<sürüm>.exe` dosyasını indirip çalıştırın.
+2. Uygulama henüz kod imzalı olmadığı için Windows SmartScreen "Windows bilgisayarınızı korudu"
+   diyebilir: **Ek bilgi → Yine de çalıştır**.
+3. Kurulum klasörünü seçin (varsayılan: `%LOCALAPPDATA%\Programs\Elitlig Araclar`, yönetici izni
+   gerekmez). Masaüstü ve Başlat menüsü kısayolları oluşturulur; kaldırmak için
+   **Ayarlar → Uygulamalar → Elitlig Araçlar → Kaldır**.
+4. Elitlig yönetim hesabınızla giriş yapın.
+
+Windows 10 / 11, 64 bit. Kurulumsuz kullanım için `Elitlig-Araclar-<sürüm>-win-x64.zip` açılıp
+`Elitlig Araclar.exe` çalıştırılabilir.
+
+- **Yayın Stüdyosu** Windows'ta da ffmpeg ile gelir (`resources\ffmpeg\ffmpeg.exe`, FFmpeg 7.1.1,
+  Gyan Doshi "essentials" derlemesi, GPLv3, SHA-256 doğrulamalı). Donanım kodlayıcı şu sırayla
+  denenir: NVIDIA **NVENC** → Intel **Quick Sync** → AMD **AMF** → **Media Foundation** → yazılım (x264).
+  Ekran kartı sürücüsü eskiyse donanım kodlayıcı açılmaz ve x264'e geçilir; sürücüyü güncellemek
+  işlemci yükünü azaltır.
+- **Kamera / mikrofon:** **Ayarlar → Gizlilik ve güvenlik → Kamera** (ve **Mikrofon**) altında
+  "Masaüstü uygulamalarının erişmesine izin ver" açık olmalıdır. Ekran paylaşımı için ayrıca izin gerekmez.
+- Hızlı kayıt kısayolu Windows'ta da **Ctrl+Alt+N**'dir; menüdeki **⌘** kısayolları **Ctrl** ile çalışır.
 
 ## Projeler
 
@@ -321,13 +345,37 @@ anında son ~10 saniye klip olarak kaydedilip oyuncunun profiline yüklenir. Yet
 - **YouTube.** Yayın adresi YouTube Studio'daki sunucu + anahtardır:
   `rtmp://a.rtmp.youtube.com/live2/<anahtar>` ya da `rtmps://a.rtmps.youtube.com:443/live2/<anahtar>`
   (sunucu uçları: `elitlig-server/docs/youtube-canli-yayin.md`).
-- **Gol klipleri.** Klip parça halkasından yeniden kodlamadan MP4'e birleştirilir
-  (`~/Library/Application Support/Elitlig Araclar/clips`, 24 saatten eskiler açılışta silinir),
-  uygulamada `elitlig-studio://` adresiyle oynatılır ve
+- **Açılar (çok açılı kayıt).** Program akışına ek olarak her kaynak (kamera vb.) ayrı bir
+  MediaRecorder akışıyla gelir; her açı için hafif bir ffmpeg (RTMP yok) H.264'e kodlar
+  (kaynak boyutu, en çok 1080p; bilinmiyorsa 1280×720, ~3000 kbps), 1 sn'de bir anahtar kare,
+  1 sn'lik parça halkası (~40 sn). Programla aynı başlık kapısı, geri basınç, takılma ve kaydedici
+  yeniden başlatma kuralları geçerlidir; yayın olmadan (prova / yalnız kayıt) da çalışır.
+- **Tekrarlar.** Gol ya da an: program ve seçilen açılar **aynı duvar saati penceresinden**
+  yeniden kodlamadan kesilir (başlangıç anahtar kareye yuvarlanır: program 2 sn, açılar 1 sn;
+  süreler ~0,5 sn içinde) → `userData/replays/<kimlik>/` (`program.mp4`, `angle-N.mp4`, her
+  birine ~%40'taki kareden 640 px JPEG kapak, `replay.json`: etiket, tür, olay, oyuncu, dakika,
+  özete dahil mi, yüklendi mi). 7 günden eskiler açılışta silinir (maç özetleri için), oturum
+  sürerken hiçbir şey silinmez. Gol klibi (`saveClip`) artık program açılı bir tekrardır;
   `POST /api/admin/live-streams/matches/:id/clips?event_id=` ile gol olayına bağlanarak yüklenir
-  (en çok 40 MB; ağ hatasında bir kez yeniden denenir).
+  (dosya + isteğe bağlı `poster` JPEG; en çok 40 MB; ağ hatasında bir kez yeniden denenir).
+  24 saatten eski, eski biçim klipler (`userData/clips`) açılışta silinir.
+- **Öne çıkanlar.** Arayüz videoyu ekran dışı canvas'ta gerçek zamanlı oluşturur; ana süreç
+  parçaları ffmpeg ile H.264 High (yuv420p) + AAC, `+faststart` MP4'e kodlar
+  (`userData/highlights/`; gerçek zamanlı kodlama başarısız olursa ham kopyadan x264 ile).
+  Yükleme ön imzalı adresle: `POST …/matches/:id/highlight/upload-url` → dosya doğrudan depoya
+  `PUT` (diskten akıtılır, ilerleme gösterilir; kapak da) → `POST …/matches/:id/highlight`.
+  Silme: `DELETE …/matches/:id/highlight`.
+- **H.264 düzeyi.** Yazılan her MP4'e (klip, tekrar, öne çıkan) çözünürlük / kare hızına uygun
+  düzey yazılır (`h264_metadata` bsf; `app/studio/h264level.js`): 720p ve 1080p30 → 4.1,
+  1080p60 → 4.2, daha büyük → 5.1+. Düşük düzey (ör. 1080p60'ta 4.0) sitede siyah görüntüye
+  yol açıyordu.
+- **Oynatma.** Klipler, tekrarlar ve öne çıkanlar uygulamada `elitlig-studio://clips/…`,
+  `…://replays/<kimlik>/<dosya>`, `…://highlights/<dosya>` adresleriyle (Range destekli) oynatılır;
+  yalnız bu klasörlerdeki beyaz listedeki adlar sunulur.
 - **İzinler.** İlk kullanımda macOS kamera ve mikrofon izni ister; ekran / pencere paylaşımı için
   **Sistem Ayarları → Gizlilik ve Güvenlik → Ekran ve Sistem Sesi Kaydı**'nda Elitlig Araçlar açılmalıdır.
+  Windows'ta sistem izni sorulmaz: kamera / mikrofon **Ayarlar → Gizlilik ve güvenlik → Kamera /
+  Mikrofon → Masaüstü uygulamalarının erişmesine izin ver** ile yönetilir.
 - **ffmpeg uygulamayla gelir.** `build/fetch-ffmpeg.js` FFmpeg 7.1.1'in statik arm64 ve x86_64
   derlemelerini (Martin Riedl FFmpeg Build Server, GPLv3, SHA-256 doğrulamalı) `build/ffmpeg/`'e
   indirir; electron-builder her mimariye kendisininkini koyar, universal birleştirme ikisini tek
@@ -375,7 +423,20 @@ Kurulum dosyasını macOS'ta üretmek için:
 npm run dist
 ```
 
+Windows kurulum dosyasını (NSIS `.exe` + `.zip`, x64) Windows'ta üretmek için:
+
+```bash
+npm run dist:win
+```
+
+`npm run ffmpeg:win` (= `node build/fetch-ffmpeg.js --platform win32`) yalnız Windows ffmpeg'ini
+`build/ffmpeg/win-x64/` altına indirir; Mac ve Linux'ta da çalışır. Linux'ta
+`npx electron-builder --win dir --x64` paketlenmiş klasörü üretir (NSIS kurulumu için wine gerekir).
+
 Her push'ta GitHub Actions (`.github/workflows/build-mac.yml`) macOS'ta testleri çalıştırır, evrensel
 `.dmg` ve `.zip` üretir, ad-hoc imzalar, uygulamanın çökmeden açıldığını ve paketli ffmpeg'in
-(universal, VideoToolbox / x264, tee + segment) çalıştığını denetler ve dosyaları
-`package.json` sürümüyle adlanan GitHub Release'e yükler.
+(universal, VideoToolbox / x264, tee + segment) çalıştığını denetler. Aynı iş akışındaki Windows işi
+`windows-latest` üzerinde testleri çalıştırır, NSIS kurulumunu ve zip'i üretir, kurulumu sessizce
+(`/S`) dener, kurulan uygulamanın 20 sn çökmeden çalıştığını ve paketli `ffmpeg.exe`'nin (x264;
+NVENC / QSV / AMF / MF yalnız uyarı olarak, H.264 seviyesi dahil) çalıştığını denetler. Son iş iki
+platformun dosyalarını birlikte `package.json` sürümüyle adlanan GitHub Release'e yükler.

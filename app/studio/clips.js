@@ -7,6 +7,10 @@
 // Klip parça sınırında başladığı için istenenden en çok ~2 sn uzun olabilir.
 // 24 saatten eski klipler açılışta silinir.
 //
+// 2.10'dan beri studio.saveClip tekrar deposuna (replays.js) yazar; bu depo
+// eski klipleri listelemek / yüklemek için ve testlerde kalır. Birleştirme
+// H.264 düzeyini düzeltir (h264level.js) ve +faststart yazar.
+//
 // Arayüz klibi elitlig-studio://clips/<ad> adresinden oynatır (Range destekli).
 // Sunucuya yükleme: POST /api/admin/live-streams/matches/:id/clips?event_id=…
 // (alanlar dosyadan ÖNCE: event_id, duration_ms, width, height, file).
@@ -16,6 +20,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { Readable } = require("node:stream");
 const ff = require("./ffmpeg");
+const ffargs = require("./ffargs");
 
 const STUDIO_SCHEME = "elitlig-studio";
 const CLIP_NAME = /^clip-[\w-]{1,80}\.mp4$/;
@@ -134,8 +139,11 @@ function serveClip(clipsDir, request) {
 
 /* ------------------------------ çok parçalı gövde ------------------------------ */
 
-/** Alanlar dosyadan önce: sunucu nesne anahtarına olay kimliğini yazar. */
-function buildClipMultipart({ fields, file, boundary = `----elitligclip${Date.now().toString(16)}${Math.random().toString(16).slice(2)}` }) {
+/**
+ * Alanlar dosyadan önce: sunucu nesne anahtarına olay kimliğini yazar.
+ * extraFiles: dosyadan sonra eklenen isteğe bağlı dosyalar ([{ field, name, mime, data }], ör. kapak).
+ */
+function buildClipMultipart({ fields, file, extraFiles = [], boundary = `----elitligclip${Date.now().toString(16)}${Math.random().toString(16).slice(2)}` }) {
   const parts = [];
   for (const [key, value] of Object.entries(fields)) {
     parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${value}\r\n`, "utf8"));
@@ -143,6 +151,12 @@ function buildClipMultipart({ fields, file, boundary = `----elitligclip${Date.no
   const safe = String(file.name || "klip.mp4").replace(/["\r\n]/g, "_");
   parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safe}"\r\nContent-Type: ${file.mime || "video/mp4"}\r\n\r\n`, "utf8"));
   parts.push(Buffer.from(file.data));
+  for (const extra of extraFiles) {
+    const field = String(extra.field || "file2").replace(/["\r\n]/g, "_");
+    const fname = String(extra.name || field).replace(/["\r\n]/g, "_");
+    parts.push(Buffer.from(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="${field}"; filename="${fname}"\r\nContent-Type: ${extra.mime || "application/octet-stream"}\r\n\r\n`, "utf8"));
+    parts.push(Buffer.from(extra.data));
+  }
   parts.push(Buffer.from(`\r\n--${boundary}--\r\n`, "utf8"));
   return { body: Buffer.concat(parts), contentType: `multipart/form-data; boundary=${boundary}` };
 }
@@ -235,7 +249,9 @@ function createClipStore({ clipsDir, getFfmpegPath, runImpl = ff.run, now = () =
       });
       const listFile = path.join(work, "list.txt");
       fs.writeFileSync(listFile, `${files.map(ff.concatLine).join("\n")}\n`);
-      const res = await runImpl(getFfmpegPath(), ff.buildConcatArgs(listFile, out), { timeout: 60000 });
+      // H.264 düzeyi kaynak boyutu / kare hızına göre düzeltilir (sitede siyah görüntü hatası).
+      const src = ffargs.parseVideoInfo((await runImpl(getFfmpegPath(), ["-hide_banner", "-nostdin", "-i", files[0]], { timeout: 15000 })).stderr);
+      const res = await runImpl(getFfmpegPath(), ffargs.buildConcatLevelArgs(listFile, out, src), { timeout: 60000 });
       if (!res.ok || !fs.existsSync(out) || fs.statSync(out).size === 0) {
         try { fs.unlinkSync(out); } catch { /* yoksay */ }
         return error("CLIP_WRITE_FAILED", `${ERR.CLIP_WRITE_FAILED} ${String(res.stderr || "").trim().split("\n").pop() || ""}`.trim());

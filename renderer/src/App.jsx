@@ -72,6 +72,23 @@ function Shell({ auth }) {
   const [palette, setPalette] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  // Yayın Stüdyosu tüm genişliği kullanır: girince kenar çubuğu kendiliğinden
+  // daralır, çıkınca önceki hâline döner (stüdyodayken ⌘⌥S yine açar/kapatır).
+  const collapsedRef = useRef(collapsed);
+  collapsedRef.current = collapsed;
+  const beforeStudioRef = useRef(null);
+  useEffect(() => {
+    if (route === "studio") {
+      if (beforeStudioRef.current === null) {
+        beforeStudioRef.current = collapsedRef.current;
+        setCollapsed(true);
+      }
+    } else if (beforeStudioRef.current !== null) {
+      const prev = beforeStudioRef.current;
+      beforeStudioRef.current = null;
+      setCollapsed(prev);
+    }
+  }, [route]);
   const [sync, setSync] = useState({ online: true, pending: 0 });
   const [focusState, setFocusState] = useState(null);
   const [chatUnread, setChatUnread] = useState(0);

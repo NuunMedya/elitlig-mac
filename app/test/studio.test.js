@@ -23,6 +23,7 @@ test("yayın komutu: tee ile RTMP (onfail=ignore) + 2 sn'lik TS halkası, 2 sn a
   assert.equal(at("-progress"), "pipe:1");
   assert.equal(at("-c:v"), "h264_videotoolbox");
   assert.equal(at("-allow_sw"), "1");
+  assert.equal(at("-level"), "4.1");
   assert.equal(at("-g"), "60");
   assert.equal(at("-b:v"), "4500k");
   assert.equal(at("-maxrate"), "4500k");
@@ -49,6 +50,7 @@ test("yalnız kayıt (url yok): tek çıkış parça halkası; libx264 ayarları
   assert.equal(args[args.indexOf("-preset") + 1], "veryfast");
   assert.equal(args[args.indexOf("-g") + 1], "50");
   assert.equal(args[args.indexOf("-sc_threshold") + 1], "0");
+  assert.equal(args[args.indexOf("-level") + 1], "4.1");
 });
 
 test("seçenekler sınırlanır, boyutlar çift sayıya yuvarlanır", () => {
@@ -126,9 +128,10 @@ test("yoklama: VideoToolbox listede ama açılamıyorsa kullanılmaz", async () 
     if (args.includes("-muxers")) return { ok: true, stdout: "  E tee  x\n  E segment  x\n DE flv  x\n" };
     return { ok: !args.includes("h264_videotoolbox"), stdout: "", stderr: "" };
   };
-  const info = await ff.probeFfmpeg({ path: "/f", source: "env" }, { runImpl });
+  const info = await ff.probeFfmpeg({ path: "/f", source: "env" }, { runImpl, platform: "darwin" });
   assert.equal(info.available, true);
-  assert.deepEqual(info.encoders, { videotoolbox: false, libx264: true });
+  assert.deepEqual(info.encoders, { videotoolbox: false, nvenc: false, qsv: false, amf: false, mf: false, libx264: true });
+  assert.equal(info.encoder, "libx264");
   assert.equal(ff.pickEncoder(info.encoders), "libx264");
   assert.equal(ff.pickEncoder({ videotoolbox: true, libx264: true }), "h264_videotoolbox");
   assert.equal((await ff.probeFfmpeg(null)).available, false);

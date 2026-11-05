@@ -24,12 +24,12 @@ function micConstraints(deviceId, noiseSuppression) {
   };
 }
 
-export function useAudioMixer({ mic, inputs = [], replayEl, replayAudio = false }) {
+export function useAudioMixer({ mic, inputs = [], replayEls = [], replayAudio = false }) {
   const ctxRef = useRef(null);
   const destRef = useRef(null);
   const micRef = useRef(null); // { stream, source, gain, analyser }
   const inputsRef = useRef(new Map()); // id → { stream, source, gain, analyser, deviceId }
-  const replayRef = useRef(null); // { source, gain }
+  const replayRef = useRef(null); // { gain, sources: [] } — tekrar videoları (A/B)
   const [micStatus, setMicStatus] = useState({ status: "waiting", label: "" });
   const [inputStatus, setInputStatus] = useState({});
   const [, setTick] = useState(0);
@@ -150,23 +150,27 @@ export function useAudioMixer({ mic, inputs = [], replayEl, replayAudio = false 
     }
   }, [inputs, inputStatus]);
 
-  /* ───────── tekrar videosunun sesi ───────── */
+  /* ───────── tekrar videolarının sesi (A/B: kuyrukta biri oynarken öteki yüklenir) ───────── */
   useEffect(() => {
     const ctx = ctxRef.current;
-    if (!ctx || !replayEl || replayRef.current) return;
-    try {
-      const source = ctx.createMediaElementSource(replayEl);
-      const gain = ctx.createGain();
-      gain.gain.value = replayAudio ? 1 : 0;
-      source.connect(gain);
-      gain.connect(destRef.current);
-      replayRef.current = { source, gain };
-      replayEl.muted = false;
-    } catch {
-      // Bağlanamazsa video sessiz oynar; hoparlöre ses verilmez.
-      replayEl.muted = true;
+    if (!ctx || !replayEls.length || replayRef.current) return;
+    const gain = ctx.createGain();
+    gain.gain.value = replayAudio ? 1 : 0;
+    gain.connect(destRef.current);
+    const sources = [];
+    for (const el of replayEls) {
+      try {
+        const source = ctx.createMediaElementSource(el);
+        source.connect(gain);
+        sources.push(source);
+        el.muted = false;
+      } catch {
+        // Bağlanamazsa video sessiz oynar; hoparlöre ses verilmez.
+        el.muted = true;
+      }
     }
-  }, [replayEl]); // eslint-disable-line react-hooks/exhaustive-deps
+    replayRef.current = { gain, sources };
+  }, [replayEls]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const ctx = ctxRef.current;
     if (ctx && replayRef.current) replayRef.current.gain.gain.setValueAtTime(replayAudio ? 1 : 0, ctx.currentTime);

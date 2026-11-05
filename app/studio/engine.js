@@ -17,6 +17,15 @@
 //     2, 4, 8, 16, 16 sn arayla 5 kez yeniden denenir; sonra "failed".
 //   - İlerleme 15 sn kesilirse (arayüz parça yollamıyor) süreç yeniden başlar.
 //   - VideoToolbox açılamazsa (ilk saniyelerde kodlayıcı hatası) libx264'e geçilir.
+//
+// Aynı motor açılar (angles.js) için de kullanılır (createSegmentRecorder):
+// buildArgs / normalizeOptions / segmentSeconds verilerek RTMP'siz, 1 sn'lik
+// parça halkası yazan hafif bir kaydedici olur.
+//
+// Duvar saati: her çalıştırmada ilerleme örneklerinden "çıktı zamanı 0'ın duvar
+// saati" (origin = min(şimdi − outTimeMs)) tahmin edilir. Parçalar bununla
+// duvar saatine eşlenir (wallStart / wallEnd, ms); tekrarlar farklı açıları aynı
+// zaman penceresinden keser (replays.js).
 "use strict";
 
 const fs = require("node:fs");
@@ -25,6 +34,7 @@ const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { EventEmitter } = require("node:events");
 const ff = require("./ffmpeg");
+const { killProcess } = require("./proc");
 
 const EBML_MAGIC = [0x1a, 0x45, 0xdf, 0xa3];
 const isContainerHeader = (buf) => Boolean(buf) && buf.length >= 4 && EBML_MAGIC.every((b, i) => buf[i] === b);
@@ -41,11 +51,18 @@ const MESSAGES = {
   connectTimeout: "Yayın sunucusuna bağlanılamadı (zaman aşımı).",
   stalled: "Yayın görüntüsü gelmiyor (kaydedici durdu); yeniden başlatılıyor.",
   noFfmpeg: "ffmpeg bulunamadı; Yayın Stüdyosu bu kurulumda çalışamaz.",
-  noEncoder: "Bu Mac'te H.264 video kodlayıcı açılamadı.",
+  noEncoder: "Bu bilgisayarda H.264 video kodlayıcı açılamadı.",
   badUrl: "Yayın adresi geçersiz. rtmp:// ya da rtmps:// ile başlayan tam adresi (yayın anahtarıyla) girin.",
   busy: "Yayın zaten sürüyor.",
-  encoderFallback: "Donanım kodlayıcı (VideoToolbox) açılamadı; yazılım kodlayıcıya (x264) geçildi.",
+  encoderFallback: "Donanım kodlayıcı açılamadı; yazılım kodlayıcıya (x264) geçildi.",
 };
+
+/** Açılamayan donanım kodlayıcının yerine geçecek kodlayıcı (ffmpeg.js sırası; yoksa x264). */
+function fallbackEncoder(current, encoders = {}) {
+  if (!current || current === ff.ENCODERS.libx264) return null;
+  if (typeof ff.nextEncoder === "function") return ff.nextEncoder(current, encoders) || null;
+  return encoders.libx264 ? ff.ENCODERS.libx264 : null;
+}
 
 /** CSV parça listesi: "seg00003.ts,6.000000,8.000000" → [{ file, index, start, end }] */
 function parseSegmentList(text) {
@@ -75,8 +92,15 @@ function createStudioEngine({
   stopTimeoutMs = 5000,
   stallTimeoutMs = 15000,
   keepSegments = KEEP_SEGMENTS,
+  segmentSeconds = 2,
+  buildArgs = ff.buildStreamArgs,
+  normalizeOptions = ff.normalizeStreamOptions,
+  messages = {},
+  platform = process.platform,
+  killImpl = (child) => killProcess(child, { platform, spawnImpl }),
   log = () => {},
 } = {}) {
+  const MSG = { ...MESSAGES, ...messages };
   const events = new EventEmitter();
   let session = null;
   let status = { state: "idle" };
@@ -144,7 +168,11 @@ function createStudioEngine({
   function clipSources() {
     if (!session) return null;
     syncSegments();
-    const complete = session.segments.map((s) => ({ ...s, path: path.join(session.dir, s.file), durationSec: s.end - s.start }));
+    const wall = (run, sec) => {
+      const origin = session.runs.get(run)?.origin;
+      return origin === null || origin === undefined ? null : Math.round(origin + sec * 1000);
+    };
+    const complete = session.segments.map((s) => ({ ...s, path: path.join(session.dir, s.file), durationSec: s.end - s.start, wallStart: wall(s.run, s.start), wallEnd: wall(s.run, s.end) }));
     let growing = null;
     const runInfo = session.runInfo;
     if (session.child && runInfo && session.progress?.outTimeMs) {
@@ -160,9 +188,12 @@ function createStudioEngine({
       const recent = session.segments.filter((x) => x.run === runInfo.run).slice(-3);
       const rate = recent.reduce((t, x) => t + x.size, 0) / Math.max(1e-6, recent.reduce((t, x) => t + (x.end - x.start), 0));
       if (recent.length && rate > 0 && size >= 0) durationSec = Math.min(durationSec, size / rate);
-      if (size > 0) growing = { file, path: full, durationSec, sizeBytes: size, run: runInfo.run, encoder: runInfo.encoder };
+      if (size > 0) {
+        const wallStart = wall(runInfo.run, lastEnd);
+        growing = { file, path: full, durationSec, sizeBytes: size, run: runInfo.run, encoder: runInfo.encoder, wallStart, wallEnd: wallStart === null ? null : Math.round(wallStart + durationSec * 1000) };
+      }
     }
-    return { dir: session.dir, complete, growing };
+    return { dir: session.dir, complete, growing, segmentSeconds };
   }
 
   /* -------------------------------- süreç -------------------------------- */
@@ -171,15 +202,16 @@ function createStudioEngine({
     const s = session;
     if (!s || s.stopping) return;
     s.run += 1;
-    const runInfo = { run: s.run, encoder: s.encoder, listFile: `list-${s.run}.csv`, startIndex: s.nextSegment, lastIndex: -1, lastEnd: null, startedAt: now(), gotProgress: false, failReason: null };
+    const runInfo = { run: s.run, encoder: s.encoder, listFile: `list-${s.run}.csv`, startIndex: s.nextSegment, lastIndex: -1, lastEnd: null, startedAt: now(), gotProgress: false, failReason: null, origin: null };
     s.runInfo = runInfo;
+    s.runs.set(s.run, runInfo);
     s.totalOutMs += s.progress?.outTimeMs || 0;
     s.progress = null;
     s.warning = null;
     s.stderrTail = [];
     s.waitingHeader = true;
     s.slowWarned = false;
-    const args = ff.buildStreamArgs({ ...s.opts, encoder: s.encoder, segmentStart: s.nextSegment, listFile: runInfo.listFile });
+    const args = buildArgs({ ...s.opts, encoder: s.encoder, segmentSeconds, segmentStart: s.nextSegment, listFile: runInfo.listFile });
     log("studio: ffmpeg başlıyor", { run: s.run, encoder: s.encoder, url: ff.maskUrl(s.opts.url) });
     let child;
     try {
@@ -211,18 +243,18 @@ function createStudioEngine({
     clearTimer("connectTimer");
     s.connectTimer = timers.setTimeout(() => {
       if (session !== s || s.runInfo !== runInfo || runInfo.gotProgress) return;
-      runInfo.failReason = { code: "TIMEOUT", message: MESSAGES.connectTimeout };
+      runInfo.failReason = { code: "TIMEOUT", message: MSG.connectTimeout };
       killChild(s);
     }, connectTimeoutMs);
     if (s.run > 1) events.emit("restartRecorder", { sessionId: s.id, run: s.run, reason: s.lastCode || null });
   }
 
-  function killChild(s, signal = "SIGKILL") {
+  function killChild(s) {
     const child = s.child;
     if (!child) return;
     s.exitingChild = child;
     try { child.stdin.destroy(); } catch { /* yoksay */ }
-    try { child.kill(signal); } catch { /* yoksay */ }
+    killImpl(child);
   }
 
   function onStderrLine(runInfo, line) {
@@ -244,6 +276,10 @@ function createStudioEngine({
     const s = session;
     if (!s || s.runInfo !== runInfo) return;
     s.progress = p;
+    if (p.outTimeMs > 0) {
+      const origin = now() - p.outTimeMs;
+      if (runInfo.origin === null || origin < runInfo.origin) runInfo.origin = origin;
+    }
     syncSegments();
     if (!runInfo.gotProgress && p.outTimeMs > 0) {
       runInfo.gotProgress = true;
@@ -256,7 +292,7 @@ function createStudioEngine({
     clearTimer("stallTimer");
     s.stallTimer = timers.setTimeout(() => {
       if (session !== s || s.runInfo !== runInfo || s.stopping) return;
-      runInfo.failReason = { code: "STALLED", message: MESSAGES.stalled };
+      runInfo.failReason = { code: "STALLED", message: MSG.stalled };
       killChild(s);
     }, stallTimeoutMs);
     if (s.child?.stdin && s.child.stdin.writableLength < SLOW_BYTES / 2 && s.warning === "slow") s.warning = null;
@@ -276,24 +312,25 @@ function createStudioEngine({
     syncSegments();
     if (s.stopping) { s.onStopped?.(); return; }
     const tail = s.stderrTail.join("\n");
-    const reason = runInfo.failReason || (error ? { code: "SPAWN", message: MESSAGES.noFfmpeg } : ff.mapFfmpegError(tail));
+    const reason = runInfo.failReason || (error ? { code: "SPAWN", message: MSG.noFfmpeg } : ff.mapFfmpegError(tail));
     log("studio: ffmpeg durdu", { code, signal, reason: reason.code, tail: s.stderrTail.slice(-5) });
-    // Donanım kodlayıcı açılamadı: hemen x264 ile yeniden dene (deneme sayılmaz).
-    if (reason.code === "ENCODER" && s.encoder === ff.ENCODERS.videotoolbox && s.encoders.libx264 && !runInfo.gotProgress) {
-      s.encoder = ff.ENCODERS.libx264;
-      s.notice = MESSAGES.encoderFallback;
+    // Donanım kodlayıcı açılamadı: hemen sıradakiyle (sonunda x264) yeniden dene (deneme sayılmaz).
+    const next = reason.code === "ENCODER" && !runInfo.gotProgress ? fallbackEncoder(s.encoder, s.encoders) : null;
+    if (next) {
+      s.encoder = next;
+      s.notice = next === ff.ENCODERS.libx264 ? MSG.encoderFallback : `Donanım kodlayıcı açılamadı; ${next} deneniyor.`;
       s.lastCode = reason.code;
       spawnRun();
       return;
     }
     if (reason.code === "SPAWN" || (reason.code === "ENCODER" && !runInfo.gotProgress)) {
-      fail(reason.code === "SPAWN" ? MESSAGES.noFfmpeg : MESSAGES.noEncoder, reason.code);
+      fail(reason.code === "SPAWN" ? MSG.noFfmpeg : MSG.noEncoder, reason.code);
       return;
     }
     s.attempts += 1;
     s.lastCode = reason.code;
     if (s.attempts > backoffMs.length) {
-      fail(`${reason.message} ${MESSAGES.failed}`, reason.code);
+      fail(`${reason.message} ${MSG.failed}`, reason.code);
       return;
     }
     s.lastMessage = `(${s.attempts}/${backoffMs.length}) ${reason.message}`;
@@ -314,26 +351,26 @@ function createStudioEngine({
   /* --------------------------------- API --------------------------------- */
 
   async function start(rawOpts = {}) {
-    if (session && !session.failed) return { ok: false, error: { code: "BUSY", message: MESSAGES.busy } };
+    if (session && !session.failed) return { ok: false, error: { code: "BUSY", message: MSG.busy } };
     if (session?.failed) await stop();
-    const opts = ff.normalizeStreamOptions(rawOpts);
-    if (opts.url && !validateUrl(opts.url)) return { ok: false, error: { code: "BAD_URL", message: MESSAGES.badUrl } };
+    const opts = normalizeOptions(rawOpts);
+    if (opts.url && !validateUrl(opts.url)) return { ok: false, error: { code: "BAD_URL", message: MSG.badUrl } };
     const info = await getFfmpeg();
-    if (!info?.available || !info.path) return { ok: false, error: { code: "NO_FFMPEG", message: info?.error || MESSAGES.noFfmpeg } };
+    if (!info?.available || !info.path) return { ok: false, error: { code: "NO_FFMPEG", message: info?.error || MSG.noFfmpeg } };
     const encoder = ff.pickEncoder(info.encoders);
-    if (!encoder) return { ok: false, error: { code: "NO_ENCODER", message: MESSAGES.noEncoder } };
-    if (session) return { ok: false, error: { code: "BUSY", message: MESSAGES.busy } };
+    if (!encoder) return { ok: false, error: { code: "NO_ENCODER", message: MSG.noEncoder } };
+    if (session) return { ok: false, error: { code: "BUSY", message: MSG.busy } };
     const id = `${new Date(now()).toISOString().replace(/[-:T]/g, "").slice(0, 14)}-${crypto.randomBytes(3).toString("hex")}`;
     const dir = path.join(tempRoot, id);
     fs.mkdirSync(dir, { recursive: true });
     session = {
       id, dir, opts, encoder, encoders: { ...info.encoders }, ffmpegPath: info.path,
-      run: 0, attempts: 0, nextSegment: 0, segments: [], totalOutMs: 0, progress: null,
+      run: 0, attempts: 0, nextSegment: 0, segments: [], runs: new Map(), totalOutMs: 0, progress: null,
       child: null, runInfo: null, stopping: false, failed: false, startedAt: now(),
     };
     sessionStatus("starting");
     spawnRun();
-    if (!session) return { ok: false, error: { code: "NO_FFMPEG", message: MESSAGES.noFfmpeg } };
+    if (!session) return { ok: false, error: { code: "NO_FFMPEG", message: MSG.noFfmpeg } };
     return { ok: true, sessionId: id, encoder: session.encoder };
   }
 
@@ -352,11 +389,11 @@ function createStudioEngine({
     stdin.write(buf);
     const pending = stdin.writableLength;
     if (pending > MAX_BYTES) {
-      s.runInfo.failReason = { code: "SLOW", message: MESSAGES.tooSlow };
+      s.runInfo.failReason = { code: "SLOW", message: MSG.tooSlow };
       killChild(s);
     } else if (pending > SLOW_BYTES && s.warning !== "slow") {
       s.warning = "slow";
-      sessionStatus(status.state, { message: MESSAGES.slow });
+      sessionStatus(status.state, { message: MSG.slow });
     }
     return true;
   }
@@ -365,7 +402,7 @@ function createStudioEngine({
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* yoksay */ }
   }
 
-  /** Nazik durdurma: stdin kapanır, ffmpeg kuyruğu boşaltır; 5 sn içinde bitmezse SIGKILL. */
+  /** Nazik durdurma: stdin kapanır, ffmpeg kuyruğu boşaltır; 5 sn içinde bitmezse öldürülür (proc.js). */
   function stop() {
     const s = session;
     if (!s) return Promise.resolve(true);
@@ -406,6 +443,13 @@ function createStudioEngine({
     stop,
     dispose,
     clipSources,
+    /** Halkadaki görüntü süresi (ms): tamamlanmış parçalar + yazılmakta olan. */
+    bufferedMs() {
+      const src = clipSources();
+      if (!src) return 0;
+      return Math.round((src.complete.reduce((t, x) => t + x.durationSec, 0) + (src.growing?.durationSec || 0)) * 1000);
+    },
+    encoder: () => session?.encoder || null,
     status: () => status,
     active: () => Boolean(session && !session.failed),
     sessionId: () => session?.id || null,
@@ -413,4 +457,7 @@ function createStudioEngine({
   };
 }
 
-module.exports = { createStudioEngine, parseSegmentList, isContainerHeader, BACKOFF_MS, MESSAGES };
+/** Genel adı: parça halkası kaydedici (yayın motoru ve açılar). */
+const createSegmentRecorder = createStudioEngine;
+
+module.exports = { createStudioEngine, createSegmentRecorder, fallbackEncoder, parseSegmentList, isContainerHeader, BACKOFF_MS, MESSAGES };

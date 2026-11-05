@@ -1,9 +1,14 @@
 // Yayın Stüdyosu — karıştırıcı yardımcıları (saf): geçiş, kare zamanlaması, ses seviyesi.
 
+import { STINGER_MS } from "./stinger";
+
+/** Geçiş türleri. stinger: ElitLig logo geçişi (stinger.js), değişim tam ortada. */
 export const TRANSITIONS = [
   { key: "cut", label: "Kesme", ms: 0 },
-  { key: "fade", label: "Geçiş (300 ms)", ms: 300 },
+  { key: "fade", label: "Yumuşak geçiş", ms: 300 },
+  { key: "stinger", label: "ElitLig logo", ms: STINGER_MS },
 ];
+export const transitionOf = (key) => TRANSITIONS.find((t) => t.key === key) || TRANSITIONS[1];
 
 /** Geçişin ilerleyişi 0…1 (kesmede hemen 1). */
 export function transitionProgress(transition, now) {

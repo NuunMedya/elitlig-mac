@@ -35,3 +35,6 @@ export const getLiveConfig = () => live("GET", `${YT}/config`);
 export const getMatchStream = (id) => live("GET", `${YT}/matches/${id}`);
 export const createMatchStream = (id, body) => live("POST", `${YT}/matches/${id}`, body);
 export const endMatchStream = (id) => live("POST", `${YT}/matches/${id}/end`, {});
+
+// Maç özeti (sunucu: routes/matchHighlights; yükleme / silme ana süreçte studio.uploadHighlight / deleteHighlight)
+export const getMatchHighlights = (matchId) => live("GET", "/api/match-highlights", undefined, { match_id: matchId });

@@ -4,7 +4,7 @@
 // ffmpeg yoksa (ya da libx264/aac/tee/segment eksikse) atlanır.
 //
 //   ELITLIG_FFMPEG=/yol/ffmpeg          kullanılacak ikili (CI: paketli uygulamadaki)
-//   ELITLIG_STUDIO_ENCODER=h264_videotoolbox | libx264   kodlayıcıyı zorla
+//   ELITLIG_STUDIO_ENCODER=h264_videotoolbox | h264_nvenc | h264_qsv | h264_amf | h264_mf | libx264   kodlayıcıyı zorla
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -59,7 +59,7 @@ const skipReason = async () => {
 const forcedEncoders = (info) => {
   const want = process.env.ELITLIG_STUDIO_ENCODER;
   if (!want) return info.encoders;
-  return { videotoolbox: want === ff.ENCODERS.videotoolbox, libx264: want === ff.ENCODERS.libx264 };
+  return Object.fromEntries(Object.entries(ff.ENCODERS).map(([key, name]) => [key, want === name]));
 };
 
 test("uçtan uca: akış → tee [flv | ts halkası] → 10 sn'lik gol klibi (MP4)", { timeout: 90000 }, async (t) => {

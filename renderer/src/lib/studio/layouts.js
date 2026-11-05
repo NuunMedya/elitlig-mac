@@ -1,9 +1,14 @@
 // Yayın Stüdyosu — sahne / kaynak yapılandırması ve yerleşim hesabı (saf).
 //
-// Yapılandırma (localStorage "studio.v1"):
+// Yapılandırma (localStorage "studio.v1", sürüm 2):
 //   sources: [{ id, kind: camera|screen|image|video|color, name, ...ayarlar }]
-//   scenes:  [{ id, name, layers: [{ id, sourceId, layout, fit, visible }] }]
-//   overlay: { scorebug: true }
+//   scenes:  [{ id, name, preset?, layers: [{ id, sourceId, layout, fit, visible }] }]
+//            — arayüzde "DÜZENLER" (Resim içinde resim, Yan yana …); her biri
+//            iki kaynaktan kurulan hazır yerleşim (preset) ya da eski "özel" sahne.
+//   overlay: { scorebug: true, variant: "small" | "bottom" | "off" }
+//   previewSceneId / programSceneId: düzen kimliği ya da "src:<kaynak>" —
+//            ÇOKLU GÖRÜNÜM: her kaynak tek başına tam ekran bir "sanal sahne"dir
+//            (tıkla → önizleme, çift tıkla → yayına).
 // Akışlar (MediaStream) saklanmaz; görünüm açılınca aygıt kimliğinden yeniden alınır.
 
 export const STORAGE_KEY = "studio.v1";
@@ -105,31 +110,144 @@ export const layoutLabel = (layout) => {
 
 /* ---------------------------- yapılandırma ---------------------------- */
 
+export const CONFIG_VERSION = 2;
+
 export function defaultConfig() {
   const cam1 = { id: "src_cam1", kind: "camera", name: "Kamera 1", deviceId: null, deviceIndex: 0, resolution: "1080p", mirror: false };
   const cam2 = { id: "src_cam2", kind: "camera", name: "Kamera 2", deviceId: null, deviceIndex: 1, resolution: "1080p", mirror: false };
-  const layer = (sourceId, layout, fit = "cover") => ({ id: uid("ly"), sourceId, layout, fit, visible: true });
+  const pip = { kind: "pip", a: cam1.id, b: cam2.id, corner: "br", size: 30 };
+  const sbs = { kind: "sbs", a: cam1.id, b: cam2.id };
   return {
-    version: 1,
+    version: CONFIG_VERSION,
     sources: [cam1, cam2],
     scenes: [
-      { id: "sc_cam1", name: "Kamera 1", layers: [layer(cam1.id, { type: "full" })] },
-      { id: "sc_cam2", name: "Kamera 2", layers: [layer(cam2.id, { type: "full" })] },
-      { id: "sc_pip", name: "Resim içinde resim", layers: [layer(cam1.id, { type: "full" }), layer(cam2.id, { type: "pip", corner: "br", size: 30 })] },
-      { id: "sc_sbs", name: "Yan yana", layers: [layer(cam1.id, { type: "left" }, "contain"), layer(cam2.id, { type: "right" }, "contain")] },
+      { id: "sc_pip", name: "Resim içinde resim", preset: pip, layers: presetLayers(pip) },
+      { id: "sc_sbs", name: "Yan yana", preset: sbs, layers: presetLayers(sbs) },
     ],
-    overlay: { scorebug: true },
-    previewSceneId: "sc_cam1",
-    programSceneId: "sc_cam1",
+    overlay: { scorebug: true, variant: "small" },
+    previewSceneId: sourceSceneId(cam2.id),
+    programSceneId: sourceSceneId(cam1.id),
   };
 }
 
 const VALID_KINDS = new Set(SOURCE_KINDS.map((k) => k.kind));
 const VALID_LAYOUTS = new Set(LAYOUTS.map((l) => l.key));
 
+/* --------------------- çoklu görünüm: kaynak = sanal sahne --------------------- */
+
+export const SOURCE_SCENE_PREFIX = "src:";
+export const sourceSceneId = (sourceId) => `${SOURCE_SCENE_PREFIX}${sourceId}`;
+export const isSourceSceneId = (id) => typeof id === "string" && id.startsWith(SOURCE_SCENE_PREFIX);
+export const sourceIdOfScene = (id) => (isSourceSceneId(id) ? id.slice(SOURCE_SCENE_PREFIX.length) : null);
+
+/**
+ * Kimliğin sahnesi: gerçek düzen ya da kaynağın tam ekran sanal sahnesi
+ * ({ id: "src:…", name, virtual: true, layers: [tam ekran] }). Yoksa null.
+ */
+export function resolveScene(config, id) {
+  if (!config || !id) return null;
+  const sid = sourceIdOfScene(id);
+  if (sid) {
+    const source = config.sources.find((s) => s.id === sid);
+    if (!source) return null;
+    return { id, name: source.name, virtual: true, sourceId: sid, layers: [{ id: `ly_${sid}`, sourceId: sid, layout: { type: "full" }, fit: source.kind === "image" ? "contain" : "cover", visible: true }] };
+  }
+  return config.scenes.find((s) => s.id === id) || null;
+}
+
+/** Kimlik hâlâ geçerli mi (düzen silinmiş / kaynak kaldırılmış olabilir). */
+export const sceneExists = (config, id) => Boolean(resolveScene(config, id));
+
+/** İlk geçerli hedef: ilk kaynak, yoksa ilk düzen. */
+export function fallbackSceneId(config) {
+  if (config.sources.length) return sourceSceneId(config.sources[0].id);
+  return config.scenes[0]?.id || null;
+}
+
+/**
+ * Çoklu görünüm şeridinin kutuları: önce kaynaklar, sonra düzenler; 1–9
+ * kısayol numarası bu sırayla verilir.
+ */
+export function multiviewItems(config) {
+  const items = [
+    ...config.sources.map((s) => ({ id: sourceSceneId(s.id), kind: "source", sourceId: s.id, name: s.name })),
+    ...config.scenes.map((sc) => ({ id: sc.id, kind: "layout", sceneId: sc.id, name: sc.name })),
+  ];
+  return items.map((it, i) => ({ ...it, number: i < 9 ? i + 1 : null }));
+}
+
+/* ----------------------------- düzen hazır kalıpları ----------------------------- */
+
+export const LAYOUT_PRESETS = [
+  { key: "pip", label: "Resim içinde resim", hint: "A tam ekran, B köşede küçük" },
+  { key: "sbs", label: "Yan yana", hint: "A solda, B sağda" },
+  { key: "full", label: "Tek kaynak + logo / görsel", hint: "A tam ekran, B (görsel) köşede" },
+];
+
+/** Kalıptan katmanlar (liste sonu üstte çizilir). */
+export function presetLayers(preset) {
+  const p = preset || {};
+  const layer = (sourceId, layout, fit = "cover") => ({ id: uid("ly"), sourceId, layout, fit, visible: true });
+  const out = [];
+  if (p.kind === "sbs") {
+    if (p.a) out.push(layer(p.a, { type: "left" }, "contain"));
+    if (p.b) out.push(layer(p.b, { type: "right" }, "contain"));
+    return out;
+  }
+  if (p.a) out.push(layer(p.a, { type: "full" }));
+  if (p.b) out.push(layer(p.b, { type: "pip", corner: p.corner || "br", size: clamp(num(p.size, p.kind === "full" ? 16 : 30), 10, 60) }, p.kind === "full" ? "contain" : "cover"));
+  return out;
+}
+
+/** Eski / elle kurulmuş sahnenin kalıbı (tanınmazsa null → "özel"). */
+export function presetFromScene(scene) {
+  if (!scene) return null;
+  if (scene.preset && LAYOUT_PRESETS.some((p) => p.key === scene.preset.kind)) return scene.preset;
+  const L = scene.layers || [];
+  if (L.length === 2 && L[0].layout?.type === "full" && L[1].layout?.type === "pip") {
+    return { kind: "pip", a: L[0].sourceId, b: L[1].sourceId, corner: L[1].layout.corner || "br", size: num(L[1].layout.size, 30) };
+  }
+  if (L.length === 2 && L[0].layout?.type === "left" && L[1].layout?.type === "right") return { kind: "sbs", a: L[0].sourceId, b: L[1].sourceId };
+  return null;
+}
+
+export function addLayoutScene(config, preset, name) {
+  const p = { kind: "pip", corner: "br", size: 30, ...preset };
+  const label = LAYOUT_PRESETS.find((x) => x.key === p.kind)?.label || "Düzen";
+  const scene = { id: uid("sc"), name: String(name || label).slice(0, 60), preset: p, layers: presetLayers(p) };
+  return { config: { ...config, scenes: [...config.scenes, scene] }, scene };
+}
+
+/** Düzenin kalıbını değiştirir; katmanlar kalıptan yeniden kurulur. */
+export const updateLayoutPreset = (config, sceneId, patch) =>
+  mapScene(config, sceneId, (s) => {
+    const preset = { ...(presetFromScene(s) || { kind: "pip" }), ...patch };
+    return { ...s, preset, layers: presetLayers(preset) };
+  });
+
+/**
+ * Sürüm 1 kaydı: tek tam ekran katmanlı sahneler ("Kamera 1") artık kaynağın
+ * kendisidir — kaldırılır; önizleme / program o kaynağa bağlanır.
+ */
+function migrateV1(raw) {
+  if (Number(raw.version) >= 2) return raw;
+  const single = new Map();
+  const scenes = [];
+  for (const sc of raw.scenes) {
+    const L = Array.isArray(sc?.layers) ? sc.layers.filter((l) => l && l.visible !== false) : [];
+    if (L.length === 1 && (!L[0].layout || L[0].layout.type === "full") && Array.isArray(raw.sources) && raw.sources.some((s) => s?.id === L[0].sourceId)) {
+      single.set(sc.id, sourceSceneId(L[0].sourceId));
+    } else scenes.push(sc);
+  }
+  const map = (id) => single.get(id) || id;
+  return { ...raw, scenes, previewSceneId: map(raw.previewSceneId), programSceneId: map(raw.programSceneId), version: 2 };
+}
+
 /** Bozuk / eski kaydı temizler; geçersizse varsayılana döner. */
-export function normalizeConfig(raw) {
-  if (!raw || typeof raw !== "object" || !Array.isArray(raw.scenes) || !Array.isArray(raw.sources)) return defaultConfig();
+export function normalizeConfig(input) {
+  if (!input || typeof input !== "object" || !Array.isArray(input.scenes) || !Array.isArray(input.sources)) return defaultConfig();
+  if (!input.scenes.length && !input.sources.length) return defaultConfig();
+  const raw = migrateV1(input);
   const sources = raw.sources
     .filter((s) => s && typeof s.id === "string" && VALID_KINDS.has(s.kind))
     // Nesne adresleri (blob:) oturum sonunda geçersizleşir; dosya yeniden seçilir.
@@ -140,6 +258,7 @@ export function normalizeConfig(raw) {
     .map((sc) => ({
       id: sc.id,
       name: String(sc.name || "Sahne").slice(0, 60),
+      ...(sc.preset && LAYOUT_PRESETS.some((p) => p.key === sc.preset.kind) ? { preset: { ...sc.preset, a: ids.has(sc.preset.a) ? sc.preset.a : null, b: ids.has(sc.preset.b) ? sc.preset.b : null } } : {}),
       layers: (Array.isArray(sc.layers) ? sc.layers : [])
         .filter((l) => l && ids.has(l.sourceId))
         .map((l) => ({
@@ -150,15 +269,15 @@ export function normalizeConfig(raw) {
           visible: l.visible !== false,
         })),
     }));
-  if (!scenes.length) return defaultConfig();
-  const has = (id) => scenes.some((s) => s.id === id);
+  if (!scenes.length && !sources.length) return defaultConfig();
+  const out = { version: CONFIG_VERSION, sources, scenes };
+  const fallback = fallbackSceneId(out);
+  const variant = ["small", "bottom", "off"].includes(raw.overlay?.variant) ? raw.overlay.variant : raw.overlay?.scorebug === false ? "off" : "small";
   return {
-    version: 1,
-    sources,
-    scenes,
-    overlay: { scorebug: raw.overlay?.scorebug !== false },
-    previewSceneId: has(raw.previewSceneId) ? raw.previewSceneId : scenes[0].id,
-    programSceneId: has(raw.programSceneId) ? raw.programSceneId : scenes[0].id,
+    ...out,
+    overlay: { scorebug: variant !== "off", variant },
+    previewSceneId: sceneExists(out, raw.previewSceneId) ? raw.previewSceneId : fallback,
+    programSceneId: sceneExists(out, raw.programSceneId) ? raw.programSceneId : fallback,
   };
 }
 
@@ -211,9 +330,9 @@ export function duplicateScene(config, sceneId) {
 export const renameScene = (config, sceneId, name) => mapScene(config, sceneId, (s) => ({ ...s, name: String(name || s.name).trim().slice(0, 60) || s.name }));
 
 export function removeScene(config, sceneId) {
-  if (config.scenes.length <= 1) return config;
+  if (config.scenes.length <= 1 && !config.sources.length) return config;
   const scenes = config.scenes.filter((s) => s.id !== sceneId);
-  const fallback = scenes[0].id;
+  const fallback = fallbackSceneId({ ...config, scenes });
   return {
     ...config,
     scenes,
@@ -248,10 +367,20 @@ export function addSource(config, source) {
 export const updateSource = (config, sourceId, patch) => ({ ...config, sources: config.sources.map((s) => (s.id === sourceId ? { ...s, ...patch } : s)) });
 
 export function removeSource(config, sourceId) {
-  return {
+  const next = {
     ...config,
     sources: config.sources.filter((s) => s.id !== sourceId),
-    scenes: config.scenes.map((sc) => ({ ...sc, layers: sc.layers.filter((l) => l.sourceId !== sourceId) })),
+    scenes: config.scenes.map((sc) => ({
+      ...sc,
+      ...(sc.preset ? { preset: { ...sc.preset, a: sc.preset.a === sourceId ? null : sc.preset.a, b: sc.preset.b === sourceId ? null : sc.preset.b } } : {}),
+      layers: sc.layers.filter((l) => l.sourceId !== sourceId),
+    })),
+  };
+  const fallback = fallbackSceneId(next);
+  return {
+    ...next,
+    previewSceneId: sceneExists(next, config.previewSceneId) ? config.previewSceneId : fallback,
+    programSceneId: sceneExists(next, config.programSceneId) ? config.programSceneId : fallback,
   };
 }
 

@@ -1,15 +1,28 @@
-// Yayın Stüdyosu · Kaynaklar: önizlemedeki sahnenin katmanları (görünürlük,
-// yerleşim, sıra) ve tüm kaynaklar (canlı küçük resim, durum, izin, ayarlar).
-import React, { useEffect, useRef, useState } from "react";
+// Yayın Stüdyosu · "Kaynaklar & Düzenler" sekmesi.
+//
+//   KAYNAKLAR  her kamera / ekran / görsel / video / renk plakası: canlı küçük
+//              resim, durum, izin, ayarlar, yeniden bağlan, sil.
+//   DÜZENLER   iki kaynaktan hazır yerleşim: Resim içinde resim (A tam ekran,
+//              B köşede), Yan yana, Tek kaynak + logo. Eski "özel" sahneler
+//              katman düzenleyicisiyle açılır.
+//
+// Açılır menüler kapanmasın diye: seçenek listeleri memo'lu, anahtarlar
+// kalıcı, panel memo'lu (yalnız yapılandırma değişince çizilir) ve kaynak
+// penceresinin onClose'u kimliği değişmeyen bir işlevdir.
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Field, Icon, MenuButton, Modal } from "../../components/ui";
-import { LAYOUTS, PIP_CORNERS, RESOLUTIONS, SOURCE_KINDS, deviceName, kindIcon, kindLabel, layoutLabel } from "../../lib/studio/layouts";
+import { LAYOUTS, LAYOUT_PRESETS, PIP_CORNERS, RESOLUTIONS, SOURCE_KINDS, deviceName, kindIcon, kindLabel, layoutLabel, presetFromScene, sourceSceneId } from "../../lib/studio/layouts";
 import { drawSource } from "./draw";
+import { useStable } from "./useStable";
 
 const STATUS_TEXT = { waiting: "Açılıyor…", live: "Canlı", missing: "Kaynak yok", denied: "İzin yok", ended: "Bağlantı koptu", busy: "Meşgul", error: "Açılamadı", file: "Dosya seçilmeli" };
+const BAD = ["missing", "denied", "ended", "busy", "error", "file"];
 
 /** Kaynağın canlı küçük resmi (yarım saniyede bir çizilir). */
 export function SourceThumb({ source, runtimeRef, width = 96 }) {
   const ref = useRef(null);
+  const srcRef = useRef(source);
+  srcRef.current = source;
   useEffect(() => {
     const draw = () => {
       const c = ref.current;
@@ -17,12 +30,12 @@ export function SourceThumb({ source, runtimeRef, width = 96 }) {
       const ctx = c.getContext("2d");
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, c.width, c.height);
-      drawSource(ctx, source, runtimeRef.current.get(source.id), { x: 0, y: 0, w: c.width, h: c.height }, "cover", { placeholders: false });
+      drawSource(ctx, srcRef.current, runtimeRef.current.get(srcRef.current.id), { x: 0, y: 0, w: c.width, h: c.height }, "cover", { placeholders: true });
     };
     draw();
     const t = setInterval(draw, 500);
     return () => clearInterval(t);
-  }, [source, runtimeRef]);
+  }, [runtimeRef]);
   return <canvas ref={ref} className="st-thumb" width={width * 2} height={Math.round((width * 2 * 9) / 16)} style={{ width, height: Math.round((width * 9) / 16) }} />;
 }
 
@@ -64,75 +77,108 @@ function LayerEditor({ layer, onChange }) {
   );
 }
 
-export default function SourcesPanel({ scene, sources, runtimeRef, version, onAddLayer, onUpdateLayer, onMoveLayer, onRemoveLayer, onNewSource, onEditSource, onRemoveSource, onReacquire, onRequestAccess }) {
+/** Kaynak seçimi (A / B): seçenekler memo'lu dizi; boş = "—". */
+const SourceSelect = memo(function SourceSelect({ value, options, onChange, label, allowEmpty }) {
+  return (
+    <Field label={label}>
+      <select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
+        {allowEmpty && <option value="">— yok —</option>}
+        {!allowEmpty && !value && <option value="">Kaynak seç…</option>}
+        {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+      </select>
+    </Field>
+  );
+});
+
+function LayoutCard({ scene, options, previewId, programId, onPreset, onRename, onPreview, onProgram, onRemove, onUpdateLayer, sources }) {
+  const preset = presetFromScene(scene);
+  const [name, setName] = useState(scene.name);
+  useEffect(() => setName(scene.name), [scene.name]);
   const [open, setOpen] = useState(null);
-  const byId = new Map(sources.map((s) => [s.id, s]));
-  const layers = scene ? [...scene.layers].reverse() : [];
-  const notInScene = sources.filter((s) => !scene?.layers.some((l) => l.sourceId === s.id));
+  const byId = useMemo(() => new Map(sources.map((s) => [s.id, s])), [sources]);
+  return (
+    <li className={`st-layout ${scene.id === programId ? "is-program" : ""} ${scene.id === previewId ? "is-preview" : ""}`}>
+      <div className="st-row">
+        <input className="st-layout__name" value={name} onChange={(e) => setName(e.target.value)} onBlur={() => name !== scene.name && onRename(scene.id, name)} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} aria-label="Düzen adı" />
+        <button type="button" className="btn btn--xs" onClick={() => onPreview(scene.id)} title="Önizlemeye al"><Icon name="eye" size={12} /></button>
+        <button type="button" className="btn btn--xs btn--red" onClick={() => onProgram(scene.id)} title="Yayına ver"><Icon name="play" size={12} /></button>
+        <button type="button" className="icon-btn icon-btn--xs" onClick={() => onRemove(scene)} title="Düzeni sil"><Icon name="trash" size={13} /></button>
+      </div>
+      {preset ? (
+        <div className="st-layout__grid">
+          <Field label="Tür">
+            <select value={preset.kind} onChange={(e) => onPreset(scene.id, { kind: e.target.value })}>
+              {LAYOUT_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </select>
+          </Field>
+          <SourceSelect label={preset.kind === "sbs" ? "Sol (A)" : "Ana görüntü (A)"} value={preset.a} options={options} onChange={(v) => onPreset(scene.id, { a: v })} />
+          <SourceSelect label={preset.kind === "sbs" ? "Sağ (B)" : "Köşedeki (B)"} value={preset.b} options={options} allowEmpty onChange={(v) => onPreset(scene.id, { b: v })} />
+          {preset.kind !== "sbs" && (
+            <>
+              <Field label="Köşe">
+                <select value={preset.corner || "br"} onChange={(e) => onPreset(scene.id, { corner: e.target.value })}>{PIP_CORNERS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}</select>
+              </Field>
+              <Field label={`Boyut · %${preset.size || 30}`}><input type="range" min={10} max={60} value={preset.size || 30} onChange={(e) => onPreset(scene.id, { size: Number(e.target.value) })} /></Field>
+            </>
+          )}
+        </div>
+      ) : (
+        <ul className="st-list">
+          <li className="st-hint">Özel düzen: katmanlar</li>
+          {[...scene.layers].reverse().map((layer) => {
+            const src = byId.get(layer.sourceId);
+            if (!src) return null;
+            return (
+              <li key={layer.id} className={`st-layer ${open === layer.id ? "is-open" : ""}`}>
+                <div className="st-layer__row" onClick={() => setOpen(open === layer.id ? null : layer.id)}>
+                  <span className="st-layer__text"><strong>{src.name}</strong><small>{layoutLabel(layer.layout)}</small></span>
+                  <Icon name={open === layer.id ? "chevronUp" : "chevronDown"} size={13} />
+                </div>
+                {open === layer.id && <LayerEditor layer={layer} onChange={(patch) => onUpdateLayer(scene.id, layer.id, patch)} />}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function SourcesPanel({ sources, scenes, runtimeRef, version, previewId, programId, actions }) {
   void version;
+  const options = useMemo(() => sources.map((s) => ({ id: s.id, name: s.name })), [sources]);
+  const { onNewSource, onEditSource, onRemoveSource, onReacquire, onRequestAccess, onPreview, onProgram, onAddLayout, onPreset, onRenameScene, onRemoveScene, onUpdateLayer } = actions;
 
   return (
-    <>
-      <section className="st-panel st-layers">
-        <header className="st-panel__head">
-          <h4 title={scene?.name}>Sahnede: {scene?.name || "—"}</h4>
-          <MenuButton label="Katman ekle" icon="plus" size={14} items={[
-            { label: "Yeni kaynak…", icon: "plus", onClick: () => onNewSource(true) },
-            notInScene.length ? "-" : null,
-            ...notInScene.map((s) => ({ label: s.name, icon: kindIcon(s.kind), onClick: () => onAddLayer(s.id) })),
-          ]} />
-        </header>
-        {layers.length ? (
-          <ul className="st-list">
-            {layers.map((layer, i) => {
-              const src = byId.get(layer.sourceId);
-              if (!src) return null;
-              const rt = runtimeRef.current.get(src.id);
-              const isOpen = open === layer.id;
-              return (
-                <li key={layer.id} className={`st-layer ${layer.visible ? "" : "is-hidden"} ${isOpen ? "is-open" : ""}`}>
-                  <div className="st-layer__row" onClick={() => setOpen(isOpen ? null : layer.id)}>
-                    <button type="button" className="icon-btn icon-btn--xs" title={layer.visible ? "Gizle" : "Göster"} onClick={(e) => { e.stopPropagation(); onUpdateLayer(layer.id, { visible: !layer.visible }); }}>
-                      <Icon name={layer.visible ? "eye" : "ban"} size={13} />
-                    </button>
-                    <span className={`st-dot is-${rt?.status || "waiting"}`} title={STATUS_TEXT[rt?.status] || ""} />
-                    <span className="st-layer__text"><strong>{src.name}</strong><small>{layoutLabel(layer.layout)}</small></span>
-                    <button type="button" className="icon-btn icon-btn--xs" title="Üste al" disabled={i === 0} onClick={(e) => { e.stopPropagation(); onMoveLayer(layer.id, 1); }}><Icon name="chevronUp" size={13} /></button>
-                    <button type="button" className="icon-btn icon-btn--xs" title="Alta al" disabled={i === layers.length - 1} onClick={(e) => { e.stopPropagation(); onMoveLayer(layer.id, -1); }}><Icon name="chevronDown" size={13} /></button>
-                    <button type="button" className="icon-btn icon-btn--xs" title="Sahneden çıkar" onClick={(e) => { e.stopPropagation(); onRemoveLayer(layer.id); }}><Icon name="x" size={13} /></button>
-                  </div>
-                  {isOpen && <LayerEditor layer={layer} onChange={(patch) => onUpdateLayer(layer.id, patch)} />}
-                </li>
-              );
-            })}
-          </ul>
-        ) : <p className="st-hint st-pad">Bu sahnede kaynak yok. “+” ile kamera, ekran ya da görsel ekle.</p>}
-      </section>
-
-      <section className="st-panel st-sources">
-        <header className="st-panel__head">
+    <div className="st-srcdock">
+      <section className="st-srcdock__col">
+        <header className="st-dock-head">
           <h4>Kaynaklar</h4>
-          <button type="button" className="btn btn--xs btn--soft" onClick={() => onNewSource(false)}><Icon name="plus" size={12} /> Kaynak ekle</button>
+          <span className="st-hint">Her kaynak üstteki şeritte bir kutudur: tıkla → önizleme, çift tıkla → yayın.</span>
+          <span className="st-top__spacer" />
+          <button type="button" className="btn btn--xs btn--soft" onClick={onNewSource}><Icon name="plus" size={12} /> Kaynak ekle</button>
         </header>
-        <ul className="st-src-list">
+        <ul className="st-src-grid">
           {sources.map((src) => {
             const rt = runtimeRef.current.get(src.id);
             const st = rt?.status || "waiting";
-            const bad = ["missing", "denied", "ended", "busy", "error", "file"].includes(st);
+            const bad = BAD.includes(st);
+            const sid = sourceSceneId(src.id);
             return (
-              <li key={src.id} className={`st-src ${bad ? "is-bad" : ""}`}>
-                <SourceThumb source={src} runtimeRef={runtimeRef} width={72} />
+              <li key={src.id} className={`st-src ${bad ? "is-bad" : ""} ${sid === programId ? "is-program" : ""} ${sid === previewId ? "is-preview" : ""}`}>
+                <button type="button" className="st-src__thumb" onClick={() => onPreview(sid)} onDoubleClick={() => onProgram(sid)} title="Tıkla: önizleme · çift tıkla: yayına">
+                  <SourceThumb source={src} runtimeRef={runtimeRef} width={112} />
+                </button>
                 <div className="st-src__text">
-                  <strong title={src.name}>{src.name}</strong>
+                  <strong title={src.name}><Icon name={kindIcon(src.kind)} size={12} /> {src.name}</strong>
                   <small><span className={`st-dot is-${st}`} /> {st === "live" ? (rt?.label || kindLabel(src.kind)) : STATUS_TEXT[st]}</small>
                   {bad && rt?.message && <small className="st-src__msg">{rt.message}</small>}
-                  {bad && (
-                    <span className="st-row st-row--wrap">
-                      {st === "denied" && (src.kind === "camera" || src.kind === "screen") && <button type="button" className="btn btn--xs" onClick={() => onRequestAccess(src.kind === "camera" ? "camera" : "screen")}>İzin iste</button>}
-                      {st === "file" ? <button type="button" className="btn btn--xs" onClick={() => onEditSource(src)}>Dosya seç</button>
-                        : <button type="button" className="btn btn--xs" onClick={() => onReacquire(src)}>Yeniden dene</button>}
-                    </span>
-                  )}
+                  <span className="st-row st-row--wrap">
+                    <button type="button" className="btn btn--xs" onClick={() => onEditSource(src)}><Icon name="sliders" size={11} /> Ayarlar</button>
+                    {st === "denied" && (src.kind === "camera" || src.kind === "screen") && <button type="button" className="btn btn--xs" onClick={() => onRequestAccess(src.kind === "camera" ? "camera" : "screen")}>İzin iste</button>}
+                    {st === "file" ? <button type="button" className="btn btn--xs" onClick={() => onEditSource(src)}>Dosya seç</button>
+                      : bad && <button type="button" className="btn btn--xs" onClick={() => onReacquire(src)}>Yeniden dene</button>}
+                  </span>
                 </div>
                 <MenuButton label="Kaynak" size={14} items={[
                   { label: "Ayarlar…", icon: "sliders", onClick: () => onEditSource(src) },
@@ -143,11 +189,31 @@ export default function SourcesPanel({ scene, sources, runtimeRef, version, onAd
               </li>
             );
           })}
+          {!sources.length && <li className="st-hint">Henüz kaynak yok. “Kaynak ekle” ile kamera, ekran, görsel ya da video ekle.</li>}
         </ul>
       </section>
-    </>
+
+      <section className="st-srcdock__col st-srcdock__col--layouts">
+        <header className="st-dock-head">
+          <h4>Düzenler</h4>
+          <span className="st-hint">İki kaynağı birlikte göstermek için (isteğe bağlı).</span>
+          <span className="st-top__spacer" />
+          <MenuButton label="Düzen ekle" icon="plus" text="Düzen ekle" size={12} className="st-menu-sm" items={LAYOUT_PRESETS.map((p) => ({ label: p.label, icon: "layers", onClick: () => onAddLayout(p.key) }))} />
+        </header>
+        {scenes.length ? (
+          <ul className="st-layouts">
+            {scenes.map((sc) => (
+              <LayoutCard key={sc.id} scene={sc} options={options} sources={sources} previewId={previewId} programId={programId}
+                onPreset={onPreset} onRename={onRenameScene} onPreview={onPreview} onProgram={onProgram} onRemove={onRemoveScene} onUpdateLayer={onUpdateLayer} />
+            ))}
+          </ul>
+        ) : <p className="st-hint">Düzen yok. “Düzen ekle” → Resim içinde resim ya da Yan yana.</p>}
+      </section>
+    </div>
   );
 }
+
+export default memo(SourcesPanel);
 
 /* ------------------------------ kaynak penceresi ------------------------------ */
 
@@ -159,7 +225,11 @@ const readDataUrl = (file) => new Promise((resolve, reject) => {
 });
 
 /** Yeni kaynak / kaynak ayarları. initial: { kind } ya da var olan kaynak. */
-export function SourceDialog({ initial, cameraCount = 0, devices, access, onRequestAccess, onRefreshDevices, onSave, onClose }) {
+function SourceDialogInner({ initial, cameraCount = 0, devices, access, onRequestAccess, onRefreshDevices, onSave, onClose: onCloseProp }) {
+  // Ortak Modal, onClose kimliği her değiştiğinde ilk alana odaklanır; stüdyo
+  // saniyede birkaç kez çizildiği için açık <select> menüsü hemen kapanıyordu.
+  // Kimliği hiç değişmeyen işlev bu döngüyü keser.
+  const onClose = useStable(onCloseProp);
   const editing = Boolean(initial?.id);
   const [draft, setDraft] = useState(() => ({ ...(initial || {}) }));
   const [screens, setScreens] = useState(null);
@@ -297,3 +367,6 @@ export function SourceDialog({ initial, cameraCount = 0, devices, access, onRequ
     </Modal>
   );
 }
+
+/** Kaynak penceresi: yalnız kendi girdileri değişince yeniden çizilir. */
+export const SourceDialog = memo(SourceDialogInner);

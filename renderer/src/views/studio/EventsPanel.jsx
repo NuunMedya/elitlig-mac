@@ -7,7 +7,7 @@ import { QUICK_EVENTS, eventLabel, eventSide } from "../../lib/studio/match";
 export default function EventsPanel({ live, onAsk, onRemove }) {
   const recent = [...live.timeline].reverse().slice(0, 10);
   return (
-    <div className="st-stack">
+    <div className="st-evdock">
       {["home", "away"].map((side) => {
         const name = side === "home" ? live.homeName : live.awayName;
         return (
@@ -23,6 +23,7 @@ export default function EventsPanel({ live, onAsk, onRemove }) {
           </section>
         );
       })}
+      <section className="st-stack st-stack--tight">
       <h5 className="st-group">Son olaylar</h5>
       {recent.length ? (
         <ul className="st-events">
@@ -39,6 +40,7 @@ export default function EventsPanel({ live, onAsk, onRemove }) {
           })}
         </ul>
       ) : <p className="st-hint">Henüz gol / kart girilmedi.</p>}
+      </section>
     </div>
   );
 }

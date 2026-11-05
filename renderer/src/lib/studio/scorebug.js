@@ -379,3 +379,336 @@ export function drawReplayBadge(ctx, outW) {
   ctx.restore();
   return b;
 }
+
+/* ======================================================================
+   ORTA-ALT BÜYÜK SKORBORD — web /skoroverlay "bottomboard" (BottomScoreBoard,
+   SkorOverlay.css .el-low premier ölçüleri) ile birebir.
+
+     [golcüler (ev)]                    [golcüler (deplasman)]   (isteğe bağlı)
+     ┌──────────────────────────────────────────────────────────┐
+     │ [arma] EV ADI │ 2 │ madalya │ 1 │ DEPLASMAN ADI [arma]   │  84 px
+     └──────────────────────────────────────────────────────────┘
+                     ( ● 2. YARI · 33:12 )                          34 px
+   Sahnede: ortada, alttan 64 px; 1000 px genişlik. Olay (GOL · OYUNCU)
+   bandı en üstte ortalanır.
+   ====================================================================== */
+
+export const BOARD = Object.freeze({
+  width: 1000,
+  bottom: 64,
+  bandH: 84,
+  radius: 12,
+  teamW: 356,
+  teamPad: 24,
+  crest: 52,
+  gap: 16,
+  scoreW: 82,
+  medalW: 74,
+  medalLogo: 66,
+  medalLift: 8,
+  clockH: 34,
+  clockPad: 26,
+  scorersGap: 6,
+  colors: Object.freeze({
+    barTop: "#360a36",
+    barBottom: "#240024",
+    p900: "#1a001a",
+    p200: "#a884ac",
+    p300: "#7d4a7d",
+    v800: "#3d0070",
+    v400: "#a855f7",
+    live: "#ff2d55",
+    hair: "rgba(216, 191, 255, 0.14)",
+    home: "#8a6cf0",
+    away: "#f06c8a",
+  }),
+});
+
+export const SCOREBUG_VARIANTS = [
+  { key: "small", label: "Küçük (sol üst)" },
+  { key: "bottom", label: "Orta-alt büyük" },
+  { key: "off", label: "Gizli" },
+];
+
+/** Metni en çok maxW genişliğe sığdırır ("…" ile). */
+export function fitText(text, maxW, font, measure) {
+  const t = String(text ?? "");
+  if (measure(t, font) <= maxW) return t;
+  let lo = 0;
+  let hi = t.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (measure(`${t.slice(0, mid).trimEnd()}…`, font) <= maxW) lo = mid; else hi = mid - 1;
+  }
+  return lo > 0 ? `${t.slice(0, lo).trimEnd()}…` : "…";
+}
+
+/** Skorbord metin harfleri: web "text-transform: uppercase" (Türkçe). */
+const upper = (v) => String(v ?? "").toLocaleUpperCase("tr-TR");
+
+/**
+ * Orta-alt skorbordun kutuları (çıkış pikseli, mutlak).
+ * state: { homeName, awayName, homeScore, awayScore, clockMs, period,
+ *          finished, scorers?: { home: [{ name, minutes }], away }, event? }
+ */
+export function bottomBoardLayout(state, outW, outH, measure) {
+  const W = Number(outW) || BUG.stageW;
+  const H = Number(outH) || BUG.stageH;
+  const s = W / BUG.stageW;
+  const B = BOARD;
+  const w = B.width * s;
+  const x = (W - w) / 2;
+  const clockH = B.clockH * s;
+  const bandH = B.bandH * s;
+  const clockY = H - B.bottom * s - clockH;
+  const bandY = clockY - bandH;
+
+  const nameFont = bugFont(21 * s, 700);
+  const scoreFont = bugFont(50 * s, 800);
+  const clockFont = bugFont(13 * s, 800);
+  const rowW = (B.teamW * 2 + B.scoreW * 2 + B.medalW) * s;
+  let cx = x + (w - rowW) / 2;
+  const crest = B.crest * s;
+  const nameMax = 232 * s;
+
+  const home = { x: cx, w: B.teamW * s };
+  const homeName = fitText(upper(state.homeName), nameMax, nameFont, measure);
+  const homeNameW = measure(homeName, nameFont);
+  home.name = { text: homeName, x: home.x + home.w - B.teamPad * s - homeNameW, w: homeNameW, font: nameFont };
+  home.crest = { x: home.name.x - B.gap * s - crest, y: bandY + (bandH - crest) / 2, w: crest, h: crest };
+  cx += home.w;
+  const homeScore = { x: cx, w: B.scoreW * s, text: String(state.homeScore ?? 0), font: scoreFont };
+  cx += homeScore.w;
+  const medal = { x: cx, w: B.medalW * s, logo: B.medalLogo * s };
+  medal.logoX = medal.x + (medal.w - medal.logo) / 2;
+  medal.logoY = bandY + (bandH - medal.logo) / 2 - B.medalLift * s;
+  cx += medal.w;
+  const awayScore = { x: cx, w: B.scoreW * s, text: String(state.awayScore ?? 0), font: scoreFont };
+  cx += awayScore.w;
+  const away = { x: cx, w: B.teamW * s };
+  const awayName = fitText(upper(state.awayName), nameMax, nameFont, measure);
+  const awayNameW = measure(awayName, nameFont);
+  away.name = { text: awayName, x: away.x + B.teamPad * s, w: awayNameW, font: nameFont };
+  away.crest = { x: away.name.x + awayNameW + B.gap * s, y: bandY + (bandH - crest) / 2, w: crest, h: crest };
+
+  // Saat hapı: "2. YARI · 33:12" (harf aralığı 2,6 px) ya da "MAÇ SONU".
+  const finished = Boolean(state.finished);
+  const clockStr = state.clockLabel ? String(state.clockLabel) : finished ? "MAÇ SONU" : `${periodLabel(state.period)} · ${clockText(state.clockMs)}`;
+  const spacing = 2.6 * s;
+  const textW = measure(clockStr, clockFont) + spacing * Math.max(0, clockStr.length - 1);
+  const dot = 7 * s;
+  const innerW = dot + 10 * s + textW;
+  const clockW = innerW + B.clockPad * 2 * s;
+  const clock = { x: (W - clockW) / 2, y: clockY, w: clockW, h: clockH, r: B.radius * s, text: clockStr, font: clockFont, spacing, finished, dot: { cx: (W - clockW) / 2 + B.clockPad * s + dot / 2, cy: clockY + clockH / 2, r: dot / 2 } };
+  clock.textX = clock.dot.cx + dot / 2 + 10 * s;
+
+  // Golcüler: iki ayrı kutu (boş taraf çizilmez), bandın 6 px üstünde.
+  const rowFont = bugFont(14 * s, 700);
+  const minFont = bugFont(12 * s, 600);
+  const rowH = 18 * s;
+  const rowGap = 4 * s;
+  const padY = 12 * s;
+  const padX = 22 * s;
+  const lists = { home: state.scorers?.home || [], away: state.scorers?.away || [] };
+  const maxRows = Math.max(lists.home.length, lists.away.length);
+  let top = bandY;
+  let scorers = null;
+  if (maxRows > 0) {
+    const shown = Math.min(maxRows, 4);
+    const boxH = padY * 2 + shown * rowH + (shown - 1) * rowGap;
+    const boxY = bandY - B.scorersGap * s - boxH;
+    const colW = (w - 132 * s) / 2;
+    const box = (side, bx) => {
+      const rows = lists[side].slice(0, 4).map((r, i) => {
+        const minutes = (r.minutes || []).map((m) => `${m}'`).join(", ");
+        const name = fitText(r.name, colW - padX * 2 - measure(minutes, minFont) - 20 * s, rowFont, measure);
+        return { name, minutes, y: boxY + padY + i * (rowH + rowGap) + rowH / 2 };
+      });
+      const contentW = rows.length ? Math.max(...rows.map((r) => 3 * s + 8 * s + measure(r.name, rowFont) + 8 * s + measure(r.minutes, minFont))) : 0;
+      const bw = Math.min(colW, contentW + padX * 2);
+      return rows.length ? { side, x: side === "home" ? bx : bx + colW - bw, y: boxY, w: bw, h: boxH, r: 10 * s, padX, rows, font: rowFont, minFont } : null;
+    };
+    scorers = { home: box("home", x), away: box("away", x + w - colW) };
+    top = boxY;
+  }
+
+  // Olay bandı: [ETİKET][OYUNCU], en üstte ortada.
+  let event = null;
+  if (state.event?.label) {
+    const eh = 36 * s;
+    const tagFont = bugFont(16 * s, 800);
+    const nameFontE = bugFont(17 * s, 800);
+    const tagW = measure(state.event.label, tagFont) + 28 * s;
+    const player = state.event.player ? String(state.event.player) : "";
+    const nW = player ? measure(player, nameFontE) + 32 * s : 0;
+    const ew = tagW + nW;
+    const ey = top - 10 * s - eh;
+    event = { x: (W - ew) / 2, y: ey, w: ew, h: eh, r: 6 * s, tag: { w: tagW, text: state.event.label, font: tagFont, color: lowerColor(state.event.kind) }, name: player ? { w: nW, text: player, font: nameFontE } : null };
+    top = ey;
+  }
+
+  const band = { x, y: bandY, w, h: bandH, r: B.radius * s };
+  return { s, W, H, x, w, band, home, homeScore, medal, awayScore, away, clock, scorers, event, top, bottom: clockY + clockH };
+}
+
+/**
+ * Orta-alt skorbordu çizer. opts: { outW, outH, images: { logo, home, away },
+ * homeColor, awayColor }. Dönüş: çizilen alanın sınırı.
+ */
+export function drawBottomBoard(ctx, state, { outW, outH, images = {}, homeColor, awayColor } = {}) {
+  const C = BOARD.colors;
+  const measure = (text, font) => { ctx.font = font; return ctx.measureText(text).width; };
+  const W = outW || ctx.canvas?.width || BUG.stageW;
+  const H = outH || ctx.canvas?.height || BUG.stageH;
+  const L = bottomBoardLayout(state, W, H, measure);
+  const s = L.s;
+  const b = L.band;
+  const mid = b.y + b.h / 2;
+
+  ctx.save();
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+
+  // Golcü kutuları.
+  if (L.scorers) {
+    for (const box of [L.scorers.home, L.scorers.away]) {
+      if (!box) continue;
+      ctx.fillStyle = C.p900;
+      roundRect(ctx, box.x, box.y, box.w, box.h, box.r);
+      ctx.fill();
+      for (const r of box.rows) {
+        const away = box.side === "away";
+        let rx = away ? box.x + box.w - box.padX : box.x + box.padX;
+        ctx.fillStyle = C.v400;
+        const barX = away ? rx - 3 * s : rx;
+        roundRect(ctx, barX, r.y - 6.5 * s, 3 * s, 13 * s, 2 * s);
+        ctx.fill();
+        rx = away ? rx - 11 * s : rx + 11 * s;
+        ctx.font = box.font;
+        const nw = ctx.measureText(r.name).width;
+        ctx.font = box.minFont;
+        const mw = ctx.measureText(r.minutes).width;
+        if (away) {
+          ctx.fillStyle = "#fff"; ctx.font = box.font; ctx.fillText(r.name, rx - nw, r.y + s);
+          ctx.fillStyle = C.p200; ctx.font = box.minFont; ctx.fillText(r.minutes, rx - nw - 8 * s - mw, r.y + s);
+        } else {
+          ctx.fillStyle = "#fff"; ctx.font = box.font; ctx.fillText(r.name, rx, r.y + s);
+          ctx.fillStyle = C.p200; ctx.font = box.minFont; ctx.fillText(r.minutes, rx + nw + 8 * s, r.y + s);
+        }
+      }
+    }
+  }
+
+  // Bant.
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
+  ctx.shadowBlur = 24 * s;
+  ctx.shadowOffsetY = 6 * s;
+  const grad = ctx.createLinearGradient(0, b.y, 0, b.y + b.h);
+  grad.addColorStop(0, C.barTop);
+  grad.addColorStop(1, C.barBottom);
+  ctx.fillStyle = grad;
+  roundRect(ctx, b.x, b.y, b.w, b.h, [b.r, b.r, 0, 0]);
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  roundRect(ctx, b.x, b.y, b.w, b.h, [b.r, b.r, 0, 0]);
+  ctx.clip();
+  ctx.fillStyle = C.p900;
+  ctx.fillRect(L.homeScore.x, b.y, L.homeScore.w + L.medal.w + L.awayScore.w, b.h);
+  ctx.fillStyle = homeColor || C.home;
+  ctx.fillRect(b.x, b.y + b.h - 3 * s, b.w / 2, 3 * s);
+  ctx.fillStyle = awayColor || C.away;
+  ctx.fillRect(b.x + b.w / 2, b.y + b.h - 3 * s, b.w / 2, 3 * s);
+  ctx.restore();
+  ctx.fillStyle = C.hair;
+  ctx.fillRect(L.medal.x, b.y + 22 * s, Math.max(1, s), b.h - 44 * s);
+  ctx.fillRect(L.medal.x + L.medal.w - Math.max(1, s), b.y + 22 * s, Math.max(1, s), b.h - 44 * s);
+
+  if (ready(images.home)) drawContain(ctx, images.home, L.home.crest.x, L.home.crest.y, L.home.crest.w, L.home.crest.h);
+  if (ready(images.away)) drawContain(ctx, images.away, L.away.crest.x, L.away.crest.y, L.away.crest.w, L.away.crest.h);
+  ctx.fillStyle = "#fff";
+  ctx.font = L.home.name.font;
+  ctx.fillText(L.home.name.text, L.home.name.x, mid + s);
+  ctx.font = L.away.name.font;
+  ctx.fillText(L.away.name.text, L.away.name.x, mid + s);
+  ctx.textAlign = "center";
+  ctx.font = L.homeScore.font;
+  ctx.fillText(L.homeScore.text, L.homeScore.x + L.homeScore.w / 2, mid + 2 * s);
+  ctx.fillText(L.awayScore.text, L.awayScore.x + L.awayScore.w / 2, mid + 2 * s);
+  ctx.textAlign = "left";
+  if (ready(images.logo)) {
+    ctx.save();
+    ctx.shadowColor = "rgba(9, 0, 10, 0.7)";
+    ctx.shadowBlur = 16 * s;
+    ctx.shadowOffsetY = 6 * s;
+    drawContain(ctx, images.logo, L.medal.logoX, L.medal.logoY, L.medal.logo, L.medal.logo);
+    ctx.restore();
+  }
+
+  // Saat hapı.
+  const c = L.clock;
+  ctx.fillStyle = c.finished ? C.p900 : C.v800;
+  roundRect(ctx, c.x, c.y, c.w, c.h, [0, 0, c.r, c.r]);
+  ctx.fill();
+  ctx.fillStyle = c.finished ? C.p300 : C.live;
+  ctx.beginPath();
+  ctx.arc(c.dot.cx, c.dot.cy, c.dot.r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.font = c.font;
+  let tx = c.textX;
+  for (const ch of c.text) {
+    ctx.fillText(ch, tx, c.y + c.h / 2 + s);
+    tx += ctx.measureText(ch).width + c.spacing;
+  }
+
+  // Olay bandı.
+  if (L.event) {
+    const e = L.event;
+    ctx.save();
+    ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
+    ctx.shadowBlur = 14 * s;
+    roundRect(ctx, e.x, e.y, e.w, e.h, e.r);
+    ctx.fillStyle = C.p900;
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
+    roundRect(ctx, e.x, e.y, e.w, e.h, e.r);
+    ctx.clip();
+    ctx.fillStyle = e.tag.color;
+    ctx.fillRect(e.x, e.y, e.tag.w, e.h);
+    ctx.restore();
+    ctx.fillStyle = "#fff";
+    ctx.font = e.tag.font;
+    ctx.fillText(e.tag.text, e.x + 14 * s, e.y + e.h / 2 + s);
+    if (e.name) {
+      ctx.font = e.name.font;
+      ctx.fillText(e.name.text, e.x + e.tag.w + 16 * s, e.y + e.h / 2 + s);
+    }
+  }
+  ctx.restore();
+  return { x: L.x, y: L.top, w: L.w, h: L.bottom - L.top };
+}
+
+/** Golcü satırları (web buildScorerLines): oyuncu başına dakikalar, sıralı. */
+export function scorerLines(events, { homeTeamId, awayTeamId, nameOf = () => null } = {}) {
+  const out = { home: [], away: [] };
+  const index = { home: new Map(), away: new Map() };
+  for (const ev of events || []) {
+    const code = String(ev.olay_kodu || "").toUpperCase();
+    if (!code.startsWith("GOAL_")) continue;
+    const tid = Number(ev.takim_id);
+    let side = tid && tid === Number(homeTeamId) ? "home" : tid && tid === Number(awayTeamId) ? "away" : null;
+    if (!side) continue;
+    const own = code === "GOAL_OWN";
+    if (own) side = side === "home" ? "away" : "home";
+    const base = nameOf(ev.oyuncu_id) || "Oyuncu";
+    const name = own ? `${base} (k.k.)` : base;
+    const key = `${name}`;
+    let row = index[side].get(key);
+    if (!row) { row = { name, minutes: [] }; index[side].set(key, row); out[side].push(row); }
+    row.minutes.push(Number(ev.dakika) || 0);
+  }
+  return out;
+}

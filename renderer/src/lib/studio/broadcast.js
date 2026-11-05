@@ -10,6 +10,78 @@ export const QUALITY_PRESETS = [
 export const AUDIO_BITRATE_KBPS = 128;
 export const presetOf = (key) => QUALITY_PRESETS.find((p) => p.key === key) || QUALITY_PRESETS[0];
 
+/* ------------------- kodlama: çözünürlük · fps · bit hızı (elle) ------------------- */
+
+export const RESOLUTION_CHOICES = [
+  { key: "720p", label: "720p", width: 1280, height: 720 },
+  { key: "1080p", label: "1080p", width: 1920, height: 1080 },
+];
+export const FPS_CHOICES = [30, 60];
+export const BITRATE_MIN_KBPS = 800;
+export const BITRATE_MAX_KBPS = 20000;
+/** Hazır bit hızları (YouTube önerileri: 720p30 ≈ 2,5–4 Mbps, 1080p60 ≈ 6–9 Mbps). */
+export const BITRATE_PRESETS = [
+  { kbps: 2500, label: "2,5 Mbps", hint: "Zayıf / mobil bağlantı" },
+  { kbps: 4500, label: "4,5 Mbps", hint: "1080p30 için iyi" },
+  { kbps: 6000, label: "6 Mbps", hint: "1080p60 için iyi" },
+  { kbps: 9000, label: "9 Mbps", hint: "Fiber, en net görüntü" },
+];
+
+/** Çözünürlük + fps için önerilen bit hızı (kbps). */
+export function recommendedBitrate(resolution, fps) {
+  const hd = resolution === "1080p";
+  const hi = Number(fps) >= 60;
+  if (hd) return hi ? 6000 : 4500;
+  return hi ? 4000 : 2500;
+}
+
+/**
+ * Elle girilen bit hızı. Dönüş: { ok, value (kbps, sınırlı), message }.
+ * Boş / sayı değil → ok:false; sınır dışı → ok:false ama value sınıra çekilmiş.
+ */
+export function validateBitrate(input) {
+  const raw = String(input ?? "").trim().replace(/\s/g, "").replace(",", ".");
+  if (!raw) return { ok: false, value: null, message: "Bit hızı gir (kbps)." };
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return { ok: false, value: null, message: "Bit hızı sayı olmalı (ör. 4500)." };
+  const v = Math.round(n);
+  if (v < BITRATE_MIN_KBPS) return { ok: false, value: BITRATE_MIN_KBPS, message: `En az ${BITRATE_MIN_KBPS} kbps.` };
+  if (v > BITRATE_MAX_KBPS) return { ok: false, value: BITRATE_MAX_KBPS, message: `En çok ${BITRATE_MAX_KBPS} kbps.` };
+  return { ok: true, value: v, message: null };
+}
+
+/** Gereken yükleme hızı (Mbps): görüntü + ses, %50 pay. */
+export const uploadNeedMbps = (kbps) => Math.round((((Number(kbps) || 0) + AUDIO_BITRATE_KBPS) * 1.5) / 100) / 10;
+
+/** Bit hızı uyarısı (çözünürlüğe göre çok düşük / çok yüksek). */
+export function bitrateAdvice(enc) {
+  const rec = recommendedBitrate(enc.resolution, enc.fps);
+  const v = Number(enc.bitrateKbps) || 0;
+  if (v < rec * 0.6) return `Bu çözünürlük için düşük: görüntü bloklanabilir (önerilen ≈ ${rec} kbps).`;
+  if (v > 12000) return "YouTube 1080p için 12 Mbps'ın üstü gereksiz; bağlantı zorlanabilir.";
+  return null;
+}
+
+/**
+ * Kayıtlı tercih → { resolution, fps, bitrateKbps }. Eski "quality" anahtarı
+ * ("1080p60" …) da okunur.
+ */
+export function normalizeEncoding(raw, legacyQuality) {
+  const legacy = legacyQuality ? presetOf(legacyQuality) : null;
+  const resolution = RESOLUTION_CHOICES.some((r) => r.key === raw?.resolution) ? raw.resolution : legacy ? (legacy.height >= 1080 ? "1080p" : "720p") : "720p";
+  const fps = FPS_CHOICES.includes(Number(raw?.fps)) ? Number(raw.fps) : legacy ? legacy.fps : 30;
+  const b = validateBitrate(raw?.bitrateKbps);
+  const bitrateKbps = b.ok ? b.value : b.value ?? (legacy ? legacy.videoBitrateKbps : recommendedBitrate(resolution, fps));
+  return { resolution, fps, bitrateKbps };
+}
+
+/** Kodlayıcıya giden ayar: { key, width, height, fps, videoBitrateKbps }. */
+export function encodingPreset(enc) {
+  const e = normalizeEncoding(enc);
+  const r = RESOLUTION_CHOICES.find((x) => x.key === e.resolution);
+  return { key: `${e.resolution}${e.fps}`, width: r.width, height: r.height, fps: e.fps, videoBitrateKbps: e.bitrateKbps };
+}
+
 /** MediaRecorder biçimi: önce H.264 (ffmpeg kopyalar), yoksa VP8 (ffmpeg kodlar). */
 export const MIME_PREFERENCE = [
   "video/x-matroska;codecs=avc1,opus",
@@ -17,8 +89,15 @@ export const MIME_PREFERENCE = [
   "video/webm;codecs=vp8,opus",
   "video/webm",
 ];
-export function pickMimeType(isSupported) {
-  for (const type of MIME_PREFERENCE) {
+/** Sessiz görüntü (açı kaydı, özet): ses kodeki olmadan. */
+export const VIDEO_ONLY_MIME_PREFERENCE = [
+  "video/x-matroska;codecs=avc1",
+  "video/webm;codecs=h264",
+  "video/webm;codecs=vp8",
+  "video/webm",
+];
+export function pickMimeType(isSupported, list = MIME_PREFERENCE) {
+  for (const type of list) {
     try { if (isSupported(type)) return type; } catch { /* sonraki */ }
   }
   return "";
@@ -140,7 +219,7 @@ export function isTypingTarget(target) {
 
 /**
  * Tuş → stüdyo eylemi. Dönüş: { type: "mic" | "replay" | "scene" | "transition" | "goal", ... } | null
- *   M mikrofon · R son golün tekrarı · 1–9 sahneyi önizlemeye al ·
+ *   M mikrofon · R son tekrar · B "önemli an" tekrarı kaydet · 1–9 kutuyu önizlemeye al ·
  *   Boşluk / Enter geçiş · G sonra H (ev) / A (deplasman) gol.
  */
 export function keyAction(e, { pendingGoal = false } = {}) {
@@ -155,6 +234,7 @@ export function keyAction(e, { pendingGoal = false } = {}) {
   }
   if (lower === "m") return { type: "mic" };
   if (lower === "r") return { type: "replay" };
+  if (lower === "b") return { type: "moment" };
   if (lower === "g") return { type: "goalArm" };
   if (key === " " || key === "Enter") {
     // Düğmede Boşluk/Enter düğmeye basar; geçiş yapmaz.

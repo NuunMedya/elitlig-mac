@@ -1,9 +1,14 @@
-# Mac kurulum dosyasını (.dmg) üretir ve GitHub Releases'e yükler.
+# Mac (.dmg) ve Windows (.exe kurulum) uygulamalarını üretir ve GitHub Releases'e yükler.
 #
-# Her push'ta macOS üzerinde Apple Silicon + Intel'de çalışan evrensel
-# (universal) uygulama derlenir. Çıktılar iş sonunda "Artifacts" altında,
-# ayrıca package.json sürümüyle adlanan sürüm sayfasında (Releases) durur.
-name: Mac uygulaması
+# Her push'ta üç iş çalışır:
+#   mac      macOS üzerinde Apple Silicon + Intel'de çalışan evrensel (universal) uygulama
+#   windows  Windows x64 üzerinde NSIS kurulum dosyası + taşınabilir zip
+#   release  ikisinin çıktısını tek seferde package.json sürümüyle adlanan sürüm
+#            sayfasına (v<sürüm>) yükler. Sürümü yalnız bu iş oluşturur / günceller,
+#            böylece iki iş aynı sürüm sayfası için yarışmaz ve birbirinin dosyasını ezmez.
+#            Bir platform başarısız olursa diğerinin dosyaları yine yüklenir.
+# Çıktılar ayrıca her işin "Artifacts" bölümünde durur.
+name: Masaüstü uygulaması (Mac + Windows)
 
 on:
   push:
@@ -15,8 +20,11 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  mac:
+    name: Mac (universal .dmg)
     runs-on: macos-14
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,8 +42,10 @@ jobs:
       - name: ffmpeg önbelleği
         uses: actions/cache@v4
         with:
-          path: build/ffmpeg
-          key: ffmpeg-${{ hashFiles('build/fetch-ffmpeg.js') }}
+          path: |
+            build/ffmpeg/arm64
+            build/ffmpeg/x64
+          key: ffmpeg-mac-${{ hashFiles('build/fetch-ffmpeg.js') }}
 
       - name: Derle (.dmg + .zip, universal)
         run: npm run dist
@@ -80,11 +90,12 @@ jobs:
             ls -la "$T/$ENC"; cat "$T/$ENC/list.csv"
             test -s "$T/$ENC/out.flv" && test -s "$T/$ENC/seg00000.ts"
           }
-          encode libx264 -preset veryfast
-          if encode h264_videotoolbox -allow_sw 1 -realtime 1; then echo "VideoToolbox: tamam"; else echo "::warning::h264_videotoolbox bu çalıştırıcıda açılamadı (uygulama libx264'e geçer)"; fi
+          encode libx264 -preset veryfast -level 4.1
+          if encode h264_videotoolbox -allow_sw 1 -realtime 1 -level 4.1; then echo "VideoToolbox: tamam"; else echo "::warning::h264_videotoolbox bu çalıştırıcıda açılamadı (uygulama libx264'e geçer)"; fi
           ELITLIG_FFMPEG="$FF" ELITLIG_STUDIO_ENCODER=libx264 node --test app/test/studio-integration.test.js
           ELITLIG_FFMPEG="$FF" ELITLIG_STUDIO_ENCODER=h264_videotoolbox node --test app/test/studio-integration.test.js || echo "::warning::VideoToolbox uçtan uca testi başarısız"
           ELITLIG_FFMPEG="$FF" node --test app/test/studio-integration.test.js
+          if [ -f app/test/studio-replays-integration.test.js ]; then ELITLIG_FFMPEG="$FF" node --test app/test/studio-replays-integration.test.js; fi
 
       - name: Sürüm bilgisi
         id: version
@@ -92,28 +103,189 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Elitlig-Araclar-${{ steps.version.outputs.version }}
+          name: Elitlig-Araclar-${{ steps.version.outputs.version }}-mac
           path: |
             dist/*.dmg
             dist/*.zip
+          if-no-files-found: error
+
+  windows:
+    name: Windows (x64 .exe kurulum)
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Git Bash, "/" ile başlamayan ffmpeg argümanlarına dokunmaz ama yine de yol çevirisini kapat.
+      MSYS_NO_PATHCONV: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Bağımlılıklar
+        run: npm install --no-audit --no-fund
+
+      - name: Testler
+        run: npm test
+
+      # Yayın Stüdyosu: ffmpeg.exe (Gyan 7.1.1 essentials, SHA-256 sabit) build/fetch-ffmpeg.js ile indirilir.
+      - name: ffmpeg önbelleği
+        uses: actions/cache@v4
+        with:
+          path: build/ffmpeg/win-x64
+          key: ffmpeg-win-${{ hashFiles('build/fetch-ffmpeg.js') }}
+
+      - name: Derle (NSIS kurulum .exe + .zip, x64)
+        run: npm run dist:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Çıktılar
+        run: |
+          ls -la dist
+          test -s "dist/Elitlig-Araclar-Setup-$(node -p "require('./package.json').version" | tr -d '\r').exe"
+          test -f "dist/win-unpacked/resources/ffmpeg/ffmpeg.exe"
+
+      - name: Sessiz kurulum testi (NSIS /S, kullanıcıya özel)
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $setup = "dist/Elitlig-Araclar-Setup-$version.exe"
+          $p = Start-Process -FilePath $setup -ArgumentList "/S" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Kurulum çıkış kodu: $($p.ExitCode)" }
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter "Elitlig Araclar.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw "Kurulan uygulama bulunamadı ($env:LOCALAPPDATA\Programs)" }
+          Write-Host "Kuruldu: $($exe.FullName)"
+          $ff = Join-Path $exe.DirectoryName "resources\ffmpeg\ffmpeg.exe"
+          if (-not (Test-Path $ff)) { throw "Kurulumda ffmpeg.exe yok: $ff" }
+          $lnk = @("$env:APPDATA\Microsoft\Windows\Start Menu\Programs", "$env:USERPROFILE\Desktop") | ForEach-Object { Get-ChildItem $_ -Recurse -Filter "*.lnk" -ErrorAction SilentlyContinue } | Where-Object { $_.Name -like "Elitlig*" }
+          if (-not $lnk) { Write-Host "::warning::Başlat menüsü / masaüstü kısayolu bulunamadı" } else { $lnk | ForEach-Object { Write-Host "Kısayol: $($_.FullName)" } }
+          "INSTALLED_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Açılış testi (uygulama 20 sn çökmeden çalışmalı)
+        shell: pwsh
+        run: |
+          $exe = $env:INSTALLED_EXE
+          if (-not $exe) { $exe = (Resolve-Path "dist/win-unpacked/Elitlig Araclar.exe").Path }
+          Write-Host "Çalıştırılan: $exe"
+          $env:ELITLIG_USER_DATA = Join-Path $env:RUNNER_TEMP "elitlig-userdata"
+          $p = Start-Process -FilePath $exe -ArgumentList "--enable-logging=stderr" -RedirectStandardError launch.err.log -RedirectStandardOutput launch.out.log -PassThru
+          Start-Sleep -Seconds 20
+          if ($p.HasExited) {
+            Write-Host "UYGULAMA ÇÖKTÜ (çıkış kodu $($p.ExitCode))"
+            Get-Content launch.err.log, launch.out.log -ErrorAction SilentlyContinue
+            exit 1
+          }
+          Write-Host "Uygulama çalışıyor (PID $($p.Id))"
+          taskkill /PID $p.Id /T /F | Out-Null
+          Select-String -Path launch.err.log -Pattern "error|fatal|crash" -ErrorAction SilentlyContinue | Select-Object -First 40 | ForEach-Object { $_.Line }
+          exit 0
+
+      - name: Yayın Stüdyosu ffmpeg testi (paketli ffmpeg.exe)
+        run: |
+          FF="$PWD/dist/win-unpacked/resources/ffmpeg/ffmpeg.exe"
+          test -f "$FF" || { echo "ffmpeg pakette yok: $FF"; exit 1; }
+          "$FF" -hide_banner -version | head -1
+          "$FF" -hide_banner -encoders | grep -E " (libx264|h264_nvenc|h264_qsv|h264_amf|h264_mf|aac) "
+          "$FF" -hide_banner -muxers | grep -E " (tee|segment|flv) "
+          "$FF" -hide_banner -protocols | tr -d '\r' | grep -E "^ +rtmps$"
+          T="$RUNNER_TEMP/fftest"
+          # Kodlayıcı seçenekleri uygulamanın kendi kurucusundan (app/studio/ffmpeg.js) alınır.
+          encode() {
+            ENC="$1"
+            mapfile -t VARGS < <(node -p 'require("./app/studio/ffmpeg").videoEncoderArgs(process.argv[1], { videoBitrateKbps: 3000, fps: 30, width: 1280, height: 720 }).join("\n")' "$ENC" | tr -d '\r')
+            PIX=$(node -p 'require("./app/studio/ffmpeg").encoderPixelFormat(process.argv[1])' "$ENC" | tr -d '\r')
+            mkdir -p "$T/$ENC"
+            ( cd "$T/$ENC" && "$FF" -hide_banner -nostdin -loglevel warning -y \
+              -f lavfi -i testsrc2=size=1280x720:rate=30 -f lavfi -i sine=frequency=440:sample_rate=48000 -t 3 \
+              -map 0:v -map 1:a -vf "format=$PIX" "${VARGS[@]}" \
+              -force_key_frames "expr:gte(t,n_forced*2)" -c:a aac -b:a 160k -ar 44100 -ac 2 -flags +global_header \
+              -f tee "[f=flv:onfail=ignore]out.flv|[f=segment:segment_time=2:segment_format=mpegts:reset_timestamps=1:segment_list=list.csv:segment_list_type=csv]seg%05d.ts" ) || return 1
+            ls -la "$T/$ENC"; cat "$T/$ENC/list.csv"
+            test -s "$T/$ENC/out.flv" && test -s "$T/$ENC/seg00000.ts" || return 1
+            # H.264 seviyesi (720p30 → 4.1 → level_idc 41) akışa yazılmış olmalı.
+            LEVEL=$("$FF" -hide_banner -nostdin -loglevel verbose -i "$T/$ENC/out.flv" -map 0:v -c copy -bsf:v trace_headers -frames:v 1 -f null - 2>&1 | tr -d '\r' | grep -m1 -oE "level_idc +[0-9]+ += +[0-9]+" | grep -oE "[0-9]+$")
+            echo "$ENC: level_idc=$LEVEL"
+            test "$LEVEL" = "41"
+          }
+          encode libx264
+          for ENC in h264_nvenc h264_qsv h264_amf h264_mf; do
+            if encode "$ENC"; then echo "$ENC: tamam"; else echo "::warning::$ENC bu çalıştırıcıda açılamadı (ekran kartı yok; uygulama sıradaki kodlayıcıya / libx264'e geçer)"; fi
+          done
+          ELITLIG_FFMPEG="$FF" ELITLIG_STUDIO_ENCODER=libx264 node --test app/test/studio-integration.test.js
+          ELITLIG_FFMPEG="$FF" node --test app/test/studio-integration.test.js
+          if [ -f app/test/studio-replays-integration.test.js ]; then ELITLIG_FFMPEG="$FF" node --test app/test/studio-replays-integration.test.js; fi
+
+      - name: Sürüm bilgisi
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Elitlig-Araclar-${{ steps.version.outputs.version }}-windows
+          path: |
+            dist/*.exe
+            dist/*.zip
+          if-no-files-found: error
+
+  release:
+    name: GitHub Releases
+    needs: [mac, windows]
+    # Bir platform başarısız olsa da diğerinin dosyaları yayımlanır.
+    if: ${{ !cancelled() && (needs.mac.result == 'success' || needs.windows.result == 'success') }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-v${{ needs.mac.outputs.version || needs.windows.outputs.version }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Elitlig-Araclar-${{ needs.mac.outputs.version || needs.windows.outputs.version }}-*
+          path: dist
+          merge-multiple: true
+
+      - run: ls -la dist
 
       - name: GitHub Releases'e yükle
         uses: softprops/action-gh-release@v2
+        env:
+          VERSION: ${{ needs.mac.outputs.version || needs.windows.outputs.version }}
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: Elitlig Araçlar ${{ steps.version.outputs.version }}
+          tag_name: v${{ env.VERSION }}
+          name: Elitlig Araçlar ${{ env.VERSION }}
           target_commitish: ${{ github.sha }}
           make_latest: true
+          fail_on_unmatched_files: false
           files: |
             dist/*.dmg
             dist/*.zip
+            dist/*.exe
           body: |
-            **Elitlig Araçlar — Mac masaüstü uygulaması**
+            **Elitlig Araçlar — Mac ve Windows masaüstü uygulaması**
 
-            1. `Elitlig-Araclar-${{ steps.version.outputs.version }}.dmg` dosyasını indirin ve çift tıklayın.
+            ### Mac
+            1. `Elitlig-Araclar-${{ env.VERSION }}.dmg` dosyasını indirin ve çift tıklayın.
             2. Açılan pencerede **Elitlig Araçlar** simgesini **Applications (Uygulamalar)** klasörüne sürükleyin.
             3. İlk açılışta: Uygulamalar klasöründe simgeye **sağ tıklayıp → Aç** deyin
                (macOS 15'te: Sistem Ayarları → Gizlilik ve Güvenlik → **Yine de Aç**).
-            4. Yönetim hesabınızla bir kez giriş yapın; oturum 3 ay boyunca açık kalır.
 
             Apple Silicon (M1/M2/M3/M4) ve Intel Mac'lerde çalışır. macOS 12 ve üzeri.
+
+            ### Windows
+            1. `Elitlig-Araclar-Setup-${{ env.VERSION }}.exe` dosyasını indirin ve çalıştırın.
+            2. Windows SmartScreen "Windows bilgisayarınızı korudu" derse: **Ek bilgi → Yine de çalıştır**
+               (uygulama henüz kod imzalı değildir).
+            3. Kurulum klasörünü seçip **Yükle** deyin; masaüstü ve Başlat menüsü kısayolları oluşturulur.
+               Kurulum yönetici izni istemez (yalnız bu kullanıcı için).
+
+            Windows 10 ve 11 (64 bit). Kurulumsuz kullanım için: `Elitlig-Araclar-${{ env.VERSION }}-win-x64.zip`.
+            Yayın Stüdyosu NVIDIA (NVENC), Intel (Quick Sync), AMD (AMF) donanım kodlayıcılarını
+            kendiliğinden kullanır; yoksa yazılım kodlayıcıya (x264) geçer.
+
+            ### İlk açılış
+            Yönetim hesabınızla bir kez giriş yapın; oturum 3 ay boyunca açık kalır.
