@@ -1,24 +1,30 @@
-// Yayın Stüdyosu · "Kaynaklar & Düzenler" sekmesi.
+// Yayın Stüdyosu · KAYNAK KİTAPLIĞI ve kaynak penceresi.
 //
-//   KAYNAKLAR  her kamera / ekran / görsel / video / renk plakası: canlı küçük
-//              resim, durum, izin, ayarlar, yeniden bağlan, sil.
-//   DÜZENLER   iki kaynaktan hazır yerleşim: Resim içinde resim (A tam ekran,
-//              B köşede), Yan yana, Tek kaynak + logo. Eski "özel" sahneler
-//              katman düzenleyicisiyle açılır.
+//   SourceLibrary  genel kaynak listesi: canlı küçük resim, durum, kaç sahnede
+//                  kullanıldığı, ayarlar, yeniden bağlan, sahneye ekle, sil.
+//                  Bir kaynak birçok sahnede katman olabilir (akış bir kez açılır).
+//   SourceDialog   yeni kaynak / kaynak ayarları: Kamera (çözünürlük, fps, ayna),
+//                  Ekran, Pencere, Görsel, Video / medya (döngü, görününce baştan),
+//                  Görüntü dizisi (slayt), Renk / gradyan, Metin, Saat / geri sayım,
+//                  Tekrar (son tekrar açısı), Ses girişi (Ses sekmesine eklenir).
 //
-// Açılır menüler kapanmasın diye: seçenek listeleri memo'lu, anahtarlar
-// kalıcı, panel memo'lu (yalnız yapılandırma değişince çizilir) ve kaynak
-// penceresinin onClose'u kimliği değişmeyen bir işlevdir.
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+// Web sayfası kaynağı yok: Electron'da <webview> / iframe içeriği tuvale
+// çizilemez (yakalanamaz). LED / skor sayfası için "LED ekran" sekmesi kullanılır.
+//
+// Açılır menüler kapanmasın diye: seçenek listeleri memo'lu, panel memo'lu ve
+// pencerenin onClose'u kimliği değişmeyen bir işlevdir (useStable).
+import React, { memo, useEffect, useRef, useState } from "react";
 import { Field, Icon, MenuButton, Modal } from "../../components/ui";
-import { LAYOUTS, LAYOUT_PRESETS, PIP_CORNERS, RESOLUTIONS, SOURCE_KINDS, deviceName, kindIcon, kindLabel, layoutLabel, presetFromScene, sourceSceneId } from "../../lib/studio/layouts";
+import { RESOLUTIONS, deviceName } from "../../lib/studio/layouts";
+import { FONTS, SOURCE_TYPES, sourceDefaults, sourceKindIcon, sourceKindLabel, sourceUsage } from "../../lib/studio/scenes";
 import { drawSource } from "./draw";
 import { useStable } from "./useStable";
 
-const STATUS_TEXT = { waiting: "Açılıyor…", live: "Canlı", missing: "Kaynak yok", denied: "İzin yok", ended: "Bağlantı koptu", busy: "Meşgul", error: "Açılamadı", file: "Dosya seçilmeli" };
-const BAD = ["missing", "denied", "ended", "busy", "error", "file"];
+export const STATUS_TEXT = { waiting: "Açılıyor…", live: "Canlı", missing: "Kaynak yok", denied: "İzin yok", ended: "Bağlantı koptu", busy: "Meşgul", error: "Açılamadı", file: "Dosya seçilmeli", empty: "Tekrar yok" };
+export const BAD = ["missing", "denied", "ended", "busy", "error", "file"];
+const SYNTHETIC = new Set(["color", "text", "clock"]);
 
-/** Kaynağın canlı küçük resmi (yarım saniyede bir çizilir). */
+/** Kaynağın canlı küçük resmi (yarım saniyede bir; görünmüyorsa çizilmez). */
 export function SourceThumb({ source, runtimeRef, width = 96 }) {
   const ref = useRef(null);
   const srcRef = useRef(source);
@@ -26,194 +32,73 @@ export function SourceThumb({ source, runtimeRef, width = 96 }) {
   useEffect(() => {
     const draw = () => {
       const c = ref.current;
-      if (!c) return;
+      if (!c || !c.isConnected || c.offsetParent === null) return;
       const ctx = c.getContext("2d");
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, c.width, c.height);
-      drawSource(ctx, srcRef.current, runtimeRef.current.get(srcRef.current.id), { x: 0, y: 0, w: c.width, h: c.height }, "cover", { placeholders: true });
+      drawSource(ctx, srcRef.current, runtimeRef.current.get(srcRef.current.id), { x: 0, y: 0, w: c.width, h: c.height }, srcRef.current.kind === "image" ? "contain" : "cover", { placeholders: true });
     };
     draw();
-    const t = setInterval(draw, 500);
+    const t = setInterval(draw, 600);
     return () => clearInterval(t);
   }, [runtimeRef]);
-  return <canvas ref={ref} className="st-thumb" width={width * 2} height={Math.round((width * 2 * 9) / 16)} style={{ width, height: Math.round((width * 9) / 16) }} />;
+  return <canvas ref={ref} className="st-thumb" width={width} height={Math.round((width * 9) / 16)} />;
 }
 
-function LayerEditor({ layer, onChange }) {
-  const l = layer.layout || { type: "full" };
-  const setLayout = (patch) => onChange({ layout: { ...l, ...patch } });
-  return (
-    <div className="st-layer-edit" onClick={(e) => e.stopPropagation()}>
-      <div className="st-row">
-        <Field label="Yerleşim">
-          <select value={l.type} onChange={(e) => setLayout({ type: e.target.value, ...(e.target.value === "pip" ? { corner: l.corner || "br", size: l.size || 30 } : {}), ...(e.target.value === "rect" ? { x: l.x ?? 5, y: l.y ?? 5, w: l.w ?? 40, h: l.h ?? 40 } : {}) })}>
-            {LAYOUTS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
-          </select>
-        </Field>
-        <Field label="Sığdır">
-          <select value={layer.fit || "cover"} onChange={(e) => onChange({ fit: e.target.value })}>
-            <option value="cover">Doldur (kırp)</option>
-            <option value="contain">Sığdır (boşluklu)</option>
-            <option value="stretch">Uzat</option>
-          </select>
-        </Field>
-      </div>
-      {l.type === "pip" && (
-        <div className="st-row">
-          <Field label="Köşe">
-            <select value={l.corner || "br"} onChange={(e) => setLayout({ corner: e.target.value })}>{PIP_CORNERS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}</select>
-          </Field>
-          <Field label={`Boyut · %${l.size || 30}`}><input type="range" min={10} max={60} step={1} value={l.size || 30} onChange={(e) => setLayout({ size: Number(e.target.value) })} /></Field>
-        </div>
-      )}
-      {l.type === "rect" && (
-        <div className="st-row st-row--4">
-          {[["x", "Sol %"], ["y", "Üst %"], ["w", "Genişlik %"], ["h", "Yükseklik %"]].map(([k, label]) => (
-            <Field key={k} label={label}><input type="number" min={0} max={100} value={l[k] ?? 0} onChange={(e) => setLayout({ [k]: Number(e.target.value) })} /></Field>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Kaynak seçimi (A / B): seçenekler memo'lu dizi; boş = "—". */
-const SourceSelect = memo(function SourceSelect({ value, options, onChange, label, allowEmpty }) {
-  return (
-    <Field label={label}>
-      <select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
-        {allowEmpty && <option value="">— yok —</option>}
-        {!allowEmpty && !value && <option value="">Kaynak seç…</option>}
-        {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-      </select>
-    </Field>
-  );
-});
-
-function LayoutCard({ scene, options, previewId, programId, onPreset, onRename, onPreview, onProgram, onRemove, onUpdateLayer, sources }) {
-  const preset = presetFromScene(scene);
-  const [name, setName] = useState(scene.name);
-  useEffect(() => setName(scene.name), [scene.name]);
-  const [open, setOpen] = useState(null);
-  const byId = useMemo(() => new Map(sources.map((s) => [s.id, s])), [sources]);
-  return (
-    <li className={`st-layout ${scene.id === programId ? "is-program" : ""} ${scene.id === previewId ? "is-preview" : ""}`}>
-      <div className="st-row">
-        <input className="st-layout__name" value={name} onChange={(e) => setName(e.target.value)} onBlur={() => name !== scene.name && onRename(scene.id, name)} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} aria-label="Düzen adı" />
-        <button type="button" className="btn btn--xs" onClick={() => onPreview(scene.id)} title="Önizlemeye al"><Icon name="eye" size={12} /></button>
-        <button type="button" className="btn btn--xs btn--red" onClick={() => onProgram(scene.id)} title="Yayına ver"><Icon name="play" size={12} /></button>
-        <button type="button" className="icon-btn icon-btn--xs" onClick={() => onRemove(scene)} title="Düzeni sil"><Icon name="trash" size={13} /></button>
-      </div>
-      {preset ? (
-        <div className="st-layout__grid">
-          <Field label="Tür">
-            <select value={preset.kind} onChange={(e) => onPreset(scene.id, { kind: e.target.value })}>
-              {LAYOUT_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
-            </select>
-          </Field>
-          <SourceSelect label={preset.kind === "sbs" ? "Sol (A)" : "Ana görüntü (A)"} value={preset.a} options={options} onChange={(v) => onPreset(scene.id, { a: v })} />
-          <SourceSelect label={preset.kind === "sbs" ? "Sağ (B)" : "Köşedeki (B)"} value={preset.b} options={options} allowEmpty onChange={(v) => onPreset(scene.id, { b: v })} />
-          {preset.kind !== "sbs" && (
-            <>
-              <Field label="Köşe">
-                <select value={preset.corner || "br"} onChange={(e) => onPreset(scene.id, { corner: e.target.value })}>{PIP_CORNERS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}</select>
-              </Field>
-              <Field label={`Boyut · %${preset.size || 30}`}><input type="range" min={10} max={60} value={preset.size || 30} onChange={(e) => onPreset(scene.id, { size: Number(e.target.value) })} /></Field>
-            </>
-          )}
-        </div>
-      ) : (
-        <ul className="st-list">
-          <li className="st-hint">Özel düzen: katmanlar</li>
-          {[...scene.layers].reverse().map((layer) => {
-            const src = byId.get(layer.sourceId);
-            if (!src) return null;
-            return (
-              <li key={layer.id} className={`st-layer ${open === layer.id ? "is-open" : ""}`}>
-                <div className="st-layer__row" onClick={() => setOpen(open === layer.id ? null : layer.id)}>
-                  <span className="st-layer__text"><strong>{src.name}</strong><small>{layoutLabel(layer.layout)}</small></span>
-                  <Icon name={open === layer.id ? "chevronUp" : "chevronDown"} size={13} />
-                </div>
-                {open === layer.id && <LayerEditor layer={layer} onChange={(patch) => onUpdateLayer(scene.id, layer.id, patch)} />}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </li>
-  );
-}
-
-function SourcesPanel({ sources, scenes, runtimeRef, version, previewId, programId, actions }) {
+function SourceLibraryInner({ config, runtimeRef, version, editableSceneId, actions }) {
   void version;
-  const options = useMemo(() => sources.map((s) => ({ id: s.id, name: s.name })), [sources]);
-  const { onNewSource, onEditSource, onRemoveSource, onReacquire, onRequestAccess, onPreview, onProgram, onAddLayout, onPreset, onRenameScene, onRemoveScene, onUpdateLayer } = actions;
-
+  const { onNewSource, onEditSource, onRemoveSource, onReacquire, onRequestAccess, onAddToScene, onPreviewSource } = actions;
+  const sources = config.sources;
   return (
-    <div className="st-srcdock">
-      <section className="st-srcdock__col">
-        <header className="st-dock-head">
-          <h4>Kaynaklar</h4>
-          <span className="st-hint">Her kaynak üstteki şeritte bir kutudur: tıkla → önizleme, çift tıkla → yayın.</span>
-          <span className="st-top__spacer" />
-          <button type="button" className="btn btn--xs btn--soft" onClick={onNewSource}><Icon name="plus" size={12} /> Kaynak ekle</button>
-        </header>
-        <ul className="st-src-grid">
-          {sources.map((src) => {
-            const rt = runtimeRef.current.get(src.id);
-            const st = rt?.status || "waiting";
-            const bad = BAD.includes(st);
-            const sid = sourceSceneId(src.id);
-            return (
-              <li key={src.id} className={`st-src ${bad ? "is-bad" : ""} ${sid === programId ? "is-program" : ""} ${sid === previewId ? "is-preview" : ""}`}>
-                <button type="button" className="st-src__thumb" onClick={() => onPreview(sid)} onDoubleClick={() => onProgram(sid)} title="Tıkla: önizleme · çift tıkla: yayına">
-                  <SourceThumb source={src} runtimeRef={runtimeRef} width={112} />
-                </button>
-                <div className="st-src__text">
-                  <strong title={src.name}><Icon name={kindIcon(src.kind)} size={12} /> {src.name}</strong>
-                  <small><span className={`st-dot is-${st}`} /> {st === "live" ? (rt?.label || kindLabel(src.kind)) : STATUS_TEXT[st]}</small>
-                  {bad && rt?.message && <small className="st-src__msg">{rt.message}</small>}
-                  <span className="st-row st-row--wrap">
-                    <button type="button" className="btn btn--xs" onClick={() => onEditSource(src)}><Icon name="sliders" size={11} /> Ayarlar</button>
-                    {st === "denied" && (src.kind === "camera" || src.kind === "screen") && <button type="button" className="btn btn--xs" onClick={() => onRequestAccess(src.kind === "camera" ? "camera" : "screen")}>İzin iste</button>}
-                    {st === "file" ? <button type="button" className="btn btn--xs" onClick={() => onEditSource(src)}>Dosya seç</button>
-                      : bad && <button type="button" className="btn btn--xs" onClick={() => onReacquire(src)}>Yeniden dene</button>}
-                  </span>
-                </div>
+    <section className="st-col st-col--lib">
+      <header className="st-col__head">
+        <h4>Kaynak kitaplığı</h4>
+        <span className="st-col__count">{sources.length}</span>
+        <span className="st-top__spacer" />
+        <button type="button" className="btn btn--xs btn--soft" onClick={onNewSource} title="Yeni kaynak ekle (kamera, ekran, metin, saat …)"><Icon name="plus" size={12} /> Kaynak</button>
+      </header>
+      <ul className="st-lib">
+        {sources.map((src) => {
+          const rt = runtimeRef.current.get(src.id);
+          const st = SYNTHETIC.has(src.kind) ? "live" : rt?.status || "waiting";
+          const bad = BAD.includes(st);
+          const used = sourceUsage(config, src.id);
+          return (
+            <li key={src.id} className={`st-lib__row ${bad ? "is-bad" : ""}`}>
+              <button type="button" className="st-lib__thumb" onClick={() => onPreviewSource(src)} title="Kaynağı tek başına önizlemede göster">
+                <SourceThumb source={src} runtimeRef={runtimeRef} width={80} />
+              </button>
+              <div className="st-lib__text">
+                <strong title={src.name}><Icon name={sourceKindIcon(src.kind)} size={12} /> {src.name}</strong>
+                <small>
+                  <span className={`st-dot is-${st}`} /> {st === "live" ? (rt?.label || sourceKindLabel(src.kind)) : STATUS_TEXT[st] || st}
+                  <span className="st-lib__used" title={used.join(", ") || "Hiçbir sahnede değil"}>· {used.length ? `${used.length} sahnede` : "kullanılmıyor"}</span>
+                </small>
+                {bad && rt?.message && <small className="st-src__msg">{rt.message}</small>}
+              </div>
+              <div className="st-lib__tools">
+                {st === "denied" && (src.kind === "camera" || src.kind === "screen" || src.kind === "window") && <button type="button" className="btn btn--xs" onClick={() => onRequestAccess(src.kind === "camera" ? "camera" : "screen")}>İzin iste</button>}
+                {st === "file" ? <button type="button" className="btn btn--xs" onClick={() => onEditSource(src)}>Dosya seç</button>
+                  : bad && <button type="button" className="btn btn--xs" onClick={() => onReacquire(src)}>Yeniden dene</button>}
+                <button type="button" className="icon-btn icon-btn--xs" disabled={!editableSceneId} onClick={() => onAddToScene(src)} title={editableSceneId ? "Önizlemedeki sahneye katman olarak ekle" : "Önce bir sahne seç"}><Icon name="plus" size={13} /></button>
                 <MenuButton label="Kaynak" size={14} items={[
                   { label: "Ayarlar…", icon: "sliders", onClick: () => onEditSource(src) },
+                  { label: "Önizlemede tek başına göster", icon: "eye", onClick: () => onPreviewSource(src) },
+                  { label: "Sahneye ekle", icon: "plus", disabled: !editableSceneId, onClick: () => onAddToScene(src) },
                   { label: "Yeniden bağlan", icon: "refresh", onClick: () => onReacquire(src) },
                   "-",
                   { label: "Kaynağı sil", icon: "trash", danger: true, onClick: () => onRemoveSource(src) },
                 ]} />
-              </li>
-            );
-          })}
-          {!sources.length && <li className="st-hint">Henüz kaynak yok. “Kaynak ekle” ile kamera, ekran, görsel ya da video ekle.</li>}
-        </ul>
-      </section>
-
-      <section className="st-srcdock__col st-srcdock__col--layouts">
-        <header className="st-dock-head">
-          <h4>Düzenler</h4>
-          <span className="st-hint">İki kaynağı birlikte göstermek için (isteğe bağlı).</span>
-          <span className="st-top__spacer" />
-          <MenuButton label="Düzen ekle" icon="plus" text="Düzen ekle" size={12} className="st-menu-sm" items={LAYOUT_PRESETS.map((p) => ({ label: p.label, icon: "layers", onClick: () => onAddLayout(p.key) }))} />
-        </header>
-        {scenes.length ? (
-          <ul className="st-layouts">
-            {scenes.map((sc) => (
-              <LayoutCard key={sc.id} scene={sc} options={options} sources={sources} previewId={previewId} programId={programId}
-                onPreset={onPreset} onRename={onRenameScene} onPreview={onPreview} onProgram={onProgram} onRemove={onRemoveScene} onUpdateLayer={onUpdateLayer} />
-            ))}
-          </ul>
-        ) : <p className="st-hint">Düzen yok. “Düzen ekle” → Resim içinde resim ya da Yan yana.</p>}
-      </section>
-    </div>
+              </div>
+            </li>
+          );
+        })}
+        {!sources.length && <li className="st-hint">Kaynak yok. “Kaynak” ile kamera, ekran, görsel, metin ya da saat ekle.</li>}
+      </ul>
+    </section>
   );
 }
-
-export default memo(SourcesPanel);
+export const SourceLibrary = memo(SourceLibraryInner);
 
 /* ------------------------------ kaynak penceresi ------------------------------ */
 
@@ -224,11 +109,47 @@ const readDataUrl = (file) => new Promise((resolve, reject) => {
   r.readAsDataURL(file);
 });
 
+const baseName = (file) => file.name.replace(/\.[^.]+$/, "");
+
+/** Metin / saat görünüm alanları (ortak). */
+function TextStyleFields({ draft, set }) {
+  return (
+    <>
+      <div className="st-row">
+        <Field label="Yazı tipi">
+          <select value={draft.font || "Archivo"} onChange={(e) => set({ font: e.target.value })}>{FONTS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}</select>
+        </Field>
+        <Field label={`Boyut · ${draft.size || 64} px`}><input type="range" min={16} max={260} step={2} value={draft.size || 64} onChange={(e) => set({ size: Number(e.target.value) })} /></Field>
+        <Field label="Hiza">
+          <select value={draft.align || "center"} onChange={(e) => set({ align: e.target.value })}>
+            <option value="left">Sol</option><option value="center">Orta</option><option value="right">Sağ</option>
+          </select>
+        </Field>
+      </div>
+      <div className="st-row st-row--wrap">
+        <Field label="Renk"><input type="color" value={draft.color || "#ffffff"} onChange={(e) => set({ color: e.target.value })} /></Field>
+        <label className="toggle st-toggle-field"><input type="checkbox" checked={draft.bold !== false} onChange={(e) => set({ bold: e.target.checked })} /> Kalın</label>
+        <label className="toggle st-toggle-field"><input type="checkbox" checked={Boolean(draft.outline)} onChange={(e) => set({ outline: e.target.checked })} /> Kontur</label>
+        {draft.outline && <Field label="Kontur rengi"><input type="color" value={draft.outlineColor || "#000000"} onChange={(e) => set({ outlineColor: e.target.value })} /></Field>}
+        {draft.outline && <Field label={`Kalınlık · ${draft.outlineWidth || 4}`}><input type="range" min={1} max={16} value={draft.outlineWidth || 4} onChange={(e) => set({ outlineWidth: Number(e.target.value) })} /></Field>}
+        <label className="toggle st-toggle-field"><input type="checkbox" checked={Boolean(draft.background)} onChange={(e) => set({ background: e.target.checked })} /> Zemin</label>
+        {draft.background && <Field label="Zemin rengi"><input type="color" value={draft.bgColor || "#54009c"} onChange={(e) => set({ bgColor: e.target.value })} /></Field>}
+      </div>
+    </>
+  );
+}
+
+const toLocalInput = (ms) => {
+  if (!ms) return "";
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
 /** Yeni kaynak / kaynak ayarları. initial: { kind } ya da var olan kaynak. */
 function SourceDialogInner({ initial, cameraCount = 0, devices, access, onRequestAccess, onRefreshDevices, onSave, onClose: onCloseProp }) {
   // Ortak Modal, onClose kimliği her değiştiğinde ilk alana odaklanır; stüdyo
   // saniyede birkaç kez çizildiği için açık <select> menüsü hemen kapanıyordu.
-  // Kimliği hiç değişmeyen işlev bu döngüyü keser.
   const onClose = useStable(onCloseProp);
   const editing = Boolean(initial?.id);
   const [draft, setDraft] = useState(() => ({ ...(initial || {}) }));
@@ -237,16 +158,18 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
   const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
   const kind = draft.kind;
   const studio = window.elitlig?.studio;
+  const isCapture = kind === "screen" || kind === "window";
 
   useEffect(() => {
-    if (kind === "camera") onRefreshDevices?.();
-    if (kind !== "screen") return;
+    if (kind === "camera" || kind === "audio") onRefreshDevices?.();
+    if (!isCapture) return undefined;
     let live = true;
     setScreens(null);
     Promise.resolve(studio?.listScreens?.()).then((list) => { if (live) setScreens(Array.isArray(list) ? list : []); }).catch(() => { if (live) setScreens([]); });
     return () => { live = false; };
   }, [kind]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const keepName = (fallback) => (draft.name && draft.name !== sourceKindLabel(kind) ? draft.name : fallback);
   const pickFile = async (file) => {
     if (!file) return;
     setBusy(true);
@@ -254,15 +177,25 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
       if (kind === "image") {
         // Küçük görsel kalıcı saklanır (data: adresi); büyükse yalnız bu oturum.
         const url = file.size <= 3 * 1024 * 1024 ? await readDataUrl(file) : URL.createObjectURL(file);
-        set({ url, fileName: file.name, name: draft.name && draft.name !== kindLabel(kind) ? draft.name : file.name.replace(/\.[^.]+$/, "") });
+        set({ url, fileName: file.name, name: keepName(baseName(file)) });
       } else {
-        set({ url: URL.createObjectURL(file), fileName: file.name, name: draft.name && draft.name !== kindLabel(kind) ? draft.name : file.name.replace(/\.[^.]+$/, "") });
+        // Nesne adresi: tuval kirletilmez; dosyalar oturumlar arasında saklanmaz.
+        const url = URL.createObjectURL(file);
+        set({ url, fileName: file.name, name: keepName(baseName(file)) });
       }
+    } finally { setBusy(false); }
+  };
+  const pickSlides = async (files) => {
+    if (!files?.length) return;
+    setBusy(true);
+    try {
+      const urls = [];
+      for (const f of [...files].slice(0, 40)) urls.push(f.size <= 2 * 1024 * 1024 ? await readDataUrl(f) : URL.createObjectURL(f));
+      set({ images: [...(draft.images || []), ...urls].slice(0, 40) });
     } finally { setBusy(false); }
   };
 
   const cams = devices.video;
-  // Sıra numarasıyla seçilmiş kamera, kimlikler görününce kimliğe bağlanır.
   useEffect(() => {
     if (kind !== "camera" || draft.deviceId) return;
     const dev = cams[Number(draft.deviceIndex) || 0];
@@ -271,20 +204,26 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
   const labelsHidden = cams.length > 0 && cams.every((d) => !d.label);
   const camDenied = access?.camera === "denied" || access?.camera === "restricted";
   const screenDenied = access?.screen === "denied" || access?.screen === "restricted";
-  const valid = kind === "camera" ? true : kind === "screen" ? Boolean(draft.screenId) : kind === "image" || kind === "video" ? Boolean(draft.url) : kind === "color";
+  const valid = kind === "camera" ? true
+    : isCapture ? Boolean(draft.screenId)
+      : kind === "image" || kind === "video" ? Boolean(draft.url)
+        : kind === "slideshow" ? (draft.images || []).length > 0
+          : kind === "text" ? Boolean(String(draft.text || "").trim())
+            : Boolean(kind);
+  const visibleScreens = (screens || []).filter((sc) => (kind === "window" ? sc.kind === "window" || String(sc.id).startsWith("window:") : sc.kind !== "window" && !String(sc.id).startsWith("window:")));
 
   return (
-    <Modal title={editing ? `${kindLabel(kind)} ayarları` : kind ? `${kindLabel(kind)} ekle` : "Kaynak ekle"} onClose={onClose} width={kind === "screen" ? 680 : 520} className="st-modal"
+    <Modal title={editing ? `${sourceKindLabel(kind)} ayarları` : kind ? `${sourceKindLabel(kind)} ekle` : "Kaynak ekle"} onClose={onClose} width={isCapture ? 680 : kind ? 560 : 640} className="st-modal"
       footer={kind ? <>
         {!editing && <button type="button" className="btn btn--ghost" onClick={() => setDraft({})}>Geri</button>}
         <span style={{ flex: 1 }} />
         <button type="button" className="btn" onClick={onClose}>Vazgeç</button>
-        <button type="button" className="btn btn--primary" disabled={!valid || busy} onClick={() => onSave({ ...draft, name: String(draft.name || kindLabel(kind)).trim() || kindLabel(kind) })}>{editing ? "Kaydet" : "Ekle"}</button>
+        <button type="button" className="btn btn--primary" disabled={!valid || busy} onClick={() => onSave({ ...draft, name: String(draft.name || sourceKindLabel(kind)).trim() || sourceKindLabel(kind) })}>{editing ? "Kaydet" : kind === "audio" ? "Ses sekmesine ekle" : "Ekle"}</button>
       </> : null}>
       {!kind ? (
         <div className="st-kinds">
-          {SOURCE_KINDS.map((k) => (
-            <button key={k.kind} type="button" className="st-kind" onClick={() => setDraft({ kind: k.kind, name: k.kind === "camera" ? `Kamera ${cameraCount + 1}` : k.label, deviceIndex: cameraCount, resolution: "1080p", mirror: false, loop: true, color: "#54009c", textColor: "#ffffff" })}>
+          {SOURCE_TYPES.map((k) => (
+            <button key={k.kind} type="button" className="st-kind" onClick={() => setDraft(sourceDefaults(k.kind, { cameraCount }))}>
               <span className="st-kind__icon"><Icon name={k.icon} size={18} /></span>
               <span><strong>{k.label}</strong><small>{k.hint}</small></span>
             </button>
@@ -318,23 +257,26 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
                 <Field label="Çözünürlük">
                   <select value={draft.resolution || "1080p"} onChange={(e) => set({ resolution: e.target.value })}>{RESOLUTIONS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select>
                 </Field>
+                <Field label="Kare hızı">
+                  <select value={draft.fps || 30} onChange={(e) => set({ fps: Number(e.target.value) })}>{[24, 25, 30, 50, 60].map((f) => <option key={f} value={f}>{f} fps</option>)}</select>
+                </Field>
                 <label className="toggle st-toggle-field"><input type="checkbox" checked={Boolean(draft.mirror)} onChange={(e) => set({ mirror: e.target.checked })} /> Ayna görüntü</label>
               </div>
             </>
           )}
 
-          {kind === "screen" && (
+          {isCapture && (
             <>
               {screenDenied && <div className="st-note is-warn"><Icon name="lock" size={14} /><span>Ekran kaydı izni yok: Sistem Ayarları › Gizlilik ve Güvenlik › Ekran ve Sistem Sesi Kaydı'ndan izin verin, sonra uygulamayı yeniden açın.</span></div>}
               {!studio?.listScreens ? <p className="st-hint">Ekran yakalama bu sürümde yok.</p>
-                : screens == null ? <p className="st-hint">Ekranlar ve pencereler listeleniyor…</p>
-                  : !screens.length ? <p className="st-hint">Paylaşılabilir ekran / pencere bulunamadı.</p>
+                : screens == null ? <p className="st-hint">{kind === "window" ? "Pencereler" : "Ekranlar"} listeleniyor…</p>
+                  : !visibleScreens.length ? <p className="st-hint">Paylaşılabilir {kind === "window" ? "pencere" : "ekran"} bulunamadı.</p>
                     : (
                       <div className="st-screens">
-                        {screens.map((sc) => (
-                          <button key={sc.id} type="button" className={`st-screen ${draft.screenId === sc.id ? "is-on" : ""}`} onClick={() => set({ screenId: sc.id, screenName: sc.name, name: draft.name && draft.name !== kindLabel("screen") ? draft.name : sc.name })}>
+                        {visibleScreens.map((sc) => (
+                          <button key={sc.id} type="button" className={`st-screen ${draft.screenId === sc.id ? "is-on" : ""}`} onClick={() => set({ screenId: sc.id, screenName: sc.name, name: keepName(sc.name) })}>
                             {sc.thumbnail ? <img src={sc.thumbnail} alt="" /> : <span className="st-screen__blank" />}
-                            <small><Icon name={sc.kind === "window" ? "file" : "overview"} size={11} /> {sc.name}</small>
+                            <small><Icon name={kind === "window" ? "file" : "overview"} size={11} /> {sc.name}</small>
                           </button>
                         ))}
                       </div>
@@ -344,22 +286,103 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
 
           {(kind === "image" || kind === "video") && (
             <>
-              <Field label={kind === "image" ? "Görsel dosyası" : "Video dosyası"} hint={kind === "video" ? "Video dosyaları oturumlar arasında saklanmaz; uygulama yeniden açılınca dosyayı tekrar seçin." : "3 MB'a kadar görseller kalıcı saklanır."}>
-                <input type="file" accept={kind === "image" ? "image/*" : "video/*"} onChange={(e) => pickFile(e.target.files?.[0])} />
+              <Field label={kind === "image" ? "Görsel dosyası" : "Video / medya dosyası"} hint={kind === "video" ? "Video dosyaları oturumlar arasında saklanmaz; uygulama yeniden açılınca dosyayı tekrar seçin." : "3 MB'a kadar görseller kalıcı saklanır."}>
+                <input type="file" accept={kind === "image" ? "image/*" : "video/*,audio/*"} onChange={(e) => pickFile(e.target.files?.[0])} />
               </Field>
               {draft.url && kind === "image" && <img className="st-file-preview" src={draft.url} alt="" />}
               {draft.fileName && <p className="st-hint">Seçili: {draft.fileName}</p>}
-              {kind === "video" && <label className="toggle"><input type="checkbox" checked={draft.loop !== false} onChange={(e) => set({ loop: e.target.checked })} /> Döngüde oynat (sessiz)</label>}
+              {kind === "video" && (
+                <div className="st-row st-row--wrap">
+                  <label className="toggle"><input type="checkbox" checked={draft.loop !== false} onChange={(e) => set({ loop: e.target.checked })} /> Döngüde oynat</label>
+                  <label className="toggle" title="Sahne yayına alındığında video baştan başlar"><input type="checkbox" checked={draft.restartOnShow !== false} onChange={(e) => set({ restartOnShow: e.target.checked })} /> Yayına gelince baştan başlat</label>
+                </div>
+              )}
+              {kind === "video" && <p className="st-hint">Videonun sesi yayına gitmez (sessiz oynar).</p>}
+            </>
+          )}
+
+          {kind === "slideshow" && (
+            <>
+              <Field label="Görseller" hint="Birden çok görsel seçebilirsin (en çok 40). 2 MB'a kadar olanlar kalıcı saklanır.">
+                <input type="file" accept="image/*" multiple onChange={(e) => pickSlides(e.target.files)} />
+              </Field>
+              {(draft.images || []).length > 0 && (
+                <div className="st-slides">
+                  {draft.images.map((u, i) => (
+                    <span key={`${i}_${u.slice(-12)}`} className="st-slide">
+                      <img src={u} alt="" />
+                      <button type="button" className="icon-btn icon-btn--xs" title="Çıkar" onClick={() => set({ images: draft.images.filter((_, j) => j !== i) })}><Icon name="x" size={11} /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <Field label={`Görsel süresi · ${Math.round((draft.intervalMs || 5000) / 1000)} sn`}><input type="range" min={1000} max={30000} step={500} value={draft.intervalMs || 5000} onChange={(e) => set({ intervalMs: Number(e.target.value) })} /></Field>
             </>
           )}
 
           {kind === "color" && (
             <>
-              <div className="st-row">
-                <Field label="Zemin rengi"><input type="color" value={draft.color || "#54009c"} onChange={(e) => set({ color: e.target.value })} /></Field>
+              <div className="st-row st-row--wrap">
+                <Field label="Renk"><input type="color" value={draft.color || "#54009c"} onChange={(e) => set({ color: e.target.value })} /></Field>
+                <label className="toggle st-toggle-field"><input type="checkbox" checked={Boolean(draft.gradient)} onChange={(e) => set({ gradient: e.target.checked })} /> Gradyan</label>
+                {draft.gradient && <Field label="İkinci renk"><input type="color" value={draft.color2 || "#c026d3"} onChange={(e) => set({ color2: e.target.value })} /></Field>}
+                {draft.gradient && <Field label={`Açı · ${draft.gradientAngle ?? 135}°`}><input type="range" min={0} max={360} step={5} value={draft.gradientAngle ?? 135} onChange={(e) => set({ gradientAngle: Number(e.target.value) })} /></Field>}
                 <Field label="Yazı rengi"><input type="color" value={draft.textColor || "#ffffff"} onChange={(e) => set({ textColor: e.target.value })} /></Field>
               </div>
-              <Field label="Yazı (en çok 3 satır)"><textarea rows={3} value={draft.text || ""} onChange={(e) => set({ text: e.target.value })} placeholder="Maç arası · Sponsorumuz …" /></Field>
+              <Field label="Yazı (isteğe bağlı)"><textarea rows={3} value={draft.text || ""} onChange={(e) => set({ text: e.target.value })} placeholder="Maç arası · Sponsorumuz …" /></Field>
+            </>
+          )}
+
+          {kind === "text" && (
+            <>
+              <Field label="Metin"><textarea rows={3} value={draft.text || ""} onChange={(e) => set({ text: e.target.value })} placeholder="Devre arası · 15 dk" /></Field>
+              <TextStyleFields draft={draft} set={set} />
+            </>
+          )}
+
+          {kind === "clock" && (
+            <>
+              <Field label="Tür">
+                <div className="st-seg">
+                  {[["clock", "Saat"], ["countdown", "Geri sayım"], ["countup", "Kronometre"], ["match", "Maç saati"]].map(([k, l]) => (
+                    <button key={k} type="button" className={(draft.mode || "clock") === k ? "is-on" : ""} onClick={() => set({ mode: k, ...(k === "countup" ? { startedAt: Date.now() } : {}) })}>{l}</button>
+                  ))}
+                </div>
+              </Field>
+              {draft.mode === "countdown" && (
+                <div className="st-row">
+                  <Field label="Bitiş anı"><input type="datetime-local" value={toLocalInput(draft.targetAt)} onChange={(e) => set({ targetAt: e.target.value ? new Date(e.target.value).getTime() : null })} /></Field>
+                  <Field label="ya da şimdiden"><select value="" onChange={(e) => e.target.value && set({ targetAt: Date.now() + Number(e.target.value) * 60_000 })}>
+                    <option value="">dakika seç…</option>{[1, 2, 5, 10, 15, 20, 30, 45, 60].map((m) => <option key={m} value={m}>{m} dk</option>)}
+                  </select></Field>
+                </div>
+              )}
+              {draft.mode === "countup" && <button type="button" className="btn btn--xs" onClick={() => set({ startedAt: Date.now() })}><Icon name="refresh" size={11} /> Sıfırla (şimdi başlat)</button>}
+              {(draft.mode || "clock") === "clock" && <label className="toggle"><input type="checkbox" checked={Boolean(draft.seconds)} onChange={(e) => set({ seconds: e.target.checked })} /> Saniyeyi göster</label>}
+              <TextStyleFields draft={draft} set={set} />
+            </>
+          )}
+
+          {kind === "replay" && (
+            <>
+              <Field label="Açı" hint="En son kaydedilen tekrarın bu açısı döngüde oynar; yeni tekrar gelince kendiliğinden değişir.">
+                <select value={draft.angle || "program"} onChange={(e) => set({ angle: e.target.value })}>
+                  <option value="program">Program (yayın görüntüsü)</option>
+                  {(initial?.angleOptions || []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </Field>
+              <label className="toggle"><input type="checkbox" checked={draft.loop !== false} onChange={(e) => set({ loop: e.target.checked })} /> Döngüde oynat</label>
+            </>
+          )}
+
+          {kind === "audio" && (
+            <>
+              <Field label="Ses aygıtı" hint="Yalnız ses: Ses sekmesindeki karıştırıcıya eklenir (seviye, sessiz).">
+                <select value={draft.deviceId || ""} onChange={(e) => set({ deviceId: e.target.value, name: keepName(devices.audio.find((d) => d.deviceId === e.target.value)?.label || "Ses girişi") })}>
+                  <option value="">Aygıt seç…</option>
+                  {devices.audio.map((d, i) => <option key={d.deviceId || i} value={d.deviceId}>{d.label || `Ses girişi ${i + 1}`}</option>)}
+                </select>
+              </Field>
             </>
           )}
         </div>
@@ -370,3 +393,4 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
 
 /** Kaynak penceresi: yalnız kendi girdileri değişince yeniden çizilir. */
 export const SourceDialog = memo(SourceDialogInner);
+export default SourceLibrary;

@@ -34,7 +34,10 @@ test("yayın komutu: tee ile RTMP (onfail=ignore) + 2 sn'lik TS halkası, 2 sn a
   assert.equal(at("-force_key_frames"), "expr:gte(t,n_forced*2)");
   assert.equal(at("-c:a"), "aac");
   assert.equal(at("-b:a"), "160k");
-  assert.equal(at("-ar"), "44100");
+  assert.equal(at("-ar"), "48000");
+  assert.equal(at("-fps_mode"), "cfr");
+  assert.equal(at("-r"), "30");
+  assert.equal(at("-loglevel"), "level+warning");
   assert.equal(at("-ac"), "2");
   assert.equal(at("-flags"), "+global_header");
   assert.match(at("-vf"), /^scale=1280:720.*fps=30/);
@@ -451,13 +454,15 @@ test("motor: bağlantı zaman aşımı yeniden denemeye düşer", async () => {
   await engine.stop();
 });
 
-test("motor: ilerleme 15 sn kesilirse yeniden başlatılır", async () => {
-  const { engine, children, timers, statuses, restarts } = setupEngine();
+test("motor: ilerleme ve parçalar 15 sn kesilirse yeniden başlatılır", async () => {
+  let t = 1_000_000;
+  const { engine, children, timers, statuses, restarts } = setupEngine({ now: () => t });
   await engine.start({ url: "rtmp://h/live/k" });
   engine.pushChunk(HEADER);
   progress(children[0], 1000);
   progress(children[0], 2000);
-  assert.equal([...timers.pending.values()].filter((t) => t.ms === 15000).length, 1);
+  assert.equal([...timers.pending.values()].filter((x) => x.ms === 15000).length, 1);
+  t += 15000;
   timers.runNext(15000);
   assert.equal(children[0].killed, HARD_KILL);
   await tick();

@@ -41,7 +41,7 @@ export const BUG = Object.freeze({
 
 const FONT_STACK = '"Archivo", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif';
 /** Tuval yazı tipi: kalın, piksel boyu ölçekli. */
-export const bugFont = (px, weight = 800) => `${weight} ${Math.max(1, px).toFixed(2)}px ${FONT_STACK}`;
+export const bugFont = (px, weight = 800, family = null) => `${weight} ${Math.max(1, px).toFixed(2)}px ${family || FONT_STACK}`;
 
 const GENERIC = new Set(["spor", "sk", "fk", "sc", "fc", "kulubu", "kulübü", "gücü", "gucu", "birliği", "birligi", "takımı", "takimi"]);
 
@@ -107,15 +107,17 @@ export function bugPlacement(outW) {
  * state: { homeName, awayName, homeScore, awayScore, clockMs, period,
  *          finished, event: { label, player, kind } | null, replay }
  */
-export function bugLayout(state, scale, measure) {
+export function bugLayout(state, scale, measure, opts = {}) {
+  const family = opts.family || null;
+  const logoK = Number(opts.logoScale) > 0 ? Number(opts.logoScale) : 1;
   const s = Number(scale) || 1;
   const rowH = BUG.rowH * s;
   const homeCode = teamShortCode(state.homeName);
   const awayCode = teamShortCode(state.awayName);
-  const codeFont = bugFont(18 * s);
-  const scoreFont = bugFont(25 * s);
-  const clockFont = bugFont(17 * s);
-  const periodFont = bugFont(11 * s);
+  const codeFont = bugFont(18 * s, 800, family);
+  const scoreFont = bugFont(25 * s, 800, family);
+  const clockFont = bugFont(17 * s, 800, family);
+  const periodFont = bugFont(11 * s, 800, family);
   const crest = BUG.crest * s;
   const gap = 8 * s;
 
@@ -130,7 +132,7 @@ export function bugLayout(state, scale, measure) {
 
   const homeScore = { x, w: BUG.scoreW * s, text: String(state.homeScore ?? 0), font: scoreFont };
   x += homeScore.w;
-  const medal = { x, w: BUG.medalW * s, logo: BUG.medalLogo * s };
+  const medal = { x, w: BUG.medalW * s, logo: BUG.medalLogo * s * logoK };
   medal.logoX = medal.x + (medal.w - medal.logo) / 2;
   medal.logoY = (rowH - medal.logo) / 2;
   x += medal.w;
@@ -176,8 +178,8 @@ export function bugLayout(state, scale, measure) {
   if (state.event && state.event.label) {
     const lh = 26 * s;
     const ly = rowH + 4 * s;
-    const tagFont = bugFont(13 * s);
-    const nameFont = bugFont(14 * s);
+    const tagFont = bugFont(13 * s, 800, family);
+    const nameFont = bugFont(14 * s, 800, family);
     const tagW = measure(state.event.label, tagFont) + 20 * s;
     const player = state.event.player ? String(state.event.player) : "";
     const nameW = player ? measure(player, nameFont) + 24 * s : 0;
@@ -222,10 +224,10 @@ const ready = (img) => Boolean(img && (img.complete === undefined || img.complet
  * Skorbordu çizer. images: { logo, home, away } (yüklenmiş HTMLImageElement).
  * Dönüş: çizilen kutunun sahnedeki sınırı.
  */
-export function drawScoreBug(ctx, state, { x = 0, y = 0, scale = 1, images = {}, homeColor, awayColor } = {}) {
-  const C = BUG.colors;
-  const measure = (text, font) => { ctx.font = font; return ctx.measureText(text).width; };
-  const L = bugLayout(state, scale, measure);
+export function drawScoreBug(ctx, state, { x = 0, y = 0, scale = 1, images = {}, homeColor, awayColor, colors = null, family = null, logoScale = 1, measure: measureOpt = null } = {}) {
+  const C = colors ? { ...BUG.colors, ...colors } : BUG.colors;
+  const measure = measureOpt || ((text, font) => { ctx.font = font; return ctx.measureText(text).width; });
+  const L = bugLayout(state, scale, measure, { family, logoScale });
   const s = L.scale;
   const rowH = L.row.h;
   const midY = rowH / 2;
@@ -451,7 +453,9 @@ const upper = (v) => String(v ?? "").toLocaleUpperCase("tr-TR");
  * state: { homeName, awayName, homeScore, awayScore, clockMs, period,
  *          finished, scorers?: { home: [{ name, minutes }], away }, event? }
  */
-export function bottomBoardLayout(state, outW, outH, measure) {
+export function bottomBoardLayout(state, outW, outH, measure, opts = {}) {
+  const family = opts.family || null;
+  const logoK = Number(opts.logoScale) > 0 ? Number(opts.logoScale) : 1;
   const W = Number(outW) || BUG.stageW;
   const H = Number(outH) || BUG.stageH;
   const s = W / BUG.stageW;
@@ -463,9 +467,9 @@ export function bottomBoardLayout(state, outW, outH, measure) {
   const clockY = H - B.bottom * s - clockH;
   const bandY = clockY - bandH;
 
-  const nameFont = bugFont(21 * s, 700);
-  const scoreFont = bugFont(50 * s, 800);
-  const clockFont = bugFont(13 * s, 800);
+  const nameFont = bugFont(21 * s, 700, family);
+  const scoreFont = bugFont(50 * s, 800, family);
+  const clockFont = bugFont(13 * s, 800, family);
   const rowW = (B.teamW * 2 + B.scoreW * 2 + B.medalW) * s;
   let cx = x + (w - rowW) / 2;
   const crest = B.crest * s;
@@ -479,7 +483,7 @@ export function bottomBoardLayout(state, outW, outH, measure) {
   cx += home.w;
   const homeScore = { x: cx, w: B.scoreW * s, text: String(state.homeScore ?? 0), font: scoreFont };
   cx += homeScore.w;
-  const medal = { x: cx, w: B.medalW * s, logo: B.medalLogo * s };
+  const medal = { x: cx, w: B.medalW * s, logo: B.medalLogo * s * logoK };
   medal.logoX = medal.x + (medal.w - medal.logo) / 2;
   medal.logoY = bandY + (bandH - medal.logo) / 2 - B.medalLift * s;
   cx += medal.w;
@@ -503,8 +507,8 @@ export function bottomBoardLayout(state, outW, outH, measure) {
   clock.textX = clock.dot.cx + dot / 2 + 10 * s;
 
   // Golcüler: iki ayrı kutu (boş taraf çizilmez), bandın 6 px üstünde.
-  const rowFont = bugFont(14 * s, 700);
-  const minFont = bugFont(12 * s, 600);
+  const rowFont = bugFont(14 * s, 700, family);
+  const minFont = bugFont(12 * s, 600, family);
   const rowH = 18 * s;
   const rowGap = 4 * s;
   const padY = 12 * s;
@@ -536,8 +540,8 @@ export function bottomBoardLayout(state, outW, outH, measure) {
   let event = null;
   if (state.event?.label) {
     const eh = 36 * s;
-    const tagFont = bugFont(16 * s, 800);
-    const nameFontE = bugFont(17 * s, 800);
+    const tagFont = bugFont(16 * s, 800, family);
+    const nameFontE = bugFont(17 * s, 800, family);
     const tagW = measure(state.event.label, tagFont) + 28 * s;
     const player = state.event.player ? String(state.event.player) : "";
     const nW = player ? measure(player, nameFontE) + 32 * s : 0;
@@ -555,12 +559,12 @@ export function bottomBoardLayout(state, outW, outH, measure) {
  * Orta-alt skorbordu çizer. opts: { outW, outH, images: { logo, home, away },
  * homeColor, awayColor }. Dönüş: çizilen alanın sınırı.
  */
-export function drawBottomBoard(ctx, state, { outW, outH, images = {}, homeColor, awayColor } = {}) {
-  const C = BOARD.colors;
-  const measure = (text, font) => { ctx.font = font; return ctx.measureText(text).width; };
+export function drawBottomBoard(ctx, state, { outW, outH, images = {}, homeColor, awayColor, colors = null, family = null, logoScale = 1, measure: measureOpt = null } = {}) {
+  const C = colors ? { ...BOARD.colors, ...colors } : BOARD.colors;
+  const measure = measureOpt || ((text, font) => { ctx.font = font; return ctx.measureText(text).width; });
   const W = outW || ctx.canvas?.width || BUG.stageW;
   const H = outH || ctx.canvas?.height || BUG.stageH;
-  const L = bottomBoardLayout(state, W, H, measure);
+  const L = bottomBoardLayout(state, W, H, measure, { family, logoScale });
   const s = L.s;
   const b = L.band;
   const mid = b.y + b.h / 2;

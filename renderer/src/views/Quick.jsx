@@ -69,8 +69,8 @@ export default function Quick() {
 
   const onKey = (e) => {
     if (e.key === "Escape") close();
-    if (e.key === "Enter" && (kind !== "note" || e.metaKey)) { e.preventDefault(); save(); }
-    if (e.metaKey && ["1", "2", "3", "4"].includes(e.key)) { e.preventDefault(); setKind(KINDS[Number(e.key) - 1].value); }
+    if (e.key === "Enter" && (kind !== "note" || (e.metaKey || e.ctrlKey))) { e.preventDefault(); save(); }
+    if ((e.metaKey || e.ctrlKey) && ["1", "2", "3", "4"].includes(e.key)) { e.preventDefault(); setKind(KINDS[Number(e.key) - 1].value); }
   };
 
   if (!signedIn) {

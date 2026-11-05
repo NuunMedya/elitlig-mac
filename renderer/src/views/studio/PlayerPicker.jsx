@@ -1,10 +1,11 @@
 // Yayın Stüdyosu — olayın oyuncusunu seçme penceresi (mobil PlayerPicker).
 // Önce İlk 11, sonra yedekler; tek tık olayı kaydeder. "Oyuncusuz kaydet"
 // olayı oyuncu bilgisi olmadan yazar. Klavye: rakam yazıp Enter → forma no.
+// İsteğe bağlı `codes` / `code` / `onCode`: olay türü çipleri (ör. gol çeşidi).
 import React, { useEffect, useMemo, useState } from "react";
 import { Icon, Modal } from "../../components/ui";
 
-export default function PlayerPicker({ title, subtitle, players, side, busy, clipKey, onPick, onClose }) {
+export default function PlayerPicker({ title, subtitle, players, side, busy, clipKey, onPick, onClose, codes = null, code = null, onCode = null }) {
   const [q, setQ] = useState("");
   const starters = players.filter((p) => p.role === "starter");
   const others = players.filter((p) => p.role !== "starter");
@@ -40,6 +41,13 @@ export default function PlayerPicker({ title, subtitle, players, side, busy, cli
         <button type="button" className="btn btn--primary" onClick={() => onPick(null)} disabled={busy}>Oyuncusuz kaydet</button>
       </>}>
       {subtitle && <p className="muted small st-picker__sub">{subtitle}</p>}
+      {codes?.length > 0 && (
+        <div className="st-picker__codes" role="radiogroup" aria-label="Olay türü">
+          {codes.map((c) => (
+            <button key={c.code} type="button" role="radio" aria-checked={code === c.code} className={`btn btn--xs${code === c.code ? " btn--primary" : ""}`} onClick={() => onCode?.(c.code)}>{c.label}</button>
+          ))}
+        </div>
+      )}
       <input type="search" placeholder="Forma no ya da ad yaz…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} autoFocus />
       {players.length ? (
         needle ? group("Eşleşenler", shown) : <>{group("İlk 11", starters)}{group("Yedekler", others)}</>

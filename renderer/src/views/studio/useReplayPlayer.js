@@ -41,12 +41,14 @@ async function prepare(el, url) {
   return el;
 }
 
-export function useReplayPlayer({ els, replayRef, playStinger, bannerOf, slowMo, onError, onStart }) {
+/** rate: oynatma hızı 0,25…1 (ağır çekim); yayın sırasında değişince ANINDA uygulanır. */
+export function useReplayPlayer({ els, replayRef, playStinger, bannerOf, rate = 1, onError, onStart }) {
   const [state, setState] = useState(null); // { queue, index }
   const tokenRef = useRef(0);
   const curRef = useRef({ queue: [], index: -1, slot: 0, nextReady: null });
-  const slowRef = useRef(slowMo);
-  slowRef.current = slowMo;
+  const r = Math.min(1, Math.max(0.25, Number(rate) || 1));
+  const rateRef = useRef(r);
+  rateRef.current = r;
   const errRef = useRef(onError);
   errRef.current = onError;
   const bannerRef = useRef(bannerOf);
@@ -80,7 +82,7 @@ export function useReplayPlayer({ els, replayRef, playStinger, bannerOf, slowMo,
         if (tokenRef.current !== token) return;
         els.forEach((x) => { if (x !== el) { try { x.pause(); } catch { /* yoksay */ } } });
         el.currentTime = 0;
-        el.playbackRate = slowRef.current ? 0.5 : 1;
+        el.playbackRate = rateRef.current;
         replayRef.current = { active: true, el, event: bannerRef.current?.(item) || null };
         el.play().catch(() => {});
       },
@@ -134,7 +136,7 @@ export function useReplayPlayer({ els, replayRef, playStinger, bannerOf, slowMo,
     return true;
   }, [els, onStart, replayRef, showAt]);
 
-  useEffect(() => { els.forEach((el) => { el.playbackRate = slowMo ? 0.5 : 1; }); }, [slowMo, els]);
+  useEffect(() => { els.forEach((el) => { el.playbackRate = r; }); }, [r, els]);
   useEffect(() => () => { tokenRef.current += 1; els.forEach((el) => { try { el.pause(); } catch { /* yoksay */ } }); }, [els]);
 
   return {

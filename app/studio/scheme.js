@@ -3,6 +3,7 @@
 //   elitlig-studio://clips/<clip-….mp4>                 eski gol klipleri (userData/clips)
 //   elitlig-studio://replays/<tekrar kimliği>/<dosya>   program.mp4, angle-1.mp4, program.jpg …
 //   elitlig-studio://highlights/<highlight-….mp4|jpg>   öne çıkanlar (userData/highlights)
+//   elitlig-studio://interviews/<interview-….mp4|jpg>   röportajlar (userData/interviews)
 //
 // Yalnız beyaz listedeki adlar sunulur; yol klasör dışına çıkamaz (aksi 404).
 // Range desteklidir (video oynatıcı ileri sarar).
@@ -16,6 +17,7 @@ const { STUDIO_SCHEME, CLIP_NAME, parseRange } = require("./clips");
 const REPLAY_ID = /^r\d{14}-[0-9a-f]{6}$/;
 const REPLAY_FILE = /^(program|angle-\d{1,3})\.(mp4|jpg)$/;
 const HIGHLIGHT_FILE = /^highlight-[\w-]{1,80}\.(mp4|jpg)$/;
+const INTERVIEW_FILE = /^interview-[\w-]{1,80}\.(mp4|jpg)$/;
 
 const CONTENT_TYPES = { ".mp4": "video/mp4", ".jpg": "image/jpeg" };
 
@@ -33,10 +35,13 @@ function safeJoin(root, ...parts) {
 const safeReplayPath = (replaysDir, id, file) => (REPLAY_ID.test(String(id || "")) && REPLAY_FILE.test(String(file || "")) ? safeJoin(replaysDir, id, file) : null);
 const safeHighlightPath = (highlightsDir, file) => (HIGHLIGHT_FILE.test(String(file || "")) ? safeJoin(highlightsDir, file) : null);
 
+const safeInterviewPath = (interviewsDir, file) => (INTERVIEW_FILE.test(String(file || "")) ? safeJoin(interviewsDir, file) : null);
+
 const replayUrl = (id, file) => `${STUDIO_SCHEME}://replays/${encodeURIComponent(id)}/${encodeURIComponent(file)}`;
 const highlightUrl = (file) => `${STUDIO_SCHEME}://highlights/${encodeURIComponent(file)}`;
+const interviewUrl = (file) => `${STUDIO_SCHEME}://interviews/${encodeURIComponent(file)}`;
 
-/** Şema adresi → diskteki dosya (ya da null). roots: { clips, replays, highlights } */
+/** Şema adresi → diskteki dosya (ya da null). roots: { clips, replays, highlights, interviews } */
 function resolveStudioUrl(roots, url) {
   let u;
   try { u = new URL(url); } catch { return null; }
@@ -46,6 +51,7 @@ function resolveStudioUrl(roots, url) {
   if (u.hostname === "clips" && parts.length === 1 && CLIP_NAME.test(parts[0])) return safeJoin(roots.clips, parts[0]);
   if (u.hostname === "replays" && parts.length === 2) return safeReplayPath(roots.replays, parts[0], parts[1]);
   if (u.hostname === "highlights" && parts.length === 1) return safeHighlightPath(roots.highlights, parts[0]);
+  if (u.hostname === "interviews" && parts.length === 1 && roots.interviews) return safeInterviewPath(roots.interviews, parts[0]);
   return null;
 }
 
@@ -75,7 +81,7 @@ function serveFile(file, request, contentType = CONTENT_TYPES[path.extname(file 
 const serveStudio = (roots, request) => serveFile(resolveStudioUrl(roots, request.url), request);
 
 module.exports = {
-  REPLAY_ID, REPLAY_FILE, HIGHLIGHT_FILE,
-  safeJoin, safeReplayPath, safeHighlightPath, replayUrl, highlightUrl,
+  REPLAY_ID, REPLAY_FILE, HIGHLIGHT_FILE, INTERVIEW_FILE,
+  safeJoin, safeReplayPath, safeHighlightPath, safeInterviewPath, replayUrl, highlightUrl, interviewUrl,
   resolveStudioUrl, serveFile, serveStudio,
 };

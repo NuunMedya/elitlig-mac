@@ -33,7 +33,11 @@ function makeVideo() {
 /** Ekran seçimi ana süreçte tek kanaldan geçer; seçimler sırayla yapılır. */
 let screenLock = Promise.resolve();
 
-export function useStudioSources(sources, { onResolve } = {}) {
+/**
+ * sources: görsel kaynaklar. opts.onResolve(id, patch): kamera kimliği kalıcı
+ * yazılır. opts.replayUrlOf(source): "Tekrar" kaynağının o anki klip adresi.
+ */
+export function useStudioSources(sources, { onResolve, replayUrlOf } = {}) {
   const runtimeRef = useRef(new Map());
   const [version, setVersion] = useState(0);
   const [devices, setDevices] = useState({ video: [], audio: [] });
@@ -93,12 +97,15 @@ export function useStudioSources(sources, { onResolve } = {}) {
         const dev = resolveCameraDevice(source, devices.video);
         return `camera|${dev ? dev.deviceId || "default" : "none"}|${source.resolution}`;
       }
-      case "screen": return `screen|${source.screenId || ""}|${source.nonce || 0}`;
+      case "screen":
+      case "window": return `screen|${source.screenId || ""}|${source.nonce || 0}`;
       case "image": return `image|${source.url || ""}`;
       case "video": return `video|${source.url || ""}|${source.loop !== false}`;
+      case "slideshow": return `slides|${(source.images || []).join("|").length}|${(source.images || []).length}|${(source.images || [])[0]?.slice(-40) || ""}|${source.intervalMs}`;
+      case "replay": return `replay|${replayUrlOf?.(source) || ""}`;
       default: return `${source.kind}`;
     }
-  }, [devices.video]);
+  }, [devices.video, replayUrlOf]);
 
   const devKey = devices.video.map((d) => d.deviceId).join(",");
 
@@ -112,7 +119,7 @@ export function useStudioSources(sources, { onResolve } = {}) {
         if (!dev) { set(id, { status: "missing", message: devices.video.length ? "Bu kamera takılı değil." : "Kamera bulunamadı." }); return; }
         const res = RESOLUTIONS.find((r) => r.key === source.resolution) || RESOLUTIONS[1];
         const stream = await md().getUserMedia({
-          video: { deviceId: dev.deviceId ? { exact: dev.deviceId } : undefined, width: { ideal: res.width }, height: { ideal: res.height }, frameRate: { ideal: 30 } },
+          video: { deviceId: dev.deviceId ? { exact: dev.deviceId } : undefined, width: { ideal: res.width }, height: { ideal: res.height }, frameRate: { ideal: Number(source.fps) || 30 } },
           audio: false,
         });
         if (!still()) { stopStream(stream); return; }
@@ -127,7 +134,7 @@ export function useStudioSources(sources, { onResolve } = {}) {
         if (!devices.video.some((d) => d.label)) refreshDevices();
         return;
       }
-      if (source.kind === "screen") {
+      if (source.kind === "screen" || source.kind === "window") {
         if (!source.screenId) { set(id, { status: "missing", message: "Ekran ya da pencere seçilmedi." }); return; }
         const run = screenLock.then(async () => {
           if (!still()) return null;
@@ -167,12 +174,38 @@ export function useStudioSources(sources, { onResolve } = {}) {
         set(id, { el });
         return;
       }
+      if (source.kind === "slideshow") {
+        const urls = (source.images || []).filter(Boolean);
+        if (!urls.length) { set(id, { status: "file", message: "Slayt için görsel seç." }); return; }
+        const images = urls.map((u) => {
+          const im = new Image();
+          im.decoding = "async";
+          im.onload = () => { if (still()) set(id, { status: "live" }); };
+          im.src = u;
+          return im;
+        });
+        set(id, { images, intervalMs: source.intervalMs || 5000 });
+        return;
+      }
+      if (source.kind === "replay") {
+        const url = replayUrlOf?.(source);
+        if (!url) { set(id, { status: "empty", message: "Henüz tekrar yok." }); return; }
+        const el = makeVideo();
+        el.loop = source.loop !== false;
+        el.crossOrigin = "anonymous";
+        el.src = url;
+        el.onloadeddata = () => { if (still()) set(id, { status: "live", el }); };
+        el.onerror = () => { if (still()) set(id, { status: "error", message: "Tekrar klibi açılamadı." }); };
+        el.play().catch(() => {});
+        set(id, { el });
+        return;
+      }
       set(id, { status: "live" });
     } catch (err) {
       if (!still()) return;
       const status = errorStatus(err);
       const message = status === "denied"
-        ? (source.kind === "screen" ? "Ekran kaydı izni yok: Sistem Ayarları › Gizlilik ve Güvenlik › Ekran ve Sistem Sesi Kaydı." : "Kamera izni yok: Sistem Ayarları › Gizlilik ve Güvenlik › Kamera.")
+        ? (source.kind === "screen" || source.kind === "window" ? "Ekran kaydı izni yok: Sistem Ayarları › Gizlilik ve Güvenlik › Ekran ve Sistem Sesi Kaydı." : "Kamera izni yok: Sistem Ayarları › Gizlilik ve Güvenlik › Kamera.")
         : status === "busy" ? "Kamera başka bir uygulamada açık olabilir." : err?.message || "Kaynak açılamadı.";
       set(id, { status, message });
     }
@@ -211,7 +244,7 @@ export function useStudioSources(sources, { onResolve } = {}) {
     }
     await refreshAccess();
     await refreshDevices();
-    if (granted) sources.filter((s) => (kind === "camera" ? s.kind === "camera" : s.kind === "screen")).forEach((s) => reacquire(s));
+    if (granted) sources.filter((s) => (kind === "camera" ? s.kind === "camera" : s.kind === "screen" || s.kind === "window")).forEach((s) => reacquire(s));
     return granted;
   }, [reacquire, refreshAccess, refreshDevices, sources]);
 

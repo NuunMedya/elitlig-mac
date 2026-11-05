@@ -36,7 +36,7 @@
   }
 }
 .content:has(> .ms-view) { container-type: inline-size; container-name: ms; min-height: 0; }
-.ms-view { position: relative; z-index: 1; flex: 1; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-template-columns: 64px minmax(300px, 380px) minmax(0, 1fr); margin-top: 36px; border-top: 1px solid var(--border); animation: viewIn 0.2s ease-out; }
+.ms-view { position: relative; z-index: 1; flex: 1; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); grid-template-columns: 64px minmax(300px, 380px) minmax(0, 1fr); margin-top: var(--drag-h, 36px); border-top: 1px solid var(--border); animation: viewIn 0.2s ease-out; }
 .ms-view.has-panel { grid-template-columns: 64px minmax(290px, 350px) minmax(0, 1fr) 350px; }
 @container ms (max-width: 1080px) { .ms-view.has-panel { grid-template-columns: 64px 280px minmax(0, 1fr) 320px; } }
 .ms-back { display: none !important; }
@@ -478,7 +478,7 @@ button.ms-chat__who:hover { background: var(--surface-2); }
 
 /* fotoğraf görüntüleyici */
 .ms-lightbox { position: fixed; inset: 0; z-index: 120; display: flex; flex-direction: column; background: rgba(12, 10, 20, 0.94); color: #fff; animation: viewIn 0.15s ease-out; }
-.ms-lightbox header { display: flex; align-items: center; gap: 12px; padding: 34px 18px 10px; }
+.ms-lightbox header { display: flex; align-items: center; gap: 12px; padding: max(12px, calc(var(--drag-h, 36px) - 2px)) 18px 10px; }
 .ms-lightbox header span:nth-child(2) { display: flex; flex-direction: column; }
 .ms-lightbox header small { color: rgba(255, 255, 255, 0.6); }
 .ms-lightbox .icon-btn { color: rgba(255, 255, 255, 0.8); }

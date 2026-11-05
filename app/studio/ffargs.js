@@ -30,7 +30,7 @@ function withoutOptions(args, names) {
  * Açı (kamera vb.) boyutu: kaynak boyutu en çok 1920×1080 kutusuna sığdırılır
  * (en-boy oranı korunur); bilinmiyorsa 1280×720. Bit hızı piksele göre.
  */
-function angleOptions({ width, height, fps } = {}) {
+function angleOptions({ width, height, fps, mimeType } = {}) {
   let w = Number(width) > 0 ? Number(width) : 1280;
   let h = Number(height) > 0 ? Number(height) : 720;
   const scale = Math.min(1, 1920 / w, 1080 / h);
@@ -43,35 +43,59 @@ function angleOptions({ width, height, fps } = {}) {
     fps: clampInt(fps, 15, 60, 30),
     videoBitrateKbps: pixels > 1280 * 720 ? 4500 : pixels > 640 * 360 ? 3000 : 1500,
     audioBitrateKbps: 128,
+    mimeType: String(mimeType || ""),
+    // Kaydedici H.264 yazıyorsa görüntü yeniden kodlanmaz (kopya): açı başına
+    // ikinci bir kodlama yok, işlemci yükü ~sıfır. VP8/VP9 ise yeniden kodlanır.
+    copy: isH264Mime(mimeType),
   };
 }
 
+/** MediaRecorder MIME türü H.264 mü: "video/x-matroska;codecs=avc1", "video/webm;codecs=h264" … */
+const isH264Mime = (mimeType) => /(?:codecs\s*=\s*"?[^;]*\b(?:avc1|avc3|h264)\b)/i.test(String(mimeType || ""));
+
+/** Açıların 1 sn'lik MPEG-TS parça halkası (her iki kipte ortak çıkış). */
+const angleSegmentArgs = ({ segmentSeconds, segmentStart, listFile }) => [
+  "-max_muxing_queue_size", "1024",
+  "-f", "segment", "-segment_time", String(segmentSeconds), "-segment_time_delta", "0.05",
+  "-break_non_keyframes", "0",
+  "-segment_format", "mpegts", "-reset_timestamps", "1",
+  "-segment_start_number", String(segmentStart),
+  "-segment_list", listFile, "-segment_list_type", "csv",
+  ff.SEGMENT_PATTERN,
+];
+
 /**
- * Açı kaydı: MediaRecorder (Matroska/WebM) stdin'den → H.264 → 1 sn'lik MPEG-TS
- * parça halkası (RTMP yok). 1 sn'de bir anahtar kare (tekrarda sıkı kesim).
+ * Açı kaydı: MediaRecorder (Matroska/WebM) stdin'den → 1 sn'lik MPEG-TS parça
+ * halkası (RTMP yok).
+ *   copy (H.264 kaydedici, 1 sn'de bir anahtar kare — arayüz MediaRecorder'a
+ *   videoKeyFrameIntervalDuration: 1000 verir): görüntü KOPYALANIR (-c:v copy,
+ *   Annex B), parçalar anahtar karelerde bölünür; yalnız ses AAC'ye çevrilir.
+ *   Aksi halde (VP8/VP9): H.264'e yeniden kodlanır, 1 sn'de bir anahtar kare.
  * Motorun buildArgs imzası: ({ ...opts, encoder, segmentStart, listFile }).
  */
-function buildAngleArgs({ width, height, fps, videoBitrateKbps, audioBitrateKbps = 128, encoder, segmentSeconds = 1, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska" }) {
-  // ffmpeg.js'teki GOP 2 sn; açılarda 1 sn: -g / -keyint_min çıkarılıp yeniden verilir.
-  const enc = withoutOptions(ff.videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height, keyframeSeconds: segmentSeconds }), ["-g", "-keyint_min"]);
-  return [
-    "-hide_banner", "-nostdin", "-loglevel", "warning", "-nostats",
+function buildAngleArgs({ width, height, fps, videoBitrateKbps, audioBitrateKbps = 128, encoder, segmentSeconds = 1, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska", copy = false, speedLevel = 0 }) {
+  const head = [
+    "-hide_banner", "-nostdin", "-loglevel", "level+warning", "-nostats",
     "-progress", "pipe:1", "-stats_period", "1",
     "-fflags", "+genpts+discardcorrupt", "-thread_queue_size", "1024",
     "-probesize", "1000000", "-analyzeduration", "1000000",
     "-f", inputFormat, "-i", "pipe:0",
     "-map", "0:v:0", "-map", "0:a:0?",
+  ];
+  const audio = ["-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "48000", "-ac", "2", "-af", "aresample=async=1000"];
+  if (copy) {
+    return [...head, "-c:v", "copy", "-bsf:v", "h264_mp4toannexb", ...audio, ...angleSegmentArgs({ segmentSeconds, segmentStart, listFile })];
+  }
+  // ffmpeg.js'teki GOP 2 sn; açılarda 1 sn: -g / -keyint_min çıkarılıp yeniden verilir.
+  const enc = withoutOptions(ff.videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height, keyframeSeconds: segmentSeconds, speedLevel }), ["-g", "-keyint_min"]);
+  return [
+    ...head,
     "-vf", `scale=${width}:${height}:flags=bicubic,fps=${fps},format=${pixFmt(encoder)}`,
     ...enc,
     "-g", String(fps), "-keyint_min", String(fps),
     "-force_key_frames", `expr:gte(t,n_forced*${segmentSeconds})`,
-    "-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "44100", "-ac", "2", "-af", "aresample=async=1000",
-    "-max_muxing_queue_size", "1024",
-    "-f", "segment", "-segment_time", String(segmentSeconds), "-segment_time_delta", "0.05",
-    "-segment_format", "mpegts", "-reset_timestamps", "1",
-    "-segment_start_number", String(segmentStart),
-    "-segment_list", listFile, "-segment_list_type", "csv",
-    ff.SEGMENT_PATTERN,
+    ...audio,
+    ...angleSegmentArgs({ segmentSeconds, segmentStart, listFile }),
   ];
 }
 
@@ -137,4 +161,4 @@ function parseVideoInfo(text) {
   return { ...base, fps };
 }
 
-module.exports = { withoutOptions, angleOptions, buildAngleArgs, buildConcatLevelArgs, buildPosterArgs, buildRenderArgs, inputFormatFor, parseVideoInfo };
+module.exports = { withoutOptions, angleOptions, isH264Mime, buildAngleArgs, buildConcatLevelArgs, buildPosterArgs, buildRenderArgs, inputFormatFor, parseVideoInfo };

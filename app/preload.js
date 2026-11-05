@@ -83,6 +83,8 @@ contextBridge.exposeInMainWorld("elitlig", {
     uploadClip: (opts) => ipcRenderer.invoke("studio:uploadClip", opts || {}),
     revealClip: (name) => ipcRenderer.invoke("studio:revealClip", name),
     // Çok açılı kayıt: her kaynak (kamera vb.) için ayrı MediaRecorder akışı (Matroska/WebM).
+    // sources: [{ id, name, width, height, fps, mimeType }] — mimeType H.264 ise
+    // ("video/x-matroska;codecs=avc1", 1 sn'de bir anahtar kare) ffmpeg yeniden kodlamaz (kopya).
     angles: {
       start: (opts) => ipcRenderer.invoke("studio:angles:start", opts || {}),
       pushChunk: (sourceId, data) => {
@@ -114,7 +116,40 @@ contextBridge.exposeInMainWorld("elitlig", {
     },
     uploadHighlight: (opts) => ipcRenderer.invoke("studio:uploadHighlight", opts || {}),
     deleteHighlight: (opts) => ipcRenderer.invoke("studio:deleteHighlight", opts || {}),
+    // { kind: "highlight" | "interview", matchId, loaded, total }
     onUploadProgress: on("studio:uploadProgress"),
+    // Yayın sağlığı: oturum günlüğü (userData/logs/studio-<zaman>.log) ve son hatalar.
+    diagnostics: () => ipcRenderer.invoke("studio:diagnostics"),
+    revealDiagnostics: () => ipcRenderer.invoke("studio:revealDiagnostics"),
+    // Yerel tam kayıt: start({ …, localRecord: { enabled, dir? } }); klasör seçimi hatırlanır.
+    recordDir: () => ipcRenderer.invoke("studio:recordDir"),
+    chooseRecordDir: () => ipcRenderer.invoke("studio:chooseRecordDir"),
+    revealLocal: (path) => ipcRenderer.invoke("studio:revealLocal", path || null),
+    onLocalRecord: on("studio:localRecord"),
+    // Röportaj: program parçaları o andan sabitlenir; stop → MP4 (userData/interviews/).
+    interview: {
+      start: (opts) => ipcRenderer.invoke("studio:interview:start", opts || {}),
+      stop: (id) => ipcRenderer.invoke("studio:interview:stop", id),
+      status: () => ipcRenderer.invoke("studio:interview:status"),
+      list: () => ipcRenderer.invoke("studio:interview:list"),
+      delete: (name) => ipcRenderer.invoke("studio:interview:delete", name),
+      reveal: (name) => ipcRenderer.invoke("studio:interview:reveal", name),
+      upload: (opts) => ipcRenderer.invoke("studio:interview:upload", opts || {}),
+      onStatus: on("studio:interview:status"),
+    },
+    // LED çıkışı: ikinci ekranda tam ekran pencere (web: elitlig.com/led/<maç>; studio: #led-output).
+    displays: () => ipcRenderer.invoke("studio:displays"),
+    onDisplaysChanged: on("studio:displays:changed"),
+    led: {
+      open: (opts) => ipcRenderer.invoke("studio:led:open", opts || {}),
+      close: () => ipcRenderer.invoke("studio:led:close"),
+      status: () => ipcRenderer.invoke("studio:led:status"),
+      onStatus: on("studio:led:status"),
+      // Stüdyo → LED (yanıtsız); LED penceresi onState ile alır, açılışta getState ile son durumu ister.
+      sendState: (state) => ipcRenderer.send("studio:led:sendState", state ?? null),
+      getState: () => ipcRenderer.invoke("studio:led:getState"),
+      onState: on("studio:led:state"),
+    },
   },
   print: (html, title) => ipcRenderer.invoke("print:html", { html, title }),
   pdf: (html, title, options = {}) => ipcRenderer.invoke("print:html", { html, title, pdf: options }),

@@ -236,6 +236,8 @@ export function keyAction(e, { pendingGoal = false } = {}) {
   if (lower === "r") return { type: "replay" };
   if (lower === "b") return { type: "moment" };
   if (lower === "g") return { type: "goalArm" };
+  if (lower === "v") return { type: "var" };
+  if (key === "?") return { type: "help" };
   if (key === " " || key === "Enter") {
     // Düğmede Boşluk/Enter düğmeye basar; geçiş yapmaz.
     const tag = String(e.target?.tagName || "").toUpperCase();
@@ -244,4 +246,28 @@ export function keyAction(e, { pendingGoal = false } = {}) {
   }
   if (/^[1-9]$/.test(key)) return { type: "scene", index: Number(key) - 1 };
   return null;
+}
+
+/* ------------------------------ yayın sağlığı ------------------------------ */
+
+/**
+ * Yayın sağlığı özeti (üst çubuk göstergesi). status: ana süreç onStatus
+ * ({ fps, droppedFrames, bitrateKbps, speed }); draw: karıştırıcı
+ * ({ fps, drawMs, stalls }); targetFps: çıkış kare hızı.
+ * Dönüş { tone: "ok" | "warn" | "bad" | "idle", fps, dropped, bitrateKbps, speed, warnings: [metin] }.
+ * speed < 0,95: kodlayıcı gerçek zamana yetişemiyor (YouTube kesintisi / tamponlama).
+ */
+export function streamHealth({ status = {}, draw = {}, targetFps = 30, encoding = false } = {}) {
+  const fps = Number.isFinite(status.fps) ? Math.round(status.fps) : Number(draw.fps) || 0;
+  const speed = Number.isFinite(Number(status.speed)) ? Number(status.speed) : null;
+  const dropped = Number(status.droppedFrames) || 0;
+  const bitrateKbps = Number.isFinite(status.bitrateKbps) ? Math.round(status.bitrateKbps) : null;
+  const warnings = [];
+  let tone = encoding ? "ok" : "idle";
+  const worse = (t) => { if (t === "bad" || (t === "warn" && tone !== "bad")) tone = t; };
+  if (encoding && speed != null && speed < 0.95) { warnings.push(`Kodlayıcı hızı ${speed.toFixed(2)}× — gerçek zamana yetişemiyor (kaliteyi / bit hızını düşür).`); worse(speed < 0.85 ? "bad" : "warn"); }
+  if (Number(draw.fps) && Number(draw.fps) < targetFps * 0.85) { warnings.push(`Program çizimi ${draw.fps} fps (hedef ${targetFps}).`); worse(encoding ? "warn" : tone); }
+  if (Number(draw.stalls) > 0) { warnings.push(`Son saniyede ${draw.stalls} takılma (uygulama meşgul).`); worse(encoding ? "warn" : tone); }
+  if (encoding && status.state === "reconnecting") { warnings.push("Yayın sunucusuna yeniden bağlanılıyor."); worse("bad"); }
+  return { tone, fps, dropped, bitrateKbps, speed, drawMs: Number(draw.drawMs) || 0, warnings };
 }

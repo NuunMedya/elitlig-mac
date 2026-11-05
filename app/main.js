@@ -21,7 +21,8 @@
 //   - Talepler (⇧⌘T): onay bekleyen talepler (/api/admin/requests); toplam
 //     kenar çubuğunda, Dock'ta ve menü çubuğunda; yeni talep socket'ten
 //     ("admin:requests") gelir, pencere arka plandayken bildirim olur.
-//   - Yayın Stüdyosu (2.9): arayüzün <canvas> programı MediaRecorder ile buraya
+//   - Yayın Stüdyosu (2.9; 2.11: fifo ile kopmadan yeniden bağlanma, açı kopya kipi,
+//     yerel tam kayıt, röportaj, LED çıkışı, tanılama günlüğü): arayüzün <canvas> programı MediaRecorder ile buraya
 //     akar; ffmpeg (uygulamayla gelir) yeniden kodlayıp RTMP(S)'ye (YouTube)
 //     ve 2 sn'lik klip halkasına yazar; gol klipleri MP4 olarak kaydedilip
 //     sunucuya yüklenir (app/studio/). Kamera / mikrofon / ekran izinleri.
@@ -43,7 +44,8 @@ const { createFocus, trayTitle } = require("./focus");
 const { createReminders } = require("./reminders");
 const { createChatLink, buildMultipart, mimeOf } = require("./chat");
 const { accessFromUser, probeAccess, sameAccess } = require("./access");
-const { registerStudio, STUDIO_SCHEME } = require("./studio");
+const { registerStudio, applyStudioSwitches, STUDIO_SCHEME } = require("./studio");
+const { isAllowedExternal } = require("./links");
 
 // Sohbet medyası (fotoğraf, ses, belge) bu şemayla ana süreç üzerinden açılır:
 // diskte önbelleklenir, çevrimdışı da görünür; arayüzün güvenlik politikası
@@ -58,6 +60,9 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 app.setName(config.APP_NAME);
+// Yayın Stüdyosu: pencere arkada / örtülü / küçültülmüşken Chromium çizimi ve
+// zamanlayıcıları kısmasın (canvas → MediaRecorder akışı durup yayın kopmasın).
+applyStudioSwitches(app);
 if (process.env.ELITLIG_USER_DATA) app.setPath("userData", process.env.ELITLIG_USER_DATA);
 
 const RENDERER = path.join(__dirname, "..", "renderer", "dist", "index.html");
@@ -664,8 +669,9 @@ function registerIpc() {
   });
 
   ipcMain.handle("app:info", () => ({ version: app.getVersion(), shortcut: config.QUICK_SHORTCUT, siteOrigin: config.SITE_ORIGIN, sessionDays: config.SESSION_DAYS }));
+  // https://accounts.google.com (YouTube bağlama) ve API sunucusu adresleri dahil tüm https.
   ipcMain.handle("app:openExternal", (_e, url) => {
-    if (/^(https?|mailto|tel|sms|whatsapp|facetime):/i.test(String(url))) return shell.openExternal(url);
+    if (isAllowedExternal(url)) return shell.openExternal(String(url).trim());
     return null;
   });
   ipcMain.handle("app:openWeb", (_e, pathname) => shell.openExternal(new URL(String(pathname || "/"), config.SITE_ORIGIN).toString()));
@@ -795,6 +801,10 @@ if (!app.requestSingleInstanceLock()) {
       ipcMain, api, broadcast, app, electronSession, systemPreferences, desktopCapturer, powerSaveBlocker, protocol, shell,
       isOwnUrl,
       isSignedIn: () => authState().signedIn,
+      dialog, screen, BrowserWindow, loadRenderer,
+      preloadPath: path.join(__dirname, "preload.js"),
+      siteOrigin: config.SITE_ORIGIN,
+      apiOrigin: config.API_ORIGIN,
       log: (...args) => { if (!app.isPackaged || process.env.ELITLIG_STUDIO_DEBUG) console.log(...args); },
     });
     focus = createFocus({ dataDir: dataDir() });

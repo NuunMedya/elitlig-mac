@@ -119,6 +119,14 @@ function planReplay({ sources = [], seconds = 10, minAngleMs = MIN_ANGLE_MS, sta
   return { plans, skipped, endWall, startWall: anchor };
 }
 
+/** Sunucu ek dosya alanını reddetti mi (multer LIMIT_UNEXPECTED_FILE). */
+const isUnexpectedFieldError = (err) => {
+  if (!err) return false;
+  const status = Number(err.status);
+  if (status !== 400 && status !== 500) return false;
+  return /unexpected[\s_-]*field|LIMIT_UNEXPECTED_FILE/i.test(`${err.message || ""} ${err.code || ""}`);
+};
+
 /* --------------------------------- depo --------------------------------- */
 
 const newId = (t) => `r${new Date(t).toISOString().replace(/[-:T]/g, "").slice(0, 14)}-${crypto.randomBytes(3).toString("hex")}`;
@@ -370,13 +378,20 @@ function createReplayStore({
       width: String(Math.round(Number(width ?? a.width) || 0)),
       height: String(Math.round(Number(height ?? a.height) || 0)),
     };
-    const extraFiles = a.posterPath ? [{ field: "poster", name: `gol-${mid}-${eid}.jpg`, mime: "image/jpeg", data: fs.readFileSync(a.posterPath) }] : [];
+    let extraFiles = a.posterPath ? [{ field: "poster", name: `gol-${mid}-${eid}.jpg`, mime: "image/jpeg", data: fs.readFileSync(a.posterPath) }] : [];
     const pathname = `/api/admin/live-streams/matches/${mid}/clips?event_id=${eid}`;
     const send = () => api.upload(pathname, buildClipMultipart({ fields, file: { name: `gol-${mid}-${eid}.mp4`, mime: "video/mp4", data }, extraFiles }), { timeout: UPLOAD_TIMEOUT_MS });
     let res = await send();
     if (!res.ok && res.offline) {
       await sleep(2000);
       res = await send();
+    }
+    // Eski sunucu (multer single("file")) "poster" alanını tanımaz: 400/500
+    // "Unexpected field" / LIMIT_UNEXPECTED_FILE. Kapaksız bir kez yeniden dene.
+    if (!res.ok && extraFiles.length && isUnexpectedFieldError(res.error)) {
+      extraFiles = [];
+      res = await send();
+      if (res.ok) res = { ...res, posterSkipped: true };
     }
     if (res.ok) {
       const meta = readMeta(replay.id);
@@ -392,4 +407,4 @@ function createReplayStore({
   return { save, list, get, update, remove, prune, upload, dir: replaysDir };
 }
 
-module.exports = { createReplayStore, planReplay, usableItems, MAX_AGE_MS, ERR };
+module.exports = { createReplayStore, planReplay, usableItems, isUnexpectedFieldError, MAX_AGE_MS, ERR };

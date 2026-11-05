@@ -1,8 +1,11 @@
 // Yayın Stüdyosu · Yayın sekmesi: YouTube (sunucu üzerinden, maç adıyla
 // kendiliğinden), elle RTMP, prova (yayınsız kayıt) ve KODLAMA: çözünürlük,
 // kare hızı ve bit hızı ayrı ayrı (bit hızı elle kbps ya da hazır seçenek).
+// YouTube kanalı bu ekrandan bağlanır (sunucu OAuth); elle RTMP'de izleme linki
+// maç sayfasına yazılır; maçın tamamı bilgisayara da kaydedilebilir.
 import React, { memo, useEffect, useState } from "react";
 import { Field, Icon } from "../../components/ui";
+import * as api from "./studioApi";
 import {
   BITRATE_MAX_KBPS, BITRATE_MIN_KBPS, BITRATE_PRESETS, FPS_CHOICES, PRIVACY_LABELS, RESOLUTION_CHOICES,
   bitrateAdvice, isRtmpUrl, joinRtmp, recommendedBitrate, streamStatusLabel, uploadNeedMbps, validateBitrate,
@@ -54,7 +57,109 @@ function EncodingCard({ encoding, onEncoding, locked }) {
   );
 }
 
-function BroadcastPanel({ yt, engine, busy, matchId, matchName, encoding, onEncoding, onStartYoutube, onStartManual, onRehearsal, onStop, onEndYoutube, toast }) {
+const fmtBytes = (n) => (!Number.isFinite(Number(n)) || !n ? "" : n > 1e9 ? `${(n / 1e9).toFixed(2)} GB` : `${Math.round(n / 1e6)} MB`);
+
+/** YouTube kanal bağlantısı (sunucu OAuth). */
+function YoutubeConnect({ yt, busy, toast, ask }) {
+  const c = yt.config;
+  const [working, setWorking] = useState(false);
+  const connect = async () => {
+    setWorking(true);
+    try { await yt.connect(); toast("Tarayıcıda Google hesabınla giriş yap ve kanala izin ver; bağlantı burada kendiliğinden görünür.", { tone: "info", timeout: 7000 }); } catch (e) { toast(e?.message || "YouTube bağlantısı başlatılamadı.", { tone: "error", timeout: 6000 }); } finally { setWorking(false); }
+  };
+  const disconnect = async () => {
+    if (!(await ask({ title: "YouTube bağlantısını kes", message: "Kanal bağlantısı sunucudan kaldırılır; yeni maçlarda yayın otomatik açılmaz.", confirmLabel: "Bağlantıyı kes", danger: true }))) return;
+    setWorking(true);
+    try { await yt.disconnect(); toast("YouTube bağlantısı kesildi.", { tone: "success" }); } catch (e) { toast(e?.message || "Bağlantı kesilemedi.", { tone: "error" }); } finally { setWorking(false); }
+  };
+  if (c.configured && c.connected !== false) {
+    return (
+      <div className="st-yt-chan">
+        {c.channel?.thumbnail ? <img src={c.channel.thumbnail} alt="" /> : <span className="st-yt-chan__ph"><Icon name="video" size={16} /></span>}
+        <span><small>Bağlı kanal</small><strong>{c.channel?.title || "YouTube kanalı"}</strong></span>
+        <button type="button" className="btn btn--xs btn--ghost" disabled={busy || working} onClick={disconnect} title="Kanal bağlantısını kes">Bağlantıyı kes</button>
+      </div>
+    );
+  }
+  if (c.oauthKnown && !c.oauthReady) {
+    return (
+      <div className="st-note is-warn st-note--block">
+        <Icon name="info" size={14} />
+        <span>
+          <strong>YouTube bağlantısı için sunucuda bir kez kurulum gerekiyor.</strong><br />
+          Google Cloud'da bir OAuth istemcisi (YOUTUBE_CLIENT_ID / YOUTUBE_CLIENT_SECRET) ve yönlendirme adresi tanımlanmalı; sonra bu ekrandan “YouTube kanalını bağla” ile giriş yapılır.{" "}
+          <button type="button" className="st-link" onClick={() => window.elitlig?.app?.openExternal?.("https://developers.google.com/youtube/v3/live/registering-an-application")}>Kurulum belgesi</button>
+          <br />Şimdilik <strong>Elle RTMP</strong> ile YouTube Studio'daki yayın anahtarını kullanabilirsin.
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="st-yt-connect">
+      <p className="st-hint">Kanalını bir kez bağla: her maç için yayın <strong>maç adıyla kendiliğinden açılır</strong>, yayın anahtarı gerekmez ve canlı link maç sayfasına eklenir.{c.error ? ` (${c.error})` : ""}</p>
+      {yt.connecting
+        ? <div className="st-note"><span className="st-spin" /> Tarayıcıda Google girişi bekleniyor… (2 dakika) <button type="button" className="btn btn--xs" onClick={() => yt.reloadConfig()}>Denetle</button></div>
+        : <button type="button" className="btn btn--red btn--block" disabled={busy || working} onClick={connect}><Icon name="video" size={13} /> YouTube kanalını bağla</button>}
+    </div>
+  );
+}
+
+/** Elle RTMP'de izleme linki → maç sayfası (match_video). */
+function WatchLink({ matchId, match, toast }) {
+  const [url, setUrl] = useState(match?.match_video || "");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { if (match?.match_video) setUrl(match.match_video); }, [match?.match_video]);
+  const valid = /^https?:\/\/(www\.)?(youtube\.com|youtu\.be|m\.youtube\.com)\//i.test(url.trim());
+  const save = async () => {
+    setSaving(true);
+    try {
+      const r = await api.setMatchVideo(matchId, url.trim());
+      if (!r?.ok) throw new Error(r?.error?.message || "Kaydedilemedi.");
+      toast("Maç sayfasına canlı yayın linki eklendi.", { tone: "success" });
+    } catch (e) { toast(e?.message || "Link kaydedilemedi.", { tone: "error" }); } finally { setSaving(false); }
+  };
+  return (
+    <div className="st-stack-sm">
+      <Field label="İzleme linki (YouTube)" hint="Maç sayfasında canlı yayın olarak görünür.">
+        <div className="st-row">
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=…" spellCheck={false} />
+          <button type="button" className="btn btn--xs btn--primary" disabled={!matchId || !valid || saving || url.trim() === match?.match_video} onClick={save}>Kaydet</button>
+        </div>
+      </Field>
+      {match?.match_video && <span className="st-okchip"><Icon name="check" size={12} /> Maç sayfasına canlı yayın linki eklendi</span>}
+    </div>
+  );
+}
+
+/** Tam maç yerel kaydı (yayınla birlikte). */
+function LocalRecordCard({ value, onChange, engine }) {
+  const studio = window.elitlig?.studio;
+  const supported = Boolean(studio?.chooseRecordDir);
+  const rec = engine.localRecord;
+  const choose = async () => {
+    try { const r = await studio.chooseRecordDir(); if (r?.path) onChange({ ...value, dir: r.path }); } catch { /* yoksay */ }
+  };
+  return (
+    <section className="st-card">
+      <header className="st-card__head"><Icon name="download" size={15} /><strong>Maçı bilgisayara da kaydet</strong>
+        {engine.active && rec?.path && <span className="pill pill--xs pill--red">KAYITTA</span>}
+      </header>
+      <label className="toggle"><input type="checkbox" checked={Boolean(value.enabled)} disabled={engine.active || !supported} onChange={(e) => onChange({ ...value, enabled: e.target.checked })} /> Yayınla birlikte tam maçı bu bilgisayara kaydet</label>
+      <div className="st-row">
+        <input readOnly value={value.dir || "Varsayılan klasör (Filmler / ElitLig)"} title={value.dir || ""} />
+        <button type="button" className="btn btn--xs" disabled={engine.active || !supported} onClick={choose}><Icon name="folder" size={12} /> Klasör</button>
+      </div>
+      {!supported && <p className="st-hint">Yerel kayıt bu uygulama sürümünde yok.</p>}
+      {engine.active && rec?.path && (
+        <p className="st-hint st-mono" title={rec.path}>{rec.path}{rec.sizeBytes ? ` · ${fmtBytes(rec.sizeBytes)}` : ""}</p>
+      )}
+      {engine.active && value.enabled && !rec?.path && <p className="st-hint">Kayıt dosyası bilgisi bekleniyor…</p>}
+      {engine.active && <p className="st-hint">Ayar yayın sürerken değişmez.</p>}
+    </section>
+  );
+}
+
+function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVia, encoding, onEncoding, onStartYoutube, onStartManual, onRehearsal, onStop, onEndYoutube, toast, ask, localRec, onLocalRec }) {
   const [rtmpUrl, setRtmpUrl] = useState("rtmp://a.rtmp.youtube.com/live2");
   const [rtmpKey, setRtmpKey] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
@@ -65,6 +170,7 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, encoding, onEnco
   const ff = engine.info?.ffmpeg;
   const manualUrl = joinRtmp(rtmpUrl, rtmpKey);
   const openStream = s?.broadcast_id && s.active !== false;
+  const connected = yt.config.configured && yt.config.connected !== false;
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(watch); toast("İzleme bağlantısı kopyalandı.", { tone: "success" }); } catch { toast("Kopyalanamadı.", { tone: "error" }); }
@@ -79,41 +185,33 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, encoding, onEnco
           <header className="st-card__head"><Icon name="video" size={15} /><strong>YouTube</strong>
             {s && <span className={`pill pill--xs ${String(s.status).toLowerCase() === "live" ? "pill--red" : ""}`}>{streamStatusLabel(s.status)}</span>}
           </header>
-          {yt.config.loading ? <p className="st-hint">Kanal bağlantısı denetleniyor…</p>
-            : !yt.config.configured ? (
-              <div className="st-note is-warn st-note--block">
-                <Icon name="info" size={14} />
-                <span>
-                  <strong>YouTube kanalı sunucuya bağlı değil{yt.config.error ? ` (${yt.config.error})` : ""}.</strong><br />
-                  Sunucuda YouTube kanal bağlantısı bir kez kurulmalı (YOUTUBE_CLIENT_ID / SECRET / REFRESH_TOKEN). Kurulunca her maç için yayın maç adıyla otomatik açılır; anahtar gerekmez.
-                  <br />Şimdilik aşağıdaki <strong>Elle RTMP</strong> ile YouTube Studio'daki yayın anahtarını kullanabilirsin.
-                </span>
-              </div>
-            ) : (
-              <>
-                <p className="st-hint">
-                  <strong>“YouTube'da canlı yayını başlat”</strong> kanalda yayını <strong>maç adıyla kendiliğinden açar</strong>{matchName ? <> (“{matchName}”)</> : null} ve görüntüyü gönderir — yayın anahtarı gerekmez.
-                </p>
-                <Field label="Gizlilik">
-                  <select value={yt.privacy} onChange={(e) => yt.setPrivacy(e.target.value)} disabled={encodingNow || busy || Boolean(openStream)}>
-                    {Object.entries(PRIVACY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </select>
-                </Field>
-                {!encodingNow
-                  ? <button type="button" className="btn btn--red btn--block" disabled={busy || !matchId || !engine.available} onClick={onStartYoutube}><Icon name="play" size={13} /> {openStream ? "Yayına devam et" : "YouTube'da canlı yayını başlat"}</button>
-                  : <button type="button" className="btn btn--block" disabled={busy} onClick={onStop}><Icon name="pause" size={13} /> Görüntüyü durdur</button>}
-                {openStream && <button type="button" className="btn btn--danger-ghost btn--block" disabled={busy} onClick={onEndYoutube}><Icon name="stop" size={13} /> YouTube yayınını bitir</button>}
-                {watch && (
-                  <div className="st-row">
-                    <input readOnly value={watch} onFocus={(e) => e.target.select()} />
-                    <button type="button" className="icon-btn" title="Kopyala" onClick={copy}><Icon name="copy" size={14} /></button>
-                    <button type="button" className="icon-btn" title="Tarayıcıda aç" onClick={() => window.elitlig?.app?.openExternal?.(watch)}><Icon name="external" size={14} /></button>
-                  </div>
-                )}
-                {s?.sync_error?.message && <p className="st-hint text-red">{s.sync_error.message}</p>}
-                {!matchId && <p className="st-hint">Önce üstten maç seç.</p>}
-              </>
-            )}
+          {yt.config.loading ? <p className="st-hint">Kanal bağlantısı denetleniyor…</p> : <YoutubeConnect yt={yt} busy={busy || encodingNow} toast={toast} ask={ask} />}
+          {connected && (
+            <>
+              <p className="st-hint">
+                <strong>“YouTube'da canlı yayını başlat”</strong> kanalda yayını <strong>maç adıyla kendiliğinden açar</strong>{matchName ? <> (“{matchName}”)</> : null} ve görüntüyü gönderir.
+              </p>
+              <Field label="Gizlilik">
+                <select value={yt.privacy} onChange={(e) => yt.setPrivacy(e.target.value)} disabled={encodingNow || busy || Boolean(openStream)}>
+                  {Object.entries(PRIVACY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </Field>
+              {!encodingNow
+                ? <button type="button" className="btn btn--red btn--block" disabled={busy || !matchId || !engine.available} onClick={onStartYoutube}><Icon name="play" size={13} /> {openStream ? "Yayına devam et" : "YouTube'da canlı yayını başlat"}</button>
+                : <button type="button" className="btn btn--block" disabled={busy} onClick={onStop}><Icon name="pause" size={13} /> Görüntüyü durdur</button>}
+              {openStream && <button type="button" className="btn btn--danger-ghost btn--block" disabled={busy} onClick={onEndYoutube}><Icon name="stop" size={13} /> YouTube yayınını bitir</button>}
+              {watch && (
+                <div className="st-row">
+                  <input readOnly value={watch} onFocus={(e) => e.target.select()} />
+                  <button type="button" className="icon-btn" title="Kopyala" onClick={copy}><Icon name="copy" size={14} /></button>
+                  <button type="button" className="icon-btn" title="Tarayıcıda aç" onClick={() => window.elitlig?.app?.openExternal?.(watch)}><Icon name="external" size={14} /></button>
+                </div>
+              )}
+              {openStream && match?.match_video && <span className="st-okchip"><Icon name="check" size={12} /> Maç sayfasına canlı yayın linki eklendi</span>}
+              {s?.sync_error?.message && <p className="st-hint text-red">{s.sync_error.message}</p>}
+              {!matchId && <p className="st-hint">Önce Maç yönetimi sekmesinden maç aç.</p>}
+            </>
+          )}
         </section>
       </div>
 
@@ -129,6 +227,7 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, encoding, onEnco
               <button type="button" className="btn btn--block" disabled={busy || encodingNow || !isRtmpUrl(manualUrl) || !engine.available} onClick={() => onStartManual(manualUrl)}><Icon name="play" size={13} /> Bu anahtarla yayına başla</button>
             </>
           )}
+          {(startedVia === "manual" || (manualOpen && match?.match_video)) && matchId && <WatchLink matchId={matchId} match={match} toast={toast} />}
         </section>
         <section className="st-card">
           <header className="st-card__head"><Icon name="target" size={15} /><strong>Prova (yayınsız kayıt)</strong></header>
@@ -140,6 +239,7 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, encoding, onEnco
       </div>
 
       <div className="st-stack">
+        <LocalRecordCard value={localRec} onChange={onLocalRec} engine={engine} />
         <EncodingCard encoding={encoding} onEncoding={onEncoding} locked={encodingNow} />
         <p className="st-hint">
           Kodlayıcı: {ff ? (ff.available ? `ffmpeg ${ff.version || ""} · ${encoderText(ff)}` : "ffmpeg yok") : "bilgi yok"}

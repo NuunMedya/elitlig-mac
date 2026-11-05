@@ -36,7 +36,7 @@ function AngleChip({ angle, sources, on, onToggle }) {
 
 function ReplayPanel({
   replays, pending, meta, sources, matchId, anglePref, onAnglePref, angleStatus, angleAvailable, multiAngle, encoding,
-  player, slowMo, onSlowMo, replayAudio, onReplayAudio, onMoment, onPlay, onStop, onSkip, onUpdate, onRemove, onRetry, onDismiss, uploadOf, recordAngles,
+  player, rate = 1, onRate, replayAudio, onReplayAudio, onMoment, onPlay, onStop, onSkip, onUpdate, onRemove, onRetry, onDismiss, uploadOf, recordAngles,
 }) {
   const [selection, setSelection] = useState({}); // replayId → [açı]
   const [onlyMatch, setOnlyMatch] = useState(true);
@@ -77,8 +77,13 @@ function ReplayPanel({
           <Icon name="star" size={15} /> ÖNEMLİ AN <Kbd>B</Kbd>
         </button>
         {!encoding && <p className="st-hint">Tekrar kaydı için yayın ya da <strong>prova</strong> açık olmalı.</p>}
-        <label className="toggle"><input type="checkbox" checked={slowMo} onChange={(e) => onSlowMo(e.target.checked)} /> Ağır çekim (0,5×)</label>
-        <label className="toggle"><input type="checkbox" checked={replayAudio} onChange={(e) => onReplayAudio(e.target.checked)} /> Tekrarın sesi yayına</label>
+        <div className={`st-rate ${player.playing ? "is-live" : ""}`}>
+          <span className="st-rate__head"><strong>Hız {String(rate).replace(".", ",")}×</strong>{rate < 1 && <em>ağır çekim</em>}{player.playing && <em className="is-live">yayında anında uygulanır</em>}</span>
+          <input type="range" min={0.25} max={1} step={0.05} value={rate} onChange={(e) => onRate(Math.round(Number(e.target.value) * 20) / 20)} aria-label="Tekrar hızı" />
+          <span className="st-chips">{[0.25, 0.5, 0.75, 1].map((v) => <button key={v} type="button" className={`st-chip ${rate === v ? "is-on" : ""}`} onClick={() => onRate(v)}>{String(v).replace(".", ",")}×</button>)}</span>
+        </div>
+        <label className="toggle" title="Kapalıyken (önerilen) canlı mikrofon sürer, tekrar videosu sessiz oynar"><input type="checkbox" checked={replayAudio} onChange={(e) => onReplayAudio(e.target.checked)} /> Tekrarın kendi sesi yayına</label>
+        {!replayAudio && <p className="st-hint">Tekrar sırasında canlı mikrofon sürer; tekrar videosunun sesi kapalı.</p>}
       </section>
 
       <section className="st-replays__list">
@@ -139,7 +144,7 @@ function ReplayPanel({
           </>
         ) : (
           <>
-            <p className="st-hint">{queue.length ? `${selectedCount} tekrar · ${queue.length} açı · ≈ ${Math.round((queueMs * (slowMo ? 2 : 1)) / 1000)} sn` : "Listeden tekrar ve açı seç; seçilenler sırayla yayına verilir."}</p>
+            <p className="st-hint">{queue.length ? `${selectedCount} tekrar · ${queue.length} açı · ≈ ${Math.round((queueMs * (1 / (rate || 1))) / 1000)} sn` : "Listeden tekrar ve açı seç; seçilenler sırayla yayına verilir."}</p>
             <button type="button" className="btn btn--red btn--lg btn--block" disabled={!queue.length} onClick={() => onPlay(queue)}>
               <Icon name="play" size={14} /> Tekrarı yayına ver
             </button>

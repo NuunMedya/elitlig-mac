@@ -10,6 +10,10 @@
 //        { key, poster_key, duration_ms, width, height, size_bytes } → öne çıkan nesnesi
 // Silme: DELETE /api/admin/live-streams/matches/:id/highlight
 // JSON çağrıları jetonlu api modülünden geçer (api.request).
+//
+// Röportaj (interview.js) aynı akışı kullanır (uploadPresigned):
+//   POST …/matches/:id/interview/upload-url → PUT → POST …/matches/:id/interview
+// upload-url 404 dönerse (uç sunucuda henüz yok) açık Türkçe hata: SERVER_PENDING.
 "use strict";
 
 const fs = require("node:fs");
@@ -28,6 +32,7 @@ const ERR = {
   NETWORK: "Bağlantı yok: video yüklenemedi. İnternet bağlantınızı kontrol edin.",
   FINALIZE: "Video yüklendi ama maça bağlanamadı.",
   DELETE: "Öne çıkanlar videosu silinemedi.",
+  SERVER_PENDING: "Sunucu güncellemesi bekleniyor: maç özeti yükleme ucu henüz yayında değil.",
 };
 const fail = (code, message = ERR[code], extra = {}) => ({ ok: false, error: { code, message, ...extra } });
 
@@ -70,6 +75,58 @@ const unwrap = (data) => (data && typeof data === "object" && data.data && typeo
 const validMatch = (matchId) => Number.isInteger(Number(matchId)) && Number(matchId) > 0;
 
 /**
+ * Ön imzalı yükleme akışı (öne çıkanlar, röportaj).
+ *   file: { path, sizeBytes, posterPath?, durationMs, width, height }
+ *   base: "/api/admin/live-streams/matches/<id>/<tür>"
+ *   kind: ilerleme olayındaki tür ("highlight" | "interview")
+ *   errors: ERR ile aynı anahtarlar (türe özgü iletiler)
+ * → { ok, result, key, posterKey } | { ok:false, error }
+ */
+async function uploadPresigned(api, { kind, matchId, base, file, meta, errors = ERR }, { putImpl = putFile, emitProgress = () => {}, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  const E = { ...ERR, ...errors };
+  const mid = Number(matchId);
+  const urlRes = await api.request({ method: "POST", path: `${base}/upload-url`, body: { size_bytes: file.sizeBytes, content_type: "video/mp4", ...meta }, cache: false, queue: false });
+  if (!urlRes.ok) {
+    if (urlRes.offline) return fail("NETWORK", E.NETWORK);
+    // Uç henüz yayında değil (eski sunucu): 404.
+    if (urlRes.error?.status === 404) return fail("SERVER_PENDING", E.SERVER_PENDING, { status: 404 });
+    return fail("UPLOAD_URL", `${E.UPLOAD_URL} ${urlRes.error?.message || ""}`.trim(), { status: urlRes.error?.status });
+  }
+  const target = unwrap(urlRes.data) || {};
+  if (!target.upload_url || !target.key) return fail("UPLOAD_URL", `${E.UPLOAD_URL} Sunucu yanıtı eksik.`);
+
+  let posterSize = 0;
+  if (target.poster_upload_url && file.posterPath) {
+    try { posterSize = fs.statSync(file.posterPath).size; } catch { posterSize = 0; }
+  }
+  const total = file.sizeBytes + posterSize;
+  const progress = (loaded) => emitProgress({ kind, matchId: mid, loaded: Math.min(loaded, total), total });
+  progress(0);
+  const put = async (url, opts) => {
+    let r = await putImpl(url, opts);
+    if (!r.ok && r.network) {
+      await sleep(2000);
+      r = await putImpl(url, opts);
+    }
+    return r;
+  };
+  const video = await put(target.upload_url, { file: file.path, size: file.sizeBytes, headers: target.headers || {}, contentType: "video/mp4", onProgress: (l) => progress(l) });
+  if (!video.ok) return fail(video.network ? "NETWORK" : "PUT_FAILED", video.network ? E.NETWORK : `${E.PUT_FAILED} (HTTP ${video.status})`, { status: video.status });
+
+  let posterKey = null;
+  if (posterSize > 0) {
+    const poster = await put(target.poster_upload_url, { file: file.posterPath, size: posterSize, headers: target.poster_headers || {}, contentType: "image/jpeg", onProgress: (l) => progress(file.sizeBytes + l) });
+    // Kapak yüklenemezse video yine bağlanır (kapak isteğe bağlı).
+    if (poster.ok) posterKey = target.poster_key || null;
+  }
+  progress(total);
+
+  const fin = await api.request({ method: "POST", path: base, body: { key: target.key, poster_key: posterKey, ...meta, size_bytes: file.sizeBytes }, cache: false, queue: false });
+  if (!fin.ok) return fail(fin.offline ? "NETWORK" : "FINALIZE", fin.offline ? E.NETWORK : `${E.FINALIZE} ${fin.error?.message || ""}`.trim(), { status: fin.error?.status });
+  return { ok: true, result: unwrap(fin.data), key: target.key, posterKey };
+}
+
+/**
  * Öne çıkanlar videosunu yükler. emitProgress({ kind, matchId, loaded, total }).
  * → { ok, highlight } | { ok:false, error }
  */
@@ -84,42 +141,14 @@ async function uploadHighlight(api, { highlightsDir, matchId, name, durationMs, 
     height: Math.round(Number(height ?? file.height) || 0),
   };
   const base = `/api/admin/live-streams/matches/${mid}/highlight`;
-  const urlRes = await api.request({ method: "POST", path: `${base}/upload-url`, body: { size_bytes: file.sizeBytes, content_type: "video/mp4", ...meta }, cache: false, queue: false });
-  if (!urlRes.ok) return fail(urlRes.offline ? "NETWORK" : "UPLOAD_URL", urlRes.offline ? ERR.NETWORK : `${ERR.UPLOAD_URL} ${urlRes.error?.message || ""}`.trim(), { status: urlRes.error?.status });
-  const target = unwrap(urlRes.data) || {};
-  if (!target.upload_url || !target.key) return fail("UPLOAD_URL", `${ERR.UPLOAD_URL} Sunucu yanıtı eksik.`);
-
-  const total = file.sizeBytes + (target.poster_upload_url && file.posterPath ? fs.statSync(file.posterPath).size : 0);
-  const progress = (loaded) => emitProgress({ kind: "highlight", matchId: mid, loaded: Math.min(loaded, total), total });
-  progress(0);
-  const put = async (url, opts) => {
-    let r = await putImpl(url, opts);
-    if (!r.ok && r.network) {
-      await sleep(2000);
-      r = await putImpl(url, opts);
-    }
-    return r;
-  };
-  const video = await put(target.upload_url, { file: file.path, size: file.sizeBytes, headers: target.headers || {}, contentType: "video/mp4", onProgress: (l) => progress(l) });
-  if (!video.ok) return fail(video.network ? "NETWORK" : "PUT_FAILED", video.network ? ERR.NETWORK : `${ERR.PUT_FAILED} (HTTP ${video.status})`, { status: video.status });
-
-  let posterKey = null;
-  if (target.poster_upload_url && file.posterPath) {
-    const psize = fs.statSync(file.posterPath).size;
-    const poster = await put(target.poster_upload_url, { file: file.posterPath, size: psize, headers: target.poster_headers || {}, contentType: "image/jpeg", onProgress: (l) => progress(file.sizeBytes + l) });
-    // Kapak yüklenemezse video yine bağlanır (kapak isteğe bağlı).
-    if (poster.ok) posterKey = target.poster_key || null;
-  }
-  progress(total);
-
-  const fin = await api.request({ method: "POST", path: base, body: { key: target.key, poster_key: posterKey, ...meta, size_bytes: file.sizeBytes }, cache: false, queue: false });
-  if (!fin.ok) return fail(fin.offline ? "NETWORK" : "FINALIZE", fin.offline ? ERR.NETWORK : `${ERR.FINALIZE} ${fin.error?.message || ""}`.trim(), { status: fin.error?.status });
-  const highlight = unwrap(fin.data)?.highlight ?? unwrap(fin.data);
+  const res = await uploadPresigned(api, { kind: "highlight", matchId: mid, base, file, meta }, { putImpl, emitProgress, sleep });
+  if (!res.ok) return res;
+  const highlight = res.result?.highlight ?? res.result;
   // Yerel bilgi dosyasına işle.
   try {
     const mp4 = safeHighlightPath(highlightsDir, name);
     const m = readHighlightMeta(highlightsDir, name) || {};
-    fs.writeFileSync(mp4.replace(/\.mp4$/, ".json"), JSON.stringify({ ...m, uploaded: { matchId: mid, key: target.key, posterKey, id: highlight?.id ?? null, url: highlight?.url ?? null, at: new Date(now()).toISOString() } }));
+    fs.writeFileSync(mp4.replace(/\.mp4$/, ".json"), JSON.stringify({ ...m, uploaded: { matchId: mid, key: res.key, posterKey: res.posterKey, id: highlight?.id ?? null, url: highlight?.url ?? null, at: new Date(now()).toISOString() } }));
   } catch { /* yoksay */ }
   return { ok: true, highlight };
 }
@@ -131,4 +160,4 @@ async function deleteHighlight(api, { matchId } = {}) {
   return { ok: true, data: res.data ?? null };
 }
 
-module.exports = { putFile, uploadHighlight, deleteHighlight, ERR };
+module.exports = { putFile, uploadPresigned, uploadHighlight, deleteHighlight, unwrap, validMatch, ERR };

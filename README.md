@@ -336,20 +336,80 @@ anında son ~10 saniye klip olarak kaydedilip oyuncunun profiline yüklenir. Yet
 
 - **Akış.** Arayüz programı `<canvas>`'ta oluşturur ve MediaRecorder ile (H.264/Opus Matroska ya da
   WebM) 250 ms'lik parçalar halinde ana sürece yollar. Ana süreçteki **ffmpeg** bunu yeniden kodlar:
-  H.264 (VideoToolbox donanım kodlayıcı; açılamazsa x264), 2 sn'de bir anahtar kare, sabit bit hızı,
-  AAC 160 kbps 44,1 kHz stereo. Tek süreçte iki çıkış: FLV → RTMP(S) ve 2 sn'lik MPEG-TS parça halkası
-  (son ~40 sn, geçici klasörde). Yayın adresi olmadan **yalnız kayıt** (prova) da çalışır.
-- **Bağlantı.** Durum: hazırlanıyor → bağlanıyor → yayında (ya da kayıtta). RTMP koparsa 2, 4, 8, 16,
-  16 sn arayla 5 kez yeniden bağlanılır, sonra hata Türkçe gösterilir (bağlantı reddedildi, zaman
-  aşımı, adres bulunamadı, yayın anahtarı, RTMPS, kodlayıcı). Yayın sürerken ekran uykuya geçmez.
+  H.264 (VideoToolbox donanım kodlayıcı; açılamazsa x264), 2 sn'de bir anahtar kare, sabit bit hızı
+  (CBR: `-maxrate` = `-b:v`, `-bufsize` = 2×), **sabit kare hızı** (`fps` süzgeci + `-fps_mode cfr -r`;
+  MediaRecorder'ın değişken zaman damgaları YouTube'a düzensiz kare olarak gitmez), AAC 160 kbps
+  **48 kHz** stereo (MediaRecorder Opus 48 kHz; yeniden örnekleme yok). Tek süreçte tee çıkışları:
+  FLV → RTMP(S) (`flvflags=no_duration_filesize`), isteğe bağlı yerel tam kayıt (MKV) ve 2 sn'lik
+  MPEG-TS parça halkası (son ~40 sn, geçici klasörde). Yayın adresi olmadan **yalnız kayıt** (prova)
+  da çalışır. Giriş zaman damgaları korunur (`+genpts`); `-use_wallclock_as_timestamps` stdin'den
+  topluca okunan parçalarda titreşim / ses kayması yarattığı için kullanılmaz.
+- **Bağlantı (2.11).** Durum: hazırlanıyor → bağlanıyor → yayında (ya da kayıtta). RTMP çıkışı ffmpeg'in
+  **fifo** katmanından yazılır: ağ yavaşlarsa kodlayıcı beklemez (~10 sn kuyruk; dolarsa kareler
+  atılır, anahtar kareyle sürer, "ağ yetişemiyor" uyarısı), bağlantı koparsa ffmpeg **süreç yeniden
+  başlamadan** 2 sn arayla 20 kez yeniden bağlanır — kayıt halkası, yerel kayıt ve tarayıcı
+  kaydedicisi kesilmez; durum "yeniden bağlanıyor (kayıt sürüyor)" olur, bağlanınca "yayında"ya
+  döner. Yayın anahtarı 3 kez reddedilirse, fifo'nun deneme hakkı biterse ya da kuyruk 30 sn dolu
+  kalırsa (bağlantı askıda) süreç yeniden başlar: 2, 4, 8, 16, 16 sn arayla 5 deneme, sonra hata
+  Türkçe gösterilir (bağlantı reddedildi, zaman aşımı, adres bulunamadı, yayın anahtarı, RTMPS,
+  kodlayıcı). fifo'suz ffmpeg'de eski yol (RTMP düşünce süreç yeniden başlar). Yayın sürerken ekran
+  uykuya geçmez; pencere arkada / örtülü / küçültülmüşken Chromium çizimi ve zamanlayıcıları kısmaz
+  (`disable-renderer-backgrounding`, `disable-backgrounding-occluded-windows`,
+  `disable-background-timer-throttling`; Windows'ta `CalculateNativeWinOcclusion` kapalı).
+  RTMP protokol seçenekleri (`-rw_timeout`, `-rtmp_live`, `-rtmp_buffer`) tee yan çıkışlarına
+  geçirilemediği için kullanılmaz; askıda kalan bağlantıyı fifo kuyruk denetimi yakalar.
+- **Kararlılık (2.11).** 2.10'da yayının kopmasının başlıca nedenleri: (1) her açı tarayıcıda bir kez,
+  ffmpeg'de bir kez daha kodlanıyordu — birkaç kamerada işlemci doyuyor, program kodlayıcısı gerçek
+  zamanın gerisine düşüyor, stdin birikip (32 MB) ya da ilerleme 15 sn kesilip süreç yeniden
+  başlıyor, RTMP bağlantısı her seferinde düşüyordu; (2) ağ takılınca tee FLV yazarken kodlayıcıyı
+  da bekletiyordu (aynı yeniden başlatmalar); (3) her RTMP kopması süreci yeniden başlatıyordu.
+  Şimdi: açılar kopya kipinde (aşağıda), RTMP fifo'da, takılma denetimi parçalar gelmeye devam
+  ettiği sürece yeniden başlatmaz (yalnız arayüzden parça **ve** ffmpeg'den ilerleme gelmiyorsa;
+  parçalar gelirken 60 sn hiç ilerleme yoksa kesin takılma). Bir açının takılması yalnız o açıyı
+  etkiler; açı ffmpeg süreçleri düşük öncelikle (nice 10) çalışır. ffmpeg hızı 10 sn boyunca
+  0,95'in altında kalırsa "slow" uyarısı verilir ve bir sonraki yeniden başlatmada daha hızlı ön
+  ayar kullanılır (x264 veryfast → superfast → ultrafast; NVENC p4 → p2 → p1).
+- **Yayın sağlığı (tanılama).** Her oturum `userData/logs/studio-<zaman>.log` dosyasına yazılır:
+  seçenekler, ffmpeg komutları, ffmpeg uyarı / hata satırları, her yeniden başlatma ve nedeni,
+  takılma / hız kararları, RTMP kopma / yeniden bağlanma, açı olayları (yayın anahtarı gizli; en çok
+  8 MB, son 20 günlük saklanır). `studio.diagnostics()` → `{ logPath, lastErrors, ffmpegErrors }`,
+  `studio.revealDiagnostics()` dosyayı Finder / Gezgin'de gösterir (kullanıcı gönderebilir).
 - **YouTube.** Yayın adresi YouTube Studio'daki sunucu + anahtardır:
   `rtmp://a.rtmp.youtube.com/live2/<anahtar>` ya da `rtmps://a.rtmps.youtube.com:443/live2/<anahtar>`
   (sunucu uçları: `elitlig-server/docs/youtube-canli-yayin.md`).
 - **Açılar (çok açılı kayıt).** Program akışına ek olarak her kaynak (kamera vb.) ayrı bir
-  MediaRecorder akışıyla gelir; her açı için hafif bir ffmpeg (RTMP yok) H.264'e kodlar
-  (kaynak boyutu, en çok 1080p; bilinmiyorsa 1280×720, ~3000 kbps), 1 sn'de bir anahtar kare,
-  1 sn'lik parça halkası (~40 sn). Programla aynı başlık kapısı, geri basınç, takılma ve kaydedici
-  yeniden başlatma kuralları geçerlidir; yayın olmadan (prova / yalnız kayıt) da çalışır.
+  MediaRecorder akışıyla gelir; her açı için hafif bir ffmpeg (RTMP yok) 1 sn'lik parça halkası
+  (~40 sn) yazar. **Kopya kipi (2.11):** kaynak `mimeType` H.264 ise
+  (`video/x-matroska;codecs=avc1`, `video/webm;codecs=h264`; arayüz MediaRecorder'a
+  `videoKeyFrameIntervalDuration: 1000` verir) görüntü yeniden kodlanmaz (`-c:v copy`,
+  `h264_mp4toannexb`, parçalar anahtar karelerde bölünür); yalnız ses AAC'ye çevrilir. 720p'de
+  işlemci süresi ~13 kat düşer (CI'da ölçülür). Kopya açılamazsa ya da kaynak VP8/VP9 ise eskisi gibi
+  H.264'e kodlanır (kaynak boyutu, en çok 1080p; bilinmiyorsa 1280×720, ~3000 kbps, 1 sn'de bir
+  anahtar kare). Programla aynı başlık kapısı, geri basınç, takılma ve kaydedici yeniden başlatma
+  kuralları geçerlidir; yayın olmadan (prova / yalnız kayıt) da çalışır.
+- **Yerel tam kayıt.** `start({ …, localRecord: { enabled, dir? } })`: maçın tamamı tee'nin üçüncü
+  çıkışıyla `<klasör>/ElitLig-<maç>-<zaman>.mkv`'ye yazılır (Matroska: uygulama çökse de dosya
+  açılır; her yeniden başlatma yeni parça, `…-2.mkv`). Durdurunca parçalar arka planda yeniden
+  kodlamadan tek `+faststart` MP4'e birleştirilir, MKV'ler silinir (başarısızsa korunur). Durumda
+  `localPath`, `localBytes`, `localRemux`; `studio:localRecord` olayı. Klasör `chooseRecordDir()`
+  ile seçilir ve hatırlanır (varsayılan `~/Movies/ElitLig`, Windows'ta `Videolar\ElitLig`). Yerel
+  çıkış yazılamazsa (disk dolu) yayın sürer, uyarı verilir.
+- **Röportaj.** `interview.start({ matchId, label })` program parça halkasında o andan itibaren
+  parçaları sabitler (halka ilerlese de silinmez); `interview.stop(id)` bunları yeniden kodlamadan
+  `userData/interviews/interview-<maç>-<zaman>.mp4`'e birleştirir (H.264 düzeyi, `+faststart`,
+  kapak). Yalnız kayıtta da çalışır; yayın durursa süren röportaj kendiliğinden yazılır (en çok
+  90 dk). `interview.upload({ matchId, name })`: `POST …/matches/:id/interview/upload-url` → `PUT`
+  (+kapak) → `POST …/matches/:id/interview { key, poster_key, duration_ms, width, height,
+  size_bytes }` (sunucu adresi `matches.post_roportaj`'a yazar); ilerleme `studio:uploadProgress`
+  (`kind: "interview"`). Uç sunucuda yoksa (404): "Sunucu güncellemesi bekleniyor: röportaj
+  yükleme ucu henüz yayında değil."
+- **LED çıkışı.** `studio.displays()` bağlı ekranları verir; `led.open({ displayId, mode, url?,
+  matchId? })` o ekranda çerçevesiz, menüsüz, siyah, tam ekran bir pencere açar (Mac ve Windows).
+  `mode: "web"`: `https://elitlig.com/led/<maç>` (ya da verilen adres; yalnız elitlig.com ve API
+  kökeni, dış gezinme engelli, ön yükleme yok). `mode: "studio"`: uygulama arayüzü `#led-output`
+  ile; stüdyo `led.sendState(state)` ile durumu yollar, LED penceresi `led.onState` / `led.getState`
+  ile alır. Esc'ye iki kez basmak ya da `led.close()` kapatır; ekran çıkarılınca pencere kapanır ve
+  durum (`led.onStatus`) yayılır.
 - **Tekrarlar.** Gol ya da an: program ve seçilen açılar **aynı duvar saati penceresinden**
   yeniden kodlamadan kesilir (başlangıç anahtar kareye yuvarlanır: program 2 sn, açılar 1 sn;
   süreler ~0,5 sn içinde) → `userData/replays/<kimlik>/` (`program.mp4`, `angle-N.mp4`, her
@@ -357,14 +417,17 @@ anında son ~10 saniye klip olarak kaydedilip oyuncunun profiline yüklenir. Yet
   özete dahil mi, yüklendi mi). 7 günden eskiler açılışta silinir (maç özetleri için), oturum
   sürerken hiçbir şey silinmez. Gol klibi (`saveClip`) artık program açılı bir tekrardır;
   `POST /api/admin/live-streams/matches/:id/clips?event_id=` ile gol olayına bağlanarak yüklenir
-  (dosya + isteğe bağlı `poster` JPEG; en çok 40 MB; ağ hatasında bir kez yeniden denenir).
+  (dosya + isteğe bağlı `poster` JPEG; en çok 40 MB; ağ hatasında bir kez yeniden denenir; eski
+  sunucu `poster` alanını reddederse — 400/500 "Unexpected field" / `LIMIT_UNEXPECTED_FILE` —
+  kapaksız bir kez yeniden gönderilir).
   24 saatten eski, eski biçim klipler (`userData/clips`) açılışta silinir.
 - **Öne çıkanlar.** Arayüz videoyu ekran dışı canvas'ta gerçek zamanlı oluşturur; ana süreç
   parçaları ffmpeg ile H.264 High (yuv420p) + AAC, `+faststart` MP4'e kodlar
   (`userData/highlights/`; gerçek zamanlı kodlama başarısız olursa ham kopyadan x264 ile).
   Yükleme ön imzalı adresle: `POST …/matches/:id/highlight/upload-url` → dosya doğrudan depoya
   `PUT` (diskten akıtılır, ilerleme gösterilir; kapak da) → `POST …/matches/:id/highlight`.
-  Silme: `DELETE …/matches/:id/highlight`.
+  Silme: `DELETE …/matches/:id/highlight`. Uç sunucuda henüz yoksa (404): "Sunucu güncellemesi
+  bekleniyor: maç özeti yükleme ucu henüz yayında değil."
 - **H.264 düzeyi.** Yazılan her MP4'e (klip, tekrar, öne çıkan) çözünürlük / kare hızına uygun
   düzey yazılır (`h264_metadata` bsf; `app/studio/h264level.js`): 720p ve 1080p30 → 4.1,
   1080p60 → 4.2, daha büyük → 5.1+. Düşük düzey (ör. 1080p60'ta 4.0) sitede siyah görüntüye

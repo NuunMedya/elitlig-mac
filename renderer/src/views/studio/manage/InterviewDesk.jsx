@@ -4,11 +4,13 @@
 //   PUT /api/maclar/:id/broadcast-state { interview: { title, variant, sponsorId, people } }
 import React, { useEffect, useMemo, useState } from "react";
 import { Icon } from "../../../components/ui";
-import { INTERVIEW_TITLES, INTERVIEW_VARIANTS, MAX_INTERVIEW_PEOPLE, editAt, interviewPatch, interviewPerson, moveItem, removeAt, sponsorHas } from "../../../lib/studio/manageBroadcast";
+import { INTERVIEW_TITLES, INTERVIEW_VARIANTS, MAX_INTERVIEW_PEOPLE, editAt, interviewPatch, interviewPerson, moveItem, removeAt, sponsorHas, staffPeople } from "../../../lib/studio/manageBroadcast";
+import * as api from "./manageApi";
+import { useLoad } from "./useManage";
 
 const SIDE_LABEL = { home: "Ev sahibi", away: "Deplasman", other: "Diğer" };
 
-export default function InterviewDesk({ desk, live, onGoLive, isLive }) {
+export default function InterviewDesk({ desk, live, onGoLive, onTakeOff, isLive, matchId }) {
   const current = desk.state.interview;
   const [title, setTitle] = useState(current.title);
   const [variant, setVariant] = useState(current.variant);
@@ -17,6 +19,8 @@ export default function InterviewDesk({ desk, live, onGoLive, isLive }) {
   const [q, setQ] = useState("");
   const [manual, setManual] = useState({ name: "", side: "home", teamName: "", role: "" });
   const sponsors = desk.sponsors.filter((s) => sponsorHas(s, "interview"));
+  const staffRes = useLoad(() => api.getMatchAssignments(matchId), [matchId], { enabled: Boolean(matchId), fallback: "" });
+  const staff = staffPeople(staffRes.data);
 
   // Sunucudaki kayıt değişince (başka reji) formu tazele.
   useEffect(() => {
@@ -34,7 +38,12 @@ export default function InterviewDesk({ desk, live, onGoLive, isLive }) {
   const toggle = (team, player) => {
     if (picked(team.side, player.id)) { setPeople((list) => list.filter((p) => !(String(p.playerId) === String(player.id) && p.side === team.side))); return; }
     if (full) return;
-    const person = interviewPerson({ playerId: player.id, name: player.name, side: team.side, teamName: team.name });
+    const person = interviewPerson({ playerId: player.id, name: player.name, side: team.side, teamName: team.name, image: player.image || "" });
+    if (person) setPeople((list) => [...list, person]);
+  };
+  const addStaff = (st) => {
+    if (full || people.some((p) => p.name === st.name)) return;
+    const person = interviewPerson({ name: st.name, side: "other", teamName: "", role: st.role });
     if (person) setPeople((list) => [...list, person]);
   };
   const addManual = (e) => {
@@ -75,6 +84,16 @@ export default function InterviewDesk({ desk, live, onGoLive, isLive }) {
             </div>
           ))}
         </div>
+        {staff.length > 0 && (
+          <>
+            <h6 className="mg-sidehead">Maç görevlileri</h6>
+            <ul className="mg-chips">
+              {staff.map((st) => (
+                <li key={st.id}><button type="button" className="mg-chip" disabled={full} onClick={() => addStaff(st)}>{st.name} <small>{st.role}</small></button></li>
+              ))}
+            </ul>
+          </>
+        )}
         <form className="mg-inline mg-wrap" onSubmit={addManual}>
           <input className="mg-grow" value={manual.name} maxLength={80} placeholder="Elle: ad soyad (antrenör, yönetici…)" onChange={(e) => setManual((m) => ({ ...m, name: e.target.value }))} />
           <select value={manual.side} onChange={(e) => setManual((m) => ({ ...m, side: e.target.value }))} aria-label="Takım">
@@ -119,6 +138,7 @@ export default function InterviewDesk({ desk, live, onGoLive, isLive }) {
                   <small>{p.teamName || SIDE_LABEL[p.side]}</small>
                 </span>
                 <input className="mg-role" value={p.role || ""} maxLength={60} placeholder="Unvan" onChange={(e) => setPeople((list) => editAt(list, i, { role: e.target.value }))} />
+                <input className="mg-role" value={p.image || ""} placeholder="Fotoğraf adresi (isteğe bağlı)" onChange={(e) => setPeople((list) => editAt(list, i, { image: e.target.value.trim() }))} />
                 <button type="button" className="icon-btn icon-btn--xs" onClick={() => setPeople((list) => moveItem(list, i, -1))} disabled={i === 0}><Icon name="chevronUp" size={12} /></button>
                 <button type="button" className="icon-btn icon-btn--xs" onClick={() => setPeople((list) => moveItem(list, i, 1))} disabled={i === people.length - 1}><Icon name="chevronDown" size={12} /></button>
                 <button type="button" className="icon-btn icon-btn--xs" onClick={() => setPeople((list) => removeAt(list, i))}><Icon name="x" size={12} /></button>
@@ -128,7 +148,10 @@ export default function InterviewDesk({ desk, live, onGoLive, isLive }) {
         ) : <p className="mg-muted">Henüz kimse seçilmedi.</p>}
         <div className="mg-inline mg-end">
           <button type="button" className="btn btn--sm" onClick={() => save(false)} disabled={desk.saving}>Kaydet</button>
-          <button type="button" className="btn btn--sm btn--primary" onClick={() => save(true)} disabled={desk.saving}><Icon name="mic" size={13} /> Kaydet ve yayına al</button>
+          {isLive && onTakeOff
+            ? <button type="button" className="btn btn--sm btn--danger-ghost" onClick={() => onTakeOff()} disabled={desk.saving}><Icon name="micOff" size={13} /> Bandı yayından kaldır</button>
+            : null}
+          <button type="button" className="btn btn--sm btn--primary" onClick={() => save(true)} disabled={desk.saving}><Icon name="mic" size={13} /> {isLive ? "Kaydet (yayında)" : "Kaydet ve bandı yayına al"}</button>
         </div>
       </fieldset>
     </div>

@@ -1,6 +1,7 @@
 // Yayın Stüdyosu — ELİTLİG LOGO GEÇİŞİ ("stinger").
 //
-// ~900 ms: menekşe degrade bir şerit soldan sağa ekranı örter (eğik kenarlı),
+// Marka renkleri (g.branding: ör. "CCL CUP" ön ayarı kendi logo ve renkleriyle)
+// verilmezse ElitLig menekşesi. ~900 ms: degrade bir şerit soldan sağa ekranı örter (eğik kenarlı),
 // ortada beyaz ElitLig madalyası dönerek büyür; tam ortada (p = 0,5) görüntü
 // arkada değişir (sahne → sahne, canlı → tekrar, tekrar → canlı); sonra şerit
 // sağa çekilir, logo büyüyüp söner. Program tuvaline çizilir: yayına gider.
@@ -67,21 +68,57 @@ export function stingerBand(state, W, H) {
   ];
 }
 
+const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+const hex6 = (c) => {
+  if (!HEX.test(String(c || ""))) return null;
+  const s = String(c).slice(1);
+  return `#${s.length === 3 ? s.split("").map((x) => x + x).join("") : s}`.toLowerCase();
+};
+/** Rengi siyaha doğru karartır (k 0…1). */
+export function darken(c, k = 0.5) {
+  const h = hex6(c);
+  if (!h) return c;
+  const n = parseInt(h.slice(1), 16);
+  const f = (v) => Math.round(v * (1 - k)).toString(16).padStart(2, "0");
+  return `#${f((n >> 16) & 255)}${f((n >> 8) & 255)}${f(n & 255)}`;
+}
+
+/** ElitLig varsayılan marka renkleri. */
+export const DEFAULT_BRANDING = Object.freeze({ primary: "#54009c", secondary: "#8a3fe0", accent: "#c026d3", text: "#ffffff", logoScale: 1, name: "ELİTLİG" });
+
 /**
- * Geçişi çizer (en üstte, skorbordun da üstünde). logo: yüklenmiş beyaz
- * ElitLig madalyası (HTMLImageElement) ya da null.
+ * Markadan (g.branding: { primary, secondary, accent, text, logoScale, name })
+ * logo geçişinin renkleri. Geçersiz renk varsayılana düşer.
  */
-export function drawStinger(ctx, W, H, p, logo) {
+export function stingerPalette(branding) {
+  const b = branding || {};
+  const primary = hex6(b.primary) || DEFAULT_BRANDING.primary;
+  const secondary = hex6(b.secondary) || DEFAULT_BRANDING.secondary;
+  const accent = hex6(b.accent) || hex6(b.secondary) || DEFAULT_BRANDING.accent;
+  const text = hex6(b.text) || DEFAULT_BRANDING.text;
+  const scale = Number(b.logoScale);
+  return {
+    stops: [[0, darken(primary, 0.55)], [0.45, primary], [0.75, secondary], [1, accent]],
+    edge: text,
+    text,
+    logoScale: Number.isFinite(scale) && scale > 0 ? Math.min(2, Math.max(0.3, scale)) : 1,
+    name: String(b.name || b.title || DEFAULT_BRANDING.name).slice(0, 24),
+  };
+}
+
+/**
+ * Geçişi çizer (en üstte, skorbordun da üstünde). logo: yüklenmiş marka
+ * logosu (HTMLImageElement) ya da null; branding: marka renkleri ve logo ölçeği.
+ */
+export function drawStinger(ctx, W, H, p, logo, branding) {
   const st = stingerState(p);
   if (st.t <= 0 || st.t >= 1) return st;
+  const pal = stingerPalette(branding);
   const poly = stingerBand(st, W, H);
   ctx.save();
-  // Ana şerit: menekşe → mor degrade.
+  // Ana şerit: marka renklerinden degrade.
   const g = ctx.createLinearGradient(0, 0, W, H);
-  g.addColorStop(0, "#2a003f");
-  g.addColorStop(0.45, "#54009c");
-  g.addColorStop(0.75, "#8a3fe0");
-  g.addColorStop(1, "#c026d3");
+  for (const [at, c] of pal.stops) g.addColorStop(at, c);
   ctx.fillStyle = g;
   ctx.beginPath();
   poly.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
@@ -89,15 +126,17 @@ export function drawStinger(ctx, W, H, p, logo) {
   ctx.fill();
   // Ön kenarda ince açık çizgi (hız hissi).
   const [, , [rx0, ry0], [rx1, ry1]] = poly;
-  ctx.strokeStyle = "rgba(216, 191, 255, 0.85)";
+  ctx.strokeStyle = pal.edge;
+  ctx.globalAlpha = 0.8;
   ctx.lineWidth = Math.max(2, W / 320);
   ctx.beginPath();
   ctx.moveTo(rx0, ry0);
   ctx.lineTo(rx1, ry1);
   ctx.stroke();
+  ctx.globalAlpha = 1;
   // Logo.
   if (st.logo.alpha > 0.01) {
-    const size = Math.min(W, H) * 0.34 * st.logo.scale;
+    const size = Math.min(W, H) * 0.34 * st.logo.scale * pal.logoScale;
     ctx.globalAlpha = st.logo.alpha;
     ctx.translate(W / 2, H / 2);
     ctx.rotate(st.logo.rotation);
@@ -115,11 +154,11 @@ export function drawStinger(ctx, W, H, p, logo) {
       const k = Math.min(size / iw, size / ih);
       try { ctx.drawImage(logo, (-iw * k) / 2, (-ih * k) / 2, iw * k, ih * k); } catch { /* hazır değil */ }
     } else {
-      ctx.fillStyle = "#fff";
+      ctx.fillStyle = pal.text;
       ctx.font = `900 ${Math.round(size * 0.22)}px "Archivo", -apple-system, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("ELİTLİG", 0, 0);
+      ctx.fillText(pal.name, 0, 0, size * 1.6);
     }
   }
   ctx.restore();

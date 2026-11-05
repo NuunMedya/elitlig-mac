@@ -227,6 +227,8 @@ export function toSquad(rows) {
       role: row.role || (row.starting ? "starter" : "bench"),
       captain: Boolean(row.captain),
       guest: Boolean(row.isGuest),
+      image: row.playerImg || row.player_img || row.image || "",
+      rating: row.puan == null || row.puan === "" ? null : Number(row.puan),
     });
   }
   const order = { starter: 0, bench: 1, reserve: 2 };

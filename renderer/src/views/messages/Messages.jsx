@@ -184,7 +184,7 @@ export default function Messages({ arg, auth, go }) {
       if (e.key === "Escape" && !document.querySelector(".modal, .menu__list, .ms-lightbox")) {
         if (panel) { setPanel(null); e.preventDefault(); } else if (side) { setSide(null); e.preventDefault(); }
       }
-      if (e.metaKey && e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      if ((e.metaKey || e.ctrlKey) && e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
         e.preventDefault();
         const list = shownChats();
         const i = list.findIndex((c) => c.id === activeId);

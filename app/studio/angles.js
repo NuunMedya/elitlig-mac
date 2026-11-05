@@ -2,11 +2,22 @@
 //
 // Arayüz program akışına ek olarak her kaynak (kamera vb.) için ayrı bir
 // MediaRecorder akışı yollar ("studio:angleChunk" { id, data }). Her açı için
-// motorun (engine.js) hafif bir kopyası çalışır: RTMP yok, 1280×720 (ya da
-// 1080p ile sınırlı kaynak boyutu) H.264, 1 sn'de bir anahtar kare, 1 sn'lik
-// MPEG-TS parça halkası (~40 sn). Başlık kapısı, geri basınç, takılma ve
-// "restartRecorder" el sıkışması programla aynıdır. Program yayını olmadan da
-// (prova / yalnız kayıt) çalışır.
+// motorun (engine.js) hafif bir kopyası çalışır: RTMP yok, 1 sn'lik MPEG-TS
+// parça halkası (~40 sn).
+//
+// Kopya kipi (2.11): kaynak { mimeType } H.264 ise ("video/x-matroska;codecs=avc1",
+// "video/webm;codecs=h264"; arayüz 1 sn'de bir anahtar kare ister) görüntü
+// YENİDEN KODLANMAZ (-c:v copy). 2.10'da her açı tarayıcıda bir kez, ffmpeg'de
+// bir kez daha (x264 / VideoToolbox) kodlanıyordu; birkaç kamerada işlemci
+// doyup program kodlayıcısı gerçek zamanın gerisine düşüyor, YouTube yayını
+// kopuyordu. Kopya açılamazsa (ilk ilerlemeden önce hata) kodlamaya geçilir.
+// VP8/VP9 kaydedicide eskisi gibi H.264'e kodlanır (1280×720 ya da kaynak
+// boyutu, en çok 1080p, 1 sn'de bir anahtar kare).
+//
+// Açı ffmpeg süreçleri düşük öncelikle (nice 10) çalışır; bir açının takılması
+// ya da yeniden başlaması yalnız o açıyı etkiler, program sürecine dokunmaz.
+// Başlık kapısı, geri basınç, takılma ve "restartRecorder" el sıkışması
+// programla aynıdır. Program yayını olmadan da (prova / yalnız kayıt) çalışır.
 "use strict";
 
 const path = require("node:path");
@@ -24,14 +35,18 @@ const ANGLE_MESSAGES = {
   slow: "Bilgisayar açı kaydına yetişemiyor; tekrar görüntüsü eksik kalabilir.",
   failed: "Açı kaydı yeniden başlatılamadı.",
   busy: "Açı kaydı zaten sürüyor.",
+  copyFallback: "Açı görüntüsü kopyalanamadı; yeniden kodlamaya geçildi (işlemci yükü artar).",
 };
+
+/** Kopya kipi ilk ilerlemeden önce düşerse yeniden kodlamaya geç. */
+const angleFallback = (opts) => (opts.copy ? { ...opts, copy: false, notice: ANGLE_MESSAGES.copyFallback } : null);
 
 const validSourceId = (id) => typeof id === "string" && SOURCE_ID.test(id) && id !== "program";
 
 /** Klasör adı için güvenli kısa ad (kimlik cihaz kimliği gibi uzun olabilir). */
 const dirName = (id) => `a-${crypto.createHash("sha1").update(id).digest("hex").slice(0, 12)}`;
 
-function createAngles({ getFfmpeg, tempRoot, recorderFactory = createSegmentRecorder, log = () => {}, ...recorderOpts } = {}) {
+function createAngles({ getFfmpeg, tempRoot, recorderFactory = createSegmentRecorder, log = () => {}, diag = null, ...recorderOpts } = {}) {
   const events = new EventEmitter();
   const angles = new Map(); // id → { id, name, opts, recorder }
 
@@ -42,7 +57,8 @@ function createAngles({ getFfmpeg, tempRoot, recorderFactory = createSegmentReco
       name: a.name,
       state: st.state || "idle",
       bufferedMs: a.recorder.bufferedMs(),
-      encoder: a.recorder.encoder() || st.encoder || null,
+      encoder: a.opts.copy ? "copy" : a.recorder.encoder() || st.encoder || null,
+      mode: a.opts.copy ? "copy" : "encode",
       width: a.opts.width,
       height: a.opts.height,
       message: st.message || null,
@@ -68,6 +84,14 @@ function createAngles({ getFfmpeg, tempRoot, recorderFactory = createSegmentReco
       normalizeOptions: (o) => ({ ...o, url: null }),
       messages: ANGLE_MESSAGES,
       log,
+      diag,
+      diagScope: `açı ${String(source.name || source.id).slice(0, 40)}`,
+      niceness: 10,
+      adjustAfterFailure: (o) => {
+        const next = angleFallback(o);
+        if (next) angle.opts = next;
+        return next;
+      },
       ...recorderOpts,
     });
     const angle = { id: source.id, name: String(source.name || source.id).slice(0, 120), opts, recorder };
@@ -87,10 +111,11 @@ function createAngles({ getFfmpeg, tempRoot, recorderFactory = createSegmentReco
     return run;
   };
 
-  async function sync({ sources = [] } = {}) {
+  /** sources: [{ id, name, width, height, fps, mimeType? }]; üst düzey mimeType tüm kaynakların varsayılanı. */
+  async function sync({ sources = [], mimeType = null } = {}) {
     const wanted = new Map();
     for (const s of Array.isArray(sources) ? sources : []) {
-      if (s && validSourceId(String(s.id ?? ""))) wanted.set(String(s.id), { ...s, id: String(s.id) });
+      if (s && validSourceId(String(s.id ?? ""))) wanted.set(String(s.id), { ...s, id: String(s.id), mimeType: s.mimeType || mimeType || "" });
     }
     const removed = [...angles.keys()].filter((id) => !wanted.has(id));
     await Promise.all(removed.map((id) => stop(id)));
@@ -163,4 +188,4 @@ function createAngles({ getFfmpeg, tempRoot, recorderFactory = createSegmentReco
   };
 }
 
-module.exports = { createAngles, validSourceId, KEEP_ANGLE_SEGMENTS };
+module.exports = { createAngles, validSourceId, angleFallback, KEEP_ANGLE_SEGMENTS, ANGLE_MESSAGES };

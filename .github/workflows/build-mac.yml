@@ -76,7 +76,7 @@ jobs:
           codesign --verify --strict --verbose=2 "$FF"
           "$FF" -hide_banner -version | head -1
           "$FF" -hide_banner -encoders | grep -E " (h264_videotoolbox|libx264|aac) "
-          "$FF" -hide_banner -muxers | grep -E " (tee|segment|flv) "
+          "$FF" -hide_banner -muxers | grep -E " (tee|segment|flv|fifo|matroska) "
           if arch -x86_64 /usr/bin/true 2>/dev/null; then arch -x86_64 "$FF" -hide_banner -version | head -1; else echo "::warning::Rosetta yok, x86_64 dilimi çalıştırılamadı"; fi
           T=$(mktemp -d)
           encode() {
@@ -96,6 +96,8 @@ jobs:
           ELITLIG_FFMPEG="$FF" ELITLIG_STUDIO_ENCODER=h264_videotoolbox node --test app/test/studio-integration.test.js || echo "::warning::VideoToolbox uçtan uca testi başarısız"
           ELITLIG_FFMPEG="$FF" node --test app/test/studio-integration.test.js
           if [ -f app/test/studio-replays-integration.test.js ]; then ELITLIG_FFMPEG="$FF" node --test app/test/studio-replays-integration.test.js; fi
+          # 2.11: açı kopya kipi (işlemci ölçümü), yerel tam kayıt, röportaj.
+          ELITLIG_FFMPEG="$FF" node --test app/test/studio-stability-integration.test.js
 
       - name: Sürüm bilgisi
         id: version
@@ -192,7 +194,7 @@ jobs:
           test -f "$FF" || { echo "ffmpeg pakette yok: $FF"; exit 1; }
           "$FF" -hide_banner -version | head -1
           "$FF" -hide_banner -encoders | grep -E " (libx264|h264_nvenc|h264_qsv|h264_amf|h264_mf|aac) "
-          "$FF" -hide_banner -muxers | grep -E " (tee|segment|flv) "
+          "$FF" -hide_banner -muxers | grep -E " (tee|segment|flv|fifo|matroska) "
           "$FF" -hide_banner -protocols | tr -d '\r' | grep -E "^ +rtmps$"
           T="$RUNNER_TEMP/fftest"
           # Kodlayıcı seçenekleri uygulamanın kendi kurucusundan (app/studio/ffmpeg.js) alınır.
@@ -222,6 +224,8 @@ jobs:
           ELITLIG_FFMPEG="$FF" ELITLIG_STUDIO_ENCODER=libx264 node --test app/test/studio-integration.test.js
           ELITLIG_FFMPEG="$FF" node --test app/test/studio-integration.test.js
           if [ -f app/test/studio-replays-integration.test.js ]; then ELITLIG_FFMPEG="$FF" node --test app/test/studio-replays-integration.test.js; fi
+          # 2.11: açı kopya kipi (işlemci ölçümü), yerel tam kayıt, röportaj.
+          ELITLIG_FFMPEG="$FF" node --test app/test/studio-stability-integration.test.js
 
       - name: Sürüm bilgisi
         id: version

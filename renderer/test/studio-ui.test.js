@@ -56,7 +56,7 @@ describe("kaynak penceresi: açılır menü yeniden çizimde kapanmaz", () => {
     unmount();
   });
 
-  it("(kök nedenin kanıtı) çıplak Modal'a değişen onClose verilince odak ilk alana zıplar", () => {
+  it("ortak Modal artık yalnız açılışta odaklar: değişen onClose odağı <select>'ten almaz", () => {
     const { host, root, unmount } = mount();
     const render = (tick) => h(Modal, { title: "T", onClose: () => tick },
       h("input", { id: "first" }),
@@ -66,7 +66,7 @@ describe("kaynak penceresi: açılır menü yeniden çizimde kapanmaz", () => {
     act(() => sel.focus());
     expect(document.activeElement).toBe(sel);
     act(() => root.render(render(1)));
-    expect(document.activeElement.id).toBe("first");
+    expect(document.activeElement.id).toBe("sel");
     unmount();
   });
 });

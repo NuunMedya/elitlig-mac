@@ -1,53 +1,81 @@
 // Yayın Stüdyosu — karıştırıcı: PROGRAM ve ÖNİZLEME tuvalleri.
 //
 // PROGRAM tuvali (çıkış boyutunda, ör. 1920×1080) yayına giden görüntüdür;
-// captureStream(fps) ile kaydediciye verilir. Her karede: program hedefinin
-// (kaynak ya da düzen) katmanları ya da tekrar videosu; geçişte iki hedefin
-// karışımı (yumuşak) ya da ElitLig logo geçişi (stinger, değişim tam ortada);
-// en üstte skorbord (küçük sol üst / orta-alt büyük / gizli) ve tekrar rozeti.
-// ÖNİZLEME tuvali düzenlenen hedefi daha düşük çözünürlükte gösterir.
+// captureStream(fps) ile kaydediciye verilir. Her karede sırayla:
+//   1. taban: VAR çerçevesi | tekrar videosu | geçiş (iki sahnenin karışımı) | program sahnesi
+//   2. yayın grafikleri (grafik modülü: skorbord türleri, altyazı, röportaj bandı)
+//   3. tekrar rozeti
+//   4. marka logo geçişi (stinger) en üstte
+// ÖNİZLEME tuvali düzenlenen sahneyi daha düşük çözünürlükte gösterir
+// (grafikler isteğe bağlı, soluk); düzenleyicide sürüklenen kutu
+// yapılandırmaya yazılmadan (overrideRef) anında çizilir.
 //
-// Zamanlama: requestAnimationFrame + yedek setInterval. Pencere gizlenince /
-// örtülünce rAF durur; yedek zamanlayıcı kareyi sürdürür (ana süreçte
-// webPreferences.backgroundThrottling = false gerekir).
-//
-// Bu kanca React durumunu kare başına GÜNCELLEMEZ: fps ölçümü ref'te durur
-// (getStats); arayüzün saniyede onlarca kez yeniden çizilmesi açık açılır
-// menüleri kapatıyordu.
+// Sabit kare hızı: rAF + yedek setInterval; React durumu kare başına
+// GÜNCELLENMEZ (istatistik ref'te), önizleme 2–3 karede bir çizilir, geçiş
+// dışında ara tuval kullanılmaz. Uzun kareler (takılma) sayılır: Yayın sağlığı.
 //
 // Tuval asla "kirletilmez" (taint): uzak görseller yalnız CORS'la yüklenir.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bugPlacement, drawBottomBoard, drawReplayBadge, drawScoreBug } from "../../lib/studio/scorebug";
-import { fallbackDue, previewSize, transitionProgress } from "../../lib/studio/compose";
+import { fallbackDue, previewSize } from "../../lib/studio/compose";
 import { drawStinger, STINGER_MS } from "../../lib/studio/stinger";
-import { resolveScene } from "../../lib/studio/layouts";
+import { progressAt, transitionFrame } from "../../lib/studio/transitions";
+import { resolveScene } from "../../lib/studio/scenes";
 import { drawScene, drawVideoFull } from "./draw";
+import { drawVar } from "./var/drawVar";
 
-/** Skorbord türü: overlay.variant, eski kayıtta overlay.scorebug. */
+/** Skorbord türü (grafik modülü yokken yedek). */
 export const bugVariantOf = (cfg) => cfg?.overlay?.variant || (cfg?.overlay?.scorebug === false ? "off" : "small");
 
-/** Skorbordu türüne göre çizer (program, önizleme ve özet aynı işlevi kullanır). */
+/** Yedek skorbord çizimi (grafik modülü yoksa; özet de kullanır). */
 export function drawBug(ctx, variant, state, W, H, images) {
   if (!state || variant === "off") return;
   if (variant === "bottom") drawBottomBoard(ctx, state, { outW: W, outH: H, images });
   else drawScoreBug(ctx, state, { ...bugPlacement(W), images });
 }
 
-export function useCompositor({ width, height, fps, configRef, runtimeRef, bugRef, imagesRef, replayRef }) {
+/** Bir görünümü (from / to) dönüşümüyle hedef tuvale basar. */
+function blit(ctx, src, v, W, H, blurCanvas) {
+  if (v.alpha <= 0.001) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, v.alpha);
+  if (v.scale !== 1 || v.dx || v.dy) {
+    ctx.translate(W / 2 + v.dx * W, H / 2 + v.dy * H);
+    ctx.scale(v.scale, v.scale);
+    ctx.translate(-W / 2, -H / 2);
+  }
+  ctx.drawImage(src, 0, 0, W, H);
+  if (v.blur > 0.01 && blurCanvas) {
+    // Ucuz bulanıklık: küçült-büyüt (filter: blur 1080p'de pahalı).
+    const b = blurCanvas.getContext("2d");
+    b.imageSmoothingEnabled = true;
+    b.drawImage(src, 0, 0, blurCanvas.width, blurCanvas.height);
+    ctx.globalAlpha = Math.min(1, v.alpha) * Math.min(1, v.blur * 1.15);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(blurCanvas, 0, 0, W, H);
+  }
+  ctx.restore();
+}
+
+export function useCompositor({ width, height, fps, configRef, runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef }) {
   const program = useMemo(() => document.createElement("canvas"), []);
   const preview = useMemo(() => document.createElement("canvas"), []);
-  const scratch = useMemo(() => document.createElement("canvas"), []);
-  const transitionRef = useRef(null); // { kind: "fade" | "stinger", fromId, toId, startedAt, ms }
-  const stingerRef = useRef(null); // { startedAt, ms, onMid, onEnd, midFired } — tekrar giriş / çıkışı
-  const statsRef = useRef({ fps: 0 });
+  const scratchA = useMemo(() => document.createElement("canvas"), []);
+  const scratchB = useMemo(() => document.createElement("canvas"), []);
+  const blurC = useMemo(() => document.createElement("canvas"), []);
+  const transitionRef = useRef(null); // { kind, fromId, toId, startedAt, ms }
+  const stingerRef = useRef(null); // { startedAt, ms, onMid, onEnd, midFired }
+  const statsRef = useRef({ fps: 0, drawMs: 0, stalls: 0, totalStalls: 0 });
   const trackRef = useRef(null);
 
   useEffect(() => {
     program.width = width; program.height = height;
-    scratch.width = width; scratch.height = height;
+    scratchA.width = width; scratchA.height = height;
+    scratchB.width = width; scratchB.height = height;
+    blurC.width = Math.max(16, Math.round(width / 28)); blurC.height = Math.max(9, Math.round(height / 28));
     const p = previewSize(width, height);
     preview.width = p.width; preview.height = p.height;
-  }, [width, height, program, preview, scratch]);
+  }, [width, height, program, preview, scratchA, scratchB, blurC]);
 
   useEffect(() => {
     let stream = null;
@@ -56,53 +84,75 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, bugRe
     return () => { stream?.getTracks().forEach((t) => t.stop()); trackRef.current = null; };
   }, [program, fps]);
 
-  const frame = useRef({ last: 0, count: 0, statAt: 0, previewSkip: 0 });
+  const frame = useRef({ last: 0, count: 0, statAt: 0, previewSkip: 0, drawMax: 0, stalls: 0, total: 0 });
 
   const draw = useCallback((now) => {
     const cfg = configRef.current;
     const runtime = runtimeRef.current;
     if (!cfg) return;
+    const t0 = performance.now();
     const W = program.width;
     const H = program.height;
     const ctx = program.getContext("2d", { alpha: false });
     const sceneOf = (id) => resolveScene(cfg, id);
     const replay = replayRef.current;
-    const bug = bugRef.current;
-    const images = imagesRef.current || {};
-    const variant = bugVariantOf(cfg);
+    const vr = varRef?.current;
+    const brand = brandRef?.current || {};
+    const clock = matchClockRef?.current?.() ?? null;
+    // Düzenleyicide sürüklenen kutu (stüdyo modu kapalıyken program da düzenlenir).
+    const opts = { now, matchClockMs: clock, override: overrideRef?.current || null };
 
-    // PROGRAM
+    // 1. taban
     const tr = transitionRef.current;
     let stingerP = null;
-    if (replay?.active && replay.el) {
+    if (vr?.active) {
+      const vsrc = vr.sourceId ? cfg.sources.find((x) => x.id === vr.sourceId) : null;
+      drawVar(ctx, W, H, now, { ...vr, source: vsrc, sourceRt: vsrc ? runtime.get(vsrc.id) : null }, brand);
+    } else if (replay?.active && replay.el) {
       drawVideoFull(ctx, replay.el, W, H);
     } else if (tr) {
-      const p = transitionProgress(tr, now);
+      const p = progressAt(tr, now);
+      const f = transitionFrame(tr.kind, p);
       if (tr.kind === "stinger") {
-        drawScene(ctx, sceneOf(p < 0.5 ? tr.fromId : tr.toId), cfg.sources, runtime, W, H);
+        drawScene(ctx, sceneOf(f.switched ? tr.toId : tr.fromId), cfg.sources, runtime, W, H, opts);
         stingerP = p;
+      } else if (tr.kind === "fade") {
+        drawScene(ctx, sceneOf(tr.fromId), cfg.sources, runtime, W, H, opts);
+        const b = scratchB.getContext("2d", { alpha: false });
+        drawScene(b, sceneOf(tr.toId), cfg.sources, runtime, W, H, opts);
+        blit(ctx, scratchB, f.to, W, H, null);
       } else {
-        drawScene(ctx, sceneOf(tr.fromId), cfg.sources, runtime, W, H);
-        if (p > 0) {
-          const sctx = scratch.getContext("2d", { alpha: false });
-          drawScene(sctx, sceneOf(tr.toId), cfg.sources, runtime, W, H);
-          ctx.globalAlpha = p;
-          ctx.drawImage(scratch, 0, 0);
-          ctx.globalAlpha = 1;
-        }
+        const a = scratchA.getContext("2d", { alpha: false });
+        const b = scratchB.getContext("2d", { alpha: false });
+        drawScene(a, sceneOf(tr.fromId), cfg.sources, runtime, W, H, opts);
+        drawScene(b, sceneOf(tr.toId), cfg.sources, runtime, W, H, opts);
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, W, H);
+        blit(ctx, scratchA, f.from, W, H, blurC);
+        if (f.wipe != null) {
+          // Silme: yumuşak kenarlı, soldan sağa açılır.
+          const edge = f.wipe * (W * 1.1) - W * 0.05;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(0, 0, Math.max(0, edge), H);
+          ctx.clip();
+          ctx.drawImage(scratchB, 0, 0, W, H);
+          ctx.restore();
+          ctx.fillStyle = "rgba(255,255,255,0.85)";
+          ctx.fillRect(edge - Math.max(2, W / 480), 0, Math.max(2, W / 240), H);
+        } else blit(ctx, scratchB, f.to, W, H, blurC);
       }
       if (p >= 1) transitionRef.current = null;
     } else {
-      drawScene(ctx, sceneOf(cfg.programSceneId), cfg.sources, runtime, W, H);
+      drawScene(ctx, sceneOf(cfg.programSceneId), cfg.sources, runtime, W, H, opts);
     }
-    if (bug) {
-      const state = { ...bug, clockMs: bug.clockAt ? bug.clockAt(Date.now()) : bug.clockMs, event: replay?.active ? replay.event : bug.event };
-      drawBug(ctx, variant, state, W, H, images);
-    }
-    if (replay?.active) drawReplayBadge(ctx, W);
 
-    // Logo geçişi en üstte (skorbordu da örter).
-    if (stingerP != null && stingerP < 1) drawStinger(ctx, W, H, stingerP, images.logo);
+    // 2. yayın grafikleri
+    try { overlayRef.current?.(ctx, { width: W, height: H, now, target: "program", replay: Boolean(replay?.active), event: replay?.active ? replay.event : null }); } catch { /* grafik hatası yayını durdurmasın */ }
+    // 3. tekrar rozeti
+    if (replay?.active && !vr?.active) drawReplayBadge(ctx, W);
+    // 4. logo geçişi
+    if (stingerP != null && stingerP < 1) drawStinger(ctx, W, H, stingerP, brand.logo, brand.branding);
     const sg = stingerRef.current;
     if (sg) {
       const p = Math.min(1, (now - sg.startedAt) / sg.ms);
@@ -110,66 +160,75 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, bugRe
         sg.midFired = true;
         try { sg.onMid?.(); } catch { /* yoksay */ }
       }
-      if (p < 1) drawStinger(ctx, W, H, p, images.logo);
+      if (p < 1) drawStinger(ctx, W, H, p, brand.logo, brand.branding);
       else {
         stingerRef.current = null;
         try { sg.onEnd?.(); } catch { /* yoksay */ }
       }
     }
 
-    // ÖNİZLEME (her iki karede bir; yayına gitmez)
-    frame.current.previewSkip = (frame.current.previewSkip + 1) % 2;
-    if (frame.current.previewSkip === 0) {
+    // ÖNİZLEME (2 / 3 karede bir; yayına gitmez)
+    const f = frame.current;
+    f.previewSkip = (f.previewSkip + 1) % (fps > 40 ? 3 : 2);
+    if (f.previewSkip === 0) {
       const pw = preview.width;
       const ph = preview.height;
       const pctx = preview.getContext("2d", { alpha: false });
-      drawScene(pctx, sceneOf(cfg.previewSceneId), cfg.sources, runtime, pw, ph, { placeholders: true });
-      if (bug) drawBug(pctx, variant, { ...bug, clockMs: bug.clockAt ? bug.clockAt(Date.now()) : bug.clockMs }, pw, ph, images);
+      drawScene(pctx, sceneOf(cfg.previewSceneId), cfg.sources, runtime, pw, ph, { ...opts, placeholders: true });
+      if (previewGraphicsRef?.current) {
+        pctx.save();
+        pctx.globalAlpha = 0.55;
+        try { overlayRef.current?.(pctx, { width: pw, height: ph, now, target: "preview" }); } catch { /* yoksay */ }
+        pctx.restore();
+      }
     }
 
-    const f = frame.current;
+    const dt = performance.now() - t0;
+    if (dt > f.drawMax) f.drawMax = dt;
     f.count += 1;
     if (now - f.statAt >= 1000) {
-      statsRef.current = { fps: Math.round((f.count * 1000) / (now - f.statAt || 1)) };
+      statsRef.current = { fps: Math.round((f.count * 1000) / (now - f.statAt || 1)), drawMs: Math.round(f.drawMax * 10) / 10, stalls: f.stalls, totalStalls: f.total };
       f.count = 0;
       f.statAt = now;
+      f.drawMax = 0;
+      f.stalls = 0;
     }
-  }, [bugRef, configRef, imagesRef, preview, program, replayRef, runtimeRef, scratch]);
+  }, [blurC, brandRef, configRef, fps, matchClockRef, overlayRef, overrideRef, preview, previewGraphicsRef, program, replayRef, runtimeRef, scratchA, scratchB, varRef]);
 
   useEffect(() => {
     let raf = 0;
     let alive = true;
     const interval = 1000 / Math.max(1, fps);
-    const tick = (now) => {
+    const run = (now) => {
       const f = frame.current;
-      if (now - f.last >= interval - 2) {
-        f.last = now;
-        draw(now);
-      }
+      // Takılma: iki kare süresinden uzun boşluk (ana iş parçacığı meşgul).
+      if (f.last && now - f.last > interval * 2.5) { f.stalls += 1; f.total += 1; }
+      f.last = now;
+      draw(now);
     };
     const loop = () => {
       if (!alive) return;
-      tick(performance.now());
+      const now = performance.now();
+      if (now - frame.current.last >= interval - 2) run(now);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     const timer = setInterval(() => {
       const now = performance.now();
-      if (fallbackDue(frame.current.last, now, fps)) { frame.current.last = now; draw(now); }
+      if (fallbackDue(frame.current.last, now, fps)) run(now);
     }, Math.max(8, Math.floor(interval / 2)));
     return () => { alive = false; cancelAnimationFrame(raf); clearInterval(timer); };
   }, [draw, fps]);
 
-  /** Önizlemedeki hedefi programa al. kind: "cut" | "fade" | "stinger". */
+  /** Önizlemedeki sahneyi programa al. kind: transitions.js türü. */
   const startTransition = useCallback((fromId, toId, kind, ms) => {
     if (!ms || kind === "cut" || fromId === toId) { transitionRef.current = null; return; }
     transitionRef.current = { kind, fromId, toId, startedAt: performance.now(), ms };
   }, []);
 
   /**
-   * Bağımsız logo geçişi (tekrara giriş / tekrardan çıkış / tekrar arası):
-   * onMid ekran tam örtülüyken çağrılır — görüntü orada değiştirilir.
-   * Çizim döngüsü durmuşsa (pencere kapalı) yedek zamanlayıcı onMid'i yine çağırır.
+   * Bağımsız logo geçişi (tekrar / VAR giriş-çıkışı): onMid ekran tam
+   * örtülüyken çağrılır. Çizim döngüsü durmuşsa yedek zamanlayıcı onMid'i yine çağırır.
    */
   const playStinger = useCallback(({ onMid, onEnd, ms = STINGER_MS } = {}) => {
     const prev = stingerRef.current;
@@ -186,8 +245,9 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, bugRe
   const getVideoTrack = useCallback(() => trackRef.current, []);
   const getStats = useCallback(() => statsRef.current, []);
   const busy = useCallback(() => Boolean(transitionRef.current || stingerRef.current), []);
+  const transitionNow = useCallback(() => transitionRef.current, []);
 
-  return { program, preview, getStats, startTransition, playStinger, getVideoTrack, busy };
+  return { program, preview, getStats, startTransition, playStinger, getVideoTrack, busy, transitionNow };
 }
 
 /**

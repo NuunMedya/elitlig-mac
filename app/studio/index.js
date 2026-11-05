@@ -6,6 +6,9 @@
 // render.js + highlights.js (öne çıkanlar), scheme.js (elitlig-studio://),
 // ffmpeg.js / ffargs.js (ikili ve komutlar), h264level.js (H.264 düzeyi).
 //
+// 2.11: angles.js (H.264 kopya kipi), diag.js (tanılama günlüğü),
+// localrecord.js (yerel tam kayıt), interview.js (röportaj), led.js (LED çıkışı).
+//
 // IPC (preload "studio"):
 //   invoke: studio:info, studio:mediaAccess, studio:requestMediaAccess,
 //           studio:listScreens, studio:selectScreen, studio:start, studio:stop,
@@ -15,15 +18,27 @@
 //           studio:saveReplay, studio:listReplays, studio:getReplay,
 //           studio:updateReplay, studio:deleteReplay, studio:revealReplay,
 //           studio:render:start, studio:render:finish, studio:render:cancel,
-//           studio:uploadHighlight, studio:deleteHighlight
+//           studio:uploadHighlight, studio:deleteHighlight,
+//           studio:diagnostics, studio:revealDiagnostics,
+//           studio:recordDir, studio:chooseRecordDir, studio:revealLocal,
+//           studio:interview:start, studio:interview:stop, studio:interview:status,
+//           studio:interview:list, studio:interview:delete, studio:interview:upload,
+//           studio:interview:reveal,
+//           studio:displays, studio:led:open, studio:led:close, studio:led:status,
+//           studio:led:getState
 //   send:   studio:chunk (program parçası), studio:angleChunk { id, data },
-//           studio:renderChunk { id, data } (yanıt yok)
+//           studio:renderChunk { id, data }, studio:led:sendState (yanıt yok)
 //   olay:   studio:status, studio:restartRecorder, studio:angles:status,
 //           studio:angles:restartRecorder, studio:render:progress,
-//           studio:uploadProgress
+//           studio:uploadProgress (kind: "highlight" | "interview"),
+//           studio:localRecord, studio:interview:status, studio:displays:changed,
+//           studio:led:status, studio:led:state (yalnız LED penceresine)
 //
 // Depolama (userData): clips/ (eski klipler, 24 sa), replays/<kimlik>/ (7 gün),
-// highlights/ (7 gün). Geçici parça halkaları: <temp>/elitlig-studio/.
+// highlights/ (7 gün), interviews/ (7 gün), logs/studio-*.log (son 20),
+// studio-settings.json (son kayıt klasörü). Geçici parça halkaları:
+// <temp>/elitlig-studio/. Yerel tam kayıt: seçilen klasör (varsayılan
+// ~/Movies/ElitLig, Windows: Videolar\ElitLig).
 "use strict";
 
 const path = require("node:path");
@@ -35,6 +50,10 @@ const { createReplayStore } = require("./replays");
 const { createRenderer, pruneHighlights } = require("./render");
 const { uploadHighlight, deleteHighlight } = require("./highlights");
 const { serveStudio, REPLAY_ID } = require("./scheme");
+const { createDiagnostics } = require("./diag");
+const { remuxParts, defaultRecordDir, createSettings } = require("./localrecord");
+const { createInterviews } = require("./interview");
+const { createLedManager } = require("./led");
 const ff = require("./ffmpeg");
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -51,17 +70,41 @@ function replayAsClip(replay) {
   };
 }
 
+/**
+ * Chromium bayrakları (app hazır olmadan, main.js'in başında): pencere arkada,
+ * örtülü ya da küçültülmüşken çizim / zamanlayıcı kısılmasın. Aksi halde
+ * canvas.captureStream() kare üretmeyi bırakır, MediaRecorder parça yollamaz,
+ * motor "takıldı" deyip ffmpeg'i yeniden başlatır ve YouTube yayını kopar.
+ * Windows'ta örtülen pencerelerin çizimi ayrıca CalculateNativeWinOcclusion ile durur.
+ */
+const STUDIO_SWITCHES = Object.freeze(["disable-renderer-backgrounding", "disable-background-timer-throttling", "disable-backgrounding-occluded-windows"]);
+const STUDIO_DISABLED_FEATURES = Object.freeze(["CalculateNativeWinOcclusion"]);
+function applyStudioSwitches(app) {
+  const cl = app?.commandLine;
+  if (!cl) return;
+  for (const sw of STUDIO_SWITCHES) cl.appendSwitch(sw);
+  const existing = typeof cl.getSwitchValue === "function" ? cl.getSwitchValue("disable-features") : "";
+  const features = [...new Set([...String(existing || "").split(",").filter(Boolean), ...STUDIO_DISABLED_FEATURES])];
+  cl.appendSwitch("disable-features", features.join(","));
+}
+
 const MEDIA_STATES = new Set(["granted", "denied", "not-determined", "restricted"]);
 
 function registerStudio({
   ipcMain, api, broadcast, app, electronSession, systemPreferences, desktopCapturer,
   powerSaveBlocker, protocol, shell, isOwnUrl, isSignedIn = () => true, log = () => {},
+  dialog = null, screen = null, BrowserWindow = null, loadRenderer = null, preloadPath = null,
+  siteOrigin = "https://elitlig.com", apiOrigin = null,
 }) {
   const appRoot = path.join(__dirname, "..", "..");
   const tempRoot = path.join(app.getPath("temp"), "elitlig-studio");
   const clipsDir = path.join(app.getPath("userData"), "clips");
   const replaysDir = path.join(app.getPath("userData"), "replays");
   const highlightsDir = path.join(app.getPath("userData"), "highlights");
+  const interviewsDir = path.join(app.getPath("userData"), "interviews");
+  const logsDir = path.join(app.getPath("userData"), "logs");
+  const settings = createSettings(path.join(app.getPath("userData"), "studio-settings.json"));
+  const diagnostics = createDiagnostics({ dir: logsDir, header: { app: app.getVersion?.(), platform: process.platform, arch: process.arch } });
 
   // Önceki çalıştırmadan kalan parça klasörleri (çökme / zorla kapatma).
   try { fs.rmSync(tempRoot, { recursive: true, force: true }); } catch { /* yoksay */ }
@@ -81,18 +124,25 @@ function registerStudio({
     return probePromise;
   };
 
-  const engine = createStudioEngine({ getFfmpeg, tempRoot: path.join(tempRoot, "program"), log });
-  const angles = createAngles({ getFfmpeg, tempRoot: path.join(tempRoot, "angles"), log });
   let lastFfmpegPath = null;
   const ffmpegPath = () => lastFfmpegPath || "ffmpeg";
+  const engine = createStudioEngine({
+    getFfmpeg, tempRoot: path.join(tempRoot, "program"), log, diag: diagnostics,
+    remuxLocal: ({ parts, outFile, ffmpegPath: bin }) => remuxParts({ parts, outFile, ffmpegPath: bin || ffmpegPath() }),
+  });
+  const angles = createAngles({ getFfmpeg, tempRoot: path.join(tempRoot, "angles"), log, diag: diagnostics });
+  const interviews = createInterviews({ engine, interviewsDir, getFfmpegPath: ffmpegPath, log });
+  // Yayın durunca süren röportajlar parça klasörü silinmeden önce bitirilir.
+  engine.setBeforeCleanup(() => interviews.finalizeAll("SESSION_ENDED"));
   const clips = createClipStore({ clipsDir, getFfmpegPath: ffmpegPath });
   const replays = createReplayStore({ replaysDir, getFfmpegPath: ffmpegPath });
   const renderer = createRenderer({ getFfmpeg, highlightsDir, tempRoot: path.join(tempRoot, "render"), log });
-  const anyActive = () => engine.active() || angles.active() || renderer.active();
+  const anyActive = () => engine.active() || angles.active() || renderer.active() || interviews.status().length > 0;
   // Açılışta: eski klipler (24 sa), tekrarlar ve öne çıkanlar (7 gün). Oturum sürerken silinmez.
   try { clips.prune(); } catch { /* yoksay */ }
   try { replays.prune({ isActive: anyActive }); } catch { /* yoksay */ }
   try { pruneHighlights(highlightsDir, { isActive: anyActive }); } catch { /* yoksay */ }
+  try { interviews.prune({ isActive: anyActive }); } catch { /* yoksay */ }
   const ensureFfmpegPath = async () => {
     if (lastFfmpegPath) return;
     const info = await getFfmpeg();
@@ -129,6 +179,12 @@ function registerStudio({
   engine.events.on("status", (st) => broadcast("studio:status", st));
   engine.events.on("restartRecorder", (payload) => broadcast("studio:restartRecorder", payload));
   engine.events.on("ended", () => releaseOwner("program"));
+  const localFiles = new Set(); // revealLocal yalnız bu oturumda yazılan kayıtları gösterir
+  engine.events.on("local", (job) => {
+    for (const f of [job.path, job.mkvPath, job.mp4Path, ...(job.parts || [])]) if (f) localFiles.add(path.resolve(f));
+    broadcast("studio:localRecord", { state: job.state, sessionId: job.sessionId, path: job.path, mp4Path: job.mp4Path, parts: job.parts, bytes: job.bytes, error: job.error || null });
+  });
+  interviews.events.on("status", (st) => broadcast("studio:interview:status", st));
   angles.events.on("status", (list) => {
     broadcast("studio:angles:status", list);
     if (!angles.active() && owners.angles) releaseOwner("angles");
@@ -189,7 +245,7 @@ function registerStudio({
 
   /* ---------------------------------- şema ---------------------------------- */
 
-  protocol.handle(STUDIO_SCHEME, (request) => serveStudio({ clips: clipsDir, replays: replaysDir, highlights: highlightsDir }, request));
+  protocol.handle(STUDIO_SCHEME, (request) => serveStudio({ clips: clipsDir, replays: replaysDir, highlights: highlightsDir, interviews: interviewsDir }, request));
 
   /* ----------------------------------- IPC ----------------------------------- */
 
@@ -220,8 +276,20 @@ function registerStudio({
     return true;
   });
 
+  const recordDir = () => settings.get("recordDir") || defaultRecordDir(app);
+
   ipcMain.handle("studio:start", async (event, opts = {}) => {
-    const res = await engine.start(opts || {});
+    const o = { ...(opts || {}) };
+    if (o.localRecord?.enabled) {
+      const dir = o.localRecord.dir ? String(o.localRecord.dir) : recordDir();
+      o.localRecord = { enabled: true, dir, name: o.localRecord.name ?? o.matchLabel ?? o.matchName ?? o.matchId ?? null };
+    } else {
+      delete o.localRecord;
+    }
+    if (!engine.active()) diagnostics.begin({ recordOnly: !o.url, localRecord: Boolean(o.localRecord), matchId: o.matchId ?? null });
+    const res = await engine.start(o);
+    if (res.ok && o.localRecord) settings.set({ recordDir: o.localRecord.dir });
+    if (res.ok) res.logPath = diagnostics.logPath();
     if (res.ok) {
       setOwner("program", event.sender);
       const info = await getFfmpeg();
@@ -234,6 +302,7 @@ function registerStudio({
     engine.pushChunk(data);
   });
   ipcMain.handle("studio:stop", async () => {
+    await ensureFfmpegPath();
     await engine.stop();
     releaseOwner("program");
     return true;
@@ -360,21 +429,97 @@ function registerStudio({
     return deleteHighlight(api, payload || {});
   });
 
+  /* --------------------------- tanılama ve yerel kayıt --------------------------- */
+
+  ipcMain.handle("studio:diagnostics", () => {
+    const snap = diagnostics.snapshot();
+    return { logPath: snap.logPath, lastErrors: snap.lastErrors, ffmpegErrors: engine.lastErrors(), truncated: snap.truncated };
+  });
+  ipcMain.handle("studio:revealDiagnostics", () => {
+    const file = diagnostics.logPath();
+    if (file && fs.existsSync(file)) { shell.showItemInFolder(file); return true; }
+    try { fs.mkdirSync(logsDir, { recursive: true }); shell.openPath(logsDir); return true; } catch { return false; }
+  });
+  ipcMain.handle("studio:recordDir", () => ({ dir: recordDir(), defaultDir: defaultRecordDir(app) }));
+  ipcMain.handle("studio:chooseRecordDir", async (event) => {
+    if (!dialog) return { ok: false, error: { code: "NO_DIALOG", message: "Klasör seçilemiyor." } };
+    const current = recordDir();
+    try { fs.mkdirSync(current, { recursive: true }); } catch { /* yoksay */ }
+    const parent = BrowserWindow?.fromWebContents?.(event.sender) || undefined;
+    const res = await dialog.showOpenDialog(parent, { title: "Yerel kayıt klasörü", defaultPath: current, buttonLabel: "Seç", properties: ["openDirectory", "createDirectory"] });
+    if (res.canceled || !res.filePaths?.[0]) return { ok: false, canceled: true, dir: current };
+    const dir = res.filePaths[0];
+    try { fs.accessSync(dir, fs.constants.W_OK); } catch { return { ok: false, error: { code: "LOCAL_DIR", message: "Bu klasöre yazılamıyor. Başka bir klasör seçin." }, dir: current }; }
+    settings.set({ recordDir: dir });
+    return { ok: true, dir };
+  });
+  ipcMain.handle("studio:revealLocal", (_e, file) => {
+    const target = file ? path.resolve(String(file)) : null;
+    if (target && localFiles.has(target) && fs.existsSync(target)) { shell.showItemInFolder(target); return true; }
+    const dir = recordDir();
+    if (fs.existsSync(dir)) { shell.openPath(dir); return true; }
+    return false;
+  });
+
+  /* -------------------------------- röportaj -------------------------------- */
+
+  ipcMain.handle("studio:interview:start", (_e, opts = {}) => interviews.start(opts || {}));
+  ipcMain.handle("studio:interview:stop", async (_e, id) => {
+    await ensureFfmpegPath();
+    return interviews.stop(id);
+  });
+  ipcMain.handle("studio:interview:status", () => ({ active: interviews.status() }));
+  ipcMain.handle("studio:interview:list", () => interviews.list());
+  ipcMain.handle("studio:interview:delete", (_e, name) => interviews.remove(name));
+  ipcMain.handle("studio:interview:reveal", (_e, name) => {
+    const item = interviews.describe(name);
+    if (!item?.path) return false;
+    shell.showItemInFolder(item.path);
+    return true;
+  });
+  ipcMain.handle("studio:interview:upload", async (_e, payload = {}) => {
+    if (!isSignedIn()) return { ok: false, error: { message: "Oturum açık değil." } };
+    return interviews.upload(api, payload || {}, { emitProgress: (p) => broadcast("studio:uploadProgress", p) });
+  });
+
+  /* -------------------------------- LED çıkışı -------------------------------- */
+
+  const led = screen && BrowserWindow ? createLedManager({ BrowserWindow, screen, loadRenderer, preloadPath, siteOrigin, apiOrigin, log }) : null;
+  if (led) {
+    led.events.on("status", (st) => broadcast("studio:led:status", st));
+    led.events.on("displays", (list) => broadcast("studio:displays:changed", list));
+  }
+  const noLed = { ok: false, error: { code: "NO_LED", message: "LED çıkışı bu sürümde kullanılamıyor." } };
+  ipcMain.handle("studio:displays", () => (led ? led.displays() : []));
+  ipcMain.handle("studio:led:open", (_e, opts = {}) => (led ? led.open(opts || {}) : noLed));
+  ipcMain.handle("studio:led:close", () => (led ? led.close() : false));
+  ipcMain.handle("studio:led:status", () => (led ? led.status() : { open: false, displayId: null, mode: null, url: null }));
+  ipcMain.handle("studio:led:getState", () => (led ? led.getState() : null));
+  ipcMain.on("studio:led:sendState", (event, state) => {
+    if (!led || !ownContents(event.sender)) return;
+    led.sendState(state, event.sender);
+  });
+
   return {
     engine,
     angles,
     clips,
     replays,
     renderer,
+    interviews,
+    led,
+    diagnostics,
     /** Uygulama kapanırken: ffmpeg süreçlerini öldür, parça klasörlerini sil. */
     dispose() {
       engine.dispose();
       angles.dispose();
       renderer.dispose();
+      interviews.dispose();
+      led?.dispose();
       keepAwake(false);
       try { fs.rmSync(tempRoot, { recursive: true, force: true }); } catch { /* yoksay */ }
     },
   };
 }
 
-module.exports = { registerStudio, STUDIO_SCHEME };
+module.exports = { registerStudio, applyStudioSwitches, STUDIO_SWITCHES, STUDIO_SCHEME };

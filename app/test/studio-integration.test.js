@@ -109,16 +109,17 @@ test("uçtan uca: akış → tee [flv | ts halkası] → 10 sn'lik gol klibi (MP
   assert.equal(fs.readdirSync(path.join(root, "seg")).length, 0);
   const out = await ff.run(info.path, ["-hide_banner", "-i", flv]);
   assert.match(out.stderr, /Video: h264/);
-  assert.match(out.stderr, /Audio: aac.*44100 Hz, stereo/);
+  assert.match(out.stderr, /Audio: aac.*48000 Hz, stereo/);
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test("uçtan uca: RTMP bağlanamazsa 'reconnecting' + kaydedici yeniden başlatma; kayıt halkası sürer", { timeout: 60000 }, async (t) => {
+test("uçtan uca (fifo yok): RTMP bağlanamazsa 'reconnecting' + kaydedici yeniden başlatma; sonra 'failed'", { timeout: 60000 }, async (t) => {
   const why = await skipReason();
   if (why) { t.skip(why); return; }
   const info = await getInfo();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "studio-int-"));
-  const engine = createStudioEngine({ getFfmpeg: async () => ({ ...info, encoders: forcedEncoders(info) }), tempRoot: root, backoffMs: [300, 300] });
+  // Eski davranış (fifo'suz ffmpeg): RTMP düşünce süreç yeniden başlar.
+  const engine = createStudioEngine({ getFfmpeg: async () => ({ ...info, muxers: { ...info.muxers, fifo: false }, encoders: forcedEncoders(info) }), tempRoot: root, backoffMs: [300, 300] });
   const statuses = [];
   const restarts = [];
   engine.events.on("status", (s) => statuses.push(s));
@@ -126,16 +127,72 @@ test("uçtan uca: RTMP bağlanamazsa 'reconnecting' + kaydedici yeniden başlatm
   engine.events.on("restartRecorder", () => { restarts.push(Date.now()); feed(engine, input, 3); });
   const res = await engine.start({ url: "rtmp://127.0.0.1:9/live2/anahtar", width: 640, height: 360, fps: 30, videoBitrateKbps: 1000 });
   assert.equal(res.ok, true);
-  await feed(engine, input, 3);
-  for (let i = 0; i < 40 && statuses.at(-1).state !== "failed"; i += 1) await sleep(250);
-  const states = statuses.map((s) => s.state);
-  assert.ok(states.includes("connecting"));
-  assert.ok(states.includes("reconnecting"), states.join(","));
-  const rec = statuses.find((s) => s.state === "reconnecting");
-  assert.equal(rec.code, "CONNECTION_REFUSED");
-  assert.match(rec.message, /^\(1\/2\) .*reddetti/);
-  assert.equal(restarts.length, 2);
-  assert.equal(statuses.at(-1).state, "failed");
-  await engine.stop();
-  fs.rmSync(root, { recursive: true, force: true });
+  try {
+    await feed(engine, input, 3);
+    for (let i = 0; i < 40 && statuses.at(-1).state !== "failed"; i += 1) await sleep(250);
+    const states = statuses.map((s) => s.state);
+    assert.ok(states.includes("connecting"));
+    assert.ok(states.includes("reconnecting"), states.join(","));
+    const rec = statuses.find((s) => s.state === "reconnecting");
+    assert.equal(rec.code, "CONNECTION_REFUSED");
+    assert.match(rec.message, /^\(1\/2\) .*reddetti/);
+    assert.equal(restarts.length, 2);
+    assert.equal(statuses.at(-1).state, "failed");
+  } finally {
+    await engine.stop();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** Yerel RTMP sunucusu (ffmpeg -listen 1): gelen akışı okur, kare sayısını döndürür. */
+function rtmpListener(ffmpegPath, url, seconds) {
+  const p = spawn(ffmpegPath, ["-hide_banner", "-nostdin", "-loglevel", "info", "-listen", "1", "-timeout", String(seconds), "-i", url, "-t", String(seconds), "-c", "copy", "-f", "null", "-"]);
+  let err = "";
+  p.stderr.on("data", (d) => { err += d; });
+  const done = new Promise((resolve) => p.on("exit", () => resolve(err)));
+  return { done, kill: () => { try { p.kill("SIGKILL"); } catch { /* yoksay */ } } };
+}
+
+test("uçtan uca (fifo): RTMP kopunca süreç YENİDEN BAŞLAMADAN yeniden bağlanır; halka sürer", { timeout: 90000 }, async (t) => {
+  const why = await skipReason();
+  if (why) { t.skip(why); return; }
+  const info = await getInfo();
+  if (!info.muxers.fifo) { t.skip("ffmpeg'de fifo yok"); return; }
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "studio-int-"));
+  const port = 19000 + Math.floor(Math.random() * 900);
+  const url = `rtmp://127.0.0.1:${port}/live2/anahtar`;
+  const engine = createStudioEngine({ getFfmpeg: async () => ({ ...info, encoders: forcedEncoders(info) }), tempRoot: root });
+  const statuses = [];
+  const restarts = [];
+  engine.events.on("status", (s) => statuses.push(s));
+  engine.events.on("restartRecorder", () => restarts.push(Date.now()));
+  const seconds = 16;
+  const input = await makeInput(info.path, seconds);
+  const res = await engine.start({ url, width: 640, height: 360, fps: 30, videoBitrateKbps: 1000 });
+  assert.equal(res.ok, true);
+  let listener = null;
+  try {
+    const feeding = feed(engine, input, seconds);
+    // İlk 5 sn sunucu yok (bağlantı reddedilir), sonra sunucu açılır.
+    await sleep(5000);
+    const down = statuses.filter((s) => s.state === "reconnecting");
+    assert.ok(down.length > 0, statuses.map((s) => s.state).join(","));
+    assert.equal(down[0].code, "CONNECTION_REFUSED");
+    assert.match(down[0].message, /yeniden bağlanılıyor \(kayıt sürüyor\)/);
+    listener = rtmpListener(info.path, url, 8);
+    await feeding;
+    const got = await listener.done;
+    assert.match(got, /Input #0, flv/);
+    const tm = [...got.matchAll(/time=(\d+):(\d+):([\d.]+)/g)].at(-1);
+    const received = tm ? Number(tm[1]) * 3600 + Number(tm[2]) * 60 + Number(tm[3]) : 0;
+    assert.ok(received > 3, `sunucuya ulaşan süre: ${received} sn`);
+    assert.ok(statuses.some((s, i) => s.state === "live" && i > statuses.indexOf(down[0])), "yeniden 'live' olmalı");
+    assert.equal(restarts.length, 0, "kaydedici yeniden başlatılmamalı");
+    assert.ok(engine.bufferedMs() > 8000, `halka ${engine.bufferedMs()} ms`);
+    t.diagnostic(`sunucuya ulaşan süre ${received} sn, durumlar ${[...new Set(statuses.map((s) => s.state))].join(",")}`);
+  } finally {
+    listener?.kill();
+    await engine.stop();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

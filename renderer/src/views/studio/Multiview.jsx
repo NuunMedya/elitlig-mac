@@ -1,82 +1,137 @@
-// Yayın Stüdyosu · ÇOKLU GÖRÜNÜM şeridi (OBS "multiview").
+// Yayın Stüdyosu · ÇOKLU GÖRÜNÜM (OBS "multiview").
 //
-// Her kaynak (ve her düzen) canlı küçük resimli bir kutu: tıkla → ÖNİZLEME
-// (yeşil çerçeve), çift tıkla → doğrudan PROGRAM (yayına, kırmızı çerçeve).
-// 1–9 kısayolu kutunun numarasıdır. Sonda "+ Kaynak ekle".
+// Kutular SAHNELERDİR (ve "Önizlemede göster" ile seçilen kaynaklar): tıkla →
+// ÖNİZLEME (yeşil), çift tıkla → doğrudan PROGRAM (kırmızı). Numara = 1–9 kısayolu.
+// Hangi sahne / kaynakların görüneceği şeridin sağındaki menüden seçilir
+// ("sadece istediğim kaynakları önizlemede görüntüleyebileyim").
 //
-// Küçük resimler tek bir zamanlayıcıyla (saniyede 10 kare) doğrudan tuvallere
-// çizilir; React durumu kare başına değişmez.
-import React, { memo, useEffect, useRef } from "react";
+// Küçük resimler TEK zamanlayıcıyla (saniyede ~6 kare) doğrudan tuvallere
+// çizilir; görünmeyen kutu ve gizli pencere atlanır. React durumu kare başına
+// değişmez — program tuvalinin kare hızını bozmaz.
+import React, { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Icon, MenuButton } from "../../components/ui";
-import { kindIcon, resolveScene } from "../../lib/studio/layouts";
+import { isShownInMultiview, resolveScene, sourceKindIcon, sourceSceneId } from "../../lib/studio/scenes";
 import { drawScene } from "./draw";
+import { BAD, STATUS_TEXT } from "./SourcesPanel";
 
-const BAD = new Set(["missing", "denied", "ended", "busy", "error", "file"]);
-const STATUS_TEXT = { waiting: "Açılıyor…", missing: "Kaynak yok", denied: "İzin yok", ended: "Bağlantı koptu", busy: "Meşgul", error: "Açılamadı", file: "Dosya seçilmeli" };
-const TILE_W = 288;
-const TILE_H = 162;
+const TILE_W = 256;
+const TILE_H = 144;
+const TILE_MS = 166;
 
-function Multiview({ items, configRef, runtimeRef, previewId, programId, studioMode, version, onPreview, onProgram, onAdd, onEdit, onReacquire, onRemove }) {
-  const canvases = useRef(new Map());
-  void version;
-
+/** Tüm kutu tuvallerini çizen tek zamanlayıcı. register(id, canvas | null). */
+export function useTileRenderer(configRef, runtimeRef, { ms = TILE_MS } = {}) {
+  const canvases = useRef(new Map()); // canvas → id
   useEffect(() => {
     const draw = () => {
+      if (document.hidden) return;
       const cfg = configRef.current;
       if (!cfg) return;
-      for (const [id, c] of canvases.current) {
-        if (!c.isConnected) continue;
+      const now = performance.now();
+      for (const [c, id] of canvases.current) {
+        if (!c.isConnected || c.offsetParent === null) continue;
         const ctx = c.getContext("2d", { alpha: false });
-        drawScene(ctx, resolveScene(cfg, id), cfg.sources, runtimeRef.current, c.width, c.height, { placeholders: true });
+        drawScene(ctx, resolveScene(cfg, id), cfg.sources, runtimeRef.current, c.width, c.height, { placeholders: true, now });
       }
     };
     draw();
-    const t = setInterval(draw, 100);
+    const t = setInterval(draw, ms);
     return () => clearInterval(t);
-  }, [configRef, runtimeRef]);
+  }, [configRef, runtimeRef, ms]);
+  return useCallback((id, canvas, prev) => {
+    if (prev && prev !== canvas) canvases.current.delete(prev);
+    if (canvas) canvases.current.set(canvas, id);
+  }, []);
+}
 
+/** Tek kutu (şerit ve ızgara ortak). */
+export const Tile = memo(function Tile({ tile, register, onAir, inPreview, bad, studioMode, onPreview, onProgram, menu, large = false }) {
+  const ref = useRef(null);
+  const setRef = useCallback((el) => {
+    register(tile.id, el, ref.current);
+    ref.current = el;
+  }, [register, tile.id]);
+  useEffect(() => () => { if (ref.current) register(tile.id, null, ref.current); }, [register, tile.id]);
   return (
-    <section className="st-mv" aria-label="Kaynaklar">
+    <div className={`st-tile ${large ? "is-large" : ""} ${onAir ? "is-program" : ""} ${inPreview ? "is-preview" : ""} ${tile.kind === "source" ? "is-source" : ""} ${bad ? "is-bad" : ""}`}>
+      <button type="button" className="st-tile__hit" onClick={() => onPreview(tile.id)} onDoubleClick={() => onProgram(tile.id)}
+        title={studioMode ? "Tık: önizlemeye al · Çift tık: yayına ver" : "Tık: yayına ver"}>
+        <canvas ref={setRef} width={large ? TILE_W * 2 : TILE_W} height={large ? TILE_H * 2 : TILE_H} />
+        {onAir && <span className="st-tile__badge is-live">YAYINDA</span>}
+        {inPreview && <span className="st-tile__badge">ÖNİZLEME</span>}
+        {bad && <span className="st-tile__warn">{bad}</span>}
+      </button>
+      <div className="st-tile__bar">
+        {tile.hotkey && <b className="st-tile__no">{tile.hotkey}</b>}
+        <Icon name={tile.kind === "source" ? sourceKindIcon(tile.sourceKind) : "layers"} size={12} />
+        <span className="st-tile__name" title={tile.name}>{tile.name}</span>
+        {tile.kind === "source" && <span className="st-tile__kind">KAYNAK</span>}
+        {menu && <MenuButton label="Kutu" size={13} items={menu} />}
+      </div>
+    </div>
+  );
+});
+
+/** "Önizlemede göster": hangi sahne ve kaynaklar kutu olarak görünsün. */
+function ShowPicker({ config, onToggle, onReset }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [open]);
+  const custom = Boolean(config.multiview?.show);
+  return (
+    <div className="st-showpick" ref={ref}>
+      <button type="button" className={`st-mv__tool ${custom ? "is-on" : ""}`} onClick={() => setOpen((v) => !v)} title="Önizlemede göster: şeritte hangi sahne / kaynaklar görünsün" aria-expanded={open}>
+        <Icon name="filter" size={13} /><span>Göster</span>
+      </button>
+      {open && (
+        <div className="st-showpick__pop" role="dialog" aria-label="Önizlemede göster">
+          <header><strong>Önizlemede göster</strong>{custom && <button type="button" className="btn btn--xs btn--ghost" onClick={onReset}>Tüm sahneler</button>}</header>
+          <h5>Sahneler</h5>
+          {(config.scenes || []).map((sc) => (
+            <label key={sc.id} className="toggle"><input type="checkbox" checked={isShownInMultiview(config, sc.id)} onChange={() => onToggle(sc.id)} /> {sc.name}</label>
+          ))}
+          <h5>Kaynaklar (tek başına)</h5>
+          {(config.sources || []).map((s) => (
+            <label key={s.id} className="toggle"><input type="checkbox" checked={isShownInMultiview(config, sourceSceneId(s.id))} onChange={() => onToggle(sourceSceneId(s.id))} /> <Icon name={sourceKindIcon(s.kind)} size={11} /> {s.name}</label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Kutunun uyarı metni (kaynak kutusunda ya da sahnedeki bozuk kaynakta). */
+export function tileWarning(config, runtime, tile) {
+  const scene = config && runtime ? resolveScene(config, tile.id) : null;
+  if (!scene) return null;
+  for (const l of scene.layers) {
+    if (!l.visible) continue;
+    const rt = runtime.get(l.sourceId);
+    if (rt && BAD.includes(rt.status)) return STATUS_TEXT[rt.status];
+  }
+  return null;
+}
+
+function Multiview({ tiles = [], config, runtimeRef, register, previewId, programId, studioMode, version, onPreview, onProgram, onAddScene, onAddSource, onToggleShow, onResetShow, tileMenu }) {
+  void version;
+  return (
+    <section className="st-mv" aria-label="Sahneler">
       <div className="st-mv__scroll">
-        {items.map((it) => {
-          const src = it.kind === "source" ? configRef.current?.sources.find((s) => s.id === it.sourceId) : null;
-          const rt = src ? runtimeRef.current.get(src.id) : null;
-          const bad = rt && BAD.has(rt.status);
-          const onAir = it.id === programId;
-          const inPreview = studioMode && it.id === previewId && !onAir;
-          return (
-            <div key={it.id} className={`st-tile ${onAir ? "is-program" : ""} ${inPreview ? "is-preview" : ""} ${it.kind === "layout" ? "is-layout" : ""} ${bad ? "is-bad" : ""}`}>
-              <button type="button" className="st-tile__hit" onClick={() => onPreview(it.id)} onDoubleClick={() => onProgram(it.id)}
-                title={studioMode ? "Tıkla: önizlemeye al · Çift tıkla: yayına ver" : "Tıkla: yayına ver"}>
-                <canvas ref={(el) => { if (el) canvases.current.set(it.id, el); else canvases.current.delete(it.id); }} width={TILE_W} height={TILE_H} />
-                {onAir && <span className="st-tile__badge is-live">YAYINDA</span>}
-                {inPreview && <span className="st-tile__badge">ÖNİZLEME</span>}
-                {bad && <span className="st-tile__warn">{STATUS_TEXT[rt.status]}</span>}
-              </button>
-              <div className="st-tile__bar">
-                {it.number && <b className="st-tile__no">{it.number}</b>}
-                <Icon name={it.kind === "layout" ? "layers" : kindIcon(src?.kind)} size={12} />
-                <span className="st-tile__name" title={it.name}>{it.name}</span>
-                {it.kind === "layout" && <span className="st-tile__kind">DÜZEN</span>}
-                {src && (
-                  <MenuButton label="Kaynak" size={13} items={[
-                    { label: "Önizlemeye al", icon: "eye", onClick: () => onPreview(it.id) },
-                    { label: "Yayına ver", icon: "play", onClick: () => onProgram(it.id) },
-                    "-",
-                    { label: "Ayarlar…", icon: "sliders", onClick: () => onEdit(src) },
-                    { label: "Yeniden bağlan", icon: "refresh", onClick: () => onReacquire(src) },
-                    "-",
-                    { label: "Kaynağı sil", icon: "trash", danger: true, onClick: () => onRemove(src) },
-                  ]} />
-                )}
-              </div>
-            </div>
-          );
-        })}
-        <button type="button" className="st-tile st-tile--add" onClick={onAdd} title="Kamera, ekran, görsel, video ya da renk plakası ekle">
-          <Icon name="plus" size={20} strokeWidth={2.4} />
-          <span>Kaynak ekle</span>
-        </button>
+        {(tiles || []).map((t) => (
+          <Tile key={t.id} tile={t} register={register} studioMode={studioMode}
+            onAir={t.id === programId} inPreview={studioMode && t.id === previewId && t.id !== programId}
+            bad={tileWarning(config, runtimeRef.current, t)} onPreview={onPreview} onProgram={onProgram} menu={tileMenu(t)} />
+        ))}
+        {!(tiles || []).length && <p className="st-hint st-pad">Şeritte gösterilecek sahne seçilmedi — sağdaki “Göster” menüsünden seç.</p>}
+      </div>
+      <div className="st-mv__tools">
+        <ShowPicker config={config} onToggle={onToggleShow} onReset={onResetShow} />
+        <button type="button" className="st-mv__tool" onClick={onAddScene} title="Yeni boş sahne"><Icon name="plus" size={13} /><span>Sahne</span></button>
+        <button type="button" className="st-mv__tool" onClick={onAddSource} title="Kamera, ekran, pencere, görsel, video, metin, saat …"><Icon name="video" size={13} /><span>Kaynak</span></button>
       </div>
     </section>
   );

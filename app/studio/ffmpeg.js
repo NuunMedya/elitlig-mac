@@ -135,7 +135,7 @@ const encoderTestArgs = (encoder) => [
  *     encoder (tercih edilen), muxers: { tee, segment, flv }, aac, error? }
  */
 async function probeFfmpeg(candidate, { runImpl = run, testEncoders = true, platform = process.platform } = {}) {
-  const none = { available: false, path: null, source: null, version: null, encoders: emptyEncoders(), encoder: null, muxers: { tee: false, segment: false, flv: false }, aac: false };
+  const none = { available: false, path: null, source: null, version: null, encoders: emptyEncoders(), encoder: null, muxers: { tee: false, segment: false, flv: false, fifo: false, matroska: false }, aac: false };
   if (!candidate) return { ...none, error: "ffmpeg bulunamadı." };
   const version = await runImpl(candidate.path, ["-hide_banner", "-version"]);
   if (!version.ok) return { ...none, path: candidate.path, source: candidate.source, error: "ffmpeg çalıştırılamadı." };
@@ -156,7 +156,9 @@ async function probeFfmpeg(candidate, { runImpl = run, testEncoders = true, plat
     version: parseVersion(version.stdout),
     encoders: has,
     encoder: pickEncoder(has, platform),
-    muxers: { tee: muxers.has("tee"), segment: muxers.has("segment"), flv: muxers.has("flv") },
+    // fifo: RTMP çıkışı ayrı iş parçacığında, kopunca süreç içinde yeniden bağlanır (yoksa düz tee).
+    // matroska: yerel tam kayıt (.mkv).
+    muxers: { tee: muxers.has("tee"), segment: muxers.has("segment"), flv: muxers.has("flv"), fifo: muxers.has("fifo"), matroska: muxers.has("matroska") },
     aac: encoders.has("aac"),
   };
   if (!info.available) info.error = "ffmpeg'de canlı yayın için gereken kodlayıcı / biçim yok.";
@@ -206,6 +208,12 @@ const STREAM_URL = /^rtmps?:\/\/[^\s|[\]'"\\]+$/i;
 /** RTMP(S) adresi geçerli mi; tee sözdizimini bozacak karakterler (| [ ] ' \ boşluk) reddedilir. */
 const isValidStreamUrl = (url) => typeof url === "string" && url.length <= 2048 && STREAM_URL.test(url.trim());
 
+/**
+ * Metindeki tüm RTMP(S) adreslerinin anahtarını gizler (günlük / tanılama).
+ * Adres boşluk, tırnak, "|" ya da "]" ile biter (tee bağımsız değişkeni, ffmpeg satırları).
+ */
+const maskSecrets = (text) => String(text ?? "").replace(/(rtmps?:\/\/[^\s'"|\]]*\/)([^\s'"|\]/]+)/gi, (_m, base, key) => `${base}${key.length > 4 ? `••••${key.slice(-4)}` : "••••"}`);
+
 /** Yayın anahtarını kayıtlardan gizler: rtmp://a.rtmp.youtube.com/live2/abcd-… → …/live2/••••ef12 */
 const maskUrl = (url) => String(url || "").replace(/(rtmps?:\/\/[^/]+\/(?:[^/]+\/)*)([^/?]+)/i, (_m, base, key) => `${base}${key.length > 4 ? `••••${key.slice(-4)}` : "••••"}`);
 
@@ -229,11 +237,22 @@ function normalizeStreamOptions(opts = {}) {
 }
 
 /**
- * Video kodlayıcı seçenekleri: sabit bit hızı (CBR), 2 sn'de bir anahtar kare,
- * High profil, açık H.264 seviyesi, düşük gecikme ayarları.
+ * Hız düzeyi (speedLevel 0..2): kodlayıcı gerçek zamana yetişemezse (ffmpeg
+ * speed < 0.95, 10 sn) bir sonraki yeniden başlatmada daha hızlı ön ayar.
+ *   libx264: veryfast → superfast → ultrafast;  NVENC: p4 → p2 → p1;
+ *   diğer donanım kodlayıcılarında (VideoToolbox, QSV, AMF, MF) etkisi yok.
+ */
+const X264_PRESETS = Object.freeze(["veryfast", "superfast", "ultrafast"]);
+const NVENC_PRESETS = Object.freeze(["p4", "p2", "p1"]);
+const MAX_SPEED_LEVEL = X264_PRESETS.length - 1;
+const presetFor = (list, level) => list[Math.min(list.length - 1, Math.max(0, Math.round(Number(level) || 0)))];
+
+/**
+ * Video kodlayıcı seçenekleri: sabit bit hızı (CBR: -maxrate = -b:v, -bufsize = 2×),
+ * 2 sn'de bir anahtar kare, High profil, açık H.264 seviyesi, düşük gecikme ayarları.
  * width / height verilmezse 1080p varsayılır (seviye hesabı için).
  */
-function videoEncoderArgs(encoder, { videoBitrateKbps, fps, width = 1920, height = 1080, keyframeSeconds = 2 }) {
+function videoEncoderArgs(encoder, { videoBitrateKbps, fps, width = 1920, height = 1080, keyframeSeconds = 2, speedLevel = 0 }) {
   const vb = videoBitrateKbps;
   const gop = Math.max(1, Math.round(fps * keyframeSeconds));
   const level = computeH264Level({ width, height, fps });
@@ -243,7 +262,7 @@ function videoEncoderArgs(encoder, { videoBitrateKbps, fps, width = 1920, height
       return ["-c:v", ENCODERS.videotoolbox, "-allow_sw", "1", "-realtime", "1", "-profile:v", "high", "-level", level, ...rate];
     case ENCODERS.nvenc:
       // forced-idr: -force_key_frames ile istenen kareler IDR olur (klip parçaları bağımsız açılır).
-      return ["-c:v", ENCODERS.nvenc, "-preset", "p4", "-tune", "ll", "-rc", "cbr", "-profile:v", "high", "-level", level, "-forced-idr", "1", "-no-scenecut", "1", ...rate];
+      return ["-c:v", ENCODERS.nvenc, "-preset", presetFor(NVENC_PRESETS, speedLevel), "-tune", "ll", "-rc", "cbr", "-profile:v", "high", "-level", level, "-forced-idr", "1", "-no-scenecut", "1", ...rate];
     case ENCODERS.qsv:
       // QSV seviyeyi genel AVCodecContext.level'dan okur: 4.2 → 42. b:v = maxrate → CBR.
       return ["-c:v", ENCODERS.qsv, "-preset", "veryfast", "-look_ahead", "0", "-profile:v", "high", "-level", String(h264level.levelIdc(level)), "-forced_idr", "1", ...rate];
@@ -254,7 +273,7 @@ function videoEncoderArgs(encoder, { videoBitrateKbps, fps, width = 1920, height
       // Profil sayıyla verilir (100 = High; h264_mf'in adlı profil seçeneği yok).
       return ["-c:v", ENCODERS.mf, "-hw_encoding", "1", "-rate_control", "cbr", "-scenario", "live_streaming", "-profile:v", "100", ...rate, "-bsf:v", `h264_metadata=level=${level}`];
     default:
-      return ["-c:v", ENCODERS.libx264, "-preset", "veryfast", "-profile:v", "high", "-level", level, "-sc_threshold", "0", ...rate, "-x264-params", "nal-hrd=cbr"];
+      return ["-c:v", ENCODERS.libx264, "-preset", presetFor(X264_PRESETS, speedLevel), "-profile:v", "high", "-level", level, "-sc_threshold", "0", ...rate, "-x264-params", "nal-hrd=cbr"];
   }
 }
 
@@ -266,18 +285,72 @@ const segmentIndex = (name) => {
 };
 
 /**
- * Yayın komutu. ffmpeg, MediaRecorder çıktısını (Matroska/WebM) stdin'den okur,
- * yeniden kodlar ve tee ile iki çıkışa yazar:
- *   1. FLV → RTMP(S) (onfail=ignore: yayın koparsa kayıt halkası sürer)
- *   2. 2 sn'lik MPEG-TS parçaları (klip / tekrar için), cwd = parça klasörü
- * İlerleme stdout'a (-progress pipe:1), uyarı/hatalar stderr'e yazılır.
+ * tee çıkış adı kaçışı: tee bağımsız değişkeni av_get_token ile ayrıştırılır
+ * ("\\", "'" ve "|" özel). Windows yolları ileri eğik çizgiye çevrilir
+ * (ffmpeg Windows'ta "/" kabul eder; "\\" kaçış karakteridir).
  */
-function buildStreamArgs({ url = null, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, segmentSeconds = 2, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska" }) {
+const teeEscape = (file, platform = process.platform) => {
+  const s = platform === "win32" ? String(file).replace(/\\/g, "/") : String(file);
+  return s.replace(/[\\'|]/g, (c) => `\\${c}`);
+};
+
+/**
+ * RTMP için fifo seçenekleri (tee'de "use_fifo=1:fifo_options=…"). fifo, FLV
+ * çıkışını ayrı iş parçacığında yazar: ağ yavaşlarsa kodlayıcı beklemez (kuyruk
+ * dolarsa paket atılır, yeniden anahtar kareyle başlar); bağlantı koparsa
+ * ffmpeg SÜRECİ YENİDEN BAŞLAMADAN 2 sn arayla yeniden bağlanır (kayıt halkası,
+ * yerel kayıt ve tarayıcı kaydedicisi kesilmez). Deneme hakkı bitince tee
+ * "Slave muxer #0 failed" yazar; motor o zaman süreci yeniden başlatır.
+ * İç ":" iki kez kaçılır (tee bağımsız değişkeni + tee seçenek sözlüğü).
+ */
+const RTMP_FIFO_OPTIONS = Object.freeze({
+  attempt_recovery: 1,
+  recover_any_error: 1,
+  recovery_wait_time: 2,
+  max_recovery_attempts: 20,
+  drop_pkts_on_overflow: 1,
+  restart_with_keyframe: 1,
+  queue_size: 900, // ~10 sn (30 fps video + AAC ≈ 77 paket/sn)
+});
+const fifoOptionString = (opts = RTMP_FIFO_OPTIONS) => Object.entries(opts).map(([k, v]) => `${k}=${v}`).join("\\\\\\:");
+
+/**
+ * tee çıkışlarının sırası (tee "Slave muxer #N" numarası): [rtmp?, local?, segment].
+ * Motor, düşen yan çıkışın hangisi olduğunu buradan anlar (yerel kayıt düşerse
+ * yayın sürer).
+ */
+const streamSlaves = ({ url = null, localFile = null } = {}) => [url ? "rtmp" : null, localFile ? "local" : null, "segment"].filter(Boolean);
+
+/** ffmpeg sürümü -fps_mode'u (5.1+) biliyor mu; bilinmeyen (git) sürümde evet. */
+const supportsFpsMode = (version) => {
+  const m = /^n?(\d+)\.(\d+)/.exec(String(version || ""));
+  if (!m) return true;
+  const major = Number(m[1]);
+  return major > 5 || (major === 5 && Number(m[2]) >= 1);
+};
+
+/**
+ * Yayın komutu. ffmpeg, MediaRecorder çıktısını (Matroska/WebM) stdin'den okur,
+ * yeniden kodlar ve tee ile çıkışlara yazar:
+ *   1. FLV → RTMP(S): onfail=ignore, flvflags=no_duration_filesize (canlı FLV'de
+ *      süre/boyut için geri dönüp yazmaz); fifo varsa süreç içinde yeniden bağlanır.
+ *   2. (isteğe bağlı) yerel tam kayıt: Matroska (.mkv, çökmeye dayanıklı), onfail=ignore.
+ *   3. 2 sn'lik MPEG-TS parçaları (klip / tekrar / röportaj için), cwd = parça klasörü.
+ * Sabit kare hızı: fps süzgeci + -fps_mode cfr + -r (MediaRecorder'ın değişken
+ * zaman damgaları YouTube'a düzensiz kare olarak gitmesin). Ses 48 kHz stereo
+ * (MediaRecorder Opus 48 kHz; yeniden örnekleme yok), aresample=async ile kayma düzeltilir.
+ * Giriş zaman damgaları korunur (+genpts): -use_wallclock_as_timestamps stdin'den
+ * topluca okunan parçalarda titreşim ve ses/görüntü kayması yaratır, kullanılmaz.
+ * İlerleme stdout'a (-progress pipe:1); günlük stderr'e, düzey önekli
+ * ("[warning] …"; fifo'nun "Recovery successful" satırı info düzeyindedir).
+ */
+function buildStreamArgs({ url = null, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, segmentSeconds = 2, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska", fifo = false, localFile = null, speedLevel = 0, fpsMode = true, platform = process.platform }) {
   const outputs = [];
-  if (url) outputs.push(`[f=flv:onfail=ignore:flvflags=no_duration_filesize]${url}`);
+  if (url) outputs.push(`[f=flv:onfail=ignore:flvflags=no_duration_filesize${fifo ? `:use_fifo=1:fifo_options=${fifoOptionString()}` : ""}]${url}`);
+  if (localFile) outputs.push(`[f=matroska:onfail=ignore]${teeEscape(localFile, platform)}`);
   outputs.push(`[f=segment:segment_time=${segmentSeconds}:segment_time_delta=0.05:segment_format=mpegts:reset_timestamps=1:segment_start_number=${segmentStart}:segment_list=${listFile}:segment_list_type=csv:onfail=abort]${SEGMENT_PATTERN}`);
   return [
-    "-hide_banner", "-nostdin", "-loglevel", "warning", "-nostats",
+    "-hide_banner", "-nostdin", "-loglevel", url && fifo ? "level+info" : "level+warning", "-nostats",
     "-progress", "pipe:1", "-stats_period", "1",
     "-fflags", "+genpts+discardcorrupt", "-thread_queue_size", "1024",
     // MediaRecorder başlığı iz bilgisini taşır; uzun yoklama yalnız başlangıç gecikmesi ekler.
@@ -285,9 +358,10 @@ function buildStreamArgs({ url = null, width, height, fps, videoBitrateKbps, aud
     "-f", inputFormat, "-i", "pipe:0",
     "-map", "0:v:0", "-map", "0:a:0?",
     "-vf", `scale=${width}:${height}:flags=bicubic,fps=${fps},format=${encoderPixelFormat(encoder)}`,
-    ...videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height, keyframeSeconds: segmentSeconds }),
+    ...(fpsMode ? ["-fps_mode", "cfr"] : ["-vsync", "cfr"]), "-r", String(fps),
+    ...videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height, keyframeSeconds: segmentSeconds, speedLevel }),
     "-force_key_frames", `expr:gte(t,n_forced*${segmentSeconds})`,
-    "-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "44100", "-ac", "2", "-af", "aresample=async=1000",
+    "-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "48000", "-ac", "2", "-af", "aresample=async=1000",
     "-flags", "+global_header",
     "-max_muxing_queue_size", "1024",
     "-f", "tee", outputs.join("|"),
@@ -409,6 +483,14 @@ module.exports = {
   pickEncoder,
   isValidStreamUrl,
   maskUrl,
+  maskSecrets,
+  teeEscape,
+  fifoOptionString,
+  streamSlaves,
+  supportsFpsMode,
+  RTMP_FIFO_OPTIONS,
+  X264_PRESETS,
+  MAX_SPEED_LEVEL,
   normalizeStreamOptions,
   videoEncoderArgs,
   buildStreamArgs,

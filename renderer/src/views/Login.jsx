@@ -1,10 +1,11 @@
 import React, { useState } from "react";
-import { Icon } from "../components/ui";
+import { Icon, isMac } from "../components/ui";
 import logo from "../assets/logo-white.png";
 
+const MAC = isMac();
 const FEATURES = [
   ["checkSquare", "Yapılacaklar ve maç görevleri"],
-  ["calendar", "Ajanda, hatırlatmalar Mac bildirimiyle"],
+  ["calendar", `Ajanda, hatırlatmalar ${MAC ? "Mac" : "masaüstü"} bildirimiyle`],
   ["receipt", "Ön muhasebe, cari ve KDV"],
   ["grid", "Formüllü tablolar, Excel içe/dışa aktarma"],
   ["cloudOff", "İnternet yokken de çalışır"],
@@ -34,7 +35,7 @@ export default function Login({ expired, onSignedIn }) {
       <div className="login__drag" />
       <section className="login__brand">
         <img src={logo} alt="Elitlig" />
-        <h1>Lig yönetiminin günlük işleri, Mac'inizde.</h1>
+        <h1>Lig yönetiminin günlük işleri, {MAC ? "Mac'inizde" : "bilgisayarınızda"}.</h1>
         <p>Yapılacaklar, maç masası, ajanda, muhasebe, tablolar ve rehber — internet yokken bile.</p>
         <ul>
           {FEATURES.map(([icon, text]) => <li key={text}><Icon name={icon} size={16} />{text}</li>)}
@@ -42,7 +43,7 @@ export default function Login({ expired, onSignedIn }) {
       </section>
       <form className="login__form" onSubmit={submit}>
         <h2>Giriş yapın</h2>
-        <p className="muted">Elitlig yönetim hesabınızla bir kez giriş yapın; bu Mac'te 3 ay boyunca oturumunuz açık kalır.</p>
+        <p className="muted">Elitlig yönetim hesabınızla bir kez giriş yapın; {MAC ? "bu Mac'te" : "bu bilgisayarda"} 3 ay boyunca oturumunuz açık kalır.</p>
         {expired && <div className="notice notice--warn">Oturum süreniz doldu. Lütfen yeniden giriş yapın.</div>}
         <label className="field">
           <span className="field__label">Kullanıcı adı</span>
@@ -57,7 +58,7 @@ export default function Login({ expired, onSignedIn }) {
         </label>
         {error && <div className="notice notice--error" role="alert">{error}</div>}
         <button type="submit" className="btn btn--primary btn--lg" disabled={busy || !username.trim() || !password}>{busy ? "Giriş yapılıyor…" : "Giriş yap"}</button>
-        <p className="login__fine"><Icon name="lock" size={12} /> Oturum bilgisi Mac'in Anahtar Zinciri ile şifrelenir.</p>
+        <p className="login__fine"><Icon name="lock" size={12} /> {MAC ? "Oturum bilgisi Mac'in Anahtar Zinciri ile şifrelenir." : "Oturum bilgisi işletim sisteminin güvenli deposuyla (Windows'ta DPAPI) şifrelenir."}</p>
         <button type="button" className="link-btn" onClick={() => window.elitlig.app.openWeb("/sifremi-unuttum")}>Şifremi unuttum</button>
       </form>
     </div>

@@ -11,7 +11,9 @@
 // yayın grafiğinde de görünür.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "./studioApi";
+import { updateEvent as putEvent } from "./manage/manageApi";
 import { BUG_EVENT_MS, TIMELINE_CODES, bugEventOf, controlSteps, eventBody, isManualResult, livePhase, normalizeMatchStatus, scoreFromEvents, sortEvents, timerNowMs, toSquad } from "../../lib/studio/match";
+import { eventUpdateBody, fullEventBody } from "../../lib/studio/manage";
 
 function usePoll(fn, ms, enabled) {
   const ref = useRef(fn);
@@ -147,6 +149,33 @@ export function useLiveMatch(matchId, userId) {
     return created;
   }, [awayTeamId, homeTeamId, matchId, minute, period, syncScore, userId]);
 
+  /**
+   * Tam olay (reji ızgarası): form { side, code, playerId, outId, inId, minute?, period?, note }.
+   * Dakika / devre boşsa maç saati yazılır.
+   */
+  const addFullEvent = useCallback(async (form) => {
+    const body = fullEventBody({
+      ...form,
+      minute: form.minute === "" || form.minute == null ? minute : form.minute,
+      period: form.period || period,
+      homeTeamId, awayTeamId, userId,
+    });
+    const created = await api.must(api.createEvent(matchId, body), "Olay kaydedilemedi.");
+    setRawEvents((prev) => {
+      const list = prev || [];
+      return list.some((e) => Number(e.id) === Number(created?.id)) ? list : [...list, created];
+    });
+    syncScore().catch(() => {});
+    return created;
+  }, [awayTeamId, homeTeamId, matchId, minute, period, syncScore, userId]);
+
+  const updateEvent = useCallback(async (eventId, form) => {
+    const body = eventUpdateBody({ ...form, minute: form.minute === "" ? 0 : form.minute }, { homeTeamId, awayTeamId });
+    const updated = await api.must(putEvent(matchId, eventId, body), "Olay güncellenemedi.");
+    await syncScore();
+    return updated;
+  }, [awayTeamId, homeTeamId, matchId, syncScore]);
+
   const removeEvent = useCallback(async (eventId) => {
     await api.must(api.deleteEvent(matchId, eventId), "Olay silinemedi.");
     setRawEvents((prev) => (prev || []).filter((e) => Number(e.id) !== Number(eventId)));
@@ -163,7 +192,9 @@ export function useLiveMatch(matchId, userId) {
     status, manual, homeTeamId, awayTeamId, homeName, awayName, logos,
     events, timeline, squads, nameOf,
     timer, clockMs, minute, period, running, phase, score, bannerEvent,
-    control, nudgeClock, addEvent, removeEvent,
+    control, nudgeClock, addEvent, addFullEvent, updateEvent, removeEvent,
+    lineup, teams,
     refresh: () => { loadMatch(); loadEvents(); loadTimer(); loadLineup(); },
+    refreshLineup: loadLineup,
   };
 }

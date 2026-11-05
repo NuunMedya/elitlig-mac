@@ -290,3 +290,18 @@ export function playerExtraPayload(f) {
   if (f.player_img) out.player_img = String(f.player_img).trim();
   return out;
 }
+
+/** Maç seçimi: canlı maçlar en üstte, sonra liste sırası (gün / saat). */
+export function liveFirst(rows) {
+  const list = rows || [];
+  return [...list.filter((m) => m.status === "canli"), ...list.filter((m) => m.status !== "canli")];
+}
+
+/** Canlı maç şeridi: GET /maclar?mac_durumu=canli satırları (tarih süzgeci yok), saate göre. */
+export function liveStripRows(rows, { city } = {}) {
+  return (rows || [])
+    .map(toListMatch)
+    .filter((m) => m && m.status === "canli" && (!city || !m.city || fold(m.city) === fold(city)))
+    .sort((a, b) => String(a.time || "99").localeCompare(String(b.time || "99")) || a.id - b.id)
+    .slice(0, 12);
+}

@@ -189,7 +189,7 @@ export async function renderHighlight({ plan, info, images, boardOf, signal, onP
       } else if (seg) {
         drawCard(ctx, W, H, seg.type, info, images, at.local);
       }
-      if (at.stinger != null) drawStinger(ctx, W, H, at.stinger, images.logo);
+      if (at.stinger != null) drawStinger(ctx, W, H, at.stinger, images.logo, images.branding);
       onProgress?.(Math.min(1, t / plan.durationMs), t);
       if (at.done) { resolve(); return; }
       setTimeout(tick, 1000 / fps / 2);

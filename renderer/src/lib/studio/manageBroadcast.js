@@ -322,3 +322,10 @@ export function formatLeft(ms) {
   const s = total % 60;
   return m ? `${m}:${String(s).padStart(2, "0")}` : `${s} sn`;
 }
+
+/** GET /api/staff/matches/:id → röportaj için görevliler: [{ id, name, role }]. */
+export function staffPeople(data) {
+  return Object.values(data?.assignments || {})
+    .filter((a) => a && a.fullName)
+    .map((a) => ({ id: String(a.staffId ?? a.fullName), name: String(a.fullName).trim(), role: String(a.dutyLabel || a.duty || "").trim() }));
+}

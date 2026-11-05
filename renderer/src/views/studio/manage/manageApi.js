@@ -59,3 +59,14 @@ export const getPlayer = (id) => live("GET", `/oyuncular/${id}`);
 export const addPlayerToTeam = ({ playerId, playerName, teamId, teamName }) =>
   live("POST", "/oyuncu-takimlari/add", { player_id: playerId, player_name: playerName, team_id: teamId, team_name: teamName });
 export const removePlayerFromTeam = (playerId, teamId) => live("DELETE", `/oyuncu-takimlari/${playerId}/${teamId}`);
+
+/* ------------------------------ maç sonu ------------------------------ */
+/** PATCH /api/maclar/:id/kadro/puan — { ratings: [{ playerId, oyuncu_id, puan }] } (matches.stats). */
+export const saveRatings = (id, body) => live("PATCH", `/api/maclar/${id}/kadro/puan`, body);
+/** PATCH /maclar/:id/status — durum değişimi (matches.publish). */
+export const setMatchStatus = (id, status) => live("PATCH", `/maclar/${id}/status`, { mac_durumu: status });
+/** GET /oyuncu-istatistikleri/mac/:id — kayıt yoksa 404 (boş liste sayılır). */
+export const getMatchStats = (id) => live("GET", `/oyuncu-istatistikleri/mac/${id}`, undefined, { _t: Date.now() });
+export const createPlayerStat = (body) => live("POST", "/oyuncu-istatistikleri/", body);
+export const updatePlayerStat = (statId, body) => live("PATCH", `/oyuncu-istatistikleri/playerStat/${statId}`, body);
+export const deletePlayerStat = (statId) => live("DELETE", `/oyuncu-istatistikleri/${statId}`);

@@ -58,7 +58,13 @@ export function useAngleRecorders({ active, sourceIds, sources, runtimeRef, vers
     const mimeType = pickMimeType((t) => MediaRecorder.isTypeSupported(t), VIDEO_ONLY_MIME_PREFERENCE);
     let rec;
     try {
-      rec = new MediaRecorder(new MediaStream([track]), { mimeType: mimeType || undefined, videoBitsPerSecond: ANGLE_BITRATE_KBPS * 1000 });
+      rec = new MediaRecorder(new MediaStream([track]), {
+        mimeType: mimeType || undefined,
+        videoBitsPerSecond: ANGLE_BITRATE_KBPS * 1000,
+        // 1 sn'de bir anahtar kare: ana süreç H.264 açıları yeniden kodlamadan
+        // (copy) 1 sn'lik parçalara böler; tekrar penceresi bu sayede hassas olur.
+        videoKeyFrameIntervalDuration: 1000,
+      });
     } catch (e) {
       errRef.current?.(`Açı kaydı açılamadı (${namesRef.current.get(id) || id}): ${e?.message || e}`);
       return false;
