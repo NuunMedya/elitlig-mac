@@ -22,7 +22,7 @@ permissions:
 jobs:
   mac:
     name: Mac (universal .dmg)
-    runs-on: macos-14
+    runs-on: macos-15  # macos-14 görüntüsü GitHub'da kaldırıldı
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
