@@ -7,7 +7,11 @@
 //   Program    master fader, stereo ölçer, sınırlayıcı, "programı dinle"
 //   Yönlendirme  YAYINA GİDEN SES matrisi: bağlam (canlı / tekrar & VAR / video /
 //              özet) × (canlı mikrofon / video-tekrar sesi / müzik); anında uygulanır
-//   Ayarlar    mikrofon aygıtı + gürültü azaltma, ek girişler, müzik çalar
+//   Ayarlar    mikrofon aygıtı + gürültü azaltma, ek ses kaynakları (aygıt ya da ses / video
+//              DOSYASI, kalıcı), müzik çalar
+//   Sahneler   SAHNE BAŞINA SES (OBS gibi): her şerit × sahne "Bu sahnede yayına ver"
+//   Genel      "Tüm sesleri kapat" (yayına hiç ses gitmez) · "Yalnız mikrofonu kapat";
+//              her şeritte YAYINDA / neden kapalı rozeti
 // Ölçerler tek rAF döngüsünde DOM'u doğrudan günceller (React çizimi yok).
 import React, { useCallback, useEffect, useRef } from "react";
 import { Field, Icon, Kbd } from "../../components/ui";
@@ -16,7 +20,10 @@ import {
   FADER_TICKS, METER_TICKS, PLAYBACK_CONTEXTS, ROUTE_GROUPS, dbText, dbToFader, faderToDb, meterBallistics, meterFraction, peakHold, routingFor, samplesLevel,
 } from "../../lib/studio/audio";
 import { uid } from "../../lib/studio/layouts";
+import { audioInputFromDraft, scenesText } from "../../lib/studio/audio";
+import { persistFile } from "./SourcesPanel";
 import "./modes/modes.css";
+import "./audio/audio.css";
 
 /** Eski tek çubuk ölçer (üst çubuk): DOM'u doğrudan günceller. */
 export function LevelMeter({ getAnalyser, muted, compact = false }) {
@@ -130,8 +137,11 @@ function Fader({ db, onChange, label }) {
 const GROUP_SHORT = Object.fromEntries(ROUTE_GROUPS.map((g) => [g.key, g.short]));
 
 function Strip({ strip, st, audio, bind, status }) {
-  const onAir = audio.routeNow?.[strip.group];
+  const air = audio.airOf ? audio.airOf(strip.id) : null;
+  const onAir = air ? air.onAir : audio.routeNow?.[strip.group] && !st.mute;
   const set = (patch) => audio.setStrip(strip.id, patch);
+  const scenes = audio.scenesOf ? audio.scenesOf(strip.id) : null;
+  const perScene = strip.kind === "mic" || strip.kind === "input" || strip.kind === "file";
   return (
     <div className={`mx-strip is-${strip.kind} ${st.mute ? "is-muted" : ""} ${st.solo ? "is-solo" : ""}`}>
       <header className="mx-strip__head" title={strip.label}>
@@ -153,8 +163,9 @@ function Strip({ strip, st, audio, bind, status }) {
         <button type="button" className={`mx-btn is-mute ${st.mute ? "is-on" : ""}`} onClick={() => set({ mute: !st.mute })} title={strip.id === "mic" ? "Sessiz (M)" : "Sessiz"}>M</button>
         <button type="button" className={`mx-btn is-solo ${st.solo ? "is-on" : ""}`} onClick={() => set({ solo: !st.solo })} title="Solo / kulaklıkla dinle"><Phones /></button>
       </div>
-      <footer className={`mx-strip__bus ${onAir && !st.mute ? "is-air" : ""}`} title={onAir ? "Bu bara şu an yayına gidiyor" : "Bu bara şu an yayına GİTMİYOR (yönlendirme)"}>
-        {GROUP_SHORT[strip.group]} · {onAir ? "YAYINDA" : "KAPALI"}
+      {perScene && audio.scenes?.length > 0 && <div className={`mx-strip__scenes ${Array.isArray(scenes) ? "is-some" : ""}`} title="Hangi sahnelerde yayına gider (Sahne başına ses)">{scenesText(scenes, audio.scenes)}</div>}
+      <footer className={`mx-strip__bus ${onAir ? "is-air" : ""}`} title={air ? air.reason : onAir ? "Bu bara şu an yayına gidiyor" : "Bu bara şu an yayına GİTMİYOR (yönlendirme)"}>
+        {onAir ? <><i className="au-dot" /> YAYINDA</> : `${GROUP_SHORT[strip.group]} · ${air?.muted ? "SESSİZ" : air && !air.inScene ? "SAHNEDE YOK" : "KAPALI"}`}
       </footer>
     </div>
   );
@@ -218,6 +229,76 @@ const MIC_STATUS = {
 
 const mmss = (s) => `${Math.floor((s || 0) / 60)}:${String(Math.floor((s || 0) % 60)).padStart(2, "0")}`;
 
+/** SAHNE BAŞINA SES: şerit × sahne ("Bu sahnede yayına ver"). */
+function SceneRouting({ audio }) {
+  const scenes = audio.scenes || [];
+  if (!audio.setScene || !scenes.length) return null;
+  const rows = audio.strips.filter((s) => s.kind === "mic" || s.kind === "input" || s.kind === "file");
+  return (
+    <section className="st-card au-scenes">
+      <header className="st-card__head"><Icon name="layers" size={15} /><strong>Sahne başına ses</strong><small className="muted">“Bu sahnede yayına ver” — OBS gibi</small></header>
+      <div className="au-scenes__wrap">
+        <table>
+          <thead>
+            <tr>
+              <th />
+              <th title="Tüm sahnelerde (yeni eklenenler dahil)">Tümü</th>
+              {scenes.map((sc) => <th key={sc.id} className={sc.id === audio.programSceneId ? "is-pgm" : ""} title={sc.id === audio.programSceneId ? `${sc.name} — şu an YAYINDA` : sc.name}>{sc.id === audio.programSceneId && <i className="au-dot" />}{sc.name}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const list = audio.scenesOf(r.id);
+              const all = !Array.isArray(list);
+              return (
+                <tr key={r.id}>
+                  <th title={r.label}><Icon name={r.icon} size={11} /> {r.label}</th>
+                  <td><button type="button" className={`mx-cell ${all ? "is-on" : ""}`} aria-pressed={all} onClick={() => audio.setAllScenes(r.id, !all)}>{all ? "TÜMÜ" : "—"}</button></td>
+                  {scenes.map((sc) => {
+                    const on = all || list.includes(sc.id);
+                    return <td key={sc.id}><input type="checkbox" checked={on} onChange={(e) => audio.setScene(r.id, sc.id, e.target.checked)} aria-label={`${r.label}: ${sc.name} sahnesinde yayına ver`} /></td>;
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="st-hint">İşaretsiz sahne yayındayken o ses gitmez (ör. “Devre arası” sahnesinde yalnız müzik). Sahneye bağlı dosyalar “Sahnede kendiliğinden çal” açıksa o sahne yayına girince çalar, çıkınca durur.</p>
+    </section>
+  );
+}
+
+/** Ek ses kaynağı: dosya satırı (çal / duraklat / döngü / kendiliğinden çal). */
+function FileInputRow({ input, audio, status, onRepick, onRemove, setInput }) {
+  const st = audio.files?.state?.[input.id] || {};
+  const missing = status === "file" || input.fileMissing || !input.url;
+  return (
+    <div className={`au-file ${missing ? "is-missing" : ""}`}>
+      <div className="st-row">
+        <Icon name="play2" size={13} />
+        <strong className="au-file__name" title={input.filePath || input.fileName || ""}>{input.name}</strong>
+        <span className="st-top__spacer" />
+        <button type="button" className="icon-btn icon-btn--xs" disabled={missing} onClick={() => (st.playing ? audio.files.pause(input.id) : audio.files.play(input.id))} title={st.playing ? "Duraklat" : "Çal"}><Icon name={st.playing ? "pause" : "play"} size={12} /></button>
+        <button type="button" className="icon-btn icon-btn--xs" disabled={missing} onClick={() => audio.files.stop(input.id)} title="Durdur (başa sar)"><Icon name="stop" size={12} /></button>
+        <button type="button" className="icon-btn icon-btn--xs" title="Kaldır" onClick={onRemove}><Icon name="trash" size={12} /></button>
+      </div>
+      {missing ? (
+        <div className="st-row"><small className="text-red">Dosya bulunamadı{input.fileName ? ` (${input.fileName})` : ""}: yeniden seç.</small><button type="button" className="btn btn--xs btn--primary" onClick={onRepick}>Yeniden seç</button></div>
+      ) : (
+        <div className="st-row">
+          <input type="range" min={0} max={Math.max(1, st.duration || 0)} step={0.1} value={st.time || 0} onChange={(e) => audio.files.seek(input.id, Number(e.target.value))} aria-label="Konum" />
+          <small className="muted">{mmss(st.time)} / {mmss(st.duration)}</small>
+        </div>
+      )}
+      <div className="st-row st-row--wrap">
+        <label className="toggle small"><input type="checkbox" checked={input.loop !== false} onChange={(e) => setInput(input.id, { loop: e.target.checked })} /> Döngü</label>
+        <label className="toggle small" title="Sahneye bağlıysa: sahne yayına girince çalar, çıkınca durur"><input type="checkbox" checked={input.autoPlay !== false} onChange={(e) => setInput(input.id, { autoPlay: e.target.checked })} /> Sahnede kendiliğinden çal</label>
+      </div>
+    </div>
+  );
+}
+
 function MusicCard({ audio }) {
   const m = audio.music;
   const file = useRef(null);
@@ -246,6 +327,8 @@ function MusicCard({ audio }) {
 export default function AudioPanel({ audio: audioProp, mixer, devices = { audio: [] }, onRequestMic }) {
   const audio = audioProp?.setStrip ? audioProp : mixer;
   const bind = useMeterBank();
+  const fileRef = useRef(null);
+  const repickRef = useRef(null);
   if (!audio?.settings) return <p className="st-hint st-pad">Ses karıştırıcı hazır değil.</p>;
   const a = audio.settings;
   const mic = a.mic;
@@ -257,6 +340,32 @@ export default function AudioPanel({ audio: audioProp, mixer, devices = { audio:
   };
   const setInput = (id, patch) => audio.update((x) => ({ ...x, inputs: x.inputs.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
   const removeInput = (id) => audio.update((x) => ({ ...x, inputs: x.inputs.filter((i) => i.id !== id) }));
+  // Ses / video dosyası: kalıcı adres (dosya yolu ana süreçte hatırlanır).
+  const media = window.elitlig?.studio?.media;
+  const fileDraft = async (file) => {
+    const kept = await persistFile(file);
+    if (kept) return { ...kept, name: file.name.replace(/\.[^.]+$/, "") };
+    return null;
+  };
+  const addFile = async (file) => {
+    if (!file) return;
+    const d = await fileDraft(file);
+    if (!d) return;
+    audio.update((x) => ({ ...x, inputs: [...x.inputs, audioInputFromDraft({ ...d, audioMode: "file" })] }));
+  };
+  const pickAndAdd = async () => {
+    if (media?.pick) {
+      const r = await media.pick({ kind: "audio" });
+      const f = r?.files?.[0];
+      if (f) audio.update((x) => ({ ...x, inputs: [...x.inputs, audioInputFromDraft({ audioMode: "file", url: f.url, filePath: f.path, fileName: f.name, name: f.name.replace(/\.[^.]+$/, "") })] }));
+      return;
+    }
+    fileRef.current?.click();
+  };
+  const repick = async (id, file) => {
+    const d = file ? await fileDraft(file) : null;
+    if (d) setInput(id, { url: d.url, filePath: d.filePath, fileName: d.fileName, fileMissing: false });
+  };
   const status = audio.micStatus.status;
   const ctxLabel = PLAYBACK_CONTEXTS.find((c) => c.key === audio.playback)?.label || "Canlı yayın";
   const now = audio.routeNow || {};
@@ -268,19 +377,34 @@ export default function AudioPanel({ audio: audioProp, mixer, devices = { audio:
         <span className="mx-status__ctx">Şu an: <b>{ctxLabel}</b></span>
         <span className="mx-status__route">Yayına giden: {ROUTE_GROUPS.filter((g) => now[g.key]).map((g) => <em key={g.key}>{g.label}</em>)}{!ROUTE_GROUPS.some((g) => now[g.key]) && <em className="is-none">hiçbiri</em>}</span>
         <span className="st-top__spacer" />
-        <button type="button" className={`btn btn--sm st-mic-mini ${mic.muted ? "is-off" : ""}`} onClick={audio.toggleMic}>{mic.muted ? "MİKROFON KAPALI" : "MİKROFON AÇIK"} <Kbd>M</Kbd></button>
+        <button type="button" className={`btn btn--sm st-mic-mini ${mic.muted ? "is-off" : ""}`} onClick={audio.toggleMic} title={mic.muted ? "Mikrofonu aç (M)" : "Yalnız mikrofonu kapat: öbür sesler yayında kalır (M)"}>{mic.muted ? "MİKROFON KAPALI · AÇ" : "YALNIZ MİKROFONU KAPAT"} <Kbd>M</Kbd></button>
+        {audio.setKillAll && (
+          <button type="button" className={`btn btn--sm au-kill ${audio.killAll ? "is-on" : ""}`} onClick={() => audio.setKillAll(!audio.killAll)} title={audio.killAll ? "Yayına giden sesi yeniden aç" : "Tüm sesleri kapat: yayına hiç ses gitmez (şerit ayarları korunur)"}>
+            <Icon name={audio.killAll ? "micOff" : "mic"} size={13} /> {audio.killAll ? "TÜM SESLER KAPALI · AÇ" : "TÜM SESLERİ KAPAT"}
+          </button>
+        )}
       </div>
+      {audio.killAll && <div className="au-killbar" role="alert"><Icon name="micOff" size={15} /> TÜM SESLER KAPALI — yayına hiç ses gitmiyor. <button type="button" onClick={() => audio.setKillAll(false)}>Sesi aç</button></div>}
+      {Array.isArray(audio.channels) && (
+        <div className="au-onair">
+          <span className="au-onair__head">YAYINA GİDEN:</span>
+          {audio.channels.filter((c) => c.onAir).map((c) => <span key={c.key} className="au-badge is-air"><i className="au-dot" /><Icon name={c.icon} size={11} /> {c.label}</span>)}
+          {audio.channels.filter((c) => !c.onAir).map((c) => <span key={c.key} className="au-badge is-off" title={c.reason}><Icon name="micOff" size={11} /> {c.label}</span>)}
+          {!audio.channels.some((c) => c.onAir) && <span className="au-badge is-none">hiç ses gitmiyor</span>}
+        </div>
+      )}
       <div className="mx-console">
         <div className="mx-strips">
           {audio.strips.map((s) => (
             <Strip key={s.id} strip={s} st={a.strips[s.id]} audio={audio} bind={bind}
-              status={s.kind === "mic" ? (status === "live" ? "live" : status === "waiting" ? "wait" : "err") : s.kind === "input" ? ({ live: "live", waiting: "wait", error: "err" }[audio.inputStatus[s.id]] || null) : s.kind === "music" ? (audio.music.playing ? "live" : null) : null} />
+              status={s.kind === "mic" ? (status === "live" ? "live" : status === "waiting" ? "wait" : "err") : s.kind === "input" || s.kind === "file" ? ({ live: "live", waiting: "wait", error: "err", file: "err" }[audio.inputStatus[s.id]] || null) : s.kind === "music" ? (audio.music.playing ? "live" : null) : null} />
           ))}
         </div>
         <MasterStrip audio={audio} bind={bind} />
       </div>
       <div className="mx-cards">
         <RoutingMatrix audio={audio} />
+        <SceneRouting audio={audio} />
         <section className="st-card">
           <header className="st-card__head"><Icon name="mic" size={15} /><strong>Mikrofon</strong></header>
           <Field label="Aygıt">
@@ -294,11 +418,21 @@ export default function AudioPanel({ audio: audioProp, mixer, devices = { audio:
           {(status === "denied" || status === "error" || status === "ended" || status === "missing") && onRequestMic && (
             <button type="button" className="btn btn--sm" onClick={onRequestMic}><Icon name="refresh" size={12} /> {status === "denied" ? "Mikrofon izni iste" : "Yeniden bağlan"}</button>
           )}
-          <header className="st-card__head mx-sub"><Icon name="plus" size={13} /><strong>Ek ses girişleri</strong>
-            <button type="button" className="btn btn--xs" onClick={addInput} disabled={!devices.audio.length}><Icon name="plus" size={11} /> Ekle</button>
+          <header className="st-card__head mx-sub"><Icon name="plus" size={13} /><strong>Ek ses kaynakları</strong>
+            <button type="button" className="btn btn--xs" onClick={addInput} disabled={!devices.audio.length} title="Kamera sesi, yakalama kartı, ikinci mikrofon"><Icon name="mic" size={11} /> Aygıt</button>
+            <button type="button" className="btn btn--xs" onClick={pickAndAdd} title="Ses ya da video dosyasının sesi (yeri hatırlanır)"><Icon name="play2" size={11} /> Dosya</button>
           </header>
-          <p className="st-hint">Kamera sesi, yakalama kartı ya da ikinci mikrofon: her biri ayrı şerit (Canlı mikrofon barası).</p>
-          {a.inputs.map((input) => (
+          <input ref={fileRef} type="file" accept="audio/*,video/*" hidden onChange={(e) => { addFile(e.target.files?.[0]); e.target.value = ""; }} />
+          <input ref={repickRef} type="file" accept="audio/*,video/*" hidden onChange={(e) => { const id = repickRef.current?.dataset.id; if (id) repick(id, e.target.files?.[0]); e.target.value = ""; }} />
+          <p className="st-hint">Aygıt: kamera sesi, yakalama kartı ya da ikinci mikrofon (Canlı mikrofon barası). Dosya: müzik, jingle ya da videonun sesi (Müzik barası). Her biri ayrı şerit; hangi sahnelerde yayına gideceği “Sahne başına ses”ten.</p>
+          {a.inputs.filter((i) => i.kind === "file").map((input) => (
+            <FileInputRow key={input.id} input={input} audio={audio} status={audio.inputStatus[input.id]} setInput={setInput} onRemove={() => removeInput(input.id)}
+              onRepick={async () => {
+                if (media?.pick) { const r = await media.pick({ kind: "audio" }); const f = r?.files?.[0]; if (f) setInput(input.id, { url: f.url, filePath: f.path, fileName: f.name, fileMissing: false }); return; }
+                if (repickRef.current) { repickRef.current.dataset.id = input.id; repickRef.current.click(); }
+              }} />
+          ))}
+          {a.inputs.filter((i) => i.kind !== "file").map((input) => (
             <div key={input.id} className="st-row">
               <select value={input.deviceId || ""} onChange={(e) => setInput(input.id, { deviceId: e.target.value, name: devices.audio.find((d) => d.deviceId === e.target.value)?.label || "Ses girişi" })}>
                 {devices.audio.filter((d) => d.deviceId && d.deviceId !== "default").map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `Ses girişi ${i + 1}`}</option>)}

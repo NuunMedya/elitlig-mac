@@ -254,7 +254,7 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     var: { toggle: toggleVar, active: airMode === "var" },
     interview: im.iv,
     highlights: hm.hl,
-    micWarning: airMode === "var" && audio ? !audio.micMuted : false,
+    micWarning: airMode === "var" && audio ? !audio.micMuted && !audio.killAll : false,
     settings: cfg,
   };
 }
