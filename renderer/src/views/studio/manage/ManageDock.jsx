@@ -2,31 +2,31 @@
 //
 //   Maçlar     maç SEÇİMİ (şu an canlı maçlar üstte, gün / tarih süzgeci, arama,
 //              yeni maç). Maç seçilince doğrudan Reji açılır.
-//   Reji       skor + saat | olay ızgarası (Goller, Kartlar, Değişiklik, Diğer) |
-//              olay listesi (en yeni üstte; düzenle / sil)
+//   Reji       iki takım ayna sütunlarda (büyük GOL, kart, penaltı, değişiklik…);
+//              ortada skor + saat + maç akışı + olay listesi; altta gol müziği
 //   Kadro      iki takımın maç kadrosu
 //   Maç sonu   puanlar, maçın enleri (maçın golü / kurtarışı olaydan ve tekrar
 //              kliplerinden), içerik, istatistik, maçı yayınla
 //   Takımlar   takım ve oyuncu oluştur / düzenle
-//   Sponsor    sponsor grafiği yayını + OBS / LED bağlantıları
-// Yayın grafikleri (Skorbord, Altyazı, Marka & tema, Ön ayarlar, LED, Röportaj)
-// artık stüdyonun kendi üst sekmelerindedir (./graphics dışa aktarımları).
+// Yayın grafikleri (Skorbord, Altyazı, Marka & tema, Ön ayarlar, LED, Röportaj) ve
+// "Sponsor & linkler" stüdyonun kendi üst sekmelerindedir (./graphics dışa
+// aktarımları); sponsor bölümü burada ikinci kez gösterilmez.
 //
 // Kullanım:
 //   <ManageDock matchId={id|null} match={live.match} live={live}
 //     onOpenMatch={(id) => setMatchId(id)}
-//     graphics={g}                                   // isteğe bağlı: useGraphics() (yoksa içeride kurulur)
-//     scenes={[{ id, name }]}                        // isteğe bağlı (sahne bazlı grafik görünürlüğü)
+//     graphics={g}                                   // (eski) yok sayılır: sponsor bölümü grafik sekmesinde
+//     scenes={[{ id, name }]}                        // (eski) yok sayılır
 //     replays={replays}                              // useReplays listesi: maçın golü / kurtarışı kapakları
 //     onPlayReplay={(replay) => …}                   // isteğe bağlı: tekrarı stüdyonun tekrar panelinde aç
 //     fullscreen / onFullscreenChange                // isteğe bağlı denetimli "Tam ekran"
 //     onGoalTap={({ side, code }) => …}              // GOL'e basıldığı an (golcü seçilmeden) → tekrar kaydı
-//     onEventCreated={({ event, playerName, side, code }) => …} />  // olay kaydedildikten sonra
+//     onEventCreated={({ event, playerName, side, code }) => …}     // olay kaydedildikten sonra
+//     goalMusic={useGoalMusic(…)} />                 // isteğe bağlı: Reji'de gol müziği (../goalmusic)
 // matchId boşken yalnız Maçlar ve Takımlar açılır. Yetkiyi sunucu denetler.
 import React, { useEffect, useState } from "react";
 import { Icon, Spinner } from "../../../components/ui";
 import { statusLabel } from "../../../lib/studio/manageMatches";
-import { LinksPanel, SponsorPanel, useGraphics } from "../graphics";
 import LineupTab from "./LineupTab";
 import MatchesTab from "./MatchesTab";
 import { NeedMatch } from "./pickers";
@@ -42,29 +42,15 @@ export const MANAGE_TABS = [
   { key: "kadro", label: "Kadro", icon: "shirt", needsMatch: true },
   { key: "macsonu", label: "Maç sonu", icon: "award", needsMatch: true },
   { key: "takimlar", label: "Takımlar & Oyuncular", icon: "users" },
-  { key: "yayin", label: "Sponsor & bağlantılar", icon: "handshake", needsMatch: true },
 ];
 
 const STORE = "elitlig.studio.manageTab";
 const readTab = () => { try { const v = localStorage.getItem(STORE); return MANAGE_TABS.some((t) => t.key === v) ? v : null; } catch { return null; } };
 const writeTab = (v) => { try { localStorage.setItem(STORE, v); } catch { /* yoksay */ } };
 
-const SponsorBody = ({ g, matchId }) => (
-  <div className="mg-stack">
-    <SponsorPanel g={g} />
-    <LinksPanel g={g} matchId={matchId} />
-  </div>
-);
-/** Dışarıdan g verilmezse kendi useGraphics'ini kurar. */
-function OwnSponsorHost({ matchId, live }) {
-  const g = useGraphics({ matchId, live });
-  return <SponsorBody g={g} matchId={matchId} />;
-}
-const SponsorHost = ({ graphics, matchId, live }) => (graphics ? <SponsorBody g={graphics} matchId={matchId} /> : <OwnSponsorHost matchId={matchId} live={live} />);
-
 export function ManageDock({
-  matchId = null, match = null, live = null, onOpenMatch, graphics = null, onGoalTap, onEventCreated,
-  scenes = [], replays = [], onPlayReplay, fullscreen, onFullscreenChange,
+  matchId = null, match = null, live = null, onOpenMatch, onGoalTap, onEventCreated, goalMusic = null,
+  replays = [], onPlayReplay, fullscreen, onFullscreenChange,
 }) {
   const user = useAuthUser();
   const hasMatch = Number(matchId) > 0;
@@ -97,10 +83,9 @@ export function ManageDock({
       if (!matchReady) return <Spinner label="Maç yükleniyor…" />;
     }
     switch (active) {
-      case "reji": return <RejiTab key={matchId} matchId={Number(matchId)} live={live} onGoalTap={onGoalTap} onEventCreated={onEventCreated} />;
+      case "reji": return <RejiTab key={matchId} matchId={Number(matchId)} live={live} onGoalTap={onGoalTap} onEventCreated={onEventCreated} goalMusic={goalMusic} />;
       case "kadro": return <LineupTab key={matchId} matchId={Number(matchId)} match={match} live={live} user={user} />;
       case "macsonu": return <PostTab key={matchId} matchId={Number(matchId)} match={match} live={live} replays={replays} onPlayReplay={onPlayReplay} />;
-      case "yayin": return <SponsorHost key={matchId} graphics={graphics} matchId={Number(matchId)} live={live} />;
       case "maclar": return <MatchesTab user={user} currentMatchId={hasMatch ? Number(matchId) : null} onOpenMatch={open} />;
       case "takimlar": return <TeamsTab user={user} match={matchReady ? match : null} />;
       default: return null;

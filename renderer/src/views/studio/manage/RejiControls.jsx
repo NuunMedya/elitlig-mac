@@ -1,34 +1,32 @@
-// Maç yönetimi · Reji sol sütunu: skor tablosu (iki takım, +GOL), büyük saat
-// (devre, düzeltme), aşama düğmesi (başlat / devre arası / bitir…), son golü geri al.
+// Maç yönetimi · Reji ORTA sütunu üstü: skor tablosu, büyük saat (devre, düzeltme)
+// ve maç akışı düğmeleri — hepsi her an görünür, aşamaya göre etkin:
+//   Başlat / Sürdür · Durdur · Devre arası · 2. yarı · Uzatma · Bitir (onaylı)
+// Sıradaki önerilen adım (primaryControl) vurgulanır.
 import React from "react";
 import { Icon } from "../../../components/ui";
-import { HALF_MS, PHASE_LABEL, eventLabel, isGoalCode, primaryControl } from "../../../lib/studio/match";
+import { PHASE_LABEL } from "../../../lib/studio/match";
 import { clockText } from "../../../lib/studio/scorebug";
+import { flowButtons } from "./rejiLogic";
 
 const NUDGES = [-60_000, -10_000, 10_000, 60_000];
 
-export default function RejiControls({ live, busy, onGoal, onControl, onFinish, onUndo, onNudge }) {
-  const primary = primaryControl(live.phase);
-  const lastGoal = [...(live.timeline || [])].reverse().find((e) => isGoalCode(e.olay_kodu));
+export default function RejiControls({ live, busy, onControl, onFinish, onNudge }) {
   const notLive = live.status !== "canli";
-  const name = (side) => (side === "home" ? live.homeName : live.awayName);
+  const finished = live.phase === "finished";
+  const buttons = flowButtons(live.phase, { period: live.period, running: live.running });
   return (
     <div className="rj-controls">
-      <div className="rj-board" aria-label="Skor">
-        {["home", "away"].map((side) => (
-          <div key={side} className={`rj-board__team is-${side}`}>
-            <span className="rj-board__name" title={name(side)}>{name(side)}</span>
-            <strong className="rj-board__score">{side === "home" ? live.score.home : live.score.away}</strong>
-            <button type="button" className="rj-goal" onClick={() => onGoal(side)} disabled={busy || live.manual} title="Gol: tekrar kaydı başlar, ardından golcü seçilir">
-              <Icon name="plus" size={14} strokeWidth={2.6} /> GOL
-            </button>
-          </div>
-        ))}
+      <div className="rj-score" aria-label="Skor">
+        <span className="rj-score__team is-home" title={live.homeName}>{live.homeName}</span>
+        <strong className="rj-score__num">{live.score.home}</strong>
+        <span className="rj-score__sep">–</span>
+        <strong className="rj-score__num">{live.score.away}</strong>
+        <span className="rj-score__team is-away" title={live.awayName}>{live.awayName}</span>
       </div>
       {live.manual && <p className="mg-note">Skor elle / hükmen tescil edildi; goller skoru değiştirmez.</p>}
 
       <div className={`rj-clock${live.running ? " is-running" : ""}`}>
-        <span className="rj-clock__phase">{live.running && <span className="mg-live__dot" />}{PHASE_LABEL[live.phase]}{["first", "second", "extra"].includes(live.phase) ? "" : ` · ${live.period >= 3 ? "uzatma" : `${live.period}. devre`}`}</span>
+        <span className="rj-clock__phase">{live.running && <span className="mg-live__dot" />}{PHASE_LABEL[live.phase]}{["first", "second", "extra", "notStarted", "finished"].includes(live.phase) ? "" : ` · ${live.period >= 3 ? "uzatma" : `${live.period}. devre`}`}</span>
         <strong>{clockText(live.clockMs)}</strong>
         <div className="rj-clock__nudges" role="group" aria-label="Saati düzelt">
           {NUDGES.map((d) => (
@@ -39,25 +37,19 @@ export default function RejiControls({ live, busy, onGoal, onControl, onFinish, 
         </div>
       </div>
 
-      <button type="button" className={`btn btn--block rj-primary ${primary.finish ? "btn--red" : "btn--green"}`} disabled={busy || !live.match}
-        onClick={() => (primary.finish ? onFinish() : onControl(primary.action))}>
-        <Icon name={primary.icon} size={15} /> {primary.label}
-      </button>
-      {(live.running || (live.phase === "second" && live.clockMs >= HALF_MS * 2) || (live.phase === "paused" && live.period >= 2)) && (
-        <div className="rj-secondary">
-          {live.running && <button type="button" className="btn btn--sm" disabled={busy} onClick={() => onControl("pause")}><Icon name="pause" size={13} /> Saati durdur</button>}
-          {live.phase === "second" && live.clockMs >= HALF_MS * 2 && <button type="button" className="btn btn--sm" disabled={busy} onClick={() => onControl("extra")}><Icon name="clock" size={13} /> Uzatmaya geç</button>}
-          {live.phase === "paused" && live.period >= 2 && <button type="button" className="btn btn--sm btn--danger-ghost" disabled={busy} onClick={onFinish}><Icon name="flag" size={13} /> Maçı bitir</button>}
+      {finished ? (
+        <button type="button" className="btn btn--block rj-flow__reopen" disabled={busy || !live.match} onClick={() => onControl("reopen")}><Icon name="refresh" size={14} /> Tekrar canlıya al</button>
+      ) : (
+        <div className="rj-flow" role="group" aria-label="Maç akışı">
+          {buttons.map((b) => (
+            <button key={b.key} type="button" className={`rj-flow__btn is-${b.key}${b.next ? " is-next" : ""}`} disabled={busy || !live.match || !b.enabled}
+              onClick={() => (b.finish ? onFinish() : onControl(b.action))} title={b.next ? "Sıradaki adım" : undefined}>
+              <Icon name={b.icon} size={14} /> <span>{b.label}</span>
+            </button>
+          ))}
         </div>
       )}
-      {lastGoal && (
-        <button type="button" className="rj-undo" onClick={() => onUndo(lastGoal)} disabled={busy} title="Son golü sil">
-          <Icon name="undo" size={12} />
-          <span>Son gol: <b>{live.nameOf(lastGoal.oyuncu_id) || "oyuncusuz"}</b> · {eventLabel(lastGoal.olay_kodu)} {lastGoal.dakika ?? 0}'</span>
-          <span className="rj-undo__act">Geri al</span>
-        </button>
-      )}
-      {notLive && live.phase !== "finished" && <p className="mg-muted mg-small">Maç başlamadı: olaylar yine girilebilir, saat maç başlayınca çalışır.</p>}
+      {notLive && !finished && <p className="mg-muted mg-small">Maç başlamadı: olaylar yine girilebilir, saat maç başlayınca çalışır.</p>}
     </div>
   );
 }
