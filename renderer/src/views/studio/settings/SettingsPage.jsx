@@ -1,7 +1,8 @@
 // Yayın Stüdyosu · AYARLAR sayfası (dişli simgesi): stüdyonun üstünde tam sayfa.
 //
-//   Yayın · Kayıt (kayıt kalitesi + 10 dk boyut tahmini) · Tekrar · Geçiş · LED ·
-//   Görünüm · Kısayollar · Bildirimler · Gelişmiş
+//   Yayın · Kayıt (kayıt kalitesi + 10 dk boyut tahmini) · Tekrar · Geçiş (Geçişler
+//   sekmesiyle aynı bileşen) · LED · Görünüm · Kısayol düğmeleri (sol şerit) ·
+//   Klavye kısayolları (aynı eylemler) · Bildirimler · Gelişmiş
 //
 // Ayarlar ilgili kod yollarını besler: kodlama (prefs.encoding), geçiş
 // (prefs.transition / transitionMs), çalışma alanı, LED tercihleri ve
@@ -12,6 +13,9 @@ import { BITRATE_PRESETS, FPS_CHOICES, RESOLUTION_CHOICES, encodingPreset, recom
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../../lib/studio/transitions";
 import { WORKSPACES, FIXED_SHORTCUTS } from "../../../lib/studio/scenesWorkspace";
 import { AUDIO_KBPS_CHOICES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, RECORD_QUALITIES, RESERVED_KEYS, bindHotkey, keyText, recordEstimate } from "./settings";
+import { RAIL_WIDGETS, addWidget, moveWidget, removeWidget, toggleWidgetSize, widgetOf } from "../shortcuts/railModel";
+import { RailCatalog } from "../shortcuts/ShortcutRail";
+import TransitionsTab from "../scenes/TransitionsTab";
 
 export const SETTINGS_SECTIONS = [
   { key: "yayin", label: "Yayın", icon: "broadcast" },
@@ -20,7 +24,8 @@ export const SETTINGS_SECTIONS = [
   { key: "gecis", label: "Geçiş", icon: "swap" },
   { key: "led", label: "LED ekran", icon: "overview" },
   { key: "gorunum", label: "Görünüm", icon: "grid" },
-  { key: "kisayol", label: "Kısayollar", icon: "command" },
+  { key: "serit", label: "Kısayol düğmeleri", icon: "zap" },
+  { key: "kisayol", label: "Klavye kısayolları", icon: "command" },
   { key: "bildirim", label: "Bildirimler", icon: "bell" },
   { key: "gelismis", label: "Gelişmiş", icon: "sliders" },
 ];
@@ -78,7 +83,39 @@ function HotkeyRow({ action, keys, onBind, onReset }) {
   );
 }
 
-function SettingsPage({ section, onSection, settings, set, onReset, prefs, setPref, led, scenes, engine, onClose, toast }) {
+/** Sol şeritteki kısayol düğmeleri: sıra, boyut, kaldır (+ katalog). */
+function RailManager({ rail, scenes }) {
+  const { items, setItems, reset } = rail;
+  const nameOf = (it) => (it.type === "scene" ? `Sahne · ${scenes.find((s) => s.id === it.opts?.sceneId)?.name || "?"}` : widgetOf(it.type)?.label || it.type);
+  return (
+    <>
+      <Section title="Şeritteki kısayollar" sub="Yukarıdan aşağı sıra. Stüdyoda şeride sağ tık ya da “Düzenle” ile de sürükleyip boyutlayabilirsin.">
+        <ol className="st-railman">
+          {items.map((it, i) => (
+            <li key={it.id}>
+              <Icon name={widgetOf(it.type)?.icon || "zap"} size={14} />
+              <span className="st-railman__name">{nameOf(it)}</span>
+              <div className="st-seg">
+                <button type="button" className={it.size === 1 ? "is-on" : ""} onClick={() => it.size !== 1 && setItems((c) => toggleWidgetSize(c, it.id))}>1×1</button>
+                <button type="button" className={it.size === 2 ? "is-on" : ""} onClick={() => it.size !== 2 && setItems((c) => toggleWidgetSize(c, it.id))}>2×2</button>
+              </div>
+              <button type="button" className="icon-btn icon-btn--xs" disabled={i === 0} onClick={() => setItems((c) => moveWidget(c, it.id, c[i - 1]?.id))} title="Yukarı"><Icon name="chevronUp" size={13} /></button>
+              <button type="button" className="icon-btn icon-btn--xs" disabled={i === items.length - 1} onClick={() => setItems((c) => moveWidget(c, it.id, c[i + 1]?.id))} title="Aşağı"><Icon name="chevronDown" size={13} /></button>
+              <button type="button" className="icon-btn icon-btn--xs" onClick={() => setItems((c) => removeWidget(c, it.id))} title="Kaldır"><Icon name="x" size={13} /></button>
+            </li>
+          ))}
+          {!items.length && <li className="st-hint">Şerit boş. Sağdan kısayol ekle.</li>}
+        </ol>
+        <button type="button" className="btn btn--sm btn--ghost" onClick={reset}><Icon name="undo" size={13} /> Varsayılan düzene dön</button>
+      </Section>
+      <Section title="Kısayol ekle" sub={`${RAIL_WIDGETS.length} parçacık: her biri işlevseldir (durumunu gösterir, açılır panelle seçim yapar).`}>
+        <RailCatalog compact items={items} scenes={scenes} onAdd={(type, size, opts) => setItems((c) => addWidget(c, type, { size, opts }))} />
+      </Section>
+    </>
+  );
+}
+
+function SettingsPage({ section, onSection, settings, set, onReset, prefs, setPref, led, scenes, engine, onClose, toast, rail = null, hasModes = false, brandRef = null }) {
   const enc = prefs.encoding;
   const preset = encodingPreset(enc);
   const est = recordEstimate(settings.record, { streamVideoKbps: preset.videoBitrateKbps, audioKbps: settings.stream.audioKbps });
@@ -175,17 +212,7 @@ function SettingsPage({ section, onSection, settings, set, onReset, prefs, setPr
       </Section>
     );
   } else if (section === "gecis") {
-    body = (
-      <Section title="Geçiş" sub="Önizlemeden yayına alırken (Geçiş düğmesi, Boşluk) kullanılan varsayılan.">
-        <div className="st-choices is-grid">{TRANSITION_KINDS.map((t) => <Choice key={t.key} on={tKind.key === t.key} title={t.label} text={t.ms ? `${t.ms} ms varsayılan` : "anında"} onClick={() => setPref("transition", t.key)} />)}</div>
-        {tKind.key !== "cut" && (
-          <Field label={`Süre · ${tMs} ms`}>
-            <input type="range" min={tKind.min} max={tKind.max} step={50} value={tMs} onChange={(e) => setPref("transitionMs", (m) => ({ ...(m || {}), [tKind.key]: Number(e.target.value) }))} />
-          </Field>
-        )}
-        <Toggle checked={prefs.studioMode} onChange={(v) => setPref("studioMode", v)} title="Önizleme (stüdyo modu)" text="Kapalıyken sahneye tek tık doğrudan yayına alır" />
-      </Section>
-    );
+    body = <div className="st-set__wide"><TransitionsTab prefs={prefs} setPref={setPref} hasModes={hasModes} brandRef={brandRef} /></div>;
   } else if (section === "led") {
     body = (
       <Section title="LED ekran varsayılanları" sub="LED ekran sekmesiyle aynı ayarlar.">
@@ -226,18 +253,28 @@ function SettingsPage({ section, onSection, settings, set, onReset, prefs, setPr
         </Section>
       </>
     );
+  } else if (section === "serit") {
+    body = rail ? <RailManager rail={rail} scenes={scenes} /> : <p className="st-hint">Kısayol şeridi yüklenemedi.</p>;
   } else if (section === "kisayol") {
+    const row = (a) => (
+      <HotkeyRow key={a.key} action={a} keys={settings.hotkeys[a.key] || []}
+        onBind={(k) => { if (RESERVED_KEYS.has(k.length === 1 ? k.toLowerCase() : k)) { toast?.(`“${keyText(k)}” tuşu ayrılmış (sahne / gol tuşları).`, { tone: "warn" }); return; } set("hotkeys", bindHotkey(settings.hotkeys, a.key, k)); }}
+        onReset={() => set("hotkeys", (a.default.length ? a.default : [""]).reduce((h, k, i) => (k ? bindHotkey(h, a.key, k, { replace: i === 0 }) : { ...h, [a.key]: [] }), settings.hotkeys))} />
+    );
+    const rest = HOTKEY_ACTIONS.filter((a) => a.default.length);
+    const extra = HOTKEY_ACTIONS.filter((a) => !a.default.length);
     body = (
-      <Section title="Klavye kısayolları" sub="Bir eylemin tuşunu değiştirmek için “Değiştir”e bas, sonra tuşa bas. 1–9 sahne tuşları sabittir.">
-        <div className="st-hks">
-          {HOTKEY_ACTIONS.map((a) => (
-            <HotkeyRow key={a.key} action={a} keys={settings.hotkeys[a.key] || []}
-              onBind={(k) => { if (RESERVED_KEYS.has(k.length === 1 ? k.toLowerCase() : k)) { toast?.(`“${keyText(k)}” tuşu ayrılmış (sahne / gol tuşları).`, { tone: "warn" }); return; } set("hotkeys", bindHotkey(settings.hotkeys, a.key, k)); }}
-              onReset={() => set("hotkeys", a.default.reduce((h, k, i) => bindHotkey(h, a.key, k, { replace: i === 0 }), settings.hotkeys))} />
-          ))}
-        </div>
-        <dl className="st-keys st-keys--fixed">{FIXED_SHORTCUTS.map(([k, v]) => <React.Fragment key={k}><dt><Kbd>{k}</Kbd></dt><dd>{v}</dd></React.Fragment>)}</dl>
-      </Section>
+      <>
+        <Section title="Temel tuşlar" sub="Bir eylemin tuşunu değiştirmek için “Değiştir”e bas, sonra tuşa bas. 1–9 sahne tuşları sabittir.">
+          <div className="st-hks">{rest.map(row)}</div>
+        </Section>
+        <Section title="Kısayol düğmeleriyle aynı eylemler" sub="Sol şeritteki parçacıkların eylemlerine de tuş atayabilirsin (varsayılan: atanmamış).">
+          <div className="st-hks">{extra.map(row)}</div>
+        </Section>
+        <Section title="Sabit tuşlar">
+          <dl className="st-keys st-keys--fixed">{FIXED_SHORTCUTS.map(([k, v]) => <React.Fragment key={k}><dt><Kbd>{k}</Kbd></dt><dd>{v}</dd></React.Fragment>)}</dl>
+        </Section>
+      </>
     );
   } else if (section === "bildirim") {
     body = (
@@ -286,15 +323,21 @@ function SettingsPage({ section, onSection, settings, set, onReset, prefs, setPr
   );
 }
 
-/** Çalışma alanı küçük çizimi. */
+/** Çalışma alanı küçük çizimi (SVG; yeşil = önizleme, kırmızı = program, gri = sahneler). */
 export function WorkspacePic({ ws }) {
-  return (
-    <span className={`st-wspic is-${ws.key}`} aria-hidden="true">
-      {ws.key === "program" ? <><b className="is-pgm" /><span><b className="is-pvw" /><i /><i /><i /></span></>
-        : ws.grid ? <><span className={`is-g${ws.grid}`}>{Array.from({ length: ws.grid * ws.grid }, (_, i) => <i key={i} />)}</span><b className="is-pgm" /></>
-          : <><span className="is-row"><b className="is-pvw" /><b className="is-pgm" /></span><span className="is-strip"><i /><i /><i /><i /></span></>}
-    </span>
-  );
+  const P = (x, y, w, h) => <rect x={x} y={y} width={w} height={h} rx="1.4" className="is-pgm" />;
+  const V = (x, y, w, h) => <rect x={x} y={y} width={w} height={h} rx="1.4" className="is-pvw" />;
+  const S = (x, y, w, h, k) => <rect key={k} x={x} y={y} width={w} height={h} rx="1" className="is-sc" />;
+  let body;
+  if (ws.key === "program") body = <>{P(1, 1, 31, 28)}{V(34, 1, 13, 8)}{S(34, 11, 13, 5, 1)}{S(34, 17.5, 13, 5, 2)}{S(34, 24, 13, 5, 3)}</>;
+  else if (ws.key === "single") body = <>{P(1, 1, 46, 21)}{[0, 1, 2, 3].map((i) => S(1 + i * 11.75, 24, 10.5, 5, i))}</>;
+  else if (ws.grid) {
+    const n = ws.grid;
+    const cw = (22 - (n - 1) * 1.5) / n;
+    const ch = (28 - (n - 1) * 1.5) / n;
+    body = <>{Array.from({ length: n * n }, (_, i) => S(1 + (i % n) * (cw + 1.5), 1 + Math.floor(i / n) * (ch + 1.5), cw, ch, i))}{P(25, 1, 22, 15)}{V(25, 18, 14, 11)}</>;
+  } else body = <>{V(1, 1, 22.5, 17)}{P(24.5, 1, 22.5, 17)}{[0, 1, 2, 3].map((i) => S(1 + i * 11.75, 21, 10.5, 8, i))}</>;
+  return <svg className={`st-wspic is-${ws.key}`} viewBox="0 0 48 30" aria-hidden="true">{body}</svg>;
 }
 
 export default memo(SettingsPage);

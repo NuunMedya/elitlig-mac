@@ -9,7 +9,8 @@
 // chunked aktarım reddedilir — DigitalOcean Spaces gibi).
 //
 // Masaüstü tarafı: api.js (jetonlu request / upload, {ok,data} sarmalı),
-// replays.upload (tekrar → gol klibi, kapak), clips.upload (eski klip),
+// clips.uploadGoalClip (studio:uploadClip: ön imzalı gol klibi, eski sunucuda
+// çok parçalı yedek), replays.upload (çok parçalı tekrar → gol klibi, kapak), clips.upload (eski klip),
 // highlights.uploadHighlight / putFile, interview.upload, yükleme günlüğü.
 //
 // Sunucu deposu yoksa atlanır:
@@ -25,7 +26,7 @@ const { createRequire } = require("node:module");
 
 const { createApi } = require("../api");
 const { createReplayStore } = require("../studio/replays");
-const { createClipStore } = require("../studio/clips");
+const { createClipStore, uploadGoalClip } = require("../studio/clips");
 const { uploadHighlight, putFile } = require("../studio/highlights");
 const { createInterviews } = require("../studio/interview");
 const { createUploadLog, withUploadLog } = require("../studio/uploadlog");
@@ -33,6 +34,9 @@ const { createUploadLog, withUploadLog } = require("../studio/uploadlog");
 const SERVER_DIR = process.env.ELITLIG_SERVER_DIR || path.resolve(__dirname, "..", "..", "..", "elitlig-server");
 const HAS_SERVER = fs.existsSync(path.join(SERVER_DIR, "routes", "liveStreams.js")) && fs.existsSync(path.join(SERVER_DIR, "node_modules", "express"));
 const skip = HAS_SERVER ? false : `sunucu deposu yok (${SERVER_DIR})`;
+// Ön imzalı gol klibi ucu (sunucu 2026-11 sonrası): yoksa o test atlanır.
+const HAS_CLIP_PRESIGN = HAS_SERVER && /createClipUploadUrls/.test(fs.readFileSync(path.join(SERVER_DIR, "services", "goalClips", "index.js"), "utf8"));
+const skipPresign = skip || (HAS_CLIP_PRESIGN ? false : "sunucuda ön imzalı gol klibi ucu yok");
 
 const TOKEN = "T0K3N";
 const ACCESS = "AKIATEST";
@@ -108,12 +112,14 @@ function loadServer() {
     spaces: req("./middleware/spacesUpload"),
     errors: req("./middleware/errorHandlers"),
     highlights: req("./services/matchHighlights"),
+    goalClipsRouter: req("./routes/goalClips"),
+    highlightsRouter: req("./routes/matchHighlights"),
   };
 }
 
 function makeDb(S) {
   return {
-    Matches: S.makeModel([{ id: 7, first_team_name: "Şahinler", second_team_name: "Kurtlar", city_id: 6 }, { id: 8, first_team_name: "A", second_team_name: "B", city_id: 6 }]),
+    Matches: S.makeModel([{ id: 7, first_team_name: "Şahinler", second_team_name: "Kurtlar", city_id: 6, post_roportaj: null, match_interview: "none" }, { id: 8, first_team_name: "A", second_team_name: "B", city_id: 6 }]),
     MacOlaylari: S.makeModel([
       { id: 100, mac_id: 7, takim_id: 1, oyuncu_id: 55, dakika: 12, devre: 1, olay_kodu: "GOAL_RIGHT_FOOT" },
       { id: 102, mac_id: 7, takim_id: 1, oyuncu_id: 55, dakika: 40, devre: 2, olay_kodu: "YELLOW_CARD" },
@@ -144,7 +150,7 @@ function memoryEngine(keyFn) {
   };
 }
 
-async function startApp(S, spaces) {
+async function startApp(S, spaces, { withClipPresign = true } = {}) {
   const db = makeDb(S);
   const engine = memoryEngine(S.liveStreams.clipObjectKey);
   const requests = [];
@@ -163,6 +169,8 @@ async function startApp(S, spaces) {
   app.use(S.express.json());
   app.use(S.express.urlencoded({ extended: true }));
   const pass = (_req, _res, next) => next();
+  // Eski sunucu benzetimi: ön imzalı klip ucu yok (kodsuz 404 → masaüstü çok parçalıya düşer).
+  if (!withClipPresign) app.post(/^\/api\/admin\/live-streams\/matches\/\d+\/clips\/upload-url$/, (req, res) => res.status(404).json({ error: `Endpoint not found: ${req.originalUrl}` }));
   app.use("/api/admin/live-streams", S.liveStreams.createLiveStreamsRouter(db, {
     auth: (req, res, next) => {
       if (req.headers.authorization !== `Bearer ${TOKEN}`) return res.status(401).json({ message: "Oturum gerekli.", code: "UNAUTHORIZED" });
@@ -176,8 +184,14 @@ async function startApp(S, spaces) {
     storage: { deleteObject: async () => true },
     publicCache: { clear() {} },
     highlightDeps,
+    clipDeps: highlightDeps,
     highlightCache: { clear() {} },
+    clearMatches: () => {},
   }));
+  // Sitenin okuduğu herkese açık uçlar (önbelleksiz).
+  const noCache = (_req, _res, next) => next();
+  app.use("/api/goal-clips", S.goalClipsRouter.createGoalClipsRouter(db, { cache: noCache }));
+  app.use("/api/match-highlights", S.highlightsRouter.createMatchHighlightsRouter(db, { cache: noCache }));
   app.use(S.errors.notFoundHandler);
   app.use(S.errors.errorHandler);
   const server = await new Promise((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
@@ -356,4 +370,104 @@ test("ön imzalı PUT: Spaces'in reddettiği durumlar anlaşılır hataya döner
   fs.writeFileSync(file, Buffer.alloc(1000, 1));
   r = await putFile(urls.data.upload_url, { file, size: 1000, headers: noAcl });
   assert.equal(r.status, 403);
+});
+
+test("uçtan uca: studio:uploadClip ön imzalı (SigV4 doğrulanan PUT, kapak) → sitenin okuduğu uçlar; eski sunucuda çok parçalı yedek", { skip: skipPresign, timeout: 60000 }, async (t) => {
+  const S = loadServer();
+  const spaces = await startFakeSpaces();
+  const srv = await startApp(S, spaces);
+  t.after(() => { srv.server.close(); spaces.server.close(); });
+  const log = createUploadLog({ file: path.join(tmp("log"), "uploads.json") });
+  const api = withUploadLog(desktopApi(srv.base), log);
+  const putImpl = withUploadLog.put(putFile, log);
+  const replaysDir = tmp("replays");
+  const replays = createReplayStore({ replaysDir, getFfmpegPath: () => "ffmpeg", sleep: async () => {} });
+  const clips = createClipStore({ clipsDir: tmp("clips"), getFfmpegPath: () => "ffmpeg", sleep: async () => {} });
+  // 7,5 MB: eski yolda 5 MB üstü çok parçalı (multer-s3) yüklemeye düşen boyut.
+  const size = 7_500_000;
+  const rid = writeReplay(replaysDir, { size });
+  const progress = [];
+  let res = await uploadGoalClip(api, { matchId: 7, eventId: 100, replayId: rid, angle: "program" }, { replays, clips, putImpl, emitProgress: (p) => progress.push(p), sleep: async () => {} });
+  assert.equal(res.ok, true, JSON.stringify(res.error));
+  assert.equal(res.via, "presigned");
+  assert.equal(res.data.event_id, 100);
+  assert.equal(res.data.player_id, 55);
+  assert.match(res.data.url, /goal-clips\/7\/100-\d{13}-[0-9a-f]{6}\.mp4$/);
+  assert.match(res.data.poster_url, /goal-clips\/7\/100-\d{13}-[0-9a-f]{6}\.jpg$/);
+  assert.equal(res.data.size_bytes, size);
+  assert.equal(res.data.duration_ms, 10010);
+  // Dosya sunucudan GEÇMEDİ: çok parçalı istek yok, Spaces'e imzalı PUT var.
+  assert.ok(!srv.requests.some((r) => /multipart/.test(r.headers["content-type"] || "")), "sunucuya dosya gitmez");
+  assert.equal(srv.engine.written.length, 0);
+  const videoPut = spaces.puts.find((p) => p.key.startsWith("goal-clips/7/") && p.key.endsWith(".mp4"));
+  assert.equal(videoPut.signature.ok, true, "SigV4 imzası tutar");
+  assert.deepEqual(videoPut.signature.signed.sort(), ["cache-control", "content-length", "content-type", "host", "x-amz-acl"]);
+  assert.equal(videoPut.headers["content-length"], String(size));
+  assert.equal(videoPut.headers["transfer-encoding"], undefined);
+  assert.equal(videoPut.headers.authorization, undefined);
+  assert.equal(spaces.objects.get(videoPut.key).acl, "public-read");
+  assert.equal(spaces.objects.get(videoPut.key).contentType, "video/mp4");
+  assert.ok(spaces.objects.has(videoPut.key.replace(/\.mp4$/, ".jpg")), "kapak Spaces'te");
+  assert.ok(progress.length && progress.at(-1).loaded === progress.at(-1).total);
+  assert.equal(replays.get(rid).uploaded.clipId, res.data.id, "yerelde yüklendi işaretlendi");
+  assert.equal(replays.get(rid).uploaded.via, "presigned");
+
+  // Site: GET /api/goal-clips?match_id= ve ?player_id= klibi döndürür.
+  let r = await fetch(`${srv.base}/api/goal-clips?match_id=7`);
+  let body = await r.json();
+  assert.equal(body.items.length, 1);
+  assert.equal(body.items[0].url, res.data.url);
+  assert.equal(body.items[0].poster_url, res.data.poster_url);
+  r = await fetch(`${srv.base}/api/goal-clips?player_id=55`);
+  assert.equal((await r.json()).items.length, 1);
+
+  // Gol olmayan olay: adres hiç verilmez, Türkçe ileti + kod.
+  res = await uploadGoalClip(api, { matchId: 7, eventId: 102, replayId: rid }, { replays, clips, putImpl, sleep: async () => {} });
+  assert.equal(res.ok, false);
+  assert.equal(res.error.code, "EVENT_NOT_GOAL");
+  assert.match(res.error.message, /yalnızca gol/);
+
+  // Günlük: upload-url, PUT (Spaces konak + yol, imza yok), finalize; Türkçe hata.
+  const entries = log.list();
+  assert.ok(entries.some((e) => e.kind === "clip" && e.endpoint === "/api/admin/live-streams/matches/7/clips/upload-url" && e.ok));
+  assert.ok(entries.some((e) => e.kind === "clip" && e.method === "PUT" && e.ok && /\/elitlig-test\/goal-clips\/7\//.test(e.endpoint)));
+  assert.ok(entries.some((e) => e.kind === "clip" && e.endpoint === "/api/admin/live-streams/matches/7/clips" && e.ok));
+  assert.ok(entries.some((e) => e.code === "EVENT_NOT_GOAL" && /yalnızca gol/.test(e.message)));
+  assert.ok(!/X-Amz-Signature|X-Amz-Credential/.test(JSON.stringify(entries)));
+
+  // Özet ve röportaj: sitenin okuduğu alanlar.
+  const highlightsDir = tmp("hl");
+  const hname = "highlight-20261105-130000.mp4";
+  fs.writeFileSync(path.join(highlightsDir, hname), fakeMp4(1024 * 1024));
+  fs.writeFileSync(path.join(highlightsDir, hname.replace(/\.mp4$/, ".json")), JSON.stringify({ name: hname, durationMs: 120000, width: 1920, height: 1080 }));
+  const hl = await uploadHighlight(api, { highlightsDir, matchId: 7, name: hname }, { putImpl });
+  assert.equal(hl.ok, true, JSON.stringify(hl.error));
+  r = await fetch(`${srv.base}/api/match-highlights?match_id=7`);
+  body = await r.json();
+  assert.equal(body.items[0].url, hl.highlight.url);
+  // Maç detayı (GET /maclar/:id → highlight) aynı kaydı okur.
+  const summary = await S.highlights.summaryForMatch(srv.db, 7);
+  assert.equal(summary.highlight.url, hl.highlight.url);
+
+  const interviewsDir = tmp("iv");
+  const interviews = createInterviews({ engine: { active: () => false, sessionId: () => null }, interviewsDir, getFfmpegPath: () => "ffmpeg" });
+  const iname = "interview-7-20261105-130000.mp4";
+  fs.writeFileSync(path.join(interviewsDir, iname), fakeMp4(64 * 1024));
+  fs.writeFileSync(path.join(interviewsDir, iname.replace(/\.mp4$/, ".json")), JSON.stringify({ name: iname, matchId: 7, durationMs: 30000, width: 1280, height: 720 }));
+  const iv = await interviews.upload(api, { matchId: 7, name: iname }, { putImpl });
+  assert.equal(iv.ok, true, JSON.stringify(iv.error));
+  const match = srv.db.Matches.store.rows.find((m) => m.id === 7);
+  // Web maç sayfası match_interview || post_roportaj okur.
+  assert.equal(match.match_interview, iv.data.url);
+  assert.equal(match.post_roportaj, iv.data.url);
+
+  // Eski sunucu (ön imzalı klip ucu yok): kodsuz 404 → çok parçalı yedek, yine başarılı.
+  const old = await startApp(S, spaces, { withClipPresign: false });
+  t.after(() => old.server.close());
+  const oldApi = withUploadLog(desktopApi(old.base), log);
+  const rid2 = writeReplay(replaysDir, { id: "r20261105130000-abcdef", size: 200 * 1024 });
+  res = await uploadGoalClip(oldApi, { matchId: 7, eventId: 100, replayId: rid2 }, { replays, clips, putImpl, sleep: async () => {} });
+  assert.equal(res.ok, true, JSON.stringify(res.error));
+  assert.equal(res.via, "multipart");
+  assert.equal(old.engine.written[0].fieldname, "file");
 });

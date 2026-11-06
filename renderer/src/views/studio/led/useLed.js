@@ -11,6 +11,11 @@
 //
 // YÖNLENDİRME (ledRouting.js): Yayın (Program, varsayılan) · Önizleme · Belirli
 // sahne · Kapalı. Program değişince durum hemen gönderilir (LED programı izler).
+//
+// IPC yükü: durum 10 Hz'de hazırlanır ama YALNIZ değişince gönderilir (en geç
+// KEEPALIVE_MS'de bir yine de): sahne / grafik yapılandırması büyük olabilir;
+// her 100 ms'de aynısını yollamak ana süreci ve LED penceresini boşuna yorar.
+// Stüdyonun ekranı seçilirse ana süreç önce sorar (pencere olarak aç / vazgeç).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveScene } from "../../../lib/studio/scenes";
 import { ledTargetScene, normalizeLedRoute, routeSceneToLed } from "./ledRouting";
@@ -31,6 +36,17 @@ function readPrefs(defaults) {
 const led = () => window.elitlig?.studio?.led;
 export const ledAvailable = () => Boolean(led()?.open);
 export const LED_WEB_BASE = "https://elitlig.com/led/";
+export const LED_SEND_MS = 100;
+export const KEEPALIVE_MS = 2000;
+
+/** Gönderim anahtarı: sentAt hariç durum (değişmediyse yeniden gönderilmez). */
+export function ledStateKey(state) {
+  if (!state) return "null";
+  try { return JSON.stringify({ ...state, sentAt: 0 }); } catch { return String(Math.random()); }
+}
+
+/** Gönderilmeli mi: değişti ya da canlı tutma süresi doldu. */
+export const shouldSendLed = (key, last, now, keepaliveMs = KEEPALIVE_MS) => !last || key !== last.key || now - last.at >= keepaliveMs;
 
 /** LED penceresine gidecek, JSON'a çevrilebilir durum. */
 export function ledState({ config, sceneId, graphics, branding, matchId, width = 1920, height = 1080, route = "program" }) {
@@ -82,19 +98,27 @@ export function useLed({ configRef, programIdRef, previewIdRef, graphicsRef, bra
 
   // Stüdyo kipinde durum yarım saniyede bir ve hedef değişince HEMEN gönderilir.
   const studioMode = status.open && (status.mode === "studio" || (status.mode == null && !prefs.web));
-  const send = useCallback(() => {
+  const lastSentRef = useRef(null);
+  const send = useCallback((force = false) => {
     const cfg = configRef.current;
     if (!cfg || !led()?.sendState) return;
-    try { led().sendState(ledState({ config: cfg, sceneId: targetScene(), graphics: graphicsRef.current, branding: brandingRef.current, matchId, route: prefsRef.current.route })); } catch { /* yoksay */ }
+    try {
+      const st = ledState({ config: cfg, sceneId: targetScene(), graphics: graphicsRef.current, branding: brandingRef.current, matchId, route: prefsRef.current.route });
+      const key = ledStateKey(st);
+      const t = Date.now();
+      if (!force && !shouldSendLed(key, lastSentRef.current, t)) return;
+      lastSentRef.current = { key, at: t };
+      led().sendState(st);
+    } catch { /* yoksay */ }
   }, [brandingRef, configRef, graphicsRef, matchId, targetScene]);
   useEffect(() => {
-    if (!studioMode) return undefined;
-    send();
-    // 10 Hz: LED'deki saat / skor / grafikler yayınla aynı anda değişsin (ana süreç birleştirir).
-    const t = setInterval(send, 100);
+    if (!studioMode) { lastSentRef.current = null; return undefined; }
+    send(true);
+    // 10 Hz denetim: LED'deki saat / skor / grafikler yayınla aynı anda değişsin; değişmeyen durum gitmez.
+    const t = setInterval(() => send(false), LED_SEND_MS);
     return () => clearInterval(t);
   }, [send, studioMode]);
-  useEffect(() => { if (studioMode) send(); }, [targetId, prefs.route, send, studioMode]);
+  useEffect(() => { if (studioMode) send(true); }, [targetId, prefs.route, send, studioMode]);
 
   const open = useCallback(async (override = null) => {
     setError(null);
@@ -107,8 +131,9 @@ export function useLed({ configRef, programIdRef, previewIdRef, graphicsRef, bra
       : { displayId: p.displayId, mode: "studio", sceneId: targetScene() };
     try {
       const res = await led()?.open?.(opts);
+      if (res?.canceled) return false; // stüdyonun ekranı için sorulan soruya "Vazgeç"
       if (!res?.ok) { setError(res?.error?.message || "LED çıkışı açılamadı."); return false; }
-      setStatus((s) => ({ ...s, open: true, displayId: p.displayId, mode: opts.mode }));
+      setStatus((s) => ({ ...s, open: true, displayId: p.displayId, mode: opts.mode, windowed: Boolean(res.windowed) }));
       refreshStatus();
       return true;
     } catch (e) { setError(e?.message || "LED çıkışı açılamadı."); return false; }

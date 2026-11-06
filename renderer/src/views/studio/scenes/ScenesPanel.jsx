@@ -6,13 +6,18 @@
 //   Sahne düzenleyici  YALNIZ "Düzenle" ile açılır: katmanlar (üstte = en üstte çizilir:
 //                      göz, kilit, sürükleyerek sırala, çıkar, + kaynak), büyük tuvalde
 //                      taşı / boyutla / kırp / döndür, dönüşüm alanları
+//                      Her sahne kartında "Kaynak ekle ▾": var olan kaynak ya da yeni kaynak
+//                      (SourceDialog) doğrudan o sahneye katman olur. Sağda KAYNAKLAR listesi
+//                      (durum, ayarlar, yeniden bağlan, sil) — ayrı Kaynaklar sekmesi yok.
 //   SceneRail          "Büyük program" düzeninde dikey sahne listesi
+//   SourceRows         kaynak listesi (Sahneler sekmesi ve sahne düzenleyicisi)
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Field, Icon, MenuButton, Modal } from "../../../components/ui";
-import { FITS, SCENE_TEMPLATES, TEMPLATE_LAYOUTS, layersTopFirst, pipBox, sourceKindIcon, templateOf, templateSourceIds, uiIndexToArray } from "../../../lib/studio/scenes";
+import { FITS, SCENE_TEMPLATES, TEMPLATE_LAYOUTS, layersTopFirst, pipBox, sourceKindIcon, sourceKindLabel, sourceUsage, templateOf, templateSourceIds, uiIndexToArray } from "../../../lib/studio/scenes";
 import { centerLayer, fitToScreen, fromPixels, normAspect, stretchToScreen, toPixels } from "../../../lib/studio/scenesTransform";
 import { drawScene, naturalSize } from "../draw";
 import { Tile, tileWarning } from "../Multiview";
+import { BAD, STATUS_TEXT, SourceThumb } from "../SourcesPanel";
 import SceneEditOverlay from "./SceneEditOverlay";
 import Monitor from "./Monitor";
 
@@ -183,7 +188,7 @@ export function TemplateDialog({ tplKey, config, onCreate, onClose }) {
         <div className="st-stack">
           <Field label="Sahne adı"><input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") create(); }} /></Field>
           {tpl.slots > 0 && (noSources
-            ? <p className="st-hint is-armed">Önce Kaynaklar sekmesinden bir kaynak (kamera, görsel…) ekle.</p>
+            ? <p className="st-hint is-armed">Önce bir kaynak ekle: Sahneler sekmesinde bir sahnenin “Kaynak ekle” menüsü ya da sağdaki Kaynaklar listesi.</p>
             : Array.from({ length: tpl.slots }, (_, i) => (
               <Field key={i} label={slotNames[i] || `Kaynak ${i + 1}`}>
                 <select value={ids[i] || ""} onChange={(e) => setIds((cur) => { const n = [...cur]; n[i] = e.target.value; return n; })}>
@@ -207,33 +212,106 @@ export function TemplateDialog({ tplKey, config, onCreate, onClose }) {
   );
 }
 
-/* ------------------------------ Sahneler sekmesi ------------------------------ */
+/* ------------------------------ kaynak listesi ------------------------------ */
 
-function ScenesTabInner({ config, runtimeRef, register, version, studioMode, ledId, actions }) {
+const SYNTHETIC = new Set(["color", "text", "clock"]);
+
+/** "Kaynak ekle ▾" menüsü: var olan kaynaklar (sahnede olmayanlar önce) + yeni kaynak. */
+export function sourceMenu(config, sceneId, { onAddLayer, onNewSource }) {
+  const scene = config.scenes.find((s) => s.id === sceneId);
+  const inScene = new Set((scene?.layers || []).map((l) => l.sourceId));
+  return [
+    { label: "Yeni kaynak… (kamera, ekran, görsel, video, metin, saat)", icon: "plus", onClick: () => onNewSource({ toScene: sceneId }) },
+    ...(config.sources.length ? ["-"] : []),
+    ...config.sources.map((s) => ({ label: `${s.name}${inScene.has(s.id) ? " · sahnede" : ""}`, icon: sourceKindIcon(s.kind), onClick: () => onAddLayer(sceneId, s.id) })),
+  ];
+}
+
+/** Kaynak satırları: küçük resim, durum, kullanım; ayarlar / yeniden bağlan / sil / sahneye ekle. */
+function SourceRowsInner({ config, runtimeRef, version, actions, sceneId = null, title = "Kaynaklar" }) {
   void version;
-  const { onPreview, onProgram, onToLed, onEdit, onTemplate, tileMenu } = actions;
+  const { onNewSource, onEditSource, onRemoveSource, onReacquire, onRequestAccess, onAddToScene } = actions;
   return (
-    <div className="st-scenetab">
-      <section className="st-tpl">
-        <header className="st-col__head"><h4>Yeni sahne</h4><span className="st-hint">şablondan başla</span></header>
-        <div className="st-tpl__row">
-          {SCENE_TEMPLATES.map((t) => (
-            <button key={t.key} type="button" className="st-tpl__btn" onClick={() => onTemplate(t.key)} title={t.hint}>
-              <TemplatePic tpl={t} /><span>{t.label}</span>
-            </button>
-          ))}
-        </div>
-      </section>
-      <section className="st-scenegrid" aria-label="Sahneler">
-        {config.scenes.map((sc, i) => {
-          const t = { id: sc.id, kind: "scene", name: sc.name, hotkey: i < 9 ? i + 1 : null };
+    <section className="st-srows">
+      <header className="st-col__head">
+        <h4>{title}</h4><span className="st-col__count">{config.sources.length}</span>
+        <span className="st-top__spacer" />
+        <button type="button" className="btn btn--xs" onClick={() => onNewSource(sceneId ? { toScene: sceneId } : undefined)}><Icon name="plus" size={11} /> Yeni</button>
+      </header>
+      <ul className="st-srows__list">
+        {config.sources.map((src) => {
+          const rt = runtimeRef.current.get(src.id);
+          const st = SYNTHETIC.has(src.kind) ? "live" : rt?.status || "waiting";
+          const bad = BAD.includes(st);
+          const used = sourceUsage(config, src.id);
+          const inScene = sceneId ? config.scenes.find((x) => x.id === sceneId)?.layers.some((l) => l.sourceId === src.id) : false;
           return (
-            <Tile key={sc.id} tile={t} size="grid" register={register} studioMode={studioMode}
-              onAir={sc.id === config.programSceneId} inPreview={studioMode && sc.id === config.previewSceneId && sc.id !== config.programSceneId} onLed={sc.id === ledId}
-              bad={tileWarning(config, runtimeRef.current, t)} onPreview={onPreview} onProgram={onProgram} onToLed={onToLed} onEdit={onEdit} menu={tileMenu(t)} />
+            <li key={src.id} className={`st-srow ${bad ? "is-bad" : ""}`}>
+              <button type="button" className="st-srow__thumb" onClick={() => onEditSource(src)} title="Kaynak ayarları"><SourceThumb source={src} runtimeRef={runtimeRef} width={96} /></button>
+              <span className="st-srow__text">
+                <strong title={src.name}><Icon name={sourceKindIcon(src.kind)} size={11} /> {src.name}</strong>
+                <small><span className={`st-dot is-${st}`} /> {st === "live" ? (rt?.label || "Hazır") : STATUS_TEXT[st] || st} · <span title={used.join(", ") || "Hiçbir sahnede değil"}>{used.length ? `${used.length} sahnede` : sourceKindLabel(src.kind)}</span></small>
+              </span>
+              <span className="st-srow__tools">
+                {st === "denied" && (src.kind === "camera" || src.kind === "screen" || src.kind === "window") && <button type="button" className="btn btn--xs" onClick={() => onRequestAccess(src.kind === "camera" ? "camera" : "screen")}>İzin</button>}
+                {bad && st !== "denied" && <button type="button" className="icon-btn icon-btn--xs" onClick={() => (st === "file" ? onEditSource(src) : onReacquire(src))} title={st === "file" ? "Dosya seç" : "Yeniden dene"}><Icon name="refresh" size={12} /></button>}
+                {sceneId && !inScene && <button type="button" className="btn btn--xs btn--soft" onClick={() => onAddToScene(src, sceneId)} title="Bu sahneye katman olarak ekle"><Icon name="plus" size={11} /> Ekle</button>}
+                <MenuButton label="Kaynak" size={13} items={[
+                  { label: "Ayarlar…", icon: "sliders", onClick: () => onEditSource(src) },
+                  ...config.scenes.map((sc) => ({ label: `“${sc.name}” sahnesine ekle`, icon: "layers", onClick: () => onAddToScene(src, sc.id) })),
+                  { label: "Bu kaynaktan sahne oluştur", icon: "layers", onClick: () => actions.onSceneFromSource(src.id) },
+                  { label: "Yeniden bağlan", icon: "refresh", onClick: () => onReacquire(src) },
+                  "-",
+                  { label: "Kaynağı sil", icon: "trash", danger: true, onClick: () => onRemoveSource(src) },
+                ]} />
+              </span>
+            </li>
           );
         })}
-      </section>
+        {!config.sources.length && <li className="st-hint st-pad-sm">Henüz kaynak yok. Bir sahnenin “Kaynak ekle” menüsünden kamera, ekran, görsel… ekle.</li>}
+      </ul>
+    </section>
+  );
+}
+export const SourceRows = memo(SourceRowsInner);
+
+/* ------------------------------ Sahneler sekmesi ------------------------------ */
+
+function ScenesTabInner({ config, runtimeRef, register, version, studioMode, ledId, actions, libActions }) {
+  const { onPreview, onProgram, onToLed, onEdit, onTemplate, tileMenu } = actions;
+  const byId = new Map(config.sources.map((s) => [s.id, s]));
+  return (
+    <div className="st-scenetab">
+      <div className="st-scenetab__main">
+        <section className="st-tpl">
+          <header className="st-col__head"><h4>Yeni sahne</h4><span className="st-hint">şablondan başla</span></header>
+          <div className="st-tpl__row">
+            {SCENE_TEMPLATES.map((t) => (
+              <button key={t.key} type="button" className="st-tpl__btn" onClick={() => onTemplate(t.key)} title={t.hint}>
+                <TemplatePic tpl={t} /><span>{t.label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+        <section className="st-scenegrid" aria-label="Sahneler">
+          {config.scenes.map((sc, i) => {
+            const t = { id: sc.id, kind: "scene", name: sc.name, hotkey: i < 9 ? i + 1 : null };
+            const names = sc.layers.map((l) => byId.get(l.sourceId)?.name).filter(Boolean);
+            return (
+              <div key={sc.id} className="st-scard">
+                <Tile tile={t} size="grid" register={register} studioMode={studioMode}
+                  onAir={sc.id === config.programSceneId} inPreview={studioMode && sc.id === config.previewSceneId && sc.id !== config.programSceneId} onLed={sc.id === ledId}
+                  bad={tileWarning(config, runtimeRef.current, t)} onPreview={onPreview} onProgram={onProgram} onToLed={onToLed} onEdit={onEdit} menu={tileMenu(t)} />
+                <div className="st-scard__foot">
+                  <span className="st-scard__layers" title={names.join(", ") || "Boş sahne"}><Icon name="layers" size={11} /> {names.length ? names.join(" · ") : "boş"}</span>
+                  <MenuButton label="Kaynak ekle" icon="plus" text="Kaynak" size={12} className="st-menu-sm" align="end" items={sourceMenu(config, sc.id, actions)} />
+                </div>
+              </div>
+            );
+          })}
+        </section>
+      </div>
+      {libActions && <aside className="st-scenetab__side"><SourceRows config={config} runtimeRef={runtimeRef} version={version} actions={{ ...libActions, onSceneFromSource: actions.onSceneFromSource }} /></aside>}
     </div>
   );
 }
@@ -302,7 +380,7 @@ function SceneNameEdit({ scene, onRename }) {
  * Sahne düzenleyici (tam sayfa katman): yalnız "Düzenle" ile açılır.
  * Yayındaki sahne düzenlenirse değişiklik canlı görünür (uyarı gösterilir).
  */
-export function SceneEditor({ config, configRef, runtimeRef, sceneId, selectedLayerId, onSelectLayer, outW, outH, overrideRef, matchClockRef, isProgram, isPreview, actions, onClose }) {
+export function SceneEditor({ config, configRef, runtimeRef, sceneId, selectedLayerId, onSelectLayer, outW, outH, overrideRef, matchClockRef, isProgram, isPreview, actions, libActions = null, onClose }) {
   const scene = config.scenes.find((s) => s.id === sceneId) || null;
   const canvas = useEditorCanvas(configRef, runtimeRef, sceneId, overrideRef, matchClockRef, outW, outH);
   const layer = scene?.layers.find((l) => l.id === selectedLayerId) || null;
@@ -332,6 +410,7 @@ export function SceneEditor({ config, configRef, runtimeRef, sceneId, selectedLa
       <div className="st-editor__body">
         <aside className="st-editor__side">
           <LayersList config={config} scene={scene} selectedId={selectedLayerId} actions={{ ...actions, onSelectLayer }} />
+          {libActions && <SourceRows config={config} runtimeRef={runtimeRef} actions={{ ...libActions, onSceneFromSource: actions.onSceneFromSource }} sceneId={scene.id} title="Kaynak kitaplığı" />}
           <p className="st-hint st-pad-sm">Tuvalde tıkla: seç · sürükle: taşı · köşe: boyutla (Shift oranı korur) · Alt + köşe: kırp · üstteki nokta: döndür · ok tuşları: kaydır · Delete: çıkar</p>
         </aside>
         <div className="st-editor__stage">

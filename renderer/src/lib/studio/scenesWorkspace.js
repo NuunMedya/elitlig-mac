@@ -1,29 +1,30 @@
 // Yayın Stüdyosu — ÇALIŞMA ALANI düzenleri (saf). Üst çubuktan seçilir, hatırlanır.
-// Ekranlarda YALNIZ SAHNELER görünür (kaynaklar kendi sekmesinde).
+// Ekranlarda YALNIZ SAHNELER görünür (kaynaklar sahnelerin içinden eklenir).
 //
-//   classic   KLASİK: Önizleme | geçiş | Program, altta sahne şeridi (OBS stüdyo modu)
+//   classic   KLASİK: Önizleme | geçiş | Program yan yana, altta sahne şeridi (OBS stüdyo modu)
 //   program   BÜYÜK PROGRAM: program büyük; sağda küçük önizleme, geçiş ve dikey sahne listesi (vMix)
-//   grid4     ÇOKLU GÖRÜNÜM 2×2: solda sahne ızgarası, sağda program + önizleme + geçiş
+//   single    TEK PROGRAM: yalnız program (önizleme yok: sahneye tık doğrudan yayına), altta şerit
+//   grid4     ÇOKLU GÖRÜNÜM 2×2: solda dört sahne, sağda program + önizleme + geçiş
 //   grid9     ÇOKLU GÖRÜNÜM 3×3: aynı, dokuz sahne
-//   compact   KOMPAKT: dizüstü (1280×800) için sıkı önizleme | program + küçük şerit
+// Dizüstü sıkılığı artık ayrı düzen değil: dar / alçak pencerede CSS kendisi sıkılaşır.
 export const WORKSPACES = [
-  { key: "classic", label: "Klasik", hint: "Önizleme | Program + sahne şeridi", icon: "overview", monitors: "dual", grid: 0, strip: true, rail: false, density: "normal" },
-  { key: "program", label: "Büyük program", hint: "Program büyük, sağda önizleme ve sahne listesi", icon: "video", monitors: "rail", grid: 0, strip: false, rail: true, density: "normal" },
-  { key: "grid4", label: "Çoklu görünüm 2×2", hint: "Sahne ızgarası + program", icon: "grid", monitors: "grid", grid: 2, strip: false, rail: false, density: "normal" },
-  { key: "grid9", label: "Çoklu görünüm 3×3", hint: "Dokuz sahne + program", icon: "grid", monitors: "grid", grid: 3, strip: false, rail: false, density: "normal" },
-  { key: "compact", label: "Kompakt", hint: "Dizüstü (1280×800): sıkı düzen", icon: "layers", monitors: "dual", grid: 0, strip: true, rail: false, density: "compact" },
+  { key: "classic", label: "Klasik", hint: "Önizleme | Program yan yana + sahne şeridi", icon: "overview", monitors: "dual", grid: 0, strip: true, rail: false, preview: true, density: "normal" },
+  { key: "program", label: "Büyük program", hint: "Program büyük, yanda küçük önizleme ve sahne listesi", icon: "video", monitors: "rail", grid: 0, strip: false, rail: true, preview: true, density: "normal" },
+  { key: "single", label: "Tek program", hint: "Yalnız program; sahneye tık doğrudan yayına", icon: "broadcast", monitors: "single", grid: 0, strip: true, rail: false, preview: false, density: "normal" },
+  { key: "grid4", label: "Çoklu görünüm 2×2", hint: "Dört sahne + program ve önizleme", icon: "grid", monitors: "grid", grid: 2, strip: false, rail: false, preview: true, density: "normal" },
+  { key: "grid9", label: "Çoklu görünüm 3×3", hint: "Dokuz sahne + program ve önizleme", icon: "grid", monitors: "grid", grid: 3, strip: false, rail: false, preview: true, density: "normal" },
 ];
 
-/** Eski anahtarlar (sürüm 2.11). */
-export const LEGACY_WORKSPACES = { studio: "classic", mv4: "grid4", mv9: "grid9", vertical: "program" };
+/** Eski anahtarlar (sürüm 2.11 ve 2.12). */
+export const LEGACY_WORKSPACES = { studio: "classic", mv4: "grid4", mv9: "grid9", vertical: "program", compact: "classic" };
 
 export const workspaceOf = (key) => {
   const k = LEGACY_WORKSPACES[key] || key;
   return WORKSPACES.find((w) => w.key === k) || WORKSPACES[0];
 };
 
-/** Önizleme görünür mü (stüdyo modu açıksa; her düzende önizleme yeri var). */
-export const previewVisible = (ws, studioMode) => Boolean(studioMode) && Boolean(workspaceOf(ws?.key || ws));
+/** Önizleme görünür mü (stüdyo modu açık ve düzende önizleme yeri varsa; Tek program'da yok). */
+export const previewVisible = (ws, studioMode) => Boolean(studioMode) && workspaceOf(ws?.key || ws).preview !== false;
 
 /**
  * Izgara hücreleri: YALNIZ sahne kutuları (sırasıyla). Eksik hücreler

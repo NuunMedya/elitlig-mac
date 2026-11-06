@@ -17,7 +17,7 @@
 import React, { memo, useEffect, useRef, useState } from "react";
 import { Field, Icon, MenuButton, Modal } from "../../components/ui";
 import { RESOLUTIONS, deviceName } from "../../lib/studio/layouts";
-import { FONTS, SOURCE_TYPES, sourceDefaults, sourceKindIcon, sourceKindLabel, sourceUsage } from "../../lib/studio/scenes";
+import { FONTS, SOURCE_TYPES, persistentUrl, sourceDefaults, sourceKindIcon, sourceKindLabel, sourceUsage } from "../../lib/studio/scenes";
 import { drawSource } from "./draw";
 import { useStable } from "./useStable";
 
@@ -82,7 +82,7 @@ function SourceLibraryInner({ config, runtimeRef, version, actions }) {
               </div>
               <div className="st-srcard__tools">
                 {st === "denied" && (src.kind === "camera" || src.kind === "screen" || src.kind === "window") && <button type="button" className="btn btn--xs" onClick={() => onRequestAccess(src.kind === "camera" ? "camera" : "screen")}>İzin iste</button>}
-                {st === "file" ? <button type="button" className="btn btn--xs" onClick={() => onEditSource(src)}>Dosya seç</button>
+                {st === "file" ? <button type="button" className="btn btn--xs btn--primary" onClick={() => onEditSource(src)}>{src.fileMissing || src.fileName ? "Yeniden seç" : "Dosya seç"}</button>
                   : bad && <button type="button" className="btn btn--xs" onClick={() => onReacquire(src)}>Yeniden dene</button>}
                 <button type="button" className="btn btn--xs btn--soft" onClick={() => onSceneFromSource(src.id)} title="Bu kaynağı tam ekran gösteren yeni sahne"><Icon name="layers" size={11} /> Sahne oluştur</button>
                 <MenuButton label="Sahneye ekle" icon="plus" size={13} items={[
@@ -118,6 +118,20 @@ const readDataUrl = (file) => new Promise((resolve, reject) => {
 });
 
 const baseName = (file) => file.name.replace(/\.[^.]+$/, "");
+
+/**
+ * Seçilen dosya → KALICI adres. Ana süreç dosyanın tam yolunu izin listesine yazar,
+ * elitlig-studio://media/<kimlik>/<ad> döner (uygulama yeniden açılınca da yüklenir).
+ * Köprü yoksa (eski sürüm / önizleme) null: çağıran eski yola (data: / blob:) düşer.
+ */
+export async function persistFile(file) {
+  const media = window.elitlig?.studio?.media;
+  if (!file || !media?.allowFile) return null;
+  try {
+    const r = await media.allowFile(file);
+    return r?.url ? { url: r.url, filePath: r.path || null, mediaId: r.id || null, fileName: r.name || file.name } : null;
+  } catch { return null; }
+}
 
 /** Metin / saat görünüm alanları (ortak). */
 function TextStyleFields({ draft, set }) {
@@ -182,14 +196,17 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
     if (!file) return;
     setBusy(true);
     try {
-      if (kind === "image") {
+      // Önce kalıcı yerel dosya (tam yol + elitlig-studio://media); olmazsa eski yol.
+      const kept = await persistFile(file);
+      if (kept) {
+        set({ ...kept, fileMissing: false, name: keepName(baseName(file)) });
+      } else if (kind === "image") {
         // Küçük görsel kalıcı saklanır (data: adresi); büyükse yalnız bu oturum.
         const url = file.size <= 3 * 1024 * 1024 ? await readDataUrl(file) : URL.createObjectURL(file);
-        set({ url, fileName: file.name, name: keepName(baseName(file)) });
+        set({ url, fileName: file.name, fileMissing: false, name: keepName(baseName(file)) });
       } else {
-        // Nesne adresi: tuval kirletilmez; dosyalar oturumlar arasında saklanmaz.
         const url = URL.createObjectURL(file);
-        set({ url, fileName: file.name, name: keepName(baseName(file)) });
+        set({ url, fileName: file.name, fileMissing: false, name: keepName(baseName(file)) });
       }
     } finally { setBusy(false); }
   };
@@ -198,10 +215,14 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
     setBusy(true);
     try {
       const urls = [];
-      for (const f of [...files].slice(0, 40)) urls.push(f.size <= 2 * 1024 * 1024 ? await readDataUrl(f) : URL.createObjectURL(f));
-      set({ images: [...(draft.images || []), ...urls].slice(0, 40) });
+      for (const f of [...files].slice(0, 40)) {
+        const kept = await persistFile(f);
+        urls.push(kept ? kept.url : f.size <= 2 * 1024 * 1024 ? await readDataUrl(f) : URL.createObjectURL(f));
+      }
+      set({ images: [...(draft.images || []), ...urls].slice(0, 40), missingImages: 0 });
     } finally { setBusy(false); }
   };
+  const persistent = Boolean(window.elitlig?.studio?.media?.allowFile);
 
   const cams = devices.video;
   useEffect(() => {
@@ -214,9 +235,10 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
   const screenDenied = access?.screen === "denied" || access?.screen === "restricted";
   const valid = kind === "camera" ? true
     : isCapture ? Boolean(draft.screenId)
-      : kind === "image" || kind === "video" ? Boolean(draft.url)
+      : kind === "image" || kind === "video" ? Boolean(draft.url) && !draft.fileMissing
         : kind === "slideshow" ? (draft.images || []).length > 0
           : kind === "text" ? Boolean(String(draft.text || "").trim())
+            : kind === "audio" && draft.audioMode === "file" ? Boolean(draft.url && persistentUrl(draft.url))
             : Boolean(kind);
   const visibleScreens = (screens || []).filter((sc) => (kind === "window" ? sc.kind === "window" || String(sc.id).startsWith("window:") : sc.kind !== "window" && !String(sc.id).startsWith("window:")));
 
@@ -294,31 +316,32 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
 
           {(kind === "image" || kind === "video") && (
             <>
-              <Field label={kind === "image" ? "Görsel dosyası" : "Video / medya dosyası"} hint={kind === "video" ? "Video dosyaları oturumlar arasında saklanmaz; uygulama yeniden açılınca dosyayı tekrar seçin." : "3 MB'a kadar görseller kalıcı saklanır."}>
+              <Field label={kind === "image" ? "Görsel dosyası" : "Video / medya dosyası"} hint={persistent ? "Dosyanın yeri hatırlanır: uygulama yeniden açılınca kendiliğinden yüklenir (dosyayı taşıma / silme)." : kind === "video" ? "Video dosyaları oturumlar arasında saklanmaz; uygulama yeniden açılınca dosyayı tekrar seçin." : "3 MB'a kadar görseller kalıcı saklanır."}>
                 <input type="file" accept={kind === "image" ? "image/*" : "video/*,audio/*"} onChange={(e) => pickFile(e.target.files?.[0])} />
               </Field>
-              {draft.url && kind === "image" && <img className="st-file-preview" src={draft.url} alt="" />}
-              {draft.fileName && <p className="st-hint">Seçili: {draft.fileName}</p>}
+              {draft.fileMissing && <div className="st-note is-warn"><Icon name="alert" size={14} /><span>Dosya bulunamadı{draft.fileName ? ` (${draft.fileName})` : ""}: yeniden seç.</span></div>}
+              {draft.url && !draft.fileMissing && kind === "image" && <img className="st-file-preview" src={draft.url} alt="" crossOrigin={String(draft.url).startsWith("elitlig-studio:") ? "anonymous" : undefined} />}
+              {draft.fileName && <p className="st-hint" title={draft.filePath || ""}>Seçili: {draft.fileName}{draft.filePath ? <span className="muted"> · {draft.filePath}</span> : null}</p>}
               {kind === "video" && (
                 <div className="st-row st-row--wrap">
                   <label className="toggle"><input type="checkbox" checked={draft.loop !== false} onChange={(e) => set({ loop: e.target.checked })} /> Döngüde oynat</label>
                   <label className="toggle" title="Sahne yayına alındığında video baştan başlar"><input type="checkbox" checked={draft.restartOnShow !== false} onChange={(e) => set({ restartOnShow: e.target.checked })} /> Yayına gelince baştan başlat</label>
                 </div>
               )}
-              {kind === "video" && <p className="st-hint">Videonun sesi yayına gitmez (sessiz oynar).</p>}
+              {kind === "video" && <p className="st-hint">Videonun sesi, kaynak PROGRAM sahnesindeyken yayına gider (Ses sekmesi › Tekrar / Video şeridi).</p>}
             </>
           )}
 
           {kind === "slideshow" && (
             <>
-              <Field label="Görseller" hint="Birden çok görsel seçebilirsin (en çok 40). 2 MB'a kadar olanlar kalıcı saklanır.">
+              <Field label="Görseller" hint={persistent ? "Birden çok görsel seçebilirsin (en çok 40). Dosyaların yeri hatırlanır." : "Birden çok görsel seçebilirsin (en çok 40). 2 MB'a kadar olanlar kalıcı saklanır."}>
                 <input type="file" accept="image/*" multiple onChange={(e) => pickSlides(e.target.files)} />
               </Field>
               {(draft.images || []).length > 0 && (
                 <div className="st-slides">
                   {draft.images.map((u, i) => (
                     <span key={`${i}_${u.slice(-12)}`} className="st-slide">
-                      <img src={u} alt="" />
+                      <img src={u} alt="" crossOrigin={String(u).startsWith("elitlig-studio:") ? "anonymous" : undefined} />
                       <button type="button" className="icon-btn icon-btn--xs" title="Çıkar" onClick={() => set({ images: draft.images.filter((_, j) => j !== i) })}><Icon name="x" size={11} /></button>
                     </span>
                   ))}
@@ -385,12 +408,28 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
 
           {kind === "audio" && (
             <>
-              <Field label="Ses aygıtı" hint="Yalnız ses: Ses sekmesindeki karıştırıcıya eklenir (seviye, sessiz).">
-                <select value={draft.deviceId || ""} onChange={(e) => set({ deviceId: e.target.value, name: keepName(devices.audio.find((d) => d.deviceId === e.target.value)?.label || "Ses girişi") })}>
-                  <option value="">Aygıt seç…</option>
-                  {devices.audio.map((d, i) => <option key={d.deviceId || i} value={d.deviceId}>{d.label || `Ses girişi ${i + 1}`}</option>)}
-                </select>
+              <Field label="Tür">
+                <div className="st-seg">
+                  <button type="button" className={draft.audioMode !== "file" ? "is-on" : ""} onClick={() => set({ audioMode: "device" })}><Icon name="mic" size={11} /> Ses aygıtı</button>
+                  <button type="button" className={draft.audioMode === "file" ? "is-on" : ""} onClick={() => set({ audioMode: "file" })}><Icon name="play2" size={11} /> Ses / video dosyası</button>
+                </div>
               </Field>
+              {draft.audioMode === "file" ? (
+                <>
+                  <Field label="Dosya" hint="Müzik, jingle ya da videonun sesi. Dosyanın yeri hatırlanır; hangi sahnelerde yayına gideceğini Ses › Sahne başına ses'ten seç.">
+                    <input type="file" accept="audio/*,video/*" onChange={(e) => pickFile(e.target.files?.[0])} />
+                  </Field>
+                  {draft.fileName && <p className="st-hint">Seçili: {draft.fileName}</p>}
+                  {!persistent && <p className="st-hint text-red">Bu sürümde dosya yeri saklanamıyor.</p>}
+                </>
+              ) : (
+                <Field label="Ses aygıtı" hint="Yalnız ses: Ses sekmesindeki karıştırıcıya eklenir (seviye, sessiz, sahne başına ses).">
+                  <select value={draft.deviceId || ""} onChange={(e) => set({ deviceId: e.target.value, name: keepName(devices.audio.find((d) => d.deviceId === e.target.value)?.label || "Ses girişi") })}>
+                    <option value="">Aygıt seç…</option>
+                    {devices.audio.map((d, i) => <option key={d.deviceId || i} value={d.deviceId}>{d.label || `Ses girişi ${i + 1}`}</option>)}
+                  </select>
+                </Field>
+              )}
             </>
           )}
         </div>

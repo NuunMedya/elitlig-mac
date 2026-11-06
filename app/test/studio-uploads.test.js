@@ -443,9 +443,10 @@ test("IPC: yükleme denemeleri (yerel ret dahil) studio.diagnostics().uploads'ta
 });
 
 test("IPC: olay seçilmeden klip yüklemesi BAD_REQUEST olarak günlüğe; sunucu yanıtı (uç, durum, kod) günlüğe", async (t) => {
+  // Ön imzalı akış: upload-url olayı doğrular (sunucu EVENT_NOT_FOUND döner); çok parçalı yola düşülmez.
   const api = {
-    request: async () => ({ ok: true, data: {} }),
-    upload: async () => ({ ok: false, error: { status: 404, code: "EVENT_NOT_FOUND", message: "Bu maçta böyle bir olay yok." } }),
+    request: async (o) => (/\/clips\/upload-url$/.test(o.path) ? { ok: false, error: { status: 404, code: "EVENT_NOT_FOUND", message: "Bu maçta böyle bir olay yok." } } : { ok: true, data: {} }),
+    upload: async () => { throw new Error("çok parçalı yola düşülmemeli"); },
   };
   const h = studioHarness({ api });
   t.after(() => h.studio.dispose());
@@ -460,7 +461,8 @@ test("IPC: olay seçilmeden klip yüklemesi BAD_REQUEST olarak günlüğe; sunuc
   assert.equal(res.error.code, "EVENT_NOT_FOUND");
   const [last, first] = (await h.invoke("studio:diagnostics")).uploads;
   assert.deepEqual([first.code, first.local, first.method], ["BAD_REQUEST", true, "IPC"]);
-  assert.deepEqual([last.code, last.status, last.method, last.endpoint, last.eventId], ["EVENT_NOT_FOUND", 404, "POST", "/api/admin/live-streams/matches/7/clips", 999]);
+  assert.deepEqual([last.code, last.status, last.method, last.endpoint, last.eventId], ["EVENT_NOT_FOUND", 404, "POST", "/api/admin/live-streams/matches/7/clips/upload-url", 999]);
+  assert.equal(last.message, "Bu maçta böyle bir olay yok.");
 });
 
 test("IPC: studio:interview:stop — arayüz id'yi kaybetse de (undefined) süren röportaj durur", async (t) => {

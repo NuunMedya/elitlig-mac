@@ -9,7 +9,10 @@ const read = (path, query) => request({ path, query, cache: true });
 
 /* ------------------------------- maç ------------------------------- */
 export const getAdminMatch = (id) => live("GET", `/api/maclar/${id}`);
+/** Herkese açık liste (her il). Yalnız eski sunucuda yedek olarak kullanılır. */
 export const listMatches = (query) => live("GET", "/maclar", undefined, query);
+/** İl kapsamlı liste (matches.live): { items, scope: { nationwide, city_id, city } }; kapsam sunucuda uygulanır. */
+export const listScopedMatches = (query) => live("GET", "/api/admin/live-streams/matches", undefined, query);
 export const createFixture = (body) => live("POST", "/maclar/add-fikstur", body);
 export const updateMatch = (id, body) => live("PATCH", `/maclar/${id}`, body);
 export const deleteMatch = (id) => live("DELETE", `/maclar/${id}`);

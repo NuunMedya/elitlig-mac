@@ -12,6 +12,7 @@
 // IPC (preload "studio"):
 //   invoke: studio:info, studio:mediaAccess, studio:requestMediaAccess,
 //           studio:listScreens, studio:selectScreen, studio:start, studio:stop,
+//           studio:restartEncoder, studio:network (RTMP aktarıcısı, relay.js),
 //           studio:saveClip, studio:listClips, studio:deleteClip,
 //           studio:uploadClip, studio:revealClip,
 //           studio:angles:start, studio:angles:stop, studio:angles:status,
@@ -26,7 +27,9 @@
 //           studio:interview:list, studio:interview:delete, studio:interview:upload,
 //           studio:interview:reveal,
 //           studio:displays, studio:led:open, studio:led:close, studio:led:status,
-//           studio:led:getState
+//           studio:led:getState,
+//           studio:media:allow (preload: webUtils yolu), studio:media:pick (dosya penceresi),
+//           studio:media:check, studio:media:forget  (media.js — kalıcı yerel dosya kaynakları)
 //   send:   studio:chunk (program parçası), studio:angleChunk { id, data },
 //           studio:renderChunk { id, data }, studio:led:sendState (yanıt yok)
 //   olay:   studio:status, studio:restartRecorder, studio:angles:status,
@@ -37,7 +40,7 @@
 //
 // Depolama (userData): clips/ (eski klipler, 24 sa), replays/<kimlik>/ (7 gün),
 // highlights/ (7 gün), interviews/ (7 gün), logs/studio-*.log (son 20),
-// studio-settings.json (son kayıt klasörü). Geçici parça halkaları:
+// studio-settings.json (son kayıt klasörü), studio-media.json (seçilen yerel dosyaların izin listesi). Geçici parça halkaları:
 // <temp>/elitlig-studio/. Yerel tam kayıt: seçilen klasör (varsayılan
 // ~/Movies/ElitLig, Windows: Videolar\ElitLig).
 "use strict";
@@ -45,7 +48,7 @@
 const path = require("node:path");
 const fs = require("node:fs");
 const { createStudioEngine } = require("./engine");
-const { createClipStore, STUDIO_SCHEME } = require("./clips");
+const { createClipStore, STUDIO_SCHEME, uploadGoalClip } = require("./clips");
 const { createAngles } = require("./angles");
 const { createReplayStore } = require("./replays");
 const { createRenderer, pruneHighlights } = require("./render");
@@ -56,6 +59,7 @@ const { createDiagnostics } = require("./diag");
 const { remuxParts, defaultRecordDir, createSettings } = require("./localrecord");
 const { createInterviews } = require("./interview");
 const { createLedManager } = require("./led");
+const { createMediaLibrary, dialogFilters } = require("./media");
 const ff = require("./ffmpeg");
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -96,7 +100,7 @@ function registerStudio({
   ipcMain, api, broadcast, app, electronSession, systemPreferences, desktopCapturer,
   powerSaveBlocker, protocol, shell, isOwnUrl, isSignedIn = () => true, log = () => {},
   dialog = null, screen = null, BrowserWindow = null, loadRenderer = null, preloadPath = null, powerMonitor = null,
-  siteOrigin = "https://elitlig.com", apiOrigin = null,
+  siteOrigin = "https://elitlig.com", apiOrigin = null, globalShortcut = null,
 }) {
   const appRoot = path.join(__dirname, "..", "..");
   const tempRoot = path.join(app.getPath("temp"), "elitlig-studio");
@@ -174,13 +178,23 @@ function registerStudio({
 
   /* -------------------------- uyku engeli ve durum -------------------------- */
 
-  let blockerId = null;
-  const keepAwake = (on) => {
-    if (on && blockerId === null) blockerId = powerSaveBlocker.start("prevent-display-sleep");
-    if (!on && blockerId !== null) {
-      try { powerSaveBlocker.stop(blockerId); } catch { /* yoksay */ }
-      blockerId = null;
+  // Oturum sürerken: uygulama askıya alınmaz (App Nap / sistem uykusu: zamanlayıcılar ve
+  // ağ durmasın) ve — kapatılmadıysa (start({ keepDisplayAwake: false })) — ekran da uyumaz
+  // (ekran uyuyunca bazı Mac'lerde tuval çizimi durur).
+  const blockers = { app: null, display: null };
+  let keepDisplayAwake = true;
+  const blocker = (kind, type, on) => {
+    if (on && blockers[kind] === null) {
+      try { blockers[kind] = powerSaveBlocker.start(type); } catch { /* yoksay */ }
     }
+    if (!on && blockers[kind] !== null) {
+      try { powerSaveBlocker.stop(blockers[kind]); } catch { /* yoksay */ }
+      blockers[kind] = null;
+    }
+  };
+  const keepAwake = (on) => {
+    blocker("app", "prevent-app-suspension", on);
+    blocker("display", "prevent-display-sleep", on && keepDisplayAwake);
   };
   // Parçaları yalnız oturumu başlatan pencere gönderebilir: program, açılar ve
   // her öne çıkan oturumu için ayrı sahip. Pencere gizlenince (⌘W / arka plan)
@@ -190,7 +204,8 @@ function registerStudio({
   let unthrottled = new Set();
   const applyOwners = () => {
     const now = new Set([owners.program, owners.angles, ...renderOwners.values()].filter((wc) => wc && !wc.isDestroyed()));
-    for (const wc of unthrottled) if (!now.has(wc) && !wc.isDestroyed()) wc.setBackgroundThrottling(true);
+    // Kısma oturum bitince de geri AÇILMAZ: ana pencere zaten backgroundThrottling: false
+    // ile açılır (main.js); yeniden açmak sonraki yayının ilk saniyelerinde çizimi kısabilir.
     for (const wc of now) if (!unthrottled.has(wc)) wc.setBackgroundThrottling(false);
     unthrottled = now;
     keepAwake(anyActive() || now.size > 0);
@@ -268,7 +283,9 @@ function registerStudio({
 
   /* ---------------------------------- şema ---------------------------------- */
 
-  protocol.handle(STUDIO_SCHEME, (request) => serveStudio({ clips: clipsDir, replays: replaysDir, highlights: highlightsDir, interviews: interviewsDir }, request));
+  // Kullanıcının seçtiği yerel dosyalar (video / görsel / ses kaynakları): kalıcı izin listesi.
+  const mediaLib = createMediaLibrary({ file: path.join(app.getPath("userData"), "studio-media.json"), scheme: STUDIO_SCHEME });
+  protocol.handle(STUDIO_SCHEME, (request) => serveStudio({ clips: clipsDir, replays: replaysDir, highlights: highlightsDir, interviews: interviewsDir, media: mediaLib.resolve }, request));
 
   /* ----------------------------------- IPC ----------------------------------- */
 
@@ -292,10 +309,12 @@ function registerStudio({
     if (process.platform !== "darwin") return mediaStatus(kind) === "granted";
     try { return await systemPreferences.askForMediaAccess(kind); } catch { return false; }
   });
-  ipcMain.handle("studio:listScreens", async () => {
-    const sources = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: false });
+  // opts.thumbnails === false: küçük resimsiz (açılışta pencereyi adıyla yeniden bulmak için, hızlı).
+  ipcMain.handle("studio:listScreens", async (_e, opts) => {
+    const thumbs = opts?.thumbnails !== false;
+    const sources = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: thumbs ? { width: 320, height: 180 } : { width: 0, height: 0 }, fetchWindowIcons: false });
     return sources.map((s) => {
-      const thumbnail = s.thumbnail && !s.thumbnail.isEmpty() ? s.thumbnail.toDataURL() : null;
+      const thumbnail = thumbs && s.thumbnail && !s.thumbnail.isEmpty() ? s.thumbnail.toDataURL() : null;
       return { id: s.id, name: s.name, kind: s.id.startsWith("screen:") ? "screen" : "window", displayId: s.display_id || null, thumbnail, thumbnailDataUrl: thumbnail };
     });
   });
@@ -322,7 +341,10 @@ function registerStudio({
     } else {
       delete o.localRecord;
     }
-    if (!engine.active()) diagnostics.begin({ recordOnly: !o.url, localRecord: Boolean(o.localRecord), matchId: o.matchId ?? null });
+    if (!engine.active()) diagnostics.begin({ recordOnly: !o.url, localRecord: Boolean(o.localRecord), matchId: o.matchId ?? null, backupUrl: Boolean(o.backupUrl) });
+    // Ekran uykusu engeli (varsayılan açık); yedek giriş adresi (backupUrl) motora olduğu gibi gider.
+    keepDisplayAwake = o.keepDisplayAwake !== false;
+    delete o.keepDisplayAwake;
     const res = await engine.start(o);
     if (res.ok && o.localRecord) settings.set({ recordDir: o.localRecord.dir });
     if (res.ok) res.logPath = diagnostics.logPath();
@@ -343,6 +365,14 @@ function registerStudio({
     releaseOwner("program");
     return true;
   });
+  // Arayüz görüntü izinin takıldığını / kuyruğun şiştiğini gördü: kodlayıcı yeni
+  // başlıkla yeniden başlar (restartRecorder olayı gelir), deneme sayılmaz.
+  ipcMain.handle("studio:restartEncoder", (event, reason) => {
+    if (!ownerOk(owners.program, event.sender)) return false;
+    return engine.restartEncoder(reason ? String(reason).slice(0, 60) : "RECORDER");
+  });
+  // RTMP aktarıcısının ayrıntılı durumu (status.network ile aynı) | null.
+  ipcMain.handle("studio:network", () => engine.network());
 
   /* --------------------------------- açılar --------------------------------- */
 
@@ -425,8 +455,12 @@ function registerStudio({
       if (!isSignedIn()) return signedOut();
       await ensureFfmpegPath();
       // { matchId, eventId, replayId, angle = "program" } ya da eski { matchId, eventId, name }.
-      if (p.replayId || REPLAY_ID.test(String(p.name || ""))) return replays.upload(uploadApi, { ...p, replayId: p.replayId || p.name });
-      return clips.upload(uploadApi, p);
+      // Ön imzalı yükleme (dosya doğrudan Spaces'e; Heroku'nun 30 sn sınırına takılmaz);
+      // eski sunucuda çok parçalı yola düşer. Her adım yükleme günlüğüne yazılır.
+      return uploadGoalClip(uploadApi, p, {
+        replays, clips, putImpl: loggedPut, isReplayId: (v) => REPLAY_ID.test(String(v || "")),
+        emitProgress: (pr) => broadcast("studio:uploadProgress", pr),
+      });
     });
   });
   ipcMain.handle("studio:revealClip", (_e, name) => {
@@ -504,6 +538,25 @@ function registerStudio({
     settings.set({ recordDir: dir });
     return { ok: true, dir };
   });
+  /* --------------------- kalıcı yerel dosyalar (media.js) --------------------- */
+  const ownSender = (event) => {
+    const url = event?.senderFrame?.url || event?.sender?.getURL?.() || "";
+    return !isOwnUrl || isOwnUrl(url);
+  };
+  // Yol yalnız preload'daki webUtils.getPathForFile'dan gelir (kullanıcının seçtiği File).
+  ipcMain.handle("studio:media:allow", (event, filePath) => (ownSender(event) ? mediaLib.allow(filePath) : null));
+  ipcMain.handle("studio:media:pick", async (event, opts = {}) => {
+    if (!dialog || !ownSender(event)) return { ok: false, error: { code: "NO_DIALOG", message: "Dosya seçilemiyor." } };
+    const kind = ["video", "image", "audio"].includes(opts?.kind) ? opts.kind : null;
+    const parent = BrowserWindow?.fromWebContents?.(event.sender) || undefined;
+    const res = await dialog.showOpenDialog(parent, { title: "Dosya seç", buttonLabel: "Seç", filters: dialogFilters(kind), properties: opts?.multiple ? ["openFile", "multiSelections"] : ["openFile"] });
+    if (res.canceled || !res.filePaths?.length) return { ok: false, canceled: true, files: [] };
+    const files = res.filePaths.slice(0, 40).map((p) => mediaLib.allow(p)).filter(Boolean);
+    return { ok: files.length > 0, files, ...(files.length ? {} : { error: { code: "MEDIA_TYPE", message: "Bu dosya türü desteklenmiyor." } }) };
+  });
+  ipcMain.handle("studio:media:check", (_e, ids) => mediaLib.check(ids));
+  ipcMain.handle("studio:media:forget", (_e, id) => mediaLib.forget(String(id || "")));
+
   ipcMain.handle("studio:revealLocal", (_e, file) => {
     const target = file ? path.resolve(String(file)) : null;
     if (target && localFiles.has(target) && fs.existsSync(target)) { shell.showItemInFolder(target); return true; }
@@ -536,15 +589,41 @@ function registerStudio({
 
   /* -------------------------------- LED çıkışı -------------------------------- */
 
-  const led = screen && BrowserWindow ? createLedManager({ BrowserWindow, screen, loadRenderer, preloadPath, siteOrigin, apiOrigin, log, powerMonitor }) : null;
+  const led = screen && BrowserWindow ? createLedManager({ BrowserWindow, screen, loadRenderer, preloadPath, siteOrigin, apiOrigin, log, powerMonitor, globalShortcut }) : null;
   if (led) {
     led.events.on("status", (st) => broadcast("studio:led:status", st));
     led.events.on("displays", (list) => broadcast("studio:displays:changed", list));
   }
   const noLed = { ok: false, error: { code: "NO_LED", message: "LED çıkışı bu sürümde kullanılamıyor." } };
   ipcMain.handle("studio:displays", () => (led ? led.displays() : []));
-  ipcMain.handle("studio:led:open", (_e, opts = {}) => (led ? led.open(opts || {}) : noLed));
-  ipcMain.handle("studio:led:close", () => (led ? led.close() : false));
+  /**
+   * LED'i aç. Seçilen ekran stüdyonun ekranıysa (ya da tek ekran) led.open önce
+   * SHARED_DISPLAY döner: kullanıcıya ana süreçten, arayüzü bloklamadan (yayın
+   * sürerken tuval çizimi durmasın) sorulur; onaylarsa normal pencere açılır.
+   * → { ok, … } | { ok: false, canceled: true } | { ok: false, needsConfirm, error } (dialog yoksa)
+   */
+  let asking = null;
+  ipcMain.handle("studio:led:open", async (event, opts = {}) => {
+    if (!led) return noLed;
+    const o = { ...(opts || {}) };
+    const res = led.open(o);
+    if (res.ok || !res.needsConfirm || !dialog?.showMessageBox) return res;
+    if (asking) return { ok: false, canceled: true, error: { code: "BUSY", message: "LED sorusu zaten açık." } };
+    const parent = BrowserWindow?.fromWebContents?.(event.sender) || undefined;
+    asking = dialog.showMessageBox(parent, {
+      type: "warning",
+      buttons: ["Pencere olarak aç", "Vazgeç"],
+      defaultId: 0,
+      cancelId: 1,
+      message: "LED çıkışı stüdyonun ekranında açılacak",
+      detail: `${res.error.message}\n\nPencere Esc ya da ${process.platform === "darwin" ? "⌘⇧L" : "Ctrl+Shift+L"} ile kapanır; menüde "LED Çıkışını Kapat" da var.`,
+    }).catch(() => ({ response: 1 }));
+    let answer;
+    try { answer = await asking; } finally { asking = null; }
+    if (answer?.response !== 0) return { ok: false, canceled: true, error: { code: "CANCELED", message: "LED çıkışı açılmadı." } };
+    return led.open({ ...o, confirmShared: true });
+  });
+  ipcMain.handle("studio:led:close", () => (led ? led.close("STUDIO") : false));
   ipcMain.handle("studio:led:status", () => (led ? led.status() : { open: false, displayId: null, mode: null, url: null }));
   ipcMain.handle("studio:led:getState", () => (led ? led.getState() : null));
   ipcMain.on("studio:led:sendState", (event, state) => {

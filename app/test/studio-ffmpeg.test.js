@@ -142,7 +142,7 @@ test("tüm kodlayıcılar: CBR, 2 sn GOP, High profil, açık seviye", () => {
     assert.equal(at(a, "-c:v"), enc);
     assert.equal(at(a, "-b:v"), "6000k", enc);
     assert.equal(at(a, "-maxrate"), "6000k", enc);
-    assert.equal(at(a, "-bufsize"), "12000k", enc);
+    assert.equal(at(a, "-bufsize"), "6000k", enc);
     assert.equal(at(a, "-g"), "120", enc);
     assert.ok(["high", "100"].includes(at(a, "-profile:v")), enc);
     const level = a.includes("-level") ? at(a, "-level") : at(a, "-bsf:v");
@@ -187,7 +187,7 @@ test("Media Foundation: donanım, cbr, live_streaming, seviye h264_metadata ile"
 
 test("libx264 ve VideoToolbox: önceki ayarlar korunur, seviye eklenir", () => {
   const x = ff.videoEncoderArgs("libx264", opts);
-  assert.deepEqual([at(x, "-preset"), at(x, "-sc_threshold"), at(x, "-x264-params"), at(x, "-level")], ["veryfast", "0", "nal-hrd=cbr", "4.2"]);
+  assert.deepEqual([at(x, "-preset"), at(x, "-sc_threshold"), at(x, "-x264-params"), at(x, "-level")], ["veryfast", "0", "nal-hrd=cbr:force-cfr=1", "4.2"]);
   const v = ff.videoEncoderArgs("h264_videotoolbox", { ...opts, width: 1280, height: 720 });
   assert.deepEqual([at(v, "-allow_sw"), at(v, "-realtime"), at(v, "-level")], ["1", "1", "4.1"]);
 });

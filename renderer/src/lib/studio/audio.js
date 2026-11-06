@@ -15,7 +15,14 @@
 //   video      programda video kaynağı   → yalnız video sesi
 //   highlight  özet yayında              → yalnız özetin kendi sesi
 // Operatör her bağlamı istediği an değiştirebilir (birden çok ya da hiç).
-// Program: baralar → master fader → sınırlayıcı (isteğe bağlı) → yayın.
+// Program: baralar → master fader → sınırlayıcı (isteğe bağlı) → TÜMÜNÜ KAPAT → yayın.
+//
+// Ek ses kaynakları (inputs): kind "device" (ikinci mikrofon, yakalama kartı, kamera
+// sesi; Canlı mikrofon barası) ya da kind "file" (ses / video dosyasının sesi; kalıcı
+// elitlig-studio://media adresi; Müzik barası). OBS'teki gibi SAHNE BAŞINA
+// yönlendirme: her şeridin `scenes` listesi (null = tüm sahneler) — şerit yalnız
+// program sahnesi listedeyse yayına gider ("Bu sahnede yayına ver").
+// killAll: "Tüm sesleri kapat" (yayına hiç ses gitmez; şerit ayarları korunur).
 
 export const FADER_MAX_DB = 10;
 export const FADER_MIN_DB = -60;
@@ -238,8 +245,9 @@ export const volumeToDb = (vol) => {
  */
 export function normalizeAudio(a) {
   const x = a && typeof a === "object" ? a : {};
-  const mic = { deviceId: null, muted: false, volume: 100, noiseSuppression: false, ...(x.mic || {}) };
-  const inputs = (Array.isArray(x.inputs) ? x.inputs : []).filter((i) => i && i.id).map((i) => ({ id: String(i.id), deviceId: i.deviceId || "", name: i.name || "Ses girişi", volume: num(i.volume, 100), muted: Boolean(i.muted) }));
+  const mic0 = { deviceId: null, muted: false, volume: 100, noiseSuppression: false, ...(x.mic || {}) };
+  const mic = { ...mic0, scenes: normalizeScenes(mic0.scenes) };
+  const inputs = (Array.isArray(x.inputs) ? x.inputs : []).filter((i) => i && i.id).map(normalizeInput);
   const strips = {};
   const src = x.strips && typeof x.strips === "object" ? x.strips : {};
   strips.mic = normalizeStrip(src.mic || { fader: volumeToDb(mic.volume) });
@@ -257,6 +265,7 @@ export function normalizeAudio(a) {
     master: { fader: normalizeStrip({ fader: master.fader }).fader, limiter: master.limiter !== false },
     music: { name: String(x.music?.name || ""), loop: x.music?.loop !== false },
     monitor: { volume: clamp(num(x.monitor?.volume, 80), 0, 100), program: Boolean(x.monitor?.program) },
+    killAll: Boolean(x.killAll),
   };
 }
 
@@ -276,7 +285,7 @@ export function stripList(audio) {
   const a = normalizeAudio(audio);
   return [
     { id: "mic", kind: "mic", group: "live", label: "Mikrofon", icon: "mic" },
-    ...a.inputs.map((i) => ({ id: i.id, kind: "input", group: "live", label: i.name || "Ses girişi", icon: "music" })),
+    ...a.inputs.map((i) => ({ id: i.id, kind: i.kind === "file" ? "file" : "input", group: inputGroup(i), label: i.name || (i.kind === "file" ? "Ses dosyası" : "Ses girişi"), icon: i.kind === "file" ? "play2" : "mic" })),
     ...FIXED_STRIPS,
   ];
 }
@@ -290,3 +299,154 @@ export const monitorSet = (audio) => {
 
 /** Sınırlayıcı ayarları (DynamicsCompressor). */
 export const LIMITER = Object.freeze({ threshold: -1.5, knee: 0, ratio: 20, attack: 0.002, release: 0.08 });
+
+/* ───────────── ek ses kaynakları ───────────── */
+
+/** Sahne listesi: null = tüm sahneler; dizi = yalnız bu sahnelerde yayında. */
+export function normalizeScenes(v) {
+  if (!Array.isArray(v)) return null;
+  return [...new Set(v.filter((x) => typeof x === "string" && x))].slice(0, 200);
+}
+
+const persistentAudioUrl = (u) => typeof u === "string" && /^(https?|data|elitlig-studio|elitlig-media):/i.test(u);
+
+/** Ek ses kaynağı: aygıt ya da dosya (eski kayıtlar aygıttır). */
+export function normalizeInput(i) {
+  const kind = i.kind === "file" ? "file" : "device";
+  const base = { id: String(i.id), kind, name: String(i.name || (kind === "file" ? "Ses dosyası" : "Ses girişi")).slice(0, 60), volume: num(i.volume, 100), muted: Boolean(i.muted), scenes: normalizeScenes(i.scenes) };
+  if (kind === "device") return { ...base, deviceId: i.deviceId || "" };
+  // Dosya: kalıcı adres (elitlig-studio://media); blob: adresleri oturumla ölür → "yeniden seç".
+  const url = persistentAudioUrl(i.url) ? i.url : null;
+  return {
+    ...base,
+    deviceId: "",
+    url,
+    filePath: typeof i.filePath === "string" ? i.filePath : null,
+    fileName: typeof i.fileName === "string" ? i.fileName : null,
+    fileMissing: Boolean(i.fileMissing) || (!url && Boolean(i.url || i.fileName)),
+    loop: i.loop !== false,
+    autoPlay: i.autoPlay !== false,
+  };
+}
+
+/** Kaynak penceresinden gelen "Ses girişi" taslağı → ek ses kaynağı (Ses sekmesi). */
+export function audioInputFromDraft(draft, id = `ain_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`) {
+  const d = draft || {};
+  if (d.audioMode === "file" || d.url) {
+    return normalizeInput({ id, kind: "file", name: d.name || d.fileName || "Ses dosyası", url: d.url, filePath: d.filePath, fileName: d.fileName, loop: d.loop, autoPlay: d.autoPlay, scenes: d.scenes, volume: 100 });
+  }
+  return normalizeInput({ id, kind: "device", deviceId: d.deviceId || "", name: d.name || "Ses girişi", scenes: d.scenes, volume: 100 });
+}
+
+/** Ek kaynağın barası: aygıt → canlı mikrofon, dosya → müzik. */
+export const inputGroup = (input) => (input?.kind === "file" ? "music" : "live");
+
+/** Şeridin sahne listesi (mikrofon / ek kaynak; sabit şeritler tüm sahnelerde). */
+export function stripScenes(audio, id) {
+  const a = normalizeAudio(audio);
+  if (id === "mic") return a.mic.scenes;
+  const i = a.inputs.find((x) => x.id === id);
+  return i ? i.scenes : null;
+}
+
+/** Program sahnesinde yayında mı (liste yoksa her sahnede). */
+export const liveInScene = (scenes, programSceneId) => (!Array.isArray(scenes) ? true : Boolean(programSceneId) && scenes.includes(programSceneId));
+
+/** Şeridin sahne kapısı (0 / 1). */
+export const sceneGain = (audio, id, programSceneId) => (liveInScene(stripScenes(audio, id), programSceneId) ? 1 : 0);
+
+const withScenes = (a, id, scenes) => {
+  if (id === "mic") return { ...a, mic: { ...a.mic, scenes } };
+  return { ...a, inputs: a.inputs.map((i) => (i.id === id ? { ...i, scenes } : i)) };
+};
+
+/**
+ * "Bu sahnede yayına ver" (saf). allSceneIds: bugünkü sahneler. Tüm sahneler
+ * işaretlenince liste null olur (sonradan eklenen sahnelerde de yayında).
+ */
+export function setStripScene(audio, id, sceneId, on, allSceneIds = []) {
+  const a = normalizeAudio(audio);
+  const all = [...new Set((allSceneIds || []).filter(Boolean))];
+  const cur = stripScenes(a, id);
+  const set = new Set(cur == null ? all : cur);
+  if (on) set.add(sceneId); else set.delete(sceneId);
+  const next = all.length && all.every((x) => set.has(x)) ? null : [...set];
+  return withScenes(a, id, next);
+}
+/** Tüm sahnelerde (null) ya da hiçbirinde ([]). */
+export const setStripAllScenes = (audio, id, all = true) => withScenes(normalizeAudio(audio), id, all ? null : []);
+
+/** Sahne listesinin kısa metni ("Tüm sahneler", "2 sahne", "Hiçbir sahne"). */
+export function scenesText(scenes, sceneList = []) {
+  if (!Array.isArray(scenes)) return "Tüm sahneler";
+  if (!scenes.length) return "Hiçbir sahne";
+  const names = scenes.map((id) => sceneList.find((s) => s.id === id)?.name).filter(Boolean);
+  if (names.length === 1) return names[0];
+  return `${names.length || scenes.length} sahne`;
+}
+
+/** Şerit grubu (live / media / music). */
+export function stripGroupOf(audio, id) {
+  if (id === "mic") return "live";
+  const f = FIXED_STRIPS.find((x) => x.id === id);
+  if (f) return f.group;
+  const i = normalizeAudio(audio).inputs.find((x) => x.id === id);
+  return i ? inputGroup(i) : "live";
+}
+
+/**
+ * Şeridin o anki yayın durumu (rozetler için).
+ * → { onAir, muted, routed, inScene, killed, reason }
+ */
+export function stripAirState(audio, id, { context = "live", programSceneId = null } = {}) {
+  const a = normalizeAudio(audio);
+  const st = a.strips[id] || STRIP_DEFAULT;
+  const routed = routingFor(context, a.routing)[stripGroupOf(a, id)];
+  const inScene = liveInScene(stripScenes(a, id), programSceneId);
+  const muted = Boolean(st.mute);
+  const killed = a.killAll;
+  const onAir = routed && inScene && !muted && !killed;
+  const ctxLabel = PLAYBACK_CONTEXTS.find((c) => c.key === context)?.label || "Canlı yayın";
+  const reason = onAir ? "Yayında"
+    : killed ? "Tüm sesler kapalı"
+      : muted ? "Sessiz"
+        : !inScene ? "Bu sahnede kapalı"
+          : `Yönlendirme kapalı (${ctxLabel})`;
+  return { onAir, muted, routed, inScene, killed, reason };
+}
+
+/** Yayına hiç ses gidiyor mu (tümü kapalı değil, en az bir şerit yayında). */
+export const anyOnAir = (channels) => (channels || []).some((c) => c.onAir);
+
+/**
+ * PROGRAM ALTINDAKİ SES ŞERİDİ: yayına giden (ya da sessizi açılınca gidecek) kanallar.
+ * Bu sahnede ve bu bağlamda yönlendirilen şeritler listelenir; sessizler de görünür
+ * (tıklayınca açılır). Programdaki video kaynakları "media" şeridini paylaşır.
+ * opts: { context, programSceneId, programIds, sources, musicPlaying, filePlaying: { id: bool }, micEnabled }
+ * → [{ key, stripId, label, icon, kind, onAir, muted, reason }]
+ */
+export function programAudioChannels(audio, opts = {}) {
+  const a = normalizeAudio(audio);
+  const { context = "live", programSceneId = null, programIds = [], sources = [], musicPlaying = false, filePlaying = {} } = opts;
+  const out = [];
+  const push = (key, stripId, label, icon, kind) => {
+    const s = stripAirState(a, stripId, { context, programSceneId });
+    if (!s.routed || !s.inScene) return;
+    out.push({ key, stripId, label, icon, kind, onAir: s.onAir, muted: s.muted, reason: s.reason });
+  };
+  if (a.mic.enabled !== false) push("mic", "mic", "Mikrofon", "mic", "mic");
+  for (const i of a.inputs) {
+    if (i.kind === "file" && !filePlaying[i.id]) continue; // çalmayan dosya sese katkı vermez
+    push(i.id, i.id, i.name, i.kind === "file" ? "play2" : "mic", i.kind === "file" ? "file" : "input");
+  }
+  const ids = new Set(programIds || []);
+  if (context === "replay") push("media", "media", "Tekrar / VAR sesi", "repeat", "media");
+  else if (context === "highlight") push("highlight", "highlight", "Özet sesi", "sparkles", "media");
+  else {
+    for (const s of sources || []) {
+      if (s?.kind === "video" && ids.has(s.id)) push(`video:${s.id}`, "media", s.name || "Video", "play2", "video");
+    }
+  }
+  if (musicPlaying) push("music", "music", "Müzik", "music", "music");
+  return out;
+}

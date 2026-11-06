@@ -4,6 +4,7 @@
 //   elitlig-studio://replays/<tekrar kimliği>/<dosya>   program.mp4, angle-1.mp4, program.jpg …
 //   elitlig-studio://highlights/<highlight-….mp4|jpg>   öne çıkanlar (userData/highlights)
 //   elitlig-studio://interviews/<interview-….mp4|jpg>   röportajlar (userData/interviews)
+//   elitlig-studio://media/<kimlik>/<ad>                kullanıcının seçtiği yerel dosyalar (media.js izin listesi)
 //
 // Yalnız beyaz listedeki adlar sunulur; yol klasör dışına çıkamaz (aksi 404).
 // Range desteklidir (video oynatıcı ileri sarar).
@@ -13,6 +14,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { Readable } = require("node:stream");
 const { STUDIO_SCHEME, CLIP_NAME, parseRange } = require("./clips");
+const { mediaIdFromParts, contentTypeOf } = require("./media");
 
 const REPLAY_ID = /^r\d{14}-[0-9a-f]{6}$/;
 const REPLAY_FILE = /^(program|angle-\d{1,3})\.(mp4|jpg)$/;
@@ -41,7 +43,7 @@ const replayUrl = (id, file) => `${STUDIO_SCHEME}://replays/${encodeURIComponent
 const highlightUrl = (file) => `${STUDIO_SCHEME}://highlights/${encodeURIComponent(file)}`;
 const interviewUrl = (file) => `${STUDIO_SCHEME}://interviews/${encodeURIComponent(file)}`;
 
-/** Şema adresi → diskteki dosya (ya da null). roots: { clips, replays, highlights, interviews } */
+/** Şema adresi → diskteki dosya (ya da null). roots: { clips, replays, highlights, interviews, media?: (kimlik) => yol | null } */
 function resolveStudioUrl(roots, url) {
   let u;
   try { u = new URL(url); } catch { return null; }
@@ -52,6 +54,10 @@ function resolveStudioUrl(roots, url) {
   if (u.hostname === "replays" && parts.length === 2) return safeReplayPath(roots.replays, parts[0], parts[1]);
   if (u.hostname === "highlights" && parts.length === 1) return safeHighlightPath(roots.highlights, parts[0]);
   if (u.hostname === "interviews" && parts.length === 1 && roots.interviews) return safeInterviewPath(roots.interviews, parts[0]);
+  if (u.hostname === "media" && typeof roots.media === "function") {
+    const id = mediaIdFromParts(parts);
+    return id ? roots.media(id) || null : null;
+  }
   return null;
 }
 
@@ -78,7 +84,10 @@ function serveFile(file, request, contentType = CONTENT_TYPES[path.extname(file 
 }
 
 /** protocol.handle işleyicisi. */
-const serveStudio = (roots, request) => serveFile(resolveStudioUrl(roots, request.url), request);
+const serveStudio = (roots, request) => {
+  const file = resolveStudioUrl(roots, request.url);
+  return file ? serveFile(file, request, CONTENT_TYPES[path.extname(file)] || contentTypeOf(file) || "application/octet-stream") : serveFile(null, request);
+};
 
 module.exports = {
   REPLAY_ID, REPLAY_FILE, HIGHLIGHT_FILE, INTERVIEW_FILE,

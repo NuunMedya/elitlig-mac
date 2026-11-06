@@ -36,14 +36,14 @@ test("yayın komutu (fifo): RTMP ayrı iş parçacığında, süreç içinde yen
   assert.equal(at(args, "-loglevel"), "level+info"); // fifo "Recovery successful" info düzeyinde
   assert.equal(at(args, "-b:v"), "6000k");
   assert.equal(at(args, "-maxrate"), "6000k");
-  assert.equal(at(args, "-bufsize"), "12000k");
+  assert.equal(at(args, "-bufsize"), "6000k");
   assert.equal(at(args, "-fps_mode"), "cfr");
   assert.equal(at(args, "-r"), "30");
   assert.equal(at(args, "-ar"), "48000");
   assert.equal(at(args, "-af"), "aresample=async=1000");
   assert.equal(at(args, "-fflags"), "+genpts+discardcorrupt");
   assert.equal(args.includes("-use_wallclock_as_timestamps"), false);
-  assert.equal(at(args, "-x264-params"), "nal-hrd=cbr");
+  assert.equal(at(args, "-x264-params"), "nal-hrd=cbr:force-cfr=1");
   // fifo'suz: düz tee (eski davranış), uyarı düzeyi.
   const plain = ff.buildStreamArgs({ ...opts, encoder: "libx264" });
   assert.equal(plain.at(-1).split("|")[0], "[f=flv:onfail=ignore:flvflags=no_duration_filesize]rtmp://a.rtmp.youtube.com/live2/abcd-efgh");
@@ -178,6 +178,7 @@ function setup(extra = {}, info = {}) {
     tempRoot: tmp("studio-stab-"),
     spawnImpl,
     timers,
+    relay: false, // eski tee/fifo yolu (aktarıcı: studio-relay.test.js)
     now: () => clock.t,
     diag: { write: (scope, message, data) => notes.push({ scope, message, data }) },
     ...extra,
@@ -741,8 +742,8 @@ test("LED: ekranlar; web kipi (yalnız elitlig.com / API), çerçevesiz tam ekra
   const statuses = [];
   led.events.on("status", (s) => statuses.push(s));
   assert.deepEqual(led.displays(), [
-    { id: 1, label: "Yerleşik Retina", bounds: { x: 0, y: 0, width: 1512, height: 982 }, primary: true, scaleFactor: 2 },
-    { id: 2, label: "Ekran 2 (1920×1080)", bounds: { x: 1512, y: 0, width: 1920, height: 1080 }, primary: false, scaleFactor: 1 },
+    { id: 1, label: "Yerleşik Retina", bounds: { x: 0, y: 0, width: 1512, height: 982 }, primary: true, scaleFactor: 2, hostsStudio: false },
+    { id: 2, label: "Ekran 2 (1920×1080)", bounds: { x: 1512, y: 0, width: 1920, height: 1080 }, primary: false, scaleFactor: 1, hostsStudio: false },
   ]);
   assert.equal(led.open({ displayId: 2, mode: "web", url: "https://evil.example/led" }).error.code, "BAD_URL");
   assert.equal(led.open({ displayId: 9, mode: "web", matchId: 5 }).error.code, "NO_DISPLAY");
@@ -767,7 +768,7 @@ test("LED: ekranlar; web kipi (yalnız elitlig.com / API), çerçevesiz tam ekra
   assert.equal(prevented, false);
   w.emit("ready-to-show");
   assert.equal(w.shown, true);
-  assert.deepEqual(led.status(), { open: true, displayId: 2, mode: "web", url: "https://elitlig.com/led/77" });
+  assert.deepEqual(led.status(), { open: true, displayId: 2, mode: "web", url: "https://elitlig.com/led/77", windowed: false, closeShortcut: "CommandOrControl+Shift+L" });
   assert.equal(statuses.at(-1).open, true);
   assert.equal(isAllowedLedUrl("http://elitlig.com/led/1", ["https://elitlig.com"]), false);
   assert.equal(describeDisplay({ id: 3, bounds: {} }, 1, 2).label, "Ekran 3");
@@ -818,7 +819,8 @@ test("LED: studio kipi #led-output + aynı preload; durum aktarımı; Esc iki ke
   assert.equal(displaysEv.at(-1).length, 1);
   // Yeniden açmak eskisini kapatır.
   screen.list.push({ id: 3, bounds: { x: 0, y: 0, width: 800, height: 600 } });
-  led.open({ displayId: 1, mode: "studio" });
+  assert.equal(led.open({ displayId: 1, mode: "studio" }).error.code, "SHARED_DISPLAY");
+  led.open({ displayId: 1, mode: "studio", confirmShared: true });
   const a = windows.at(-1);
   led.open({ displayId: 3, mode: "studio" });
   assert.equal(a.destroyed, true);

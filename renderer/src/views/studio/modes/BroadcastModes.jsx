@@ -72,7 +72,7 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     settings: cfg.var, onSettings: setVarSettings, replays: replays?.replays || [], sources: src.list, runtimeRef: src.runtimeRef, audio,
     onAir: airMode === "var", previewing: previewMode === "var", brandRef, onError: (m) => say(m),
   });
-  const im = useInterviewMode({ matchId, g, encoding: Boolean(engine?.active), toast, scene: cfg.interview, sources: src.list, runtimeRef: src.runtimeRef, brandRef });
+  const im = useInterviewMode({ matchId, g, encoding: Boolean(engine?.active), toast, scene: cfg.interview, sources: src.list, runtimeRef: src.runtimeRef, brandRef, drawProgram: engine?.drawScene || null });
   const hm = useHighlightMode({ matchId, live, audio, imagesRef, onAir: airMode === "ozet", previewing: previewMode === "ozet", onFinished: () => endRef.current() });
 
   // Ses bağlamı: yayındaki moda göre yönlendirme.
@@ -146,12 +146,10 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
   const lastAir = useRef(null);
   useEffect(() => {
     const cleanup = (prev) => {
-      const { rm: R, im: I, cfg: C, hm: Hm } = ctrl.current;
+      const { rm: R, im: I, hm: Hm } = ctrl.current;
       if (prev === "tekrar") R.stop(false);
-      if (prev === "roportaj") {
-        if (C.layers.roportaj.interview) { try { gRef.current?.setInterviewOnAir?.(false); } catch { /* yoksay */ } }
-        if (I.scene.autoRecord && I.iv.recording) I.iv.stop();
-      }
+      // Röportaj bandı burada kapatılmaz: bant yalnız Röportaj sekmesindeki anahtarla açılır / kapanır.
+      if (prev === "roportaj" && I.scene.autoRecord && I.iv.recording) I.iv.stop();
       if (prev === "ozet") { try { Hm.el.pause(); } catch { /* yoksay */ } }
     };
     if (state.stage === "onair") {
@@ -184,8 +182,7 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     if (mode === "var") V.onStart();
     if (mode === "ozet" && !Hm.ready) { say("Önce özeti oluştur (Özet sekmesi)."); return false; }
     if (mode === "roportaj") {
-      if (!I.ready) { say("Röportaj sahnesi için kamera ya da arka plan seç."); return false; }
-      if (C.layers.roportaj.interview) { try { gRef.current?.setInterviewOnAir?.(true); } catch { /* yoksay */ } }
+      if (!I.ready) { say("Ayrı röportaj sahnesi kurulmadı: bandı yayındaki sahnenin üstüne Röportaj sekmesindeki “Bant” anahtarıyla aç."); return false; }
       if (I.scene.autoRecord && !I.iv.recording && engineRef.current?.active) I.iv.start(I.scene.label, { band: false });
     }
     if (!s.air) freeze();
@@ -254,7 +251,7 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     var: { toggle: toggleVar, active: airMode === "var" },
     interview: im.iv,
     highlights: hm.hl,
-    micWarning: airMode === "var" && audio ? !audio.micMuted : false,
+    micWarning: airMode === "var" && audio ? !audio.micMuted && !audio.killAll : false,
     settings: cfg,
   };
 }

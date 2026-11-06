@@ -6,10 +6,23 @@
 // (url null → yalnız kayıt: "prova"). Ana süreç ffmpeg'i yeniden başlatınca
 // onRestartRecorder gelir: kaydedici aynı izlerle hemen yeniden kurulur
 // (yeni akış başlığı). Eski kaydedicinin geç kalan parçaları atılır.
+//
+// Dayanıklılık (saatlerce yayın):
+//   - Geri basınç: blob → ArrayBuffer kuyruğu MAX_QUEUE (≈ 10 sn) parçayı aşarsa
+//     (sekme / makine takıldı) kuyruk boşaltılır ve kodlayıcıdan yeni başlıkla
+//     yeniden başlatma istenir (studio.restartEncoder): gecikme birikmez, yayın
+//     gerçek zamana döner.
+//   - Takılma gözcüsü: görüntü izi bittiyse (readyState "ended") ya da
+//     STALL_MS boyunca hiç parça gelmediyse kaydedici (taze izlerle) yeniden kurulur.
+//   - RTMP kopmaları ana süreçte (RTMP aktarıcısı) ele alınır; kaydedici etkilenmez.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AUDIO_BITRATE_KBPS, isEncoding, pickMimeType, recorderBitsPerSecond } from "../../lib/studio/broadcast";
 
 const studio = () => window.elitlig?.studio;
+const TIMESLICE_MS = 250;
+export const MAX_QUEUE = 40; // ≈ 10 sn'lik parça
+export const STALL_MS = 4000;
+const RESTART_GAP_MS = 10000;
 
 export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
   const [status, setStatus] = useState({ state: "idle" });
@@ -22,6 +35,10 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
   const genRef = useRef(0);
   const chainRef = useRef(Promise.resolve());
   const optsRef = useRef(null);
+  const queueRef = useRef(0);
+  const lastDataRef = useRef(0);
+  const lastRestartRef = useRef(0);
+  const startRef = useRef(null);
   const errRef = useRef(onError);
   errRef.current = onError;
 
@@ -36,6 +53,28 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
     const rec = recRef.current;
     recRef.current = null;
     if (rec && rec.state !== "inactive") { try { rec.stop(); } catch { /* yoksay */ } }
+  }, []);
+
+  /**
+   * Kodlayıcıdan yeni başlıkla yeniden başlatma iste (deneme sayılmaz); ana süreç
+   * onRestartRecorder ile döner ve kaydedici taze izlerle kurulur. Eski ana süreçte
+   * (restartEncoder yok) kaydedici yerinde kalır: motorun takılma denetimi devralır.
+   */
+  const requestRestart = useCallback((reason) => {
+    const now = Date.now();
+    if (!optsRef.current || now - lastRestartRef.current < RESTART_GAP_MS) return false;
+    const s = studio();
+    if (!s?.restartEncoder) return false;
+    lastRestartRef.current = now;
+    genRef.current += 1; // eski kaydedicinin kuyruğu atılır
+    const rec = recRef.current;
+    recRef.current = null;
+    if (rec && rec.state !== "inactive") { try { rec.stop(); } catch { /* yoksay */ } }
+    queueRef.current = 0;
+    Promise.resolve(s.restartEncoder(reason))
+      .then((ok) => { if (!ok && optsRef.current && !recRef.current) startRef.current?.(); })
+      .catch(() => {});
+    return true;
   }, []);
 
   const startRecorder = useCallback(() => {
@@ -58,23 +97,34 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
       errRef.current?.(`Kaydedici açılamadı: ${err?.message || err}`);
       return false;
     }
+    queueRef.current = 0;
+    lastDataRef.current = Date.now();
     rec.ondataavailable = (e) => {
       if (genRef.current !== gen || !e.data?.size) return;
+      lastDataRef.current = Date.now();
+      // Geri basınç: kuyruk şiştiyse gerçek zamana dön (eski parçalar atılır, yeni başlık).
+      if (queueRef.current >= MAX_QUEUE) { requestRestart("QUEUE"); return; }
       const blob = e.data;
+      queueRef.current += 1;
       chainRef.current = chainRef.current
         .then(async () => {
           if (genRef.current !== gen) return;
           const buf = await blob.arrayBuffer();
           if (genRef.current !== gen) return;
-          await studio()?.pushChunk?.(buf);
+          studio()?.pushChunk?.(buf);
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => { if (genRef.current === gen) queueRef.current = Math.max(0, queueRef.current - 1); });
     };
-    rec.onerror = (e) => errRef.current?.(`Kaydedici hatası: ${e?.error?.message || "bilinmeyen"}`);
-    rec.start(250);
+    rec.onerror = (e) => {
+      errRef.current?.(`Kaydedici hatası: ${e?.error?.message || "bilinmeyen"}`);
+      if (genRef.current === gen) requestRestart("ERROR");
+    };
+    rec.start(TIMESLICE_MS);
     recRef.current = rec;
     return true;
-  }, [getAudioTrack, getVideoTrack, stopRecorder]);
+  }, [getAudioTrack, getVideoTrack, stopRecorder, requestRestart]);
+  startRef.current = startRecorder;
 
   useEffect(() => {
     const s = studio();
@@ -100,8 +150,10 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
    * → maçın tamamı bu bilgisayara da kaydedilir (YouTube / RTMP ile birlikte); kalite
    * alanlarını desteklemeyen ana süreç yayın kalitesinde kaydeder.
    * stream (Ayarlar › Yayın): { audioKbps, keyframeSec, encoder: "auto" | "hardware" | "software" }.
+   * backupUrl: yedek giriş adresi (YouTube backup ingest; broadcast.backupIngestUrl) — RTMP
+   * 3 kez üst üste koparsa motor buna geçer. keepDisplayAwake: yayın sürerken ekran uyumasın.
    */
-  const start = useCallback(async ({ url, preset, localRecord = null, matchId = null, matchName = null, stream = null }) => {
+  const start = useCallback(async ({ url, backupUrl = null, preset, localRecord = null, matchId = null, matchName = null, stream = null, keepDisplayAwake = true }) => {
     const s = studio();
     if (!s?.start) throw new Error("Yayın motoru bu sürümde yok. Uygulamayı güncelleyin.");
     if (typeof MediaRecorder === "undefined") throw new Error("Bu sistemde MediaRecorder yok.");
@@ -116,7 +168,7 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
       ...(stream?.keyframeSec ? { keyframeSec: Number(stream.keyframeSec) } : {}),
       ...(stream?.encoder && stream.encoder !== "auto" ? { encoderPreference: stream.encoder } : {}),
     };
-    const opts = { url: url || null, width: preset.width, height: preset.height, fps: preset.fps, videoBitrateKbps: preset.videoBitrateKbps, audioBitrateKbps: Number(stream?.audioKbps) || AUDIO_BITRATE_KBPS, mimeType, ...extra, ...(matchId ? { matchId, matchName: matchName || null } : {}), ...(lr ? { localRecord: lr } : {}) };
+    const opts = { url: url || null, ...(url && backupUrl ? { backupUrl } : {}), keepDisplayAwake: keepDisplayAwake !== false, width: preset.width, height: preset.height, fps: preset.fps, videoBitrateKbps: preset.videoBitrateKbps, audioBitrateKbps: Number(stream?.audioKbps) || AUDIO_BITRATE_KBPS, mimeType, ...extra, ...(matchId ? { matchId, matchName: matchName || null } : {}), ...(lr ? { localRecord: lr } : {}) };
     setStatus({ state: "starting" });
     const res = await s.start(opts);
     if (!res?.ok) {
@@ -147,6 +199,21 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
       setMode(null);
     }
   }, [stopRecorder]);
+
+  // Takılma gözcüsü: görüntü izi bitti ya da STALL_MS boyunca parça yok → kaydediciyi yeniden kur.
+  const encodingNow = isEncoding(status.state);
+  useEffect(() => {
+    if (!encodingNow) return undefined;
+    const t = setInterval(() => {
+      const rec = recRef.current;
+      if (!optsRef.current || !rec) return;
+      const tracks = rec.stream?.getVideoTracks?.() || [];
+      const ended = tracks.some((tr) => tr.readyState === "ended");
+      const silent = rec.state === "recording" && Date.now() - lastDataRef.current > STALL_MS;
+      if (ended || silent) requestRestart(ended ? "TRACK_ENDED" : "NO_DATA");
+    }, 1000);
+    return () => clearInterval(t);
+  }, [encodingNow, requestRestart]);
 
   // Görünümden çıkınca kodlayıcıyı kapat.
   const activeRef = useRef(false);

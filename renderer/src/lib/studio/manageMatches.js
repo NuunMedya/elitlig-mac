@@ -1,7 +1,10 @@
 // Yayın Stüdyosu · Maç yönetimi — maç listesi, maç oluşturma / düzenleme,
 // takım ve oyuncu formları (saf işlevler).
 //
-//   GET  /maclar?includeDraft=1&date_from&date_to&mac_durumu&league_id&season_id&city   liste
+//   GET  /api/admin/live-streams/matches?date_from&date_to&mac_durumu&league_id&season_id&city_id&city
+//        il kapsamlı liste → { items, scope: { nationwide, city_id, city } } (kapsam SUNUCUDA)
+//   GET  /maclar?includeDraft=1&date_from&date_to&mac_durumu&league_id&season_id&city   eski sunucu yedeği
+//   İstemci ayrıca kapsam dışı satırları süzer (scopeRows): yalnız yetkili ilin maçları görünür.
 //   POST /maclar/add-fikstur        yeni maç (daima taslak açılır; durum ardından PATCH)
 //   PATCH /maclar/:id               maç bilgileri (MATCH_UPDATE_FIELDS)
 //   POST /takimlar/add              { team_name, current_league, current_season, city, team_points }
@@ -61,8 +64,45 @@ export function toListMatch(m) {
     league: m.league_name || "",
     season: m.match_season || "",
     city: m.city || "",
+    cityId: m.city_id == null || m.city_id === "" ? null : Number(m.city_id),
     status,
   };
+}
+
+/* ------------------------------ il kapsamı ------------------------------ */
+
+/**
+ * Listenin kapsamı: sunucunun döndürdüğü { nationwide, city_id, city } esastır;
+ * yoksa (eski sunucu) kullanıcıdan çıkarılır. Kullanıcı da bilinmiyorsa null:
+ * yetki anlaşılana kadar hiçbir maç gösterilmez.
+ * → { nationwide, cityId, city, source: "server" | "user" } | null
+ */
+export function matchScopeOf(user, serverScope) {
+  if (serverScope && typeof serverScope === "object" && "nationwide" in serverScope) {
+    return { nationwide: Boolean(serverScope.nationwide), cityId: serverScope.city_id == null ? null : Number(serverScope.city_id), city: serverScope.city || "", source: "server" };
+  }
+  if (!user) return null;
+  return { nationwide: isNationwide(user), cityId: null, city: user.city || "", source: "user" };
+}
+
+/** Satır kapsam içinde mi? (city_id varsa kimlikle, yoksa il adıyla; ilsiz satır il kısıtlıya kapalı.) */
+export function inScope(m, scope) {
+  if (!scope) return false;
+  if (scope.nationwide) return true;
+  if (scope.cityId != null && m?.cityId != null) return Number(m.cityId) === Number(scope.cityId);
+  return Boolean(scope.city && m?.city && fold(m.city) === fold(scope.city));
+}
+
+/** Liste satırlarından (toListMatch çıktısı) kapsam dışındakileri atar. */
+export const scopeRows = (rows, scope) => (rows || []).filter((m) => inScope(m, scope));
+
+/** Sunucunun bilinmeyen uç yanıtı (eski sunucu: 404, kod yok) — yedek uca düşülür. */
+export const isMissingRoute = (res) => Boolean(res && !res.ok && !res.offline && Number(res.error?.status) === 404 && !res.error?.code);
+
+/** Kapsamlı liste yanıtı → { rows, scope } (düz dizi de kabul edilir). */
+export function readScopedList(data) {
+  if (Array.isArray(data)) return { rows: data, scope: null };
+  return { rows: asArray(data, "matches"), scope: data && typeof data === "object" && data.scope && typeof data.scope === "object" ? data.scope : null };
 }
 
 /** Süzgeç gövdesi: aralık sunucuya, kesin gün ve arama istemcide. */
@@ -297,11 +337,14 @@ export function liveFirst(rows) {
   return [...list.filter((m) => m.status === "canli"), ...list.filter((m) => m.status !== "canli")];
 }
 
-/** Canlı maç şeridi: GET /maclar?mac_durumu=canli satırları (tarih süzgeci yok), saate göre. */
-export function liveStripRows(rows, { city } = {}) {
+/**
+ * Canlı maç şeridi: canlı satırlar (tarih süzgeci yok), saate göre.
+ * scope verilirse kapsam dışı (başka ilin) maçlar atılır; city yalnız seçili il süzgecidir.
+ */
+export function liveStripRows(rows, { city, scope } = {}) {
   return (rows || [])
     .map(toListMatch)
-    .filter((m) => m && m.status === "canli" && (!city || !m.city || fold(m.city) === fold(city)))
+    .filter((m) => m && m.status === "canli" && (!city || fold(m.city) === fold(city)) && (scope === undefined || inScope(m, scope)))
     .sort((a, b) => String(a.time || "99").localeCompare(String(b.time || "99")) || a.id - b.id)
     .slice(0, 12);
 }
