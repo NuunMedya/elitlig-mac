@@ -177,7 +177,7 @@ const goalSide = (side) => ({
 const goalMusic = {
   render: ({ ctx, big }) => {
     const gm = ctx.goalMusic;
-    if (ctx.GoalMusicButtons && gm) return <div className={`st-w is-amber is-panel ${big ? "is-big" : ""}`}><ctx.GoalMusicButtons goalMusic={gm} compact={!big} /></div>;
+    if (ctx.GoalMusicButtons && gm) return <div className={`st-w is-amber is-panel ${big ? "is-big" : ""}`}><ctx.GoalMusicButtons gm={gm} goalMusic={gm} compact={!big} /></div>;
     if (!gm) return <Tile tone="amber" icon="music" big={big} label="GOL MÜZİĞİ" sub="modül yok" disabled title="Gol müziği modülü bu sürümde yok" />;
     const playing = Boolean(gm.playing);
     return <Tile tone="amber" icon={playing ? "stop" : "music"} big={big} on={playing} label={playing ? "MÜZİĞİ DURDUR" : "GOL MÜZİĞİ"} sub={gm.trackName || gm.current?.name || ""} onClick={() => (playing ? gm.stop?.() : gm.play?.())} kbd={hk(ctx, "goalMusic")} />;

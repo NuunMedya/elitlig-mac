@@ -327,6 +327,17 @@ const secureWebPreferences = () => ({
   spellcheck: true,
 });
 
+// Yayın Stüdyosu · gol müziği: gizli YouTube oynatıcısı file:// sayfadan gömülür;
+// YouTube yerleştiren kimliği (Referer) olmayan gömmeyi "Hata 153" ile reddeder.
+// YALNIZ YouTube gömme sayfası isteklerine (Referer yoksa) site adresi eklenir.
+function allowYoutubeEmbeds(ses) {
+  ses.webRequest.onBeforeSendHeaders({ urls: ["https://www.youtube.com/embed/*", "https://www.youtube-nocookie.com/embed/*"] }, (details, callback) => {
+    const headers = { ...details.requestHeaders };
+    if (!headers.Referer && !headers.referer) headers.Referer = `${config.SITE_ORIGIN}/`;
+    callback({ requestHeaders: headers });
+  });
+}
+
 function guardNavigation(win) {
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^(https?|mailto|tel|sms|whatsapp|facetime):/i.test(url)) shell.openExternal(url).catch(() => {});
@@ -807,6 +818,7 @@ if (!app.requestSingleInstanceLock()) {
     // Socket bağlanınca (ve yeniden bağlanınca) talep özeti tazelenir.
     chatLink.events.on("status", (st) => { if (st.state === "connected") refreshRequestsSoon(300); });
     registerMediaProtocol();
+    allowYoutubeEmbeds(electronSession.defaultSession);
     studio = registerStudio({
       ipcMain, api, broadcast, app, electronSession, systemPreferences, desktopCapturer, powerSaveBlocker, protocol, shell,
       isOwnUrl,

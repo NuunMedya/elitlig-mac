@@ -1,10 +1,13 @@
-// RÖPORTAJ modu: sahne (kamera A / B, arka plan görseli; tek · yan yana ·
-// köşe kamera · arka plan + kamera düzenleri), röportaj bandı (grafik modülü
-// g.interview; katmanlardan aç / kapa), kayıt (Kaydı başlat / durdur → yükleme).
-import { useCallback, useMemo } from "react";
+// RÖPORTAJ modu. Asıl akış (Röportaj sekmesi): yayındaki programın üstüne
+// röportaj BANDI (grafik modülü g.interview; tek anahtarla aç / kapa) ve
+// bağımsız KAYIT (Röportajı kaydet / Bitir → inceleme → yükle / sil).
+// İsteğe bağlı ayrı röportaj SAHNESİ (kamera A / B, arka plan görseli; tek ·
+// yan yana · köşe kamera · arka plan + kamera) mod olarak yayına alınabilir.
+import { useCallback, useMemo, useRef } from "react";
 import { stingerPalette } from "../../../lib/studio/stinger";
 import { drawSource, sourcesById } from "../draw";
 import { useInterview } from "../scenes/useInterview";
+import { drawGraphicsSafe } from "../scenes/graphicsBridge";
 
 export const INTERVIEW_LAYOUTS = [
   { key: "single", label: "Tek kamera", hint: "Kamera A tam ekran" },
@@ -82,9 +85,35 @@ export function drawInterviewScene(ctx, W, H, scene, sources, runtime, branding,
   }
 }
 
-export function useInterviewMode({ matchId, g, encoding, toast, scene, sources, runtimeRef, brandRef }) {
+/** Bant önizlemesi: yalnız röportaj bandı (skorbord / altyazı kapalı), yayında değilken. */
+export function bandPreviewSnapshot(snap) {
+  if (!snap || typeof snap !== "object" || !snap.interview) return null;
+  return { ...snap, variant: "off", hideScorebug: true, hideSubtitle: true, hideInterview: false, visibility: null, subtitle: { ...(snap.subtitle || {}), onAir: false }, interview: { ...snap.interview, onAir: true } };
+}
+
+/**
+ * drawProgram(ctx, W, H, now): program SAHNESİ (grafiksiz). Röportaj sahnesi
+ * kurulmamışsa önizleme yayındaki programı + röportaj bandını gösterir (bant
+ * yayında değilse "önizleme" olarak) — operatör bandı açmadan nasıl görüneceğini görür.
+ */
+export function useInterviewMode({ matchId, g, encoding, toast, scene, sources, runtimeRef, brandRef, drawProgram = null }) {
   const iv = useInterview({ matchId, graphics: g, encoding, toast });
   const n = useMemo(() => normalizeInterviewScene(scene), [scene]);
-  const draw = useCallback((ctx, W, H, now) => drawInterviewScene(ctx, W, H, n, sources, runtimeRef?.current, brandRef?.current?.branding, now), [n, sources, runtimeRef, brandRef]);
-  return { iv, scene: n, draw, ready: Boolean(n.camA || n.camB || n.bg) };
+  const gRef = useRef(g);
+  gRef.current = g;
+  const ready = Boolean(n.camA || n.camB || n.bg);
+  const draw = useCallback((ctx, W, H, now) => {
+    if (!ready && drawProgram) {
+      drawProgram(ctx, W, H, now);
+      const gr = gRef.current;
+      const snap = gr?.snapshotRef?.current || gr?.snapshot;
+      if (drawGraphicsSafe && snap && !snap.interview?.onAir) {
+        const pv = bandPreviewSnapshot(snap);
+        try { if (pv) drawGraphicsSafe(ctx, { width: W, height: H, now: Date.now() }, pv); } catch { /* yoksay */ }
+      }
+      return;
+    }
+    drawInterviewScene(ctx, W, H, n, sources, runtimeRef?.current, brandRef?.current?.branding, now);
+  }, [n, ready, sources, runtimeRef, brandRef, drawProgram]);
+  return { iv, scene: n, draw, ready };
 }

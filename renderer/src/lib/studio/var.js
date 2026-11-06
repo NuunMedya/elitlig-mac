@@ -70,13 +70,14 @@ export const varPulse = (now, period = 1200) => 0.5 - 0.5 * Math.cos((2 * Math.P
 /** Operatör uyarısı: VAR açık ve mikrofon açıksa (yayına gitmez). */
 export const micWarning = ({ varActive, micMuted }) => Boolean(varActive && !micMuted);
 
-/* ═════════════════════ VAR v2 (yayın kalitesinde yeni tasarım) ═════════════════════
+/* ═════════════════════ VAR v2 (kırmızı çerçeve tasarımı) ═════════════════════
  *
- * Koyu cam çerçeve; üstte markalı başlık bandı: "VAR" monogramı, durum
- * (İNCELEME / KONTROL / KARAR), konu ve zaman kodu. Bölünmüş düzenler: tek,
- * ikili (yan yana), üçlü (büyük + iki küçük). Her pencereye (slot) bir canlı
- * kaynak ya da bir tekrar açısı atanır; açı etiketleri, ağır çekim, taranan
- * ışık çizgisi. KARAR durumunda altta büyük karar bandı (GOL İPTAL …).
+ * Tüm ekranı saran nabızlı kırmızı çerçeve: yan raylar, köşe ayraçları, üst
+ * bant ("VAR" rozeti + logo, konu, İNCELEME › KONTROL › KARAR adımları, zaman
+ * kodu) ve raydan raya alt bant. Bölünmüş düzenler: tek, ikili (yan yana),
+ * üçlü (büyük + iki küçük); her açı penceresi ayrıca kırmızı çerçeveli ve
+ * "AÇI n" sekmeli. KARAR durumunda alt bant beyaz karar levhasına döner
+ * (GOL / GOL İPTAL / PENALTI / KIRMIZI KART / DEVAM …).
  */
 
 export const VAR_LAYOUTS = [
@@ -92,15 +93,15 @@ export const VAR_STATES = [
   { key: "decision", label: "KARAR", text: "", tone: "green" },
 ];
 export const VAR_DECISIONS = [
+  { key: "goalOn", label: "GOL", tone: "green" },
   { key: "goalOff", label: "GOL İPTAL", tone: "red" },
-  { key: "goalOn", label: "GOL GEÇERLİ", tone: "green" },
   { key: "penalty", label: "PENALTI", tone: "red" },
   { key: "noPenalty", label: "PENALTI YOK", tone: "green" },
   { key: "red", label: "KIRMIZI KART", tone: "red" },
   { key: "yellow", label: "SARI KART", tone: "amber" },
   { key: "offside", label: "OFSAYT", tone: "red" },
   { key: "noFoul", label: "FAUL YOK", tone: "green" },
-  { key: "continue", label: "OYUN DEVAM", tone: "green" },
+  { key: "continue", label: "DEVAM", tone: "green" },
 ];
 export const VAR_TOPICS = ["OLASI GOL", "OLASI PENALTI", "OLASI KIRMIZI KART", "OLASI OFSAYT", "KİMLİK HATASI"];
 export const VAR_TONES = Object.freeze({ amber: "#f5a524", blue: "#3b82f6", green: "#16c784", red: "#ff2d55" });
@@ -159,17 +160,31 @@ export const activeSlots = (v) => {
 };
 
 /**
- * v2 yerleşimi (piksel): header (cam başlık bandı), stage (içerik alanı),
- * panes [{ rect, index, big }], footer (karar bandı).
+ * v2 yerleşimi (piksel) — kırmızı ÇERÇEVE tasarımı:
+ *   frame   tüm ekranı saran nabızlı kırmızı çerçeve (kenardan içeride)
+ *   rails   [sol, sağ] yan raylar (dikey "VAR" yazısı, çentikler)
+ *   header  üst bant (VAR rozeti, konu, durum adımları, zaman kodu, logo)
+ *   stage   açı pencerelerinin alanı (her pencere ayrıca kırmızı çerçeveli)
+ *   panes   [{ rect, index, big }]
+ *   footer  alt karar bandı (raydan raya)
  */
 export function varLayoutV2(layout, W, H) {
   const L = varLayoutOf(layout);
-  const m = Math.round(W * 0.035);
-  const header = { x: m, y: Math.round(H * 0.035), w: W - m * 2, h: Math.round(H * 0.085) };
-  const top = header.y + header.h + Math.round(H * 0.03);
-  const footer = { x: Math.round(W * 0.18), y: Math.round(H * 0.865), w: Math.round(W * 0.64), h: Math.round(H * 0.095) };
-  const stage = { x: m, y: top, w: W - m * 2, h: Math.round(H * 0.845) - top };
-  const gap = Math.round(W * 0.014);
+  const o = Math.max(2, Math.round(H * 0.012));
+  const rw = Math.round(W * 0.034);
+  const frame = { x: o, y: o, w: W - o * 2, h: H - o * 2 };
+  const rails = [
+    { x: o, y: o, w: rw - o, h: H - o * 2 },
+    { x: W - rw, y: o, w: rw - o, h: H - o * 2 },
+  ];
+  const vpad = Math.round(H * 0.03);
+  const header = { x: rw, y: vpad, w: W - rw * 2, h: Math.round(H * 0.085) };
+  const fh = Math.round(H * 0.1);
+  const footer = { x: rw, y: H - vpad - fh, w: W - rw * 2, h: fh };
+  const sx = rw + Math.round(W * 0.012);
+  const top = header.y + header.h + vpad;
+  const stage = { x: sx, y: top, w: W - sx * 2, h: footer.y - vpad - top };
+  const gap = Math.round(W * 0.016);
   let panes;
   if (L.key === "two") {
     const half = (stage.w - gap) / 2;
@@ -197,7 +212,16 @@ export function varLayoutV2(layout, W, H) {
   } else {
     panes = [{ rect: fit169(stage), index: 0, big: true }];
   }
-  return { layout: L.key, header, stage, panes, footer };
+  return { layout: L.key, frame, rails, header, stage, panes, footer };
+}
+
+/** Karar olumlu mu (✓) olumsuz mu (✕) — karar bandındaki simge. */
+export const varDecisionPositive = (key) => (VAR_DECISIONS.find((d) => d.key === key)?.tone === "green");
+
+/** Durum adımları (İNCELEME › KONTROL › KARAR): { key, label, on, done }. */
+export function varSteps(state) {
+  const i = Math.max(0, VAR_STATES.findIndex((s) => s.key === state));
+  return VAR_STATES.map((s, k) => ({ key: s.key, label: s.label, on: k === i, done: k < i }));
 }
 
 /** Zaman kodu "SS:DD:SS.KK" (kare 0…fps-1). */

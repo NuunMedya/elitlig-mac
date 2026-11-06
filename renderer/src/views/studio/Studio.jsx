@@ -86,6 +86,8 @@ import { BrandTab, LinksPanel, PresetsTab, ScoreboardTab, SponsorPanel, Subtitle
 import { StudioAudioPanel, hasModes, useBroadcastModesSafe, useStudioAudioMod } from "./scenes/modesBridge";
 import { useVar } from "./var/useVar";
 import VarPanel from "./var/VarPanel";
+// ── gol müziği + röportaj inceleme penceresi (reji ekibi) ──
+import { InterviewReviewHost } from "./modes/InterviewPanel";
 import { useLed } from "./led/useLed";
 import LedPanel from "./led/LedPanel";
 import SettingsPage, { WorkspacePic } from "./settings/SettingsPage";
@@ -263,6 +265,8 @@ export default function Studio({ auth, go }) {
   const timer = live.timer;
   const matchClockRef = useRef(null);
   matchClockRef.current = () => (timer ? timerNowMs(timer, Date.now()) : null);
+  // ── gol müziği (goalmusic/): yalnız hoparlör, yayına gitmez; ayarlar Reji'de ──
+  // ── /gol müziği ──
   const scorers = useMemo(() => scorerLines(live.events, { homeTeamId: live.homeTeamId, awayTeamId: live.awayTeamId, nameOf: live.nameOf }), [live.events, live.homeTeamId, live.awayTeamId, live.nameOf]);
   bugRef.current = live.match ? {
     homeName: live.homeName, awayName: live.awayName, homeScore: live.score.home, awayScore: live.score.away,
@@ -457,7 +461,7 @@ export default function Studio({ auth, go }) {
   modesRef.current = { previewOverride: modes.previewOverride || null, programOverride: modes.programOverride || null };
 
   /* ───────── gol müziği (isteğe bağlı modül: ./goalmusic) ───────── */
-  const goalMusic = useGoalMusicSafe({ matchId, live, audio: mixer, mixer, toast, engine: { active: engine.active } });
+  const goalMusic = useGoalMusicSafe({ homeTeamId: live.homeTeamId, awayTeamId: live.awayTeamId, homeName: live.homeName, awayName: live.awayName, matchId, live, toast });
 
   const restartVideosIn = useCallback((sceneId) => {
     const sc = resolveScene(configRef.current, sceneId);
@@ -687,7 +691,10 @@ export default function Studio({ auth, go }) {
     replays.attach(entry.key, { eventId: Number(event?.id) || null, scorer: playerName || live.nameOf(event?.oyuncu_id), side, code: code || event?.olay_kodu });
   });
   useEffect(() => () => dockGoalClipsRef.current.forEach((x) => clearTimeout(x.timer)), []);
-  const askGoal = useStable((side) => askEvent(side, "GOAL_RIGHT_FOOT", `${side === "home" ? live.homeName : live.awayName} — golü atan`));
+  const askGoal = useStable((side) => {
+    if (live.status === "canli") goalMusic?.onGoal?.(side); // ── gol müziği: otomatik çal açıksa ──
+    askEvent(side, "GOAL_RIGHT_FOOT", `${side === "home" ? live.homeName : live.awayName} — golü atan`);
+  });
   const record = async (playerId) => {
     if (!picker) return;
     setSaving(true);
@@ -1117,6 +1124,8 @@ export default function Studio({ auth, go }) {
       )}
       {tplKey && <TemplateDialog tplKey={tplKey} config={config} onCreate={createFromTemplate} onClose={() => setTplKey(null)} />}
       {help && <HelpModal hotkeys={settings.hotkeys} onClose={() => setHelp(false)} />}
+      {/* ── röportaj: kayıt bitince inceleme (izle → web sitesine yükle / sil) ── */}
+      <InterviewReviewHost iv={interview} />
     </div>
   );
 }
