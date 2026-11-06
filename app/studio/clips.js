@@ -28,6 +28,7 @@ const path = require("node:path");
 const { Readable } = require("node:stream");
 const ff = require("./ffmpeg");
 const ffargs = require("./ffargs");
+const { computeH264Level } = require("./h264level");
 // highlights.js → render.js → scheme.js bu dosyayı içe aktarır: döngü olmasın diye geç yüklenir.
 const presignedFlow = () => require("./highlights");
 
@@ -171,6 +172,106 @@ function buildClipMultipart({ fields, file, extraFiles = [], boundary = `----eli
   return { body: Buffer.concat(parts), contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
+/* ------------------------------ web kopyası ------------------------------ */
+
+// Sitede siyah görüntü: klip, yayın parçalarının yeniden kodlanmamış (concat
+// kopyası) birleşimidir; kaynak kodlayıcıya göre (VideoToolbox gerçek zamanlı,
+// donanım kodlayıcıları, açı kaydedicisinin kopyalanan H.264'ü) akış tarayıcıda
+// çözülemeyebiliyor ya da ilk kareler (anahtar kareye kadar) siyah kalıyordu;
+// ayrıca kapak hiç yoksa sitede videonun siyah ilk karesi görünüyordu.
+// Yüklenen dosya artık her zaman tarayıcı dostu bir kopyadır:
+//   H.264 High, yuv420p, sabit kare hızı, düzey çözünürlüğe göre, AAC 48 kHz
+//   stereo (kaynakta ses varsa), moov başta (+faststart), en çok 1920×1080.
+// Kapak bu kopyanın ~1. saniyesinden alınır (ilk kare çoğu zaman siyah/geçiş).
+// Kodlama başarısız olursa özgün dosya yüklenir (yükleme hiç engellenmez).
+
+const WEB_MAX_W = 1920;
+const WEB_MAX_H = 1080;
+
+/** Kaynak boyutu en çok 1920×1080 kutusuna (çift sayılarla) sığdırılır. */
+function webClipSize(width, height) {
+  let w = Number(width) > 0 ? Number(width) : 1280;
+  let h = Number(height) > 0 ? Number(height) : 720;
+  const scale = Math.min(1, WEB_MAX_W / w, WEB_MAX_H / h);
+  const even = (n) => Math.max(2, n - (n % 2));
+  w = even(Math.round(w * scale));
+  h = even(Math.round(h * scale));
+  return { width: w, height: h };
+}
+
+/** Klip → tarayıcı dostu MP4 (libx264 High yuv420p + AAC + faststart). */
+function buildWebClipArgs(input, outFile, { width, height, fps, hasAudio = true } = {}) {
+  const size = webClipSize(width, height);
+  const rate = Math.min(60, Math.max(15, Math.round(Number(fps) > 0 ? Number(fps) : 30)));
+  return [
+    "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+    "-fflags", "+genpts", "-i", input,
+    "-map", "0:v:0", ...(hasAudio ? ["-map", "0:a:0?"] : []),
+    "-vf", `scale=${size.width}:${size.height}:flags=bicubic,fps=${rate},format=yuv420p`,
+    "-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high", "-level", computeH264Level(size.width, size.height, rate),
+    "-pix_fmt", "yuv420p", "-crf", "21", "-maxrate", "8M", "-bufsize", "16M",
+    "-g", String(rate * 2), "-bf", "2", "-threads", "2",
+    ...(hasAudio ? ["-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2"] : ["-an"]),
+    "-movflags", "+faststart", "-f", "mp4",
+    outFile,
+  ];
+}
+
+/** Kapak: ~1. saniyedeki kare (kısa klipte ortası), 1280 px, JPEG. */
+function buildWebPosterArgs(videoFile, posterFile, { durationMs = null, width = 1280 } = {}) {
+  const dur = Number(durationMs) > 0 ? Number(durationMs) / 1000 : null;
+  const at = dur == null ? 1 : Math.min(1, dur / 2);
+  return [
+    "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+    "-ss", at.toFixed(3), "-i", videoFile,
+    "-frames:v", "1", "-vf", `scale='min(${width},iw)':-2`, "-q:v", "3", "-update", "1",
+    posterFile,
+  ];
+}
+
+const webPaths = (input) => {
+  const base = String(input).replace(/\.mp4$/i, "");
+  return { video: `${base}.web.mp4`, poster: `${base}.web.jpg` };
+};
+
+/**
+ * Yüklenecek web kopyasını hazırlar (varsa ve kaynaktan yeniyse yeniden
+ * kullanır). → { path, sizeBytes, posterPath, durationMs, width, height } | null
+ */
+async function prepareWebClip({ input, ffmpegPath, runImpl = ff.run } = {}) {
+  if (!input || !ffmpegPath || !fs.existsSync(input)) return null;
+  const out = webPaths(input);
+  const probe = async (file) => ffargs.parseVideoInfo((await runImpl(ffmpegPath, ["-hide_banner", "-nostdin", "-i", file], { timeout: 15000 })).stderr);
+  try {
+    const fresh = fs.existsSync(out.video) && fs.statSync(out.video).size > 0 && fs.statSync(out.video).mtimeMs >= fs.statSync(input).mtimeMs;
+    if (!fresh) {
+      const src = await probe(input);
+      if (!src.width || !src.height) return null; // video akışı okunamadı
+      try { fs.unlinkSync(out.video); } catch { /* yok */ }
+      const res = await runImpl(ffmpegPath, buildWebClipArgs(input, out.video, src), { timeout: 120000 });
+      if (!res.ok || !fs.existsSync(out.video) || fs.statSync(out.video).size === 0) {
+        try { fs.unlinkSync(out.video); } catch { /* yok */ }
+        return null;
+      }
+    }
+    const meta = await probe(out.video);
+    if (!fs.existsSync(out.poster) || fs.statSync(out.poster).mtimeMs < fs.statSync(out.video).mtimeMs) {
+      await runImpl(ffmpegPath, buildWebPosterArgs(out.video, out.poster, { durationMs: meta.durationMs }), { timeout: 20000 });
+    }
+    const posterOk = fs.existsSync(out.poster) && fs.statSync(out.poster).size > 0;
+    return {
+      path: out.video,
+      sizeBytes: fs.statSync(out.video).size,
+      posterPath: posterOk ? out.poster : null,
+      durationMs: meta.durationMs ?? null,
+      width: meta.width ?? null,
+      height: meta.height ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /* ------------------------------ ön imzalı yükleme ------------------------------ */
 
 const CLIP_ERR = {
@@ -235,10 +336,12 @@ async function uploadGoalClip(api, payload = {}, { replays, clips, putImpl, emit
     const legacy = () => replays.upload(api, { ...p, replayId });
     // Dosya / açı yoksa eski yol aynı Türkçe hatayı (NOT_FOUND / BAD_ANGLE) verir.
     if (!replay || !a?.path) return legacy();
+    // Tarayıcı dostu kopya (H.264 yuv420p + AAC + faststart, ~1 sn kapağı); olmazsa özgün dosya.
+    const web = typeof replays.webCopy === "function" ? await replays.webCopy(replay.id, a.angle).catch(() => null) : null;
     const res = await uploadClipPresigned(api, {
       matchId: mid, eventId: eid,
-      file: { path: a.path, sizeBytes: a.sizeBytes, posterPath: a.posterPath || null },
-      durationMs: p.durationMs ?? a.durationMs, width: p.width ?? a.width, height: p.height ?? a.height,
+      file: web ? { path: web.path, sizeBytes: web.sizeBytes, posterPath: web.posterPath || a.posterPath || null } : { path: a.path, sizeBytes: a.sizeBytes, posterPath: a.posterPath || null },
+      durationMs: p.durationMs ?? web?.durationMs ?? a.durationMs, width: p.width ?? web?.width ?? a.width, height: p.height ?? web?.height ?? a.height,
     }, { putImpl, emitProgress, sleep, legacy });
     if (res.ok && res.via === "presigned") {
       try {
@@ -253,10 +356,11 @@ async function uploadGoalClip(api, payload = {}, { replays, clips, putImpl, emit
   const clip = clips?.describe?.(p.name);
   const legacy = () => clips.upload(api, p);
   if (!clip) return legacy();
+  const web = typeof clips.webCopy === "function" ? await clips.webCopy(p.name).catch(() => null) : null;
   const res = await uploadClipPresigned(api, {
     matchId: mid, eventId: Number(p.eventId),
-    file: { path: clip.path, sizeBytes: clip.sizeBytes },
-    durationMs: p.durationMs ?? clip.durationMs, width: p.width ?? clip.width, height: p.height ?? clip.height,
+    file: web ? { path: web.path, sizeBytes: web.sizeBytes, posterPath: web.posterPath } : { path: clip.path, sizeBytes: clip.sizeBytes },
+    durationMs: p.durationMs ?? web?.durationMs ?? clip.durationMs, width: p.width ?? web?.width ?? clip.width, height: p.height ?? web?.height ?? clip.height,
   }, { putImpl, emitProgress, sleep, legacy });
   if (res.ok && res.via === "presigned") {
     try {
@@ -307,7 +411,7 @@ function createClipStore({ clipsDir, getFfmpegPath, runImpl = ff.run, now = () =
       try { stat = fs.statSync(full); } catch { continue; }
       const old = now() - stat.mtimeMs > maxAgeMs;
       if (stat.isDirectory() && name.startsWith(".work-")) { fs.rmSync(full, { recursive: true, force: true }); continue; }
-      if (old && (CLIP_NAME.test(name) || /^clip-.*\.json$/.test(name))) {
+      if (old && (CLIP_NAME.test(name) || /^clip-.*\.(json|web\.mp4|web\.jpg)$/.test(name))) {
         try { fs.unlinkSync(full); removed += name.endsWith(".mp4") ? 1 : 0; } catch { /* yoksay */ }
       }
     }
@@ -324,9 +428,18 @@ function createClipStore({ clipsDir, getFfmpegPath, runImpl = ff.run, now = () =
   function remove(name) {
     const file = safeClipPath(clipsDir, name);
     if (!file) return false;
-    try { fs.unlinkSync(file); } catch { /* yoksay */ }
-    try { fs.unlinkSync(metaPath(file)); } catch { /* yoksay */ }
+    const web = webPaths(file);
+    for (const f of [file, metaPath(file), web.video, web.poster]) {
+      try { fs.unlinkSync(f); } catch { /* yoksay */ }
+    }
     return true;
+  }
+
+  /** Yükleme için tarayıcı dostu kopya (bkz. prepareWebClip); olmazsa null. */
+  async function webCopy(name) {
+    const file = safeClipPath(clipsDir, name);
+    if (!file || !fs.existsSync(file)) return null;
+    return prepareWebClip({ input: file, ffmpegPath: getFfmpegPath(), runImpl });
   }
 
   async function probe(file) {
@@ -393,16 +506,19 @@ function createClipStore({ clipsDir, getFfmpegPath, runImpl = ff.run, now = () =
     if (!Number.isInteger(mid) || mid <= 0 || !Number.isInteger(eid) || eid <= 0) return error("BAD_REQUEST");
     const clip = describe(name);
     if (!clip) return error("NOT_FOUND");
-    if (clip.sizeBytes > UPLOAD_LIMIT) return error("TOO_LARGE");
-    const data = fs.readFileSync(clip.path);
+    const web = await webCopy(name).catch(() => null);
+    const src = web || clip;
+    if (src.sizeBytes > UPLOAD_LIMIT) return error("TOO_LARGE");
+    const data = fs.readFileSync(src.path);
     const fields = {
       event_id: String(eid),
-      duration_ms: String(Math.round(Number(durationMs ?? clip.durationMs) || 0)),
-      width: String(Math.round(Number(width ?? clip.width) || 0)),
-      height: String(Math.round(Number(height ?? clip.height) || 0)),
+      duration_ms: String(Math.round(Number(durationMs ?? src.durationMs) || 0)),
+      width: String(Math.round(Number(width ?? src.width) || 0)),
+      height: String(Math.round(Number(height ?? src.height) || 0)),
     };
+    const extraFiles = web?.posterPath ? [{ field: "poster", name: `gol-${mid}-${eid}.jpg`, mime: "image/jpeg", data: fs.readFileSync(web.posterPath) }] : [];
     const pathname = `/api/admin/live-streams/matches/${mid}/clips?event_id=${eid}`;
-    const send = () => api.upload(pathname, buildClipMultipart({ fields, file: { name: `gol-${mid}-${eid}.mp4`, mime: "video/mp4", data } }), { timeout: UPLOAD_TIMEOUT_MS });
+    const send = () => api.upload(pathname, buildClipMultipart({ fields, file: { name: `gol-${mid}-${eid}.mp4`, mime: "video/mp4", data }, extraFiles }), { timeout: UPLOAD_TIMEOUT_MS });
     let res = await send();
     // Ağ hatası ya da geçici sunucu hatası (Heroku 503 H12 zaman aşımı / 502 / 504): bir kez daha dene.
     // Sunucu aynı gol için yeniden yüklemeyi öncekinin yerine yazar (çift kayıt olmaz).
@@ -420,7 +536,7 @@ function createClipStore({ clipsDir, getFfmpegPath, runImpl = ff.run, now = () =
     return res;
   }
 
-  return { save, list, remove, prune, describe, upload, resolve: (name) => safeClipPath(clipsDir, name), dir: clipsDir };
+  return { save, list, remove, prune, describe, upload, webCopy, resolve: (name) => safeClipPath(clipsDir, name), dir: clipsDir };
 }
 
 module.exports = {
@@ -438,4 +554,8 @@ module.exports = {
   uploadGoalClip,
   CLIP_ERR,
   UPLOAD_LIMIT,
+  webClipSize,
+  buildWebClipArgs,
+  buildWebPosterArgs,
+  prepareWebClip,
 };
