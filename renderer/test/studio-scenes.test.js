@@ -298,7 +298,9 @@ describe("VAR", () => {
 
 describe("çalışma alanları", () => {
   it("5 düzen; eski anahtarlar göç eder; bilinmeyen → klasik", () => {
-    expect(WORKSPACES.map((w) => w.key)).toEqual(["classic", "program", "grid4", "grid9", "compact"]);
+    expect(WORKSPACES.map((w) => w.key)).toEqual(["classic", "program", "single", "grid4", "grid9"]);
+    expect(workspaceOf("compact").key).toBe("classic");
+    expect(previewVisible(workspaceOf("single"), true)).toBe(false);
     expect(workspaceOf("yok").key).toBe("classic");
     expect(workspaceOf("studio").key).toBe("classic");
     expect(workspaceOf("mv9").key).toBe("grid9");

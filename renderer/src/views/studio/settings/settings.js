@@ -43,6 +43,15 @@ export const HOTKEY_ACTIONS = [
   { key: "var", label: "VAR kontrolünü aç / kapat", default: ["v"] },
   { key: "chapter", label: "Bölüm işareti (YouTube bölümleri)", default: ["c"] },
   { key: "help", label: "Kısayol yardımı", default: ["?"] },
+  // Kısayol şeridindeki parçacıklarla aynı eylemler (varsayılan tuşu yok; Ayarlar › Kısayollar'dan atanır).
+  { key: "event", label: "Olay gir (tür → oyuncu)", default: [] },
+  { key: "goalHome", label: "Ev sahibine GOL (golcü seçilir)", default: [] },
+  { key: "goalAway", label: "Deplasmana GOL (golcü seçilir)", default: [] },
+  { key: "goalMusic", label: "Gol müziği çal / durdur", default: [] },
+  { key: "subtitle", label: "Altyazıyı aç / kapat", default: [] },
+  { key: "interviewBand", label: "Röportaj bandını aç / kapat", default: [] },
+  { key: "interview", label: "Röportaj kaydını başlat / bitir", default: [] },
+  { key: "fullscreen", label: "Programı tam ekran göster / kapat", default: [] },
 ];
 export const DEFAULT_HOTKEYS = Object.fromEntries(HOTKEY_ACTIONS.map((a) => [a.key, a.default]));
 /** Atanamayan tuşlar: sahne tuşları ve gol yanıtları. */

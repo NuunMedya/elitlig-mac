@@ -1,5 +1,5 @@
-// Yayın Stüdyosu · ALT PANEL: sekmeler (Maç yönetimi, grafik sekmeleri, Sahneler,
-// Kaynaklar, özel kipler, Yayın, Ses, LED; sağda Ayarlar) ve sürüklenerek
+// Yayın Stüdyosu · ALT PANEL: sekmeler (vurgulu Tekrar en başta, Maç yönetimi, Sahneler,
+// Geçişler, grafik sekmeleri, özel kipler, Yayın, Ses, LED; sağda Ayarlar) ve sürüklenerek
 // büyütülüp küçültülen yükseklik (tercihlerde saklanır).
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "../../components/ui";
@@ -47,7 +47,7 @@ export default function Dock({ tabs, tab, onTab, height, onHeight, children, ext
       </div>
       <nav className="st-dock__tabs" role="tablist">
         {tabs.map((t) => (
-          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={tab === t.key ? "is-on" : ""} onClick={() => onTab(t.key)}>
+          <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={`${tab === t.key ? "is-on" : ""} ${t.accent ? "is-accent" : ""}`} onClick={() => onTab(t.key)} title={t.accent ? `${t.label}: en hızlı ulaşılan düzenleme alanı` : undefined}>
             <Icon name={t.icon} size={14} /><span>{t.label}</span>
             {t.count ? <b className="st-dock__count">{t.count}</b> : null}
           </button>
