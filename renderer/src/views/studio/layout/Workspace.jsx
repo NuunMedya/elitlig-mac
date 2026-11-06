@@ -5,10 +5,11 @@
 //              ortasına (sekme olur), kenarına (sağa / sola / alta / üste bölünür) ya da
 //              ekranın dış kenarına bırakılır; × ile kaldırılır (Kutu ekle'den geri gelir).
 //   Başlık     sağda: küçült / geri aç, büyüt (tam alan) ve ⋯ (sekme ekle, sağa / alta böl,
-//              yüzen pencere, grubu kaldır). Düzenle kapalıyken yalnız büyüt görünür; tek
-//              panelli ekran bölmelerinin (monitörler, geçiş…) başlığı gizlenir.
-//   Monitörler gizli sekmede de bağlı kalır (renderer "always"): tuval çizmeye devam eder,
-//              taşınınca / sekmeye alınınca yeniden bağlanır (scenes/Monitor).
+//              yüzen pencere, grubu kaldır, parçalara ayır). Düzenle kapalıyken tek panelli
+//              bölmelerde başlık YOK (panelin kendi başlığı yeter); sekme şeridi yalnız 2+ sekmede.
+//   Paneller   grubun içinde çizilir (renderer "onlyWhenVisible": arayüz ölçeğinde kayma olmaz);
+//              monitör tuvalleri karıştırıcıda çizilmeye devam eder, görünür olunca yeniden
+//              bağlanır (scenes/Monitor).
 //
 // Studio, LayoutCtx üzerinden şunları verir: renderPanel(kind, opts), panelInfo(kind) →
 // { icon, count, accent, pvw }, renderComponent(item, extra) (panolar), onActivate /
@@ -45,8 +46,6 @@ const DECOMPOSE = {
   ozet: ["part:ozet:air", "part:ozet:main"],
 };
 const BIG = Number.MAX_SAFE_INTEGER;
-/** Tek başınayken başlığı gizlenen paneller (kendi başlıkları var). */
-const AUTO_HIDE = new Set(["pvw", "pgm", "gecis", "sahneSerit", "ledPvw", "olcer", "saat", "acilar", "sceneCell"]);
 
 class Boundary extends React.Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -190,8 +189,9 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
     const auto = layoutRef.current.autoHide !== false;
     for (const g of api.groups) {
       const floating = g.api.location?.type === "floating";
-      const kind = g.panels.length === 1 ? g.panels[0].params?.kind : null;
-      const hide = !editRef.current && auto && !floating && !layoutRef.current.mins?.[g.id] && Boolean(kind) && AUTO_HIDE.has(kind);
+      // Düzenle kapalıyken tek panelli bölmede başlık yok (panelin kendi başlığı yeter); sekme şeridi
+      // yalnız 2+ sekmeli gruplarda. Düzenle açıkken her bölmenin başlığı (sürükleme tutamacı) görünür.
+      const hide = !editRef.current && auto && !floating && !layoutRef.current.mins?.[g.id] && g.panels.length === 1;
       if (g.header && g.header.hidden !== hide) g.header.hidden = hide;
     }
   }, []);
@@ -422,6 +422,13 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
         const json = specToDock(rail ? { row: [rail, main] } : main, { titleOf });
         if (load(json)) { setLayout((l) => ({ ...l, dock: apiRef.current.toJSON(), mins: {} })); syncHeaders(); }
       },
+      /** Varsayılana dön: Klasik yayın (Kısayollar panosu varsayılan düğmelerle). */
+      resetDefault() {
+        const rail = defaultRailBoard();
+        layoutRef.current = { ...layoutRef.current, boards: { ...layoutRef.current.boards, rail } };
+        setLayout((l) => ({ ...l, boards: { ...l.boards, rail }, removed: [] }));
+        c.applyPreset("klasik");
+      },
       load(next) {
         if (next?.dock && load(next.dock, { reuse: true })) { applyMins(next.mins); syncHeaders(); }
       },
@@ -458,6 +465,15 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
 
   return (
     <LayoutCtx.Provider value={ctx}>
+      <div className="lw-wrap">
+      {edit && (
+        <div className="lw-editbar" role="note">
+          <Icon name="pencil" size={14} />
+          <span><b>Düzenle:</b> paneli <b>başlığından sürükle</b> → başka bölmenin <b>ortasına</b> bırak (sekme olur) ya da <b>kenarına</b> bırak (yanına / altına böl) · ayraçları sürükleyerek boyutla · <b>×</b> kaldırır (Kutu ekle'den geri gelir) · panolarda bileşenleri sürükle, köşeden boyutla.</span>
+          <span className="st-top__spacer" />
+          <button type="button" className="btn btn--xs" onClick={() => ctrl.resetDefault()}><Icon name="undo" size={12} /> Varsayılana dön</button>
+        </div>
+      )}
       <div className={`lw-root ${edit ? "is-edit" : ""}`}>
         <DockviewReact
           className="lw-dv"
@@ -467,11 +483,12 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
           rightHeaderActionsComponent={GroupActions}
           watermarkComponent={Watermark}
           onReady={onReady}
-          defaultRenderer="always"
+          defaultRenderer="onlyWhenVisible"
           disableDnd={!edit}
           noPanelsOverlay="emptyGroup"
           scrollbars="native"
         />
+      </div>
       </div>
       {catalog && <Catalog ctx={ctx} target={catalog} onClose={() => setCatalog(null)} />}
     </LayoutCtx.Provider>

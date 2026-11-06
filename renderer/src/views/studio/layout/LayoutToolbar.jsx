@@ -16,6 +16,7 @@ export default function LayoutToolbar({ edit, setEdit, ctrlRef, preset, onSettin
         <>
           <button type="button" className="btn btn--sm" onClick={() => c()?.openCatalog({})} title="Panel, bileşen ya da düğme ekle (kaldırılanlar en üstte)"><Icon name="plus" size={13} /> Kutu ekle</button>
           <button type="button" className="btn btn--sm" onClick={() => c()?.newBoard({})} title="Kendi sekmeni oluştur (boş pano)"><Icon name="grid" size={13} /> Yeni sekme</button>
+          <button type="button" className="btn btn--sm" onClick={() => c()?.resetDefault()} title="Klasik yayın düzenine ve varsayılan kısayollara dön"><Icon name="undo" size={13} /> Varsayılana dön</button>
         </>
       )}
       <MenuButton items={presets} text="Hazır düzen" icon="board" label="Hazır düzenler" align="end" />

@@ -208,7 +208,7 @@ export default function LayoutSettings({ Section, layout, setLayout, ctrl, ctxLa
           <input type="checkbox" className="st-switch" checked={layout.autoHide !== false} onChange={(e) => setLayout((l) => ({ ...l, autoHide: e.target.checked }))} />
         </label>
         <div className="st-row">
-          <button type="button" className="btn btn--sm btn--ghost" onClick={() => applyPreset(LAYOUT_PRESETS[0])}><Icon name="undo" size={13} /> Varsayılan düzene dön (Klasik yayın)</button>
+          <button type="button" className="btn btn--sm" onClick={async () => { if (!onAsk || await onAsk({ title: "Varsayılana dön", message: "Ekran Klasik yayın düzenine, Kısayollar panosu varsayılan düğmelere döner. Özel sekmeler (panolar) silinmez.", confirmLabel: "Varsayılana dön" })) c.resetDefault(); }}><Icon name="undo" size={13} /> Varsayılana dön (Klasik yayın)</button>
           <span className="st-hint">Yerleşim, Ayar şablonları'nda “Ekran yerleşimi” grubuyla dışa / içe aktarılır.</span>
         </div>
       </Section>

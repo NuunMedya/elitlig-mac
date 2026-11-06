@@ -279,3 +279,38 @@
 .lw-autotr { flex: 1 1 0; min-height: 0; height: 0; overflow: auto; scrollbar-width: none; }
 .lw-panel .stg-box > .stg-strip { flex: 1 1 0; height: 0; min-height: 0; }
 .lw-panel.is-monitor > .st-monitor { flex: 1 1 0; height: 0; }
+
+/* ───────── 2.16.1: sade görünüm, taşma yok ───────── */
+.lw-wrap { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+.lw-editbar { flex: none; display: flex; align-items: center; gap: 8px; margin: 4px 4px 0; padding: 6px 10px; border-radius: 9px; background: rgba(139, 92, 246, 0.16); border: 1px solid rgba(139, 92, 246, 0.5); color: #e9ddff; font-size: 12px; line-height: 1.35; }
+.lw-editbar .ic { color: #c4b5fd; flex: none; }
+.lw-editbar b { color: #fff; }
+/* grup kendi alanını aşmaz; panel içi kaydırılır */
+.dockview-theme-studio .dv-groupview, .dockview-theme-studio .dv-content-container { overflow: hidden; }
+.dockview-theme-studio .dv-content-container > * { height: 100%; }
+.lw-panel { overflow-x: hidden; }
+/* çok sütunlu panel düzenleri kendi genişliklerine göre tek sütuna iner */
+.lw-panel .md-main, .lw-panel .md-side, .lw-solo, .lw-panel .mg-body { container-type: inline-size; container-name: dcol; min-width: 0; }
+.lw-panel .md-tab { min-width: 0; }
+@container dcol (max-width: 980px) {
+  .studio .st-replays { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .studio .st-replays > .st-replays__list { grid-column: 1 / -1; order: -1; }
+}
+@container dcol (max-width: 560px) { .studio .st-replays { grid-template-columns: minmax(0, 1fr); } }
+/* düzenle kipinde bileşen çubuğu yalnız üstüne gelince; parçacık içeriği kırpılmaz */
+.lw-item__bar { opacity: 0; transition: opacity 0.12s; pointer-events: none; }
+.lw-item.is-edit:hover .lw-item__bar, .lw-item.is-edit:focus-within .lw-item__bar { opacity: 1; pointer-events: auto; }
+.lw-item.is-edit { cursor: grab; }
+.lw-board:not(.is-edit) .react-resizable-handle { display: none; }
+.lw-board .react-grid-item > .react-resizable-handle-e, .lw-board .react-grid-item > .react-resizable-handle-s { opacity: 0; }
+.lw-board .react-grid-item:hover > .react-resizable-handle-e, .lw-board .react-grid-item:hover > .react-resizable-handle-s { opacity: 0.8; }
+/* parçacık: ikon + yazı ortalı, hücreyi doldurur */
+.lw-ri > .st-w { min-height: 0; overflow: hidden; }
+.lw-ri.is-s1x1 > .st-w:not(.is-panel):not(.is-scene), .lw-ri.is-s1x2 > .st-w:not(.is-panel):not(.is-scene) { justify-content: center; align-items: center; text-align: center; }
+/* geniş tablolar / kartlar dar bölmede kendi içinde kayar */
+.lw-panel .st-card, .lw-panel .mx-matrix, .lw-panel .mx-cards > * { min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
+.lw-panel .mx-cards { min-width: 0; }
+.lw-panel .btn { max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* dar bölmede başlık satırları alt satıra iner (düğmeler kırpılmaz) */
+.lw-panel .mx-status, .lw-panel .st-scenetab__bar, .lw-panel .st-dock-head, .lw-panel .mg-tabs { flex-wrap: wrap; row-gap: 4px; }
+.lw-panel .mx-status > *, .lw-panel .st-scenetab__bar > * { min-width: 0; }
