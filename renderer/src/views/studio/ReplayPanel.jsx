@@ -9,11 +9,15 @@
 //          yüklenme durumu, "özete ekle", sil.
 //   Sağ    kuyruk: "Tekrarı yayına ver" (tekrar1/açıA → tekrar1/açıB → tekrar2 …,
 //          aralarda ElitLig logo geçişi), oynarken "Sıradaki" / "Canlıya dön".
+//   Üstte  TEKRAR DÜZENLEYİCİ (modes/ReplayEditor): büyük önizleme, yakınlaştır /
+//          kaydır (yayına da uygulanır), zaman çizelgesi, kare kare, ±1 sn, hız,
+//          "Buradan başlat", açı küçük resimleri.
 import React, { memo, useMemo, useState } from "react";
 import { Icon, Kbd } from "../../components/ui";
 import { PROGRAM_ANGLE, angleLabel, anglesOf, defaultAngles, recordableSources, metaFor, replayOfMatch, replayTitle, secondsText, toggleIn } from "../../lib/studio/replays";
 import { TRANSITIONS } from "../../lib/studio/transitions";
 import UploadLog from "./modes/UploadLog";
+import ReplayEditor from "./modes/ReplayEditor";
 
 const STINGERS = [{ key: "cut", label: "Kesme" }, ...TRANSITIONS.filter((t) => t.stinger)];
 
@@ -80,6 +84,8 @@ function ReplayPanelInner({ api }) {
   const previewRow = (r) => setCursor({ replayId: r.id, angle: (selection[r.id] || [])[0] || defaultAngles(r, recordAngles)[0] || PROGRAM_ANGLE });
 
   return (
+    <div className="st-replays-wrap">
+    {rm.transport && <ReplayEditor rm={rm} rate={rate} onRate={onRate} sources={sources} />}
     <div className="st-replays">
       <section className="st-replays__rec">
         <h5 className="st-group">Kaydedilecek açılar</h5>
@@ -180,6 +186,7 @@ function ReplayPanelInner({ api }) {
         </label>
         <UploadLog />
       </section>
+    </div>
     </div>
   );
 }

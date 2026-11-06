@@ -93,7 +93,8 @@ export function useReplayPlayer({ els, replayRef, playStinger, switchVia, firstI
     const onMid = () => {
       if (tokenRef.current !== token) return;
       els.forEach((x) => { if (x !== el) { try { x.pause(); } catch { /* yoksay */ } } });
-      el.currentTime = 0;
+      // Düzenleyicide seçilen başlangıç noktası (yoksa baştan).
+      try { el.currentTime = Math.max(0, Number(item?.startSec) || 0); } catch { el.currentTime = 0; }
       el.playbackRate = rateRef.current;
       replayRef.current = { active: true, el, event: bannerRef.current?.(item) || null, item };
       el.play().catch(() => {});
