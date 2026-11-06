@@ -3,13 +3,75 @@
 // Ayarlar takım KİMLİĞİNE göre saklanır (localStorage, maçtan maça kalır):
 //   {
 //     volume: 0…100, autoOnGoal: bool, fadeMs,
-//     teams: { [teamId]: { mode: "active" | "random" | "rotate", activeId, rotate,
+//     teams: { [teamId]: { mode: "active" | "random" | "rotate", activeId, rotate, playSec,
 //                          tracks: [{ id, url, videoId, start, end }] } }
 //   }
 // start / end saniye (end boşsa sonuna kadar çalar). Bir takımın birden çok
 // bağlantısı olabilir: "Etkin" seçilen, "Rastgele" ya da "Sırayla" çalınır.
+// ÇALMA SÜRESİ (takım başına playSec): N saniye (hazır 10/15/20/30/45/60 ya da özel)
+// ya da null = "Süresiz" (durdurulana / parça bitene kadar). Süre dolmadan fadeMs
+// önce ses kısılmaya başlar, süre dolunca müzik durur (musicPlan / musicProgress).
 
 export const GOAL_MUSIC_KEY = "studio.goalMusic.v1";
+export const PLAY_SEC_PRESETS = [10, 15, 20, 30, 45, 60];
+export const MAX_PLAY_SEC = 600;
+
+/** Çalma süresi: null (süresiz) ya da 1…600 tam saniye. "süresiz" / "" / 0 / geçersiz → null. */
+export function normalizePlaySec(v) {
+  if (v == null || v === "" || v === false) return null;
+  if (typeof v === "string" && /^s[üu]resiz$/i.test(v.trim())) return null;
+  const n = typeof v === "number" ? v : parseTime(v);
+  if (n == null || !Number.isFinite(n) || n <= 0) return null;
+  return Math.min(MAX_PLAY_SEC, Math.max(1, Math.round(n)));
+}
+
+/** Çalma süresinin metni: "Süresiz" · "20 sn" · "1:30". */
+export const playSecLabel = (sec) => {
+  const n = normalizePlaySec(sec);
+  if (n == null) return "Süresiz";
+  return n < 60 ? `${n} sn` : formatTime(n);
+};
+
+/**
+ * Çalma planı: çalma süresi ile bağlantının bitişinden kısa olanı.
+ *   lengthSec   çalınacak süre (null: süresiz, parça bitene ya da durdurulana kadar)
+ *   fadeMs      sondaki ses kısma (sürenin yarısını geçmez)
+ *   fadeAtSec   kısmanın başladığı an (çalma başından, saniye) ya da null
+ *   endSeconds  YouTube'a verilecek bitiş (zamanlayıcıdan biraz sonra: kısma yarım kalmasın)
+ */
+export function musicPlan(track, playSec, fadeMs = DEFAULT_FADE_MS) {
+  const start = Math.max(0, Number(track?.start) || 0);
+  const trackLen = track?.end != null && Number(track.end) > start ? Number(track.end) - start : null;
+  const want = normalizePlaySec(playSec);
+  let lengthSec = want;
+  if (trackLen != null) lengthSec = lengthSec == null ? trackLen : Math.min(lengthSec, trackLen);
+  const fade = lengthSec == null ? 0 : Math.round(Math.min(Math.max(0, Number(fadeMs) || 0), (lengthSec * 1000) / 2));
+  return {
+    startSeconds: start,
+    lengthSec,
+    fadeMs: fade,
+    fadeAtSec: lengthSec == null ? null : Math.max(0, lengthSec - fade / 1000),
+    endSeconds: lengthSec == null ? null : Math.round((start + lengthSec + 1) * 10) / 10,
+    limited: want != null && (trackLen == null || want < trackLen),
+  };
+}
+
+/**
+ * Çalma anındaki durum (elapsedMs: çalma başından geçen süre).
+ * → { elapsedSec, remainingSec (null: süresiz), ratio 0…1 (null: süresiz), fade: kısma başlamalı mı, done }
+ */
+export function musicProgress(plan, elapsedMs) {
+  const el = Math.max(0, Number(elapsedMs) || 0) / 1000;
+  if (!plan || plan.lengthSec == null) return { elapsedSec: el, remainingSec: null, ratio: null, fade: false, done: false };
+  const remainingSec = Math.max(0, plan.lengthSec - el);
+  return {
+    elapsedSec: el,
+    remainingSec,
+    ratio: plan.lengthSec > 0 ? Math.min(1, el / plan.lengthSec) : 1,
+    fade: el >= plan.fadeAtSec,
+    done: el >= plan.lengthSec,
+  };
+}
 export const GOAL_MUSIC_MODES = [
   { key: "active", label: "Seçilen", hint: "Her golde işaretli bağlantı" },
   { key: "random", label: "Rastgele", hint: "Her golde rastgele bir bağlantı" },
@@ -105,8 +167,10 @@ export function normalizeTeamMusic(v) {
   const mode = GOAL_MUSIC_MODES.some((m) => m.key === x.mode) ? x.mode : "active";
   const activeId = tracks.some((t) => t.id === x.activeId) ? x.activeId : tracks[0]?.id || null;
   const rotate = Number.isInteger(x.rotate) && x.rotate >= 0 ? x.rotate % Math.max(1, tracks.length) : 0;
-  return { mode, activeId, rotate, tracks };
+  return { mode, activeId, rotate, playSec: normalizePlaySec(x.playSec), tracks };
 }
+/** Takım ayarı saklanmaya değer mi (bağlantı ya da çalma süresi var). */
+const keepTeam = (t) => t.tracks.length > 0 || t.playSec != null;
 
 export function normalizeGoalMusic(v) {
   const x = v && typeof v === "object" ? v : {};
@@ -114,7 +178,7 @@ export function normalizeGoalMusic(v) {
   for (const [k, t] of Object.entries(x.teams && typeof x.teams === "object" ? x.teams : {})) {
     if (!k || k === "undefined" || k === "null") continue;
     const n = normalizeTeamMusic(t);
-    if (n.tracks.length) teams[String(k)] = n;
+    if (keepTeam(n)) teams[String(k)] = n;
   }
   const vol = Number(x.volume);
   return {
@@ -141,7 +205,7 @@ export function updateTeamMusic(config, teamId, fn) {
   const cur = teamMusicOf(c, k);
   const next = normalizeTeamMusic(typeof fn === "function" ? fn(cur) : { ...cur, ...fn });
   const teams = { ...c.teams };
-  if (next.tracks.length) teams[k] = next; else delete teams[k];
+  if (keepTeam(next)) teams[k] = next; else delete teams[k];
   return { ...c, teams };
 }
 
@@ -170,12 +234,11 @@ export function pickTrack(team, rand = Math.random) {
   return { track: t.tracks.find((x) => x.id === t.activeId) || t.tracks[0], next: t };
 }
 
-/** loadVideoById seçenekleri. */
-export const playerArgs = (track) => ({
-  videoId: track.videoId,
-  startSeconds: track.start || 0,
-  ...(track.end != null ? { endSeconds: track.end } : {}),
-});
+/** loadVideoById seçenekleri. plan (musicPlan) verilirse bitiş plandan (zamanlayıcıdan biraz sonra). */
+export const playerArgs = (track, plan = null) => {
+  const end = plan ? plan.endSeconds : track.end;
+  return { videoId: track.videoId, startSeconds: track.start || 0, ...(end != null ? { endSeconds: end } : {}) };
+};
 
 /** Ses azaltma eğrisi: t (0…1) anındaki ses düzeyi (0…vol). */
 export const fadeLevel = (vol, t) => Math.max(0, Math.round(vol * (1 - Math.min(1, Math.max(0, t))) ** 2));

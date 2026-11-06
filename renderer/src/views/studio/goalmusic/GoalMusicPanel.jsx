@@ -7,7 +7,7 @@
 //   <GoalMusicPanel gm={useGoalMusic(…)} />
 import React, { useEffect, useState } from "react";
 import { Icon } from "../../../components/ui";
-import { GOAL_MUSIC_MODES, MAX_TRACKS, formatTime, parseTime, parseYoutubeUrl, trackLabel } from "./goalMusic";
+import { GOAL_MUSIC_MODES, MAX_TRACKS, PLAY_SEC_PRESETS, formatTime, normalizePlaySec, parseTime, parseYoutubeUrl, playSecLabel, trackLabel } from "./goalMusic";
 import "./goalmusic.css";
 
 /** Zaman alanı: "1:23" yazılır, odak çıkınca saniyeye çevrilir. */
@@ -32,6 +32,25 @@ function TimeInput({ value, onChange, placeholder, label }) {
 /** Çalarken hareket eden çubuklar. */
 export const Bars = () => <i className="gm-bars" aria-hidden="true"><b /><b /><b /></i>;
 
+/** Çalma süresi: Süresiz · 10 / 15 / 20 / 30 / 45 / 60 sn · özel (sn ya da dk:sn). */
+function DurationPicker({ value, onChange, disabled }) {
+  const preset = value != null && PLAY_SEC_PRESETS.includes(value);
+  const [draft, setDraft] = useState(value != null && !preset ? String(value) : "");
+  useEffect(() => { setDraft(value != null && !PLAY_SEC_PRESETS.includes(value) ? String(value) : ""); }, [value]);
+  const commit = () => { const n = normalizePlaySec(draft); if (draft.trim() && n != null && n !== value) onChange(n); else if (!draft.trim() && value != null && !preset) onChange(null); };
+  return (
+    <div className="gm-dur" role="group" aria-label="Çalma süresi" title="Süre dolmadan ses kısılır ve müzik durur. Süresiz: durdurulana ya da parça bitene kadar.">
+      <span className="gm-dur__label">Çalma süresi</span>
+      <span className="gm-dur__chips">
+        <button type="button" className={value == null ? "is-on" : ""} aria-pressed={value == null} disabled={disabled} onClick={() => onChange(null)}>Süresiz</button>
+        {PLAY_SEC_PRESETS.map((s) => <button key={s} type="button" className={value === s ? "is-on" : ""} aria-pressed={value === s} disabled={disabled} onClick={() => onChange(s)}>{s} sn</button>)}
+      </span>
+      <input className={`gm-dur__custom${value != null && !preset ? " is-on" : ""}`} value={draft} placeholder="özel sn" aria-label="Özel çalma süresi (saniye ya da dk:sn)" disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }} />
+    </div>
+  );
+}
+
 function TeamMusic({ gm, side }) {
   const team = gm.teams[side];
   const m = team.music;
@@ -40,6 +59,7 @@ function TeamMusic({ gm, side }) {
   const [err, setErr] = useState(null);
   const parsed = parseYoutubeUrl(url);
   const isPlaying = gm.playing === side;
+  const anyPlaying = Boolean(gm.playing); // çalarken bütün düğmeler "kes" olur
   const add = (e) => {
     e?.preventDefault?.();
     const res = gm.addLink(side, url, { start: parseTime(start) ?? undefined });
@@ -78,7 +98,7 @@ function TeamMusic({ gm, side }) {
                       <span className="gm-dash">–</span>
                       <TimeInput value={t.end} label="Bitiş (boş: sonuna kadar)" placeholder="son" onChange={(v) => setTrack(t.id, { end: v })} />
                     </span>
-                    <button type="button" className="icon-btn icon-btn--xs" title="Dene (hoparlörden)" onClick={() => (isPlaying ? gm.stop() : gm.preview(side, t.id))}><Icon name={isPlaying ? "stop" : "play"} size={12} /></button>
+                    <button type="button" className="icon-btn icon-btn--xs" title={anyPlaying ? "Müziği kes" : "Dene (hoparlörden)"} onClick={() => (anyPlaying ? gm.stop() : gm.preview(side, t.id))}><Icon name={anyPlaying ? "stop" : "play"} size={12} /></button>
                     <button type="button" className="icon-btn icon-btn--xs" title="Bağlantıyı sil" onClick={() => remove(t.id)}><Icon name="trash" size={12} /></button>
                   </li>
                 );
@@ -96,10 +116,11 @@ function TeamMusic({ gm, side }) {
           {err && <p className="gm-err">{err}</p>}
         </>
       )}
+      {team.id && <DurationPicker value={m.playSec} onChange={(v) => gm.setPlaySec?.(side, v)} disabled={!gm.setPlaySec} />}
       <div className="gm-team__go">
-        {isPlaying
-          ? <button type="button" className="btn btn--block gm-stop" onClick={() => gm.stop()}><Bars /> Sustur</button>
-          : <button type="button" className="btn btn--block gm-play" disabled={!m.tracks.length} onClick={() => gm.play(side)}><Icon name="music" size={14} /> Gol müziği ver</button>}
+        {anyPlaying
+          ? <button type="button" className="btn btn--block gm-stop is-kill" onClick={() => gm.stop()}><Bars /> MÜZİĞİ KES{isPlaying ? "" : ` · ${gm.teams[gm.playing]?.name || ""}`}</button>
+          : <button type="button" className="btn btn--block gm-play" disabled={!m.tracks.length} onClick={() => gm.play(side)} title={`Çalma süresi: ${playSecLabel(m.playSec)}`}><Icon name="music" size={14} /> Gol müziği ver · {playSecLabel(m.playSec)}</button>}
       </div>
     </section>
   );
@@ -123,7 +144,7 @@ export default function GoalMusicPanel({ gm }) {
           <input type="range" min={0} max={100} step={1} value={gm.volume} onChange={(e) => gm.setVolume(e.target.value)} aria-label="Gol müziği ses düzeyi" />
           <b>{gm.volume}</b>
         </label>
-        <button type="button" className="btn btn--sm gm-mute" disabled={!gm.playing} onClick={() => gm.stop()}><Icon name="stop" size={12} /> Sustur</button>
+        <button type="button" className={`btn btn--sm gm-mute${gm.playing ? " is-kill" : ""}`} disabled={!gm.playing} onClick={() => gm.stop()}><Icon name="stop" size={12} /> {gm.playing ? "MÜZİĞİ KES" : "Sustur"}</button>
       </div>
       {gm.error && <p className="gm-err">{gm.error}</p>}
       <div className="gm-teams">
