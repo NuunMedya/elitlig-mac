@@ -46,7 +46,8 @@ export async function prepare(el, url) {
 }
 
 /**
- * rate: oynatma hızı 0,25…1 (ağır çekim); yayın sırasında değişince ANINDA uygulanır.
+ * rate: oynatma hızı 0,25…1 (ağır çekim); yayın sırasında değişince ANINDA uygulanır —
+ * öğede rate varsa (önizlemeden yayına alınan yük) o hız kullanılır ve değişmez.
  * Modlarda (modes/): switchVia(onMid) öğeler arası geçişi çizer (varsayılan
  * playStinger), firstImmediate ilk öğeyi geçişsiz gösterir (yayına alma geçişi
  * zaten örter), onFinished kuyruk bitince çağrılır (mod kendi geçişiyle canlıya döner).
@@ -95,7 +96,8 @@ export function useReplayPlayer({ els, replayRef, playStinger, switchVia, firstI
       els.forEach((x) => { if (x !== el) { try { x.pause(); } catch { /* yoksay */ } } });
       // Düzenleyicide seçilen başlangıç noktası (yoksa baştan).
       try { el.currentTime = Math.max(0, Number(item?.startSec) || 0); } catch { el.currentTime = 0; }
-      el.playbackRate = rateRef.current;
+      // [önizleme-geçiş] öğe kendi (yayına alındığı andaki) hızıyla oynar; yoksa genel hız.
+      el.playbackRate = Number(item?.rate) > 0 ? Number(item.rate) : rateRef.current;
       replayRef.current = { active: true, el, event: bannerRef.current?.(item) || null, item };
       el.play().catch(() => {});
     };
@@ -167,7 +169,12 @@ export function useReplayPlayer({ els, replayRef, playStinger, switchVia, firstI
     return () => clearInterval(t);
   }, [active, advance, replayRef]);
 
-  useEffect(() => { els.forEach((el) => { el.playbackRate = r; }); }, [r, els]);
+  // Genel hız değişince: hızı donmuş öğe (önizlemeden yayına alınan) etkilenmez [önizleme-geçiş].
+  useEffect(() => {
+    const cur = replayRef.current;
+    if (cur?.active && Number(cur.item?.rate) > 0) return;
+    els.forEach((el) => { el.playbackRate = r; });
+  }, [r, els, replayRef]);
   useEffect(() => () => { tokenRef.current += 1; els.forEach((el) => { try { el.pause(); } catch { /* yoksay */ } }); }, [els]);
 
   return {

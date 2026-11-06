@@ -82,8 +82,8 @@
 .lw-panel.is-monitor, .lw-panel.is-gecis, .lw-panel.is-sahneSerit, .lw-panel.is-sceneCell, .lw-panel.is-acilar, .lw-panel.is-olcer, .lw-panel.is-saat { overflow: hidden; padding: 4px; }
 .lw-panel.is-monitor > .st-monitor, .lw-panel > .stg-box, .lw-panel > .st-transition, .lw-panel > .stg-cell { flex: 1 1 auto; min-height: 0; }
 .lw-panel > .st-transition { justify-content: center; padding: 0 2px; }
-.lw-panel.is-board { overflow-x: hidden; overflow-y: auto; }
-.lw-board { overflow-x: hidden; }
+.lw-panel.is-board { overflow-x: hidden; overflow-y: auto; scrollbar-width: none; }
+.lw-board { overflow-x: clip; max-width: 100%; }
 .lw-board__bar .btn { height: 22px; padding: 0 7px; font-size: 11px; }
 .lw-panel .md-tab { height: auto; min-height: 100%; }
 .lw-panel > .st-modewrap, .lw-panel > .mg-dock { flex: 1 1 auto; }
@@ -272,3 +272,5 @@
 .lw-panel.is-flash { animation: stColFlash 1.1s ease-out; }
 .st-set__card:has(.lw-tree), .st-set__card:has(.lw-presets) { grid-column: 1 / -1; }
 .lw-presets .lw-preset { min-width: 0; }
+.lw-cell { container-type: inline-size; }
+@container (max-width: 120px) { .lw-item__name, .lw-item__wh { display: none; } .lw-item__bar { justify-content: space-between; gap: 1px; } }

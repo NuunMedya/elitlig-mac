@@ -38,6 +38,9 @@ function useNow(active, ms = 500) {
 }
 
 /* ───────────────────────── tekrar ───────────────────────── */
+// [önizleme-geçiş] Tekrar parçacıkları doğrudan yayına VERMEZ: seçilen tekrar / açı / kuyruk
+// ÖNİZLEME'ye yüklenir, yayına GEÇİŞ (Boşluk) alır — önizlemede ne görünüyorsa o
+// ("R = doğrudan yayına" ayarı açıksa ya da stüdyo modu kapalıysa yükleyip aynı yolla alır).
 
 const replayGo = {
   render: ({ ctx, w, h }) => {
@@ -54,11 +57,11 @@ const replayGo = {
       );
     }
     return (
-      <button type="button" className={`st-w is-violet is-go is-${s}`} disabled={!latest} onClick={R.playLatest} title="Son tekrarı varsayılan açılarla hemen yayına ver">
+      <button type="button" className={`st-w is-violet is-go is-${s}`} disabled={!latest} onClick={R.playLatest} title={R.direct ? "Son tekrarı önizlemeye yükle ve hemen yayına al (R = doğrudan yayına)" : "Son tekrarı varsayılan açılarla önizlemeye yükle — yayına GEÇİŞ ile"}>
         {hk(ctx, "replay") && <span className="st-w__kbd">{hk(ctx, "replay")}</span>}
-        <span className="st-w__goicon"><Icon name="play" size={s === "small" ? 20 : 28} strokeWidth={2.6} /></span>
+        <span className="st-w__goicon"><Icon name={R.direct ? "play" : "eye"} size={s === "small" ? 20 : 28} strokeWidth={2.6} /></span>
         <span className="st-w__gotext">
-          <span className="st-w__label">{s === "small" ? "SON TEKRAR" : "SON TEKRARI VER"}</span>
+          <span className="st-w__label">{s === "small" ? "SON TEKRAR" : R.direct ? "SON TEKRARI VER" : "SON TEKRAR → ÖNİZLEME"}</span>
           {s !== "small" && <span className="st-w__sub">{latest ? `${latest.title} · ${latest.angles} açı` : "henüz tekrar yok"}</span>}
         </span>
       </button>
@@ -72,13 +75,13 @@ function AngleGrid({ ctx, w }) {
   const [busy, setBusy] = useState(null);
   if (!r) return <div className="st-w is-violet is-panel is-big"><span className="st-w__state"><Icon name="video" size={14} /> AÇILAR</span><span className="st-w__empty">Henüz tekrar yok. GOL ya da ÖNEMLİ AN ile kaydet.</span></div>;
   const have = (r.angles || []).filter((a) => a.url).slice(0, w === 2 ? 4 : 2);
-  const take = async (a) => { setBusy(a.angle); try { await R.take(r, [a.angle]); } finally { setBusy(null); } };
+  const take = async (a) => { setBusy(a.angle); try { await R.preview(r, [a.angle]); } finally { setBusy(null); } };
   return (
     <div className={`st-w is-violet is-panel is-big st-wag ${R.playing ? "is-on" : ""}`}>
       <span className="st-w__state"><Icon name="video" size={13} /> <span className="st-w__ellip">{replayTitle(r, metaFor(r, R.meta))}</span></span>
       <div className={`st-wag__grid is-n${have.length}`}>
         {have.map((a) => (
-          <button key={a.angle} type="button" className={`st-wag__cell ${busy === a.angle ? "is-busy" : ""}`} onClick={() => take(a)} title={`${angleLabel(a, R.sources)} — bu açıyı yayına ver`}>
+          <button key={a.angle} type="button" className={`st-wag__cell ${busy === a.angle ? "is-busy" : ""}`} onClick={() => take(a)} title={`${angleLabel(a, R.sources)} — bu açıyı önizlemeye al (yayına GEÇİŞ ile)`}>
             <video src={a.url} muted loop autoPlay playsInline preload="metadata" />
             <span>{angleLabel(a, R.sources)}</span>
           </button>
@@ -97,8 +100,8 @@ const replayRecent = {
       <div className={`st-w is-violet is-panel is-big st-wrl is-${shape(w, h)}`}>
         <span className="st-w__state"><Icon name="list" size={13} /> SON TEKRARLAR {R.list?.length ? <b className="st-w__count">{R.list.length}</b> : null}</span>
         {list.map((r, i) => (
-          <button key={r.id} type="button" className={`st-wrl__row ${r.kind === "goal" ? "is-goal" : ""}`} onClick={() => R.take(r, (r.angles || []).filter((a) => a.url).map((a) => a.angle).slice(0, 1))}
-            title="Tık: program açısıyla yayına ver">
+          <button key={r.id} type="button" className={`st-wrl__row ${r.kind === "goal" ? "is-goal" : ""}`} onClick={() => R.preview(r, (r.angles || []).filter((a) => a.url).map((a) => a.angle).slice(0, 1))}
+            title="Tık: ilk açısıyla önizlemeye al (yayına GEÇİŞ ile)">
             <b>{i + 1}</b>
             <span>{replayTitle(r, metaFor(r, R.meta))}</span>
             <Icon name="play" size={11} />
@@ -123,7 +126,7 @@ const replaySlow = {
         </div>
         {h === 2 && <input type="range" min={0.25} max={1} step={0.05} value={rate} onChange={(e) => R.setRate?.(Math.round(Number(e.target.value) * 20) / 20)} aria-label="Tekrar hızı" />}
         <button type="button" className="st-w__cta" disabled={!R.latestInfo && !R.playing} onClick={R.playing ? R.stop : R.playLatest}>
-          <Icon name={R.playing ? "stop" : "play"} size={13} /> {R.playing ? "Canlıya dön" : "Son tekrarı oynat"}
+          <Icon name={R.playing ? "stop" : "eye"} size={13} /> {R.playing ? "Canlıya dön" : "Son tekrar önizlemeye"}
         </button>
       </div>
     );
@@ -156,7 +159,7 @@ function QueueTile({ ctx, w }) {
         })}
         {!list.length && <span className="st-w__empty">Tekrar yok.</span>}
       </div>
-      <button type="button" className="st-w__cta" disabled={!sel.length || busy || !R.playQueue} onClick={go}><Icon name="play" size={13} /> {w === 1 ? (sel.length ? `Ver (${sel.length})` : "Seç") : sel.length ? `${sel.length} tekrarı ver` : "Seç, sonra ver"}</button>
+      <button type="button" className="st-w__cta" disabled={!sel.length || busy || !R.playQueue} onClick={go}><Icon name="eye" size={13} /> {w === 1 ? (sel.length ? `Önizle (${sel.length})` : "Seç") : sel.length ? `${sel.length} tekrar önizlemeye` : "Seç, önizlemeye al"}</button>
     </div>
   );
 }

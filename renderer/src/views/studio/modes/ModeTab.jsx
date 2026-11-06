@@ -1,7 +1,8 @@
 // Mod sekmesi: solda YAYIN kartı (durum, geçiş, Yayına al / Canlıya dön,
-// yayına giden ses, ek katmanlar), sağda modun kendi paneli. Sekme açıkken
-// mod önizlemede görünür.
-import React, { useEffect, useState } from "react";
+// yayına giden ses, ek katmanlar), sağda modun kendi paneli. [önizleme-geçiş] Sekmeyi
+// açmak önizlemeyi değiştirmez: "Önizlemeye al" (ya da içerik seçmek) modu önizlemeye
+// yükler; önizlemedeyken "Yayına al" Studio'nun tek GEÇİŞ yolunu çağırır (Boşluk ile aynı).
+import React, { useState } from "react";
 import { Icon, Kbd } from "../../../components/ui";
 import { BAND_SIZES, LAYER_KINDS, PIP_CORNERS, PIP_SIZES, addExtra, airButton, modeOf, normalizeLayers, removeExtra, updateExtra } from "../../../lib/studio/modes";
 import { ROUTE_GROUPS, isDefaultRoute, routingFor } from "../../../lib/studio/audio";
@@ -40,16 +41,19 @@ export function RoutePicker({ audio, context, compact = false }) {
 }
 
 function AirBar({ api, mode }) {
-  const { state, cfg, setCfg, takeToAir, endOnAir } = api;
+  const { state, cfg, setCfg, takeMode, takeToAir, endOnAir } = api;
   const btn = airButton(state, mode);
   const other = state.air && state.air !== mode && state.stage !== "idle" ? modeOf(state.air) : null;
   const tk = transitionKind(cfg.transition.kind);
   const [busy, setBusy] = useState(false);
-  const take = async () => { setBusy(true); try { await takeToAir(cfg.transition, mode); } finally { setBusy(false); } };
+  const inPreview = state.preview === mode;
+  // Önizlemede değilse önce önizlemeye; önizlemedeyse tek GEÇİŞ yolu (önizleme → program).
+  const take = async () => { setBusy(true); try { await (takeMode ? takeMode(mode) : takeToAir(cfg.transition, mode)); } finally { setBusy(false); } };
+  const label = inPreview ? (btn.on ? "Önizlemedekini yayına al" : "Yayına al") : "Önizlemeye al";
   return (
     <section className={`md-air ${btn.on ? "is-on" : ""}`}>
       <div className="md-air__state">
-        {btn.on ? <span className="md-chip is-live"><i /> YAYINDA</span> : <span className="md-chip is-pvw"><i /> ÖNİZLEMEDE</span>}
+        {btn.on ? <span className="md-chip is-live"><i /> YAYINDA</span> : inPreview ? <span className="md-chip is-pvw"><i /> ÖNİZLEMEDE</span> : <span className="md-chip">ÖNİZLEMEDE DEĞİL</span>}
         {other && <span className="md-chip">Yayında: {other.label}</span>}
       </div>
       <div className="md-air__tr">
@@ -62,10 +66,10 @@ function AirBar({ api, mode }) {
       </div>
       {btn.on
         ? <button type="button" className="btn btn--block md-air__go is-back" disabled={btn.busy} onClick={() => endOnAir(cfg.transition)}><Icon name="stop" size={14} /> {btn.label}</button>
-        : <button type="button" className="btn btn--red btn--block md-air__go" disabled={busy} onClick={take}><Icon name="broadcast" size={14} /> {btn.label}</button>}
-      {mode === "tekrar" && btn.on && <button type="button" className="btn btn--block btn--sm" onClick={take}><Icon name="play" size={12} /> Seçilenleri şimdi oynat</button>}
-      {mode === "var" && <small className="muted">Kısayol <Kbd>V</Kbd></small>}
-      {mode === "tekrar" && <small className="muted">Son tekrar <Kbd>R</Kbd></small>}
+        : <button type="button" className={`btn ${inPreview ? "btn--red" : ""} btn--block md-air__go`} disabled={busy} onClick={take}><Icon name={inPreview ? "broadcast" : "eye"} size={14} /> {inPreview && other ? btn.label : label}</button>}
+      {mode === "tekrar" && btn.on && inPreview && <button type="button" className="btn btn--block btn--sm" onClick={take}><Icon name="play" size={12} /> {label}</button>}
+      {mode === "var" && <small className="muted">Önizlemeye <Kbd>V</Kbd> · yayına GEÇİŞ <Kbd>Boşluk</Kbd></small>}
+      {mode === "tekrar" && <small className="muted">Son tekrar önizlemeye <Kbd>R</Kbd> · yayına GEÇİŞ <Kbd>Boşluk</Kbd></small>}
     </section>
   );
 }
@@ -121,9 +125,7 @@ function ModeBody({ api, mode }) {
 }
 
 export default function ModeTab({ api, mode }) {
-  const { setPreview, clearPreview } = api;
-  // Sekme açıkken mod önizlemede.
-  useEffect(() => { setPreview(mode); return () => clearPreview(mode); }, [mode, setPreview, clearPreview]);
+  // [önizleme-geçiş] Sekmeyi açmak / kapatmak önizlemeyi değiştirmez (önizlemede ne varsa yayına o gider).
   return (
     <div className={`md-tab is-${mode}`}>
       <aside className="md-side">
