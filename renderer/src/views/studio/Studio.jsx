@@ -81,6 +81,8 @@ import ShortcutRail, { useRail } from "./shortcuts/ShortcutRail";
 import EventEntry from "./shortcuts/EventEntry";
 import HealthChip from "./scenes/HealthChip";
 import { useChapters, useLowBitrate, useSilenceWatch } from "./scenes/useOperatorAlerts";
+import { useYoutubeStart } from "./youtube/YoutubeStartDialog"; // [medya] YouTube başlatma penceresi
+import { audioInputFromDraft } from "../../lib/studio/audio"; // [medya] ek ses kaynağı (aygıt / dosya)
 import { interviewClock, useInterview } from "./scenes/useInterview";
 import { BrandTab, LinksPanel, PresetsTab, ScoreboardTab, SponsorPanel, SubtitlePanel, drawGraphicsSafe, hasGraphics, useGraphicsSafe } from "./scenes/graphicsBridge";
 import { StudioAudioPanel, hasModes, useBroadcastModesSafe, useStudioAudioMod } from "./scenes/modesBridge";
@@ -142,7 +144,8 @@ const readPrefs = () => {
       transition: TRANSITION_KINDS.some((t) => t.key === p.transition) ? p.transition : "fade",
       angles: { ...DEFAULT_PREFS.angles, ...(p.angles || {}) },
       localRec: { ...DEFAULT_PREFS.localRec, ...(p.localRec || {}) },
-      audio: { mic: { ...DEFAULT_PREFS.audio.mic, ...(p.audio?.mic || {}) }, inputs: Array.isArray(p.audio?.inputs) ? p.audio.inputs : [] },
+      // [medya] karıştırıcının tüm ayarları (şeritler, yönlendirme, sahne başına ses, tümünü kapat) kalıcı
+      audio: { ...(p.audio && typeof p.audio === "object" ? p.audio : {}), mic: { ...DEFAULT_PREFS.audio.mic, ...(p.audio?.mic || {}) }, inputs: Array.isArray(p.audio?.inputs) ? p.audio.inputs : [] },
     };
   } catch { return DEFAULT_PREFS; }
 };
@@ -240,7 +243,7 @@ export default function Studio({ auth, go }) {
   // Ses: özel kip modülü yeni karıştırıcıyı getiriyorsa o (modül sabiti: kanca sırası değişmez), yoksa eskisi.
   const programIds = useMemo(() => (config.scenes.find((s) => s.id === config.programSceneId)?.layers || []).map((l) => l.sourceId), [config.scenes, config.programSceneId]);
   const mixer = useStudioAudioMod
-    ? useStudioAudioMod({ sources: { list: config.sources, runtimeRef: src.runtimeRef, programIds }, settings: { value: prefs.audio, onChange: setAudio } }) // eslint-disable-line react-hooks/rules-of-hooks
+    ? useStudioAudioMod({ sources: { list: config.sources, runtimeRef: src.runtimeRef, programIds, programSceneId: config.programSceneId, scenes: config.scenes }, settings: { value: prefs.audio, onChange: setAudio } }) // eslint-disable-line react-hooks/rules-of-hooks
     : useAudioMixer({ mic: prefs.audio.mic, inputs: prefs.audio.inputs, replayEls, replayAudio: prefs.replayAudio }); // eslint-disable-line react-hooks/rules-of-hooks
   const muted = typeof mixer.micMuted === "boolean" ? mixer.micMuted : Boolean(prefs.audio.mic?.muted);
   const legacyToggleMic = useCallback(() => setAudio((a) => ({ ...a, mic: { ...a.mic, muted: !a.mic.muted } })), [setAudio]);
@@ -304,11 +307,12 @@ export default function Studio({ auth, go }) {
     await engine.start({ url, backupUrl, preset, localRecord, stream: settings.stream, matchId, matchName: live.match ? `${live.homeName} – ${live.awayName}` : null });
   }, [engine, mixer, preset, settings.record, settings.stream, matchId, live.match, live.homeName, live.awayName]);
 
-  const startYoutube = async () => {
+  // [medya] "Yayını başlat" → YouTube ayarları penceresi (youtube/) → startYoutubeWith(ayarlar).
+  const startYoutubeWith = async (ytSettings) => {
     if (!matchId) { toast("Önce Maç yönetimi sekmesinden maç aç.", { tone: "warn" }); return; }
     setBusy(true);
     try {
-      const open = reusableStream(yt.stream) ? yt.stream : await yt.open();
+      const open = reusableStream(yt.stream) ? yt.stream : await yt.open(ytSettings || undefined);
       const url = ingestUrl(open);
       if (!url) throw new Error("YouTube yayın adresi alınamadı.");
       await begin(url, backupIngestUrl(open));
@@ -319,6 +323,8 @@ export default function Studio({ auth, go }) {
       toast(errorText(e, "YouTube yayını açılamadı."), { tone: "error", timeout: 6000 });
     } finally { setBusy(false); }
   };
+  const ytStart = useYoutubeStart({ yt, matchId, match: live.match, homeName: live.homeName, awayName: live.awayName, toast, canResume: reusableStream(yt.stream), onStart: startYoutubeWith });
+  const startYoutube = ytStart.request;
   const startManual = async (url) => {
     setBusy(true);
     try { await begin(url); setStartedVia("manual"); toast("Görüntü RTMP sunucusuna gönderiliyor. İzleme linkini maç sayfasına ekleyebilirsin (Yayın sekmesi).", { tone: "success", timeout: 6000 }); } catch (e) { toast(errorText(e, "Yayın başlatılamadı."), { tone: "error", timeout: 6000 }); } finally { setBusy(false); }
@@ -415,7 +421,7 @@ export default function Studio({ auth, go }) {
   });
 
   /* ───────── uyarılar, bölümler ───────── */
-  const chapters = useChapters(matchId, engine.since);
+  const chapters = useChapters(matchId, engine.since, { mode: engine.mode, active: engine.active, broadcastId: yt.stream?.broadcast_id || null }); // [medya] YouTube'a kendiliğinden gönderim
   const silentMs = useSilenceWatch({ getAnalyser: () => mixer.micAnalyser(true), active: engine.active && engine.mode === "live", enabled: settings.notify.silence, limitSec: settings.notify.silenceSec });
   useLowBitrate({ status: engine.status, targetKbps: preset.videoBitrateKbps, active: engine.active, enabled: settings.notify.lowBitrate, toast });
   const addChapter = useStable(() => {
@@ -537,7 +543,7 @@ export default function Studio({ auth, go }) {
     const { angleOptions, ...clean } = draft;
     void angleOptions;
     if (clean.kind === "audio") {
-      setAudio((a) => ({ ...a, inputs: [...a.inputs, { id: `ain_${Date.now().toString(36)}`, deviceId: clean.deviceId || "", name: clean.name || "Ses girişi", volume: 100, muted: false }] }));
+      setAudio((a) => ({ ...a, inputs: [...(a.inputs || []), audioInputFromDraft(clean)] })); // [medya] aygıt ya da ses / video dosyası
       setPref("tab", "ses");
       toast("Ses girişi Ses sekmesine eklendi.", { tone: "success" });
       return;
@@ -1069,7 +1075,7 @@ export default function Studio({ auth, go }) {
                 <BroadcastPanel yt={yt} engine={engine} busy={busy} matchId={matchId} matchName={matchName} match={live.match} startedVia={onAir ? startedVia : null} encoding={prefs.encoding} onEncoding={setEncoding}
                   onStartYoutube={startYoutube} onStartManual={startManual} onRehearsal={startRehearsal} onStop={() => stopEncoder({ askFirst: false })} onEndYoutube={endYoutube} toast={toast} ask={ask}
                   localRec={localRec} onLocalRec={setLocalRec} recordInfo={recordInfo} onOpenSettings={() => openSettings("kayit")}
-                  chapters={{ chapters: chapters.chapters, text: chapters.text, onAdd: addChapter, onRemove: chapters.remove, onClear: chapters.clear }} />
+                  chapters={{ ...chapters, onAdd: addChapter, onRemove: chapters.remove, onClear: chapters.clear }} />
               </div>
             )}
             {tab === "ses" && StudioAudioPanel && useStudioAudioMod && (
@@ -1126,6 +1132,7 @@ export default function Studio({ auth, go }) {
       {help && <HelpModal hotkeys={settings.hotkeys} onClose={() => setHelp(false)} />}
       {/* ── röportaj: kayıt bitince inceleme (izle → web sitesine yükle / sil) ── */}
       <InterviewReviewHost iv={interview} />
+      {ytStart.dialog /* [medya] YouTube başlatma penceresi */}
     </div>
   );
 }

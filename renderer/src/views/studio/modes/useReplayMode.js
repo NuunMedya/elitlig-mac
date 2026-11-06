@@ -3,14 +3,20 @@
 // logo geçişi; kuyruk bitince mod kendi geçişiyle canlıya döner. Ağır çekim
 // önizlemede ve yayında anında uygulanır. Program öğeleri "media" şeridinde
 // (yönlendirme varsayılanı: yalnız canlı mikrofon).
+//
+// DÜZENLEYİCİ: her klip + açı için yakınlaştırma / kaydırma görünümü (replayView.js)
+// ve başlangıç noktası tutulur. Görünüm önizlemede ve YAYINDA aynı uygulanır (program
+// çizimi kırpılmış bölgeyi çizer); başlangıç noktası yayına alınınca klibin oradan
+// başlamasını sağlar. transport: ileri / geri sarma, kare kare, oynat / duraklat —
+// tekrar yayındayken yayındaki klibe, değilse önizlemeye uygulanır.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { STINGER_MS } from "../../../lib/studio/stinger";
 import { PROGRAM_ANGLE, buildReplayQueue, defaultAngles, metaFor, replayBanner } from "../../../lib/studio/replays";
 import { isStingerKind } from "../../../lib/studio/transitions";
 import { drawReplayBadge } from "../../../lib/studio/scorebug";
 import { drawTransitionStinger } from "../../../lib/studio/transitions";
-import { drawVideoFull } from "../draw";
 import { prepare, useReplayPlayer } from "../useReplayPlayer";
+import { DEFAULT_VIEW, FRAME_SEC, clampView, drawVideoView, viewKey } from "./replayView";
 
 const mkVideo = () => {
   const v = document.createElement("video");
@@ -32,6 +38,24 @@ export function useReplayMode({ replays, rate, audio, between, onFinished, onErr
   const innerRef = useRef(null); // öğeler arası geçiş { startedAt, ms, kind, onMid, fired }
   const errRef = useRef(onError);
   errRef.current = onError;
+  // Görünüm (yakınlaştırma / kaydırma) ve başlangıç noktası: klip + açı başına.
+  const viewsRef = useRef(new Map());
+  const inRef = useRef(new Map());
+  const [viewTick, setViewTick] = useState(0);
+  const viewOf = useCallback((key) => viewsRef.current.get(key) || DEFAULT_VIEW, []);
+  const setViewFor = useCallback((key, v) => {
+    if (!key) return;
+    const next = typeof v === "function" ? v(viewsRef.current.get(key) || DEFAULT_VIEW) : v;
+    viewsRef.current.set(key, clampView(next));
+    setViewTick((t) => t + 1);
+  }, []);
+  const setInFor = useCallback((key, sec) => {
+    if (!key) return;
+    if (sec == null || !(sec > 0)) inRef.current.delete(key); else inRef.current.set(key, Number(sec));
+    setViewTick((t) => t + 1);
+  }, []);
+  /** Kuyruk öğelerine başlangıç noktası eklenir (oynatıcı oradan başlatır). */
+  const withStart = useCallback((items) => items.map((it) => ({ ...it, startSec: inRef.current.get(viewKey(it.replayId, it.angle)) || 0 })), []);
 
   // Ses: program öğeleri bir kez bağlanır, kapı açık (yalnız yayında oynarlar).
   const attach = audio?.attachMedia;
@@ -87,8 +111,8 @@ export function useReplayMode({ replays, rate, audio, between, onFinished, onErr
   const start = useCallback(async (q) => {
     const items = q || airQueue();
     if (!items.length) { errRef.current?.("Yayına verilecek tekrar seçilmedi."); return false; }
-    return player.play(items);
-  }, [airQueue, player]);
+    return player.play(withStart(items));
+  }, [airQueue, player, withStart]);
 
   const latestQueue = useCallback(() => {
     const r = replays?.latest || list[0];
@@ -104,12 +128,12 @@ export function useReplayMode({ replays, rate, audio, between, onFinished, onErr
     setCursor({ replayId: replay.id, angle: angles[0] || PROGRAM_ANGLE });
   }, [recordAngles]);
 
-  /** Program içeriği (tekrar + rozet + öğeler arası geçiş). */
+  /** Program içeriği (tekrar + rozet + öğeler arası geçiş); operatörün yakınlaştırdığı bölge. */
   const drawProgram = useCallback((ctx, W, H, now) => {
     const r = replayRef.current;
-    if (r?.active && r.el) drawVideoFull(ctx, r.el, W, H);
+    if (r?.active && r.el) drawVideoView(ctx, r.el, W, H, viewOf(viewKey(r.item?.replayId, r.item?.angle)));
     else { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
-  }, []);
+  }, [viewOf]);
   const drawProgramTop = useCallback((ctx, W, H, now) => {
     drawReplayBadge(ctx, W);
     const sg = innerRef.current;
@@ -119,19 +143,40 @@ export function useReplayMode({ replays, rate, audio, between, onFinished, onErr
     if (p < 1) drawTransitionStinger(ctx, W, H, sg.kind, p, brandRef?.current?.logo, brandRef?.current?.branding);
     else innerRef.current = null;
   }, [brandRef]);
+  const cursorKey = cursorItem ? viewKey(cursorItem.replayId, cursorItem.angle) : null;
   const drawPreview = useCallback((ctx, W, H) => {
-    if (!previewReady || !drawVideoFull(ctx, previewEl, W, H)) {
+    if (!previewReady || !drawVideoView(ctx, previewEl, W, H, viewOf(cursorKey))) {
       ctx.fillStyle = "#0b0712"; ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = "rgba(255,255,255,0.55)";
       ctx.font = `700 ${Math.round(H * 0.045)}px -apple-system, sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(cursorItem ? "Tekrar yükleniyor…" : "Önizlemek için listeden tekrar seç", W / 2, H / 2);
     }
-  }, [previewReady, previewEl, cursorItem]);
+  }, [previewReady, previewEl, cursorItem, cursorKey, viewOf]);
   const event = useCallback((target) => (target === "program" ? replayRef.current?.event || null : cursorItem ? bannerOf(cursorItem) : null), [cursorItem, bannerOf]);
 
+  /* ───────── düzenleyici: oynatma denetimi ───────── */
+  // Yayındaki klip varsa ona, yoksa önizlemeye uygulanır.
+  const transportEl = useCallback(() => (replayRef.current?.active && replayRef.current.el ? replayRef.current.el : previewEl), [previewEl]);
+  const transport = useMemo(() => ({
+    el: transportEl,
+    onAir: () => Boolean(replayRef.current?.active),
+    toggle: () => { const el = transportEl(); if (!el) return; if (el.paused) el.play().catch(() => {}); else el.pause(); },
+    play: () => { transportEl()?.play().catch(() => {}); },
+    pause: () => { try { transportEl()?.pause(); } catch { /* yoksay */ } },
+    seek: (sec) => { const el = transportEl(); if (!el) return; const d = Number.isFinite(el.duration) ? el.duration : 0; try { el.currentTime = Math.max(0, d ? Math.min(d - 0.01, sec) : sec); } catch { /* yoksay */ } },
+    nudge: (sec) => { const el = transportEl(); if (!el) return; transport.seek((el.currentTime || 0) + sec); },
+    step: (frames) => { const el = transportEl(); if (!el) return; try { el.pause(); } catch { /* yoksay */ } transport.seek((el.currentTime || 0) + frames * FRAME_SEC); },
+  }), [transportEl]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Yayındaki öğenin anahtarı (görünüm yayında canlı değişsin diye). */
+  const airKey = player.item ? viewKey(player.item.replayId, player.item.angle) : null;
+  const editKey = airKey && replayRef.current?.active ? airKey : cursorKey;
+
   return {
-    selection, setSelection, cursor: cursorItem, setCursor, queue, airQueue, latestQueue, open,
+    selection, setSelection, cursor: cursorItem, setCursor, queue, airQueue, latestQueue: () => withStart(latestQueue()), open,
     player, start, stop: (withTr) => player.stop(withTr), drawProgram, drawProgramTop, drawPreview, event, previewEl, previewReady, ready: Boolean(airQueue().length),
+    // düzenleyici
+    viewTick, viewOf, setView: setViewFor, inPointOf: (key) => inRef.current.get(key) || 0, setInPoint: setInFor,
+    cursorKey, airKey, editKey, transport,
   };
 }

@@ -37,6 +37,22 @@ export const createMatchStream = (id, body) => live("POST", `${YT}/matches/${id}
 export const endMatchStream = (id) => live("POST", `${YT}/matches/${id}/end`, {});
 export const connectYoutube = () => live("POST", `${YT}/youtube/connect`, {});
 export const disconnectYoutube = () => live("POST", `${YT}/youtube/disconnect`, {});
+// YouTube yayın ayarları (başlatma penceresi), ön ayarlar, bölümler.
+//   GET    /matches/:id/youtube-draft → { title, description, privacy, tags, latency, dvr, made_for_kids, preset_id }
+//   POST   /matches/:id { title?, description?, privacy?, tags?, latency?, dvr?, made_for_kids? } (createMatchStream)
+//   PATCH  /matches/:id/youtube { title?, description?, privacy?, tags? } (yayın sürerken düzenle)
+//   GET    /youtube-presets → { items }, POST /youtube-presets, PUT / DELETE /youtube-presets/:presetId
+//   POST   /matches/:id/chapters { chapters: [{ at_ms, label }] } → { ok, description, applied }
+export const getYoutubeDraft = (id) => live("GET", `${YT}/matches/${id}/youtube-draft`);
+export const updateYoutube = (id, body) => live("PATCH", `${YT}/matches/${id}/youtube`, body);
+export const listYoutubePresets = () => live("GET", `${YT}/youtube-presets`);
+export const createYoutubePreset = (body) => live("POST", `${YT}/youtube-presets`, body);
+export const updateYoutubePreset = (presetId, body) => live("PUT", `${YT}/youtube-presets/${encodeURIComponent(presetId)}`, body);
+export const deleteYoutubePreset = (presetId) => live("DELETE", `${YT}/youtube-presets/${encodeURIComponent(presetId)}`);
+export const postChapters = (id, chapters) => live("POST", `${YT}/matches/${id}/chapters`, { chapters });
+/** Uç sunucuda yok mu (eski sunucu): 404 / 405 / 501. */
+export const notSupported = (res) => Boolean(res && !res.ok && !res.offline && [404, 405, 501].includes(Number(res.error?.status)));
+
 /** Maç sayfasındaki canlı yayın / video bağlantısı (elle RTMP'de izleme linki). */
 export const setMatchVideo = (id, url) => live("PATCH", `/maclar/${id}`, { match_video: url });
 

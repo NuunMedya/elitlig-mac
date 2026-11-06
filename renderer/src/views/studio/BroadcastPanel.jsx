@@ -3,9 +3,15 @@
 // kare hızı ve bit hızı ayrı ayrı (bit hızı elle kbps ya da hazır seçenek).
 // YouTube kanalı bu ekrandan bağlanır (sunucu OAuth); elle RTMP'de izleme linki
 // maç sayfasına yazılır; maçın tamamı bilgisayara da kaydedilebilir.
+// "YouTube'da canlı yayını başlat" önce YouTube ayarları penceresini açar (youtube/);
+// açık yayında "YouTube ayarlarını düzenle" (başlık, açıklama, gizlilik, etiketler).
+// YouTube bölümleri yayındayken açıklamaya kendiliğinden yazılır.
 import React, { memo, useEffect, useState } from "react";
 import { Field, Icon } from "../../components/ui";
 import * as api from "./studioApi";
+import YoutubeStartDialog from "./youtube/YoutubeStartDialog";
+import { parseStamp } from "./youtube/chapters";
+import "./youtube/youtube.css";
 import {
   BITRATE_MAX_KBPS, BITRATE_MIN_KBPS, BITRATE_PRESETS, FPS_CHOICES, PRIVACY_LABELS, RESOLUTION_CHOICES,
   bitrateAdvice, isRtmpUrl, joinRtmp, recommendedBitrate, streamStatusLabel, uploadNeedMbps, validateBitrate,
@@ -168,28 +174,88 @@ function LocalRecordCard({ value, onChange, engine, recordInfo, onOpenSettings }
   );
 }
 
-/** YouTube bölümleri: yayın sırasında "Bölüm" işaretleri (C) ve goller → kopyalanabilir liste. */
-function ChaptersCard({ chapters, onAdd, onRemove, onClear, text, onAir, toast }) {
+const SYNC_TEXT = { sending: "Gönderiliyor…", sent: "YouTube'da güncel", pending: "Gönderilecek (birkaç sn)", local: "Gönderilmedi", error: "Gönderilemedi", empty: "Henüz bölüm yok" };
+const SYNC_TONE = { sending: "is-busy", sent: "is-ok", pending: "is-wait", local: "", error: "is-err", empty: "" };
+const agoText = (ms) => {
+  if (!ms) return "";
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  return s < 60 ? `${s} sn önce` : s < 3600 ? `${Math.floor(s / 60)} dk önce` : new Date(ms).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+};
+
+/** Tek bölüm satırı: zaman (düzenlenebilir, ±5 sn), ad (yeniden adlandır), sil. */
+function ChapterRow({ c, ch, merged }) {
+  const [stamp, setStamp] = useState(c.stamp);
+  const [label, setLabel] = useState(c.label);
+  useEffect(() => setStamp(c.stamp), [c.stamp]);
+  useEffect(() => setLabel(c.label), [c.label]);
+  const commitStamp = () => { const ms = parseStamp(stamp); if (ms == null) setStamp(c.stamp); else if (ms !== c.atMs) ch.setTime?.(c.id, ms); };
+  const commitLabel = () => { const v = label.trim(); if (!v) setLabel(c.label); else if (v !== c.label) ch.rename?.(c.id, v); };
+  return (
+    <li className={`yt-ch__item ${merged ? "is-merged" : ""}`} title={merged ? "10 sn'den yakın: öncekiyle birleşir" : undefined}>
+      <button type="button" className="icon-btn icon-btn--xs" onClick={() => ch.nudge?.(c.id, -5000)} title="5 sn geri"><Icon name="chevronLeft" size={11} /></button>
+      <input className="yt-ch__stamp" value={stamp} onChange={(e) => setStamp(e.target.value)} onBlur={commitStamp} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} aria-label="Zaman" />
+      <button type="button" className="icon-btn icon-btn--xs" onClick={() => ch.nudge?.(c.id, 5000)} title="5 sn ileri"><Icon name="chevronRight" size={11} /></button>
+      <input className="yt-ch__label" value={label} onChange={(e) => setLabel(e.target.value)} onBlur={commitLabel} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} maxLength={80} aria-label="Bölüm adı" />
+      <span className={`yt-ch__kind ${c.kind === "goal" ? "" : "is-mark"}`}>{c.kind === "goal" ? "GOL" : "İŞARET"}</span>
+      <button type="button" className="icon-btn icon-btn--xs" onClick={() => ch.onRemove?.(c.id)} title="Sil"><Icon name="x" size={11} /></button>
+    </li>
+  );
+}
+
+/**
+ * YouTube BÖLÜMLERİ: goller ve "Bölüm" (C) işaretleri, YouTube kaydının 0:00'ından.
+ * Yayındayken her değişiklikten sonra YouTube açıklamasına kendiliğinden yazılır
+ * (POST /matches/:id/chapters); elle "YouTube'a gönder" ve "Kopyala" da var.
+ */
+function ChaptersCard({ chapters: ch, onAir, toast, hasBroadcast }) {
+  const list = ch.chapters || [];
+  const sync = ch.sync || null;
+  const text = ch.text || "";
+  const rules = ch.rules || { ok: true, problems: [] };
+  const [, setTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 15000); return () => clearInterval(t); }, []);
   const copy = async () => {
     try { await navigator.clipboard.writeText(text); toast("Bölüm listesi kopyalandı: YouTube video açıklamasına yapıştır.", { tone: "success" }); } catch { toast("Kopyalanamadı.", { tone: "error" }); }
   };
+  const sendNow = async () => {
+    const r = await sync.send();
+    if (r?.ok) toast("Bölümler YouTube açıklamasına yazıldı.", { tone: "success" });
+    else if (r?.error) toast(r.error, { tone: "error", timeout: 6000 });
+  };
+  // Birleşen (10 sn'den yakın) işaretler.
+  const mergedIds = new Set();
+  for (let i = 1; i < list.length; i += 1) if (list[i].atMs - list[i - 1].atMs < 10_000) mergedIds.add(list[i].id);
+  if (list[0] && list[0].atMs < 10_000) mergedIds.add(list[0].id);
+  const status = sync?.status || "local";
   return (
     <section className="st-card">
-      <header className="st-card__head"><Icon name="flag" size={15} /><strong>YouTube bölümleri</strong><span className="st-col__count">{chapters.length}</span></header>
-      <p className="st-hint">Yayında <b>Bölüm</b> (C) işaret koyar; goller kendiliğinden eklenir. Liste YouTube açıklamasına yapıştırılır.</p>
-      <div className="st-row">
-        <button type="button" className="btn btn--sm" disabled={!onAir} onClick={() => onAdd()}><Icon name="flag" size={12} /> Bölüm işareti</button>
-        <button type="button" className="btn btn--sm btn--primary" disabled={!chapters.length} onClick={copy}><Icon name="copy" size={12} /> Kopyala</button>
-        {chapters.length > 0 && <button type="button" className="btn btn--sm btn--ghost" onClick={onClear}>Temizle</button>}
-      </div>
-      {chapters.length > 0 && (
-        <>
-          <pre className="st-chapters">{text}</pre>
-          <ul className="st-chapters__list">
-            {chapters.map((c) => <li key={c.id}><span className="st-mono">{c.stamp}</span> {c.label}<button type="button" className="icon-btn icon-btn--xs" onClick={() => onRemove(c.id)} title="Sil"><Icon name="x" size={11} /></button></li>)}
-          </ul>
-        </>
+      <header className="st-card__head"><Icon name="flag" size={15} /><strong>YouTube bölümleri</strong><span className="st-col__count">{ch.normalized ? ch.normalized.length : list.length}</span></header>
+      <p className="st-hint">Goller kendiliğinden eklenir; <b>Bölüm</b> (C) işaret koyar. Zamanlar YouTube kaydının başından (ilk yayın başlangıcı; kopup yeniden bağlanınca sıfırlanmaz).</p>
+      {sync && (
+        <div className="yt-ch__state">
+          <span className={`yt-ch__pill ${SYNC_TONE[status] || ""}`}>{SYNC_TEXT[status] || status}</span>
+          {sync.lastAt && <span className="muted">son gönderim {agoText(sync.lastAt)}</span>}
+          {sync.auto ? <span className="muted">· yayındayken kendiliğinden</span> : <span className="muted">· {hasBroadcast ? "" : "YouTube yayını açılınca kendiliğinden"}</span>}
+        </div>
       )}
+      {sync?.error && status === "error" && <p className="st-hint text-red">{sync.error}</p>}
+      <div className="st-row st-row--wrap">
+        <button type="button" className="btn btn--sm" disabled={!onAir} onClick={() => ch.onAdd?.()}><Icon name="flag" size={12} /> Bölüm işareti</button>
+        {sync && <button type="button" className="btn btn--sm btn--primary" disabled={!list.length || status === "sending"} onClick={sendNow} title="Bölümleri şimdi YouTube video açıklamasına yaz"><Icon name="upload" size={12} /> YouTube'a gönder</button>}
+        <button type="button" className="btn btn--sm" disabled={!list.length} onClick={copy}><Icon name="copy" size={12} /> Kopyala</button>
+        {list.length > 0 && <button type="button" className="btn btn--sm btn--ghost" onClick={ch.onClear}>Temizle</button>}
+      </div>
+      <p className={`yt-ch__rules ${rules.ok ? "is-ok" : ""}`}>
+        YouTube kuralı: ilk bölüm <b>0:00</b>, en az <b>3</b> bölüm, her biri en az <b>10 sn</b>.{" "}
+        {rules.ok ? "Liste uygun." : rules.problems.join(" ")}
+      </p>
+      {list.length > 0 && (
+        <ul className="yt-ch__list">
+          <li className="yt-ch__item is-first"><span className="yt-ch__stamp st-mono">00:00</span><span className="yt-ch__label">{ch.normalized?.[0]?.label || "Başlangıç"}</span></li>
+          {list.map((c) => <ChapterRow key={c.id} c={c} ch={ch} merged={mergedIds.has(c.id)} />)}
+        </ul>
+      )}
+      {list.length > 0 && <details><summary className="st-hint">Açıklamaya yazılacak metin</summary><pre className="st-chapters">{text}</pre></details>}
     </section>
   );
 }
@@ -206,6 +272,7 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
   const manualUrl = joinRtmp(rtmpUrl, rtmpKey);
   const openStream = s?.broadcast_id && s.active !== false;
   const connected = yt.config.configured && yt.config.connected !== false;
+  const [editOpen, setEditOpen] = useState(false);
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(watch); toast("İzleme bağlantısı kopyalandı.", { tone: "success" }); } catch { toast("Kopyalanamadı.", { tone: "error" }); }
@@ -226,11 +293,14 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
               <p className="st-hint">
                 <strong>“YouTube'da canlı yayını başlat”</strong> kanalda yayını <strong>maç adıyla kendiliğinden açar</strong>{matchName ? <> (“{matchName}”)</> : null} ve görüntüyü gönderir.
               </p>
-              <Field label="Gizlilik">
-                <select value={yt.privacy} onChange={(e) => yt.setPrivacy(e.target.value)} disabled={encodingNow || busy || Boolean(openStream)}>
-                  {Object.entries(PRIVACY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-              </Field>
+              {!openStream && <p className="st-hint">Başlatınca önce <b>YouTube ayarları</b> penceresi açılır (başlık, açıklama, gizlilik, etiketler, ön ayarlar); <b>Hemen başlat</b> ya da Enter ile varsayılanlarla geç.</p>}
+              {openStream && (
+                <div className="st-row">
+                  <span className="st-hint">Gizlilik: <b>{PRIVACY_LABELS[s.privacy || yt.privacy] || yt.privacy}</b>{s.title ? <> · “{s.title}”</> : null}</span>
+                  <span className="st-top__spacer" />
+                  <button type="button" className="btn btn--xs" disabled={busy || !yt.updateSettings} onClick={() => setEditOpen(true)} title="Yayın sürerken başlık, açıklama, gizlilik ve etiketleri değiştir"><Icon name="pencil" size={11} /> YouTube ayarlarını düzenle</button>
+                </div>
+              )}
               {!encodingNow
                 ? <button type="button" className="btn btn--red btn--block" disabled={busy || !matchId || !engine.available} onClick={onStartYoutube}><Icon name="play" size={13} /> {openStream ? "Yayına devam et" : "YouTube'da canlı yayını başlat"}</button>
                 : <button type="button" className="btn btn--block" disabled={busy} onClick={onStop}><Icon name="pause" size={13} /> Görüntüyü durdur</button>}
@@ -275,12 +345,15 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
 
       <div className="st-stack">
         <LocalRecordCard value={localRec} onChange={onLocalRec} engine={engine} recordInfo={recordInfo} onOpenSettings={onOpenSettings} />
-        {chapters && <ChaptersCard {...chapters} onAir={engine.active} toast={toast} />}
+        {chapters && <ChaptersCard chapters={chapters} onAir={engine.active} toast={toast} hasBroadcast={Boolean(openStream)} />}
         <EncodingCard encoding={encoding} onEncoding={onEncoding} locked={encodingNow} />
         <p className="st-hint">
           Kodlayıcı: {ff ? (ff.available ? `ffmpeg ${ff.version || ""} · ${encoderText(ff)}` : "ffmpeg yok") : "bilgi yok"}
         </p>
       </div>
+      {editOpen && (
+        <YoutubeStartDialog mode="edit" yt={yt} match={match} homeName={match?.first_team_name} awayName={match?.second_team_name} toast={toast} onClose={() => setEditOpen(false)} />
+      )}
     </div>
   );
 }

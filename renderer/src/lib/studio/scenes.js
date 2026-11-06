@@ -147,12 +147,24 @@ export function normalizeLayer(l, sourceKind) {
   };
 }
 
+/** Oturumlar arasında yaşayan adres mi (blob: ölür; elitlig-studio://media kalıcıdır). */
+export const persistentUrl = (url) => typeof url === "string" && /^(https?|data|file|elitlig-media|elitlig-studio):/i.test(url);
+/** Dosya kaynağı (görsel / video) dosyasını kaybetmiş mi: "Dosya bulunamadı, yeniden seç". */
+export const sourceNeedsFile = (s) => Boolean(s && (s.kind === "image" || s.kind === "video") && (!s.url || s.fileMissing));
+
 function normalizeSource(s) {
   const out = { ...s, name: str(s.name || sourceKindLabel(s.kind)) };
-  // Nesne adresleri (blob:) oturum sonunda geçersizleşir: dosya yeniden seçilir.
-  if (typeof out.url === "string" && out.url.startsWith("blob:")) out.url = null;
-  if (out.kind === "video" && out.url && !/^(https?|data|file|elitlig-media):/i.test(out.url)) out.url = null;
-  if (out.kind === "slideshow") out.images = (Array.isArray(out.images) ? out.images : []).filter((u) => typeof u === "string" && !u.startsWith("blob:")).slice(0, 40);
+  // Eski kayıtlar: nesne adresleri (blob:) oturum sonunda geçersizleşir → "dosya bulunamadı, yeniden seç".
+  // Yeni kayıtlar dosyanın tam yolunu (filePath) ve kalıcı elitlig-studio://media adresini tutar.
+  if (typeof out.url === "string" && out.url && !persistentUrl(out.url)) {
+    out.url = null;
+    if (out.kind === "image" || out.kind === "video") out.fileMissing = true;
+  }
+  if (out.kind === "slideshow") {
+    const all = Array.isArray(out.images) ? out.images : [];
+    out.images = all.filter((u) => persistentUrl(u)).slice(0, 40);
+    if (out.images.length < Math.min(40, all.length)) out.missingImages = all.length - out.images.length;
+  }
   return out;
 }
 
