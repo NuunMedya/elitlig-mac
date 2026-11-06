@@ -531,7 +531,8 @@ test("öne çıkan oturumu: iptal süreci öldürür, dosyaları siler; boş otu
   renderer.pushChunk(s.renderId, HEADER);
   assert.equal(renderer.cancel(s.renderId), true);
   assert.equal(children[0].killed, true);
-  await tick(); await tick();
+  // Ham dosya akışının açılışı / kapanışı eşzamansız: temizlik bitene kadar bekle (en çok 2 sn).
+  for (let i = 0; i < 100 && fs.readdirSync(path.join(root, "tmp")).length; i += 1) await new Promise((r) => setTimeout(r, 20));
   assert.equal(renderer.active(), false);
   assert.deepEqual(fs.readdirSync(path.join(root, "tmp")), []);
   assert.deepEqual(fs.readdirSync(path.join(root, "highlights")), []);

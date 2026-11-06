@@ -255,8 +255,17 @@ function createRenderer({
     const cleanup = () => {
       for (const f of [s.out, s.rawFile, s.out.replace(/\.mp4$/, ".jpg")]) { try { fs.unlinkSync(f); } catch { /* yoksay */ } }
     };
+    // Ham dosya akışı henüz açılmamış olabilir (açılış eşzamansız): kapanınca da temizle,
+    // yoksa iptalden sonra açılan dosya geride kalır.
+    const rawClosed = new Promise((resolve) => {
+      const st = s.rawStream;
+      if (!st || st.closed) { resolve(); return; }
+      st.once("close", resolve);
+      st.once("error", resolve);
+    });
     try { s.rawStream.destroy(); } catch { /* yoksay */ }
-    if (s.live?.exited) s.live.exited.then(cleanup); else cleanup();
+    cleanup();
+    Promise.all([rawClosed, s.live?.exited || Promise.resolve()]).then(cleanup, cleanup);
     return true;
   }
 
