@@ -73,8 +73,8 @@ const granularity = (items) => {
  * sources: [{ angle, name, complete, growing, segmentSeconds }]
  * → { endWall, startWall, plans: [{ angle, name, items, startWall, endWall, durationMs }], skipped: [{ angle, reason }] }
  */
-function planReplay({ sources = [], seconds = 10, minAngleMs = MIN_ANGLE_MS, staleEdgeMs = STALE_EDGE_MS }) {
-  const want = Math.min(30, Math.max(1, Number(seconds) || 10)) * 1000;
+function planReplay({ sources = [], seconds = 15, minAngleMs = MIN_ANGLE_MS, staleEdgeMs = STALE_EDGE_MS }) {
+  const want = Math.min(30, Math.max(1, Number(seconds) || 15)) * 1000;
   const prepared = sources.map((s) => ({ ...s, items: usableItems(s) }));
   const skipped = [];
   const withData = prepared.filter((s) => {
@@ -261,7 +261,7 @@ function createReplayStore({
    * sources: [{ angle: "program" | kaynak kimliği, name, complete, growing }]
    * → { ok, replay, skipped? } | { ok:false, error }
    */
-  async function save({ sources = [], seconds = 10, label, kind = "goal", eventId, playerName, minute, inSummary, sessionId = null } = {}) {
+  async function save({ sources = [], seconds = 15, label, kind = "goal", eventId, playerName, minute, inSummary, sessionId = null } = {}) {
     if (!sources.length) return error("NOT_STREAMING");
     const plan = planReplay({ sources, seconds });
     if (!plan.plans.length) return error("NO_BUFFER");
@@ -303,7 +303,7 @@ function createReplayStore({
         uploaded: null,
         durationMs: Math.max(...angles.map((a) => a.durationMs || 0)),
         sessionId,
-        window: { start: new Date(plan.startWall).toISOString(), end: new Date(plan.endWall).toISOString(), seconds: Math.min(30, Math.max(1, Number(seconds) || 10)) },
+        window: { start: new Date(plan.startWall).toISOString(), end: new Date(plan.endWall).toISOString(), seconds: Math.min(30, Math.max(1, Number(seconds) || 15)) },
         angles,
       };
       writeMeta(meta);
