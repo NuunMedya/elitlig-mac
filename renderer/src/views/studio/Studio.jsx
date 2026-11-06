@@ -11,7 +11,12 @@
 //
 //   Üst çubuk   yalın: skor + maç, yayın durumu, YAYIN SAĞLIĞI, çalışma alanı,
 //               kısayollar (?), AYARLAR (dişli), PROGRAMDAN ÇIK (yayın sürerken onaylı)
-//   Sol şerit   KISAYOL ŞERİDİ (./shortcuts): düzenlenebilir iki sütunlu ızgara; işlevsel
+//   YERLEŞİM    (./layout) ekranın tamamı yapboz gibi döşenir (dockview): bölmeler, sekme
+//               grupları, panolar (react-grid-layout). Üst çubukta DÜZENLE: sürükle, böl,
+//               birleştir, büyüt / küçült, yüzen pencere, kaldır; "Kutu ekle" (kaldırılanlar
+//               en üstte), "Yeni sekme" (kendi panon), "Hazır düzen". Ayarlar › Yerleşim'de ağaç.
+//               Eski sol şerit / sahne ızgarası / alt panel ilk açılışta buraya göç eder.
+//   Sol şerit   KISAYOL ŞERİDİ (./shortcuts) artık "Kısayollar" panosu: iki sütunlu; işlevsel
 //               parçacıklar (Yayın, Mikrofon, VAR, Tekrar [açı seçimi], Önemli an, Olay gir,
 //               takım GOL'leri, Skorbord çeşidi, Altyazı, Röportaj, Bölüm, LED, sahneler,
 //               gol müziği…). 1×1 / 2×2, sürükle-bırak, sağ tık, "+" katalog; Ayarlar'da da.
@@ -49,8 +54,8 @@ import { backupIngestUrl, encodingPreset, ingestUrl, keyAction, normalizeEncodin
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../lib/studio/transitions";
 import { DEFAULT_BRANDING } from "../../lib/studio/stinger";
 import { micWarning } from "../../lib/studio/var";
-import { FIXED_SHORTCUTS, WORKSPACES, workspaceOf } from "../../lib/studio/scenesWorkspace";
-import { loadStage, presetForWorkspace, presetTiles, saveStage, setTileOpts, stageHasPreview } from "../../lib/studio/stageGrid";
+import { FIXED_SHORTCUTS, workspaceOf } from "../../lib/studio/scenesWorkspace";
+import { loadStage, presetForWorkspace, presetTiles, saveStage } from "../../lib/studio/stageGrid";
 import { scorerLines } from "../../lib/studio/scorebug";
 import { eventLabel, isGoalCode, timerNowMs } from "../../lib/studio/match";
 import { PROGRAM_ANGLE, anglesOf, anglesToRecord, buildReplayQueue, defaultAngles, metaFor, recordableSources, replayBanner, replayTitle } from "../../lib/studio/replays";
@@ -68,7 +73,7 @@ import { useHighlights } from "./useHighlights";
 import { useStable } from "./useStable";
 import { errorText } from "./studioApi";
 import { tileWarning, useTileRenderer } from "./Multiview";
-import Dock, { clampDock } from "./Dock";
+import { clampDock } from "./Dock";
 import { SourceDialog } from "./SourcesPanel";
 import ReplayPanel from "./ReplayPanel";
 import HighlightsPanel from "./HighlightsPanel";
@@ -78,12 +83,11 @@ import PlayerPicker from "./PlayerPicker";
 import { ManageDock } from "./manage";
 import Monitor from "./scenes/Monitor";
 import { SceneEditor, ScenesTab, TemplateDialog, TemplateGallery } from "./scenes/ScenesPanel";
-import StageGrid, { StagePresetPicker } from "./stage/StageGrid";
 import { AnglesTile, ClockTile, LedMonitor, MetersTile, SceneCell, SceneCellPicker, ScenesStrip } from "./stage/StageTiles";
 import ReplayPreviewOverlay from "./modes/ReplayPreviewOverlay";
 import TransitionPanel from "./scenes/TransitionPanel";
 import FullscreenView from "./scenes/FullscreenView";
-import ShortcutRail, { useRail } from "./shortcuts/ShortcutRail";
+import { useRail } from "./shortcuts/ShortcutRail";
 import EventEntry from "./shortcuts/EventEntry";
 import HealthChip from "./scenes/HealthChip";
 import { useChapters, useLowBitrate, useSilenceWatch } from "./scenes/useOperatorAlerts";
@@ -105,8 +109,15 @@ import { useStudioSettings } from "./settings/useStudioSettings";
 import { HOTKEY_ACTIONS, keyText, localRecordOptions, recordEstimate, recordQualityOf } from "./settings/settings";
 // ── alt panel çalışma alanı (sütunlar, parçalar) + ayar şablonları ──
 import { useDock } from "./dock/useDock";
-import { focusPanel, panelOf } from "./dock/dockModel";
-import { PartsProvider } from "./dock/parts";
+import { panelOf } from "./dock/dockModel";
+// ── ekran yerleşimi (./layout): dockview bölmeleri + panolar ──
+import Workspace from "./layout/Workspace";
+import LayoutToolbar from "./layout/LayoutToolbar";
+import LayoutSettings, { BoardEditor } from "./layout/LayoutSettings";
+import { useLayout } from "./layout/useLayout";
+import { boardPanelId, componentOf, dockPanelIds, panelMeta } from "./layout/layoutModel";
+import { PanelScope, PartsProvider } from "./dock/parts";
+import AutoTransition from "./layout/AutoTransition";
 import { normalizeModeSettings } from "../../lib/studio/modes";
 import logoInline from "../../assets/elitlig-beyaz.png?inline";
 import "./studio.css";
@@ -120,6 +131,9 @@ const ProgramAudioStrip = audioStripMod?.default || audioStripMod?.ProgramAudioS
 const goalMusicMod = firstMod(import.meta.glob(["./goalmusic/index.js", "./goalmusic/index.jsx"], { eager: true }));
 const useGoalMusicMod = typeof goalMusicMod?.useGoalMusic === "function" ? goalMusicMod.useGoalMusic : null;
 const GoalMusicButtons = goalMusicMod?.GoalMusicButtons || null;
+const GoalMusicPanel = goalMusicMod?.GoalMusicPanel || null;
+// Yükleme günlüğü (modes/UploadLog) ayrı panel olarak da eklenebilir.
+const UploadLogPanel = firstMod(import.meta.glob("./modes/UploadLog.jsx", { eager: true }))?.default || null;
 const useNoGoalMusic = () => null;
 const useGoalMusicSafe = useGoalMusicMod || useNoGoalMusic;
 // "Yayına giden ses" seçicisi (modes/ModeTab) — Ayarlar › Tekrar'da da (modül yoksa gösterilmez).
@@ -217,20 +231,25 @@ export default function Studio({ auth, go }) {
   dockRef.current = dock;
   const dockPanelsRef = useRef([]); // o an kullanılabilen paneller (aşağıda dolar)
   const [dockFlash, setDockFlash] = useState(null);
-  /** Panele git (üst çubuk, kısayollar, bağlantılar). Yapılandırma sekmeleri Ayarlar'da açılır. */
+  /* ───────── ekran yerleşimi (./layout): bölmeler, sekme grupları, panolar ───────── */
+  const lay = useLayout({ dockH: prefs.dockH });
+  /** Panele git (üst çubuk, kısayollar, bağlantılar): ekrandaysa öne gelir, değilse eklenir. Yapılandırma sekmeleri Ayarlar'da açılır. */
   const openPanel = useStable((t) => {
     const key = String(t || "").replace(/^mode:/, "");
     if (SETTINGS_TABS[key]) { setSettingsSection(SETTINGS_TABS[key]); return; }
-    if (!panelOf(key)) return;
-    const res = focusPanel(dockRef.current, key, dockPanelsRef.current);
-    setDock(res.dock);
-    if (res.colId) { setDockFlash(res.colId); setTimeout(() => setDockFlash((f) => (f === res.colId ? null : f)), 1200); }
+    if (!panelMeta(key)) return;
+    const c = lay.ctrlRef.current;
+    if (!c) return;
+    const had = c.has(key);
+    c.add(key);
+    setDockFlash(key);
+    setTimeout(() => setDockFlash((f) => (f === key ? null : f)), 1200);
+    if (!had) toast(`“${panelMeta(key).label}” ekrana eklendi (Düzenle ile yerini değiştirebilirsin).`, { tone: "info", timeout: 2600 });
   });
 
   /* ───────── sahne alanı ızgarası (stage/StageGrid, lib/studio/stageGrid.js) ───────── */
   // Monitörler ve araç kutuları hücre ızgarasında; hazır düzenler eski çalışma alanı anahtarlarına eşlenir.
   const [stage, setStage] = useState(() => loadStage(store, prefs.workspace));
-  const [stageEdit, setStageEdit] = useState(false);
   useEffect(() => { saveStage(store, stage); }, [stage]);
   const wsSeenRef = useRef(prefs.workspace);
   useEffect(() => {
@@ -239,11 +258,8 @@ export default function Studio({ auth, go }) {
     wsSeenRef.current = prefs.workspace;
     const key = presetForWorkspace(prefs.workspace);
     setStage((st) => (st.preset === key && !st.custom ? st : { ...st, preset: key, custom: false, tiles: presetTiles(key) }));
-  }, [prefs.workspace]);
-  const applyPreset = useCallback((key) => {
-    setStage((st) => ({ ...st, preset: key, custom: false, tiles: presetTiles(key) }));
-    if (WORKSPACES.some((w) => w.key === key)) { wsSeenRef.current = key; setPref("workspace", key); }
-  }, [setPref]);
+    lay.ctrlRef.current?.applyStageTiles?.(presetTiles(key)); // yerleşimde ekran bölgesi yeniden kurulur
+  }, [prefs.workspace]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ───────── maç (yalnız Maç yönetimi'nden seçilir) ───────── */
   const [matchId, setMatchId] = useState(() => { try { return Number(localStorage.getItem(MATCH_KEY)) || null; } catch { return null; } });
@@ -472,7 +488,7 @@ export default function Studio({ auth, go }) {
 
   /* ───────── program / önizleme ───────── */
   const ws = workspaceOf(prefs.workspace);
-  const studioMode = Boolean(prefs.studioMode) && stageHasPreview(stage.tiles);
+  const studioMode = Boolean(prefs.studioMode) && lay.has("pvw");
   const tKind = transitionKind(prefs.transition);
   const tMs = transitionMs(tKind.key, prefs.transitionMs);
 
@@ -906,7 +922,7 @@ export default function Studio({ auth, go }) {
 
   /* ───────── program ses şeridi yuvası (audio/ProgramAudioStrip, başka modül) ───────── */
   const programAudio = ProgramAudioStrip ? <ProgramAudioStrip mixer={mixer} config={config} programIds={programIds} /> : null;
-  const hasMetersTile = stage.tiles.some((t) => t.type === "meters");
+  const hasMetersTile = lay.has("olcer");
 
   /* ───────── önizlemede tekrar düzenleme (modes/ReplayPreviewOverlay) ───────── */
   // Tekrar kipi önizlemedeyken önizleme monitörü düzenleyiciye döner: yakınlaştır / kaydır,
@@ -974,7 +990,7 @@ export default function Studio({ auth, go }) {
   /** Izgara kutusunun içeriği (tür başına). Monitörler tek tuvali paylaşır: düzende tekildirler. */
   const renderStageTile = (t) => {
     switch (t.type) {
-      case "preview": return studioMode || stageEdit ? previewMonitor : <div className="stg-box"><p className="st-hint" style={{ margin: "auto" }}>Stüdyo modu kapalı: sahneye tık doğrudan yayına.</p></div>;
+      case "preview": return studioMode || lay.edit ? previewMonitor : <div className="stg-box"><p className="st-hint" style={{ margin: "auto" }}>Stüdyo modu kapalı: sahneye tık doğrudan yayına.</p></div>;
       case "program": return programMonitor;
       case "transition": return transition(t.w > t.h * 1.2 ? "row" : "column");
       case "scenes": return <ScenesStrip tiles={tiles} tileProps={tileProps} onAddScene={openGallery} version={src.version} />;
@@ -986,8 +1002,16 @@ export default function Studio({ auth, go }) {
       default: return null;
     }
   };
-  const stageEditExtra = (t) => (t.type === "scene" ? <SceneCellPicker tile={t} tiles={tiles} onPick={(i) => setStage((s) => ({ ...s, custom: true, tiles: setTileOpts(s.tiles, t.id, { index: i }) }))} /> : null);
-  const stageView = <StageGrid stage={stage} onChange={setStage} edit={stageEdit} onEdit={setStageEdit} render={renderStageTile} editExtra={stageEditExtra} />;
+  /** Sahne hücresi paneli: düzenle kipinde numara seçici (panel kimliği "sceneCell~n" değişir). */
+  const sceneCellPanel = (index, panelId) => {
+    const t = { id: panelId, type: "scene", x: 0, y: 0, w: 3, h: 3, opts: { index } };
+    return (
+      <>
+        {renderStageTile(t)}
+        {lay.edit && <div className="lw-cellpick"><SceneCellPicker tile={t} tiles={tiles} onPick={(i) => { const c = lay.ctrlRef.current; if (!c || c.has(`sceneCell~${i}`)) return; c.add(`sceneCell~${i}`, { panel: panelId }); c.remove(panelId); }} /></div>}
+      </>
+    );
+  };
 
   /* ───────── kısayol şeridi bağlamı (parçacıkların okuduğu durum + eylemler) ───────── */
   // Tekrar hızı: yayın modları varsa kip ayarı (prefs.modes.rate), yoksa eski tercih.
@@ -1062,9 +1086,22 @@ export default function Studio({ auth, go }) {
     interview,
     led, openLedTab: () => setTab("led"),
     ready: { ids: readyIds, go: onReady },
+    // Ayarlar › Kısayollar panosu kataloğu: düğmeyi panoya ekle.
+    addToRail: (type, size, opts) => {
+      const sz = String(size || "1x1").split("x").map((n) => Number(n) || 1);
+      lay.setLayout((l) => {
+        const b = l.boards.rail;
+        if (!b) return l;
+        const m = componentOf(`w:${type}`);
+        if (!m) return l;
+        const bottom = b.items.reduce((mx, it) => Math.max(mx, it.y + it.h), 0);
+        return { ...l, boards: { ...l.boards, rail: { ...b, items: [...b.items, { i: `i${Date.now().toString(36)}`, t: m.key, x: 0, y: bottom, w: Math.min(b.cols, sz[0] >= 2 ? 2 : 1), h: (sz[1] >= 2 ? 2 : 1) * 2, ...(opts ? { o: opts } : {}) }] } } };
+      });
+    },
     sceneTile: { register: registerTile, programId: programIdForTally, previewId: studioMode && !modes.previewOverride ? config.previewSceneId : null, onPreview: toPreview, onProgram: toProgram },
   };
-  const railHasGoLive = rail.items.some((x) => x.type === "golive");
+  // Ekrandaki panolarda "Yayın" parçacığı varsa üst çubuktaki düğme gizlenir.
+  const railHasGoLive = Object.entries(lay.layout.boards).some(([id, b]) => lay.has(boardPanelId(id)) && b.items.some((x) => x.t === "w:golive"));
 
   /* ───────── alt panel panelleri (yalnız işletim; yapılandırma Ayarlar'da) ─────────
      render({ passive }): passive = çok sütunlu kip (özel kip sütunu önizlemeyi kendiliğinden almaz). */
@@ -1119,14 +1156,46 @@ export default function Studio({ auth, go }) {
   defPanel("led", () => <LedPanel led={led} scenes={config.scenes} matchId={matchId} ledMode={g?.ledMode} g={hasGraphics ? g : null} live={live} />, { count: led.status.open ? "●" : null });
   defPanel("olaylar", () => <div className="st-dock-events"><EventEntry ctx={railCtx} onClose={() => {}} /></div>);
   dockPanelsRef.current = Object.keys(dockDefs);
+  defPanel("bolumler", () => <PanelScope panel="yayin" only="chapters"><div className="st-bcastwrap lw-solo" data-solo-panel="yayin" data-solo-part="chapters">{dockDefs.yayin.render({ passive: true })}</div></PanelScope>, { count: chapters.chapters.length || null });
+  if (GoalMusicPanel) defPanel("golMuzigi", () => (goalMusic ? <div className="lw-pad"><GoalMusicPanel gm={goalMusic} /></div> : <p className="st-hint st-pad">Gol müziği için maç aç (takımların müzikleri).</p>), { count: goalMusic?.playing ? "●" : null });
+  if (UploadLogPanel) defPanel("yukleme", () => <div className="lw-pad"><UploadLogPanel defaultOpen /></div>);
+
+  /* ───────── ekran yerleşimi: panel / bileşen sözleşmesi (./layout) ───────── */
+  const STAGE_KIND = { pvw: "preview", pgm: "program", gecis: "transition", sahneSerit: "scenes", ledPvw: "led", acilar: "angles", olcer: "meters", saat: "clock" };
+  const renderLayoutPanel = (kind, opts, panelId) => {
+    if (kind === "sceneCell") return sceneCellPanel(Number(opts?.index) || 0, panelId);
+    if (kind === "gecis") return <AutoTransition render={transition} />;
+    if (STAGE_KIND[kind]) return renderStageTile({ id: panelId, type: STAGE_KIND[kind], x: 0, y: 0, w: 4, h: 4 });
+    const d = dockDefs[kind];
+    return d ? d.render({ passive: true, column: true }) : null;
+  };
+  const layoutValue = {
+    renderPanel: renderLayoutPanel,
+    panelBody: (kind) => dockDefs[kind]?.render({ passive: true, column: true }) ?? null,
+    panelInfo: (kind) => {
+      const m = panelMeta(kind);
+      const d = dockDefs[kind];
+      return { icon: d?.icon || m?.icon, count: d?.count || null, accent: Boolean(m?.mode), pvw: hasModes && Boolean(m?.mode) && modes.previewMode === m.mode, flash: dockFlash === kind };
+    },
+    onActivate: (k) => onDockActivate(k), onDeactivate: (k) => onDockDeactivate(k),
+    railCtx, mixer: mixer?.setStrip ? mixer : null, zoom, setEdit: lay.setEdit,
+    transition,
+    clock: { minute: live.match ? live.minute : null, period: live.match ? live.period : null },
+    meters: { strip: programAudio, mixer, muted },
+    angles: { replays: replays.replays, meta: replays.meta, sources: config.sources, cursor: RE?.previewing ? RE.rm.cursor : null, onPick: pickAngle },
+    reji: { matchId, live, ready: Boolean(live.match && Number(live.match.id) === Number(matchId)), onGoalTap: onDockGoalTap, onEventCreated: onDockEventCreated, goalMusic },
+    GoalMusicPanel, GoalMusicButtons, EventEntry,
+  };
+  // Kısayol tuşu (Olay gir): panolardaki parçacığın açılır paneli.
+  railPopRef.current = (type) => Boolean(lay.ctrlRef.current?.openWidgetPop?.(type));
   // Sütun kipinde özel kip sütununa dokununca önizleme o kipe geçer; sütun kalkınca bırakılır.
   const onDockActivate = useStable((key) => {
-    const m = panelOf(key)?.mode;
-    if (!hasModes || !m || dockRef.current.mode !== "columns" || !modes.setPreview) return;
+    const m = panelMeta(key)?.mode;
+    if (!hasModes || !m || !modes.setPreview) return;
     if (modes.previewMode !== m) modes.setPreview(m);
   });
   const onDockDeactivate = useStable((key) => {
-    const m = panelOf(key)?.mode;
+    const m = panelMeta(key)?.mode;
     if (hasModes && m) modes.clearPreview?.(m);
   });
   // Sütun kipinde bir sahne önizlemeye alınınca özel kip önizlemesi bırakılır (sahne görünsün).
@@ -1134,7 +1203,7 @@ export default function Studio({ auth, go }) {
   useEffect(() => {
     if (lastPvwRef.current === config.previewSceneId) return;
     lastPvwRef.current = config.previewSceneId;
-    if (hasModes && dockRef.current.mode === "columns" && modes.previewMode) modes.clearPreview?.(modes.previewMode);
+    if (hasModes && modes.previewMode) modes.clearPreview?.(modes.previewMode);
   }, [config.previewSceneId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ───────── Ayarlar: alt panelden taşınan yapılandırma bölümleri ───────── */
@@ -1144,15 +1213,24 @@ export default function Studio({ auth, go }) {
     ...((BrandTab || PresetsTab) && g ? [{ key: "marka", label: "Marka & ön ayarlar", icon: "palette", group: "grafik", render: () => <div className="st-gfxpair is-brand">{BrandTab && <BrandTab {...gfxProps} />}{PresetsTab && <PresetsTab {...gfxProps} />}</div> }] : []),
     ...((SponsorPanel || LinksPanel) && g ? [{ key: "sponsor", label: "Sponsor & linkler", icon: "handshake", group: "grafik", render: () => <div className="st-gfxpair">{SponsorPanel && <SponsorPanel {...gfxProps} />}{LinksPanel && <LinksPanel {...gfxProps} />}</div> }] : []),
     { key: "ses", label: "Ses", icon: "mic", group: "panel", render: audioPanel },
+    { key: "yerlesim", label: "Ekran yerleşimi", icon: "board", group: "yerlesim", render: ({ Section }) => <LayoutSettings Section={Section} layout={lay.layout} setLayout={lay.setLayout} ctrl={() => lay.ctrlRef.current} ctxLabel={layoutValue} onAsk={ask} /> },
   ];
+  const railBoardEditor = (Section) => (lay.layout.boards.rail
+    ? (
+      <Section title="Kısayollar panosu" sub="Eski sol şerit artık bir pano: düğmeleri burada ya da stüdyoda Düzenle kipinde sürükleyerek taşı, köşeden boyutla; başka panolara / sekmelere de taşıyabilirsin.">
+        <BoardEditor id="rail" board={lay.layout.boards.rail} layout={lay.layout} setLayout={lay.setLayout} c={lay.ctrlRef.current} ctxLabel={layoutValue} />
+        {!lay.has(boardPanelId("rail")) && <button type="button" className="btn btn--sm" onClick={() => lay.ctrlRef.current?.add(boardPanelId("rail"), { direction: "left" })}><Icon name="plus" size={13} /> Kısayollar panosunu ekrana geri koy</button>}
+      </Section>
+    ) : null);
   /** Ayar şablonu uygulandı: canlı uygulanabilenleri hemen yeniden oku. Dönüş: yeniden yükleme gerekiyor mu. */
   const onProfileApplied = useStable((groups) => {
     if (groups.includes("prefs")) setPrefs(readPrefs());
     if (groups.includes("settings")) reloadSettings();
     if (groups.includes("rail")) rail.reload?.();
     if (groups.includes("dock")) { try { setDock(JSON.parse(localStorage.getItem("studio.dock.v1") || "null")); } catch { /* yoksay */ } }
+    if (groups.includes("layout")) lay.reload();
     if (groups.includes("led")) { try { const v = JSON.parse(localStorage.getItem("studio.led.v2") || "null"); if (v && led.setPref) led.setPref(v); } catch { /* yoksay */ } }
-    return groups.some((k) => !["prefs", "settings", "rail", "dock", "led"].includes(k));
+    return groups.some((k) => !["prefs", "settings", "rail", "dock", "led", "layout"].includes(k));
   });
 
   return (
@@ -1166,7 +1244,7 @@ export default function Studio({ auth, go }) {
         <StatusPill state={st.state} since={engine.since} />
         <HealthChip status={st} getStats={comp.getStats} targetFps={preset.fps} encoding={onAir} />
         <span className="st-top__spacer" />
-        <StagePresetPicker stage={stage} onPreset={applyPreset} edit={stageEdit} onEdit={setStageEdit} />
+        <LayoutToolbar edit={lay.edit} setEdit={lay.setEdit} ctrlRef={lay.ctrlRef} preset={lay.layout.preset} onSettings={() => openSettings("yerlesim")} />
         {!railHasGoLive && (
           <button type="button" className={`btn ${onAir ? "" : "btn--red"} st-golive`} disabled={busy} onClick={topStart}>
             <Icon name={onAir ? "stop" : "broadcast"} size={14} /> {onAir ? (engine.mode === "rehearsal" ? "Provayı bitir" : "Yayını durdur") : "Yayını başlat"}
@@ -1179,15 +1257,9 @@ export default function Studio({ auth, go }) {
       </header>
 
       <div className="st-shell">
-        <ShortcutRail items={rail.items} setItems={rail.setItems} reset={rail.reset} ctx={railCtx} zoom={zoom} onOpenSettings={() => openSettings("serit")} />
-
         <div className="st-body">
-          {stageView}
-
-          {/* ── alt panel: çok sütunlu çalışma alanı (./Dock.jsx, ./dock/) ── */}
-          <Dock dock={dock} setDock={setDock} defs={dockDefs} height={prefs.dockH} onHeight={setDockH} flashId={dockFlash}
-            previewMode={hasModes ? modes.previewMode : null} onActivate={onDockActivate} onDeactivate={onDockDeactivate} onOpenSettings={() => openSettings("panel")}
-            extra={<button type="button" className="st-dock__settings" onClick={() => openSettings("panel")}><Icon name="sliders" size={13} /> Ayarlar</button>} />
+          {/* ── ekran yerleşimi: bölmeler, sekme grupları, panolar (./layout) ── */}
+          <Workspace layout={lay.layout} setLayout={lay.setLayout} edit={lay.edit} ctrlRef={lay.ctrlRef} value={layoutValue} />
 
           {editSceneId && (
             <SceneEditor config={config} configRef={configRef} runtimeRef={src.runtimeRef} sceneId={editSceneId} selectedLayerId={selectedLayerId} onSelectLayer={setSelectedLayerId}
@@ -1199,7 +1271,7 @@ export default function Studio({ auth, go }) {
         {settingsSection && (
           <SettingsPage section={settingsSection} onSection={setSettingsSection} settings={settings} set={setSetting} prefs={prefs} setPref={setPref} led={led} scenes={sceneList} engine={engine} toast={toast}
             rail={rail} railCtx={railCtx} hasModes={hasModes} brandRef={brandRef}
-            extraSections={settingsExtra} dock={dock} setDock={setDock} resetDock={resetDock} dockDefs={dockDefs}
+            extraSections={settingsExtra} dock={dock} setDock={setDock} resetDock={resetDock} dockDefs={dockDefs} renderRail={railBoardEditor}
             onProfileApplied={onProfileApplied} canReload={!onAir} RoutePicker={RoutePicker} audio={mixer}
             onClose={() => setSettingsSection(null)}
             onReset={async () => { if (await ask({ title: "Stüdyo ayarlarını sıfırla", message: "Kodlayıcı, kayıt kalitesi, kısayollar, uyarılar ve görünüm ayarları varsayılana döner. Sahneler ve kaynaklar silinmez.", confirmLabel: "Sıfırla", danger: true })) { resetSettings(); toast("Stüdyo ayarları sıfırlandı.", { tone: "success" }); } }} />

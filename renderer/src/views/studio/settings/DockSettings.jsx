@@ -9,7 +9,7 @@ import {
 } from "../dock/dockModel";
 import { PanelScope, allPartsOf } from "../dock/parts";
 
-export default function DockSettings({ Section, Choice, dock, setDock, resetDock, defs = {} }) {
+export default function DockSettings({ Section, Choice, dock, setDock, resetDock, defs = {}, partsOnly = false }) {
   const available = Object.keys(defs);
   const options = enabledPanels(dock, available);
   const [open, setOpen] = useState(null); // parçaları açık panel
@@ -17,7 +17,7 @@ export default function DockSettings({ Section, Choice, dock, setDock, resetDock
   const cols = dock.mode === "tabs";
   return (
     <>
-      <Section title="Düzen" sub="Çok sütunlu çalışma alanında paneller yan yana, hepsi aynı anda açıktır. Ayraçları sürükleyerek genişlikleri değiştirebilirsin.">
+      {!partsOnly && <Section title="Düzen" sub="Çok sütunlu çalışma alanında paneller yan yana, hepsi aynı anda açıktır. Ayraçları sürükleyerek genişlikleri değiştirebilirsin.">
         <div className="st-choices">
           <Choice on={!cols} title="Sütunlar (önerilen)" text="3–4 panel yan yana: ör. Reji | Sahneler | Tekrar | Ses" onClick={() => setDock((d) => setMode(d, "columns"))} />
           <Choice on={cols} title="Tek sekme" text="Eski düzen: sekmeler ve tek panel" onClick={() => setDock((d) => setMode(d, "tabs"))} />
@@ -54,7 +54,7 @@ export default function DockSettings({ Section, Choice, dock, setDock, resetDock
           </>
         )}
         <button type="button" className="btn btn--sm btn--ghost" onClick={resetDock}><Icon name="undo" size={13} /> Varsayılan düzene dön (Reji | Sahneler | Tekrar | Ses)</button>
-      </Section>
+      </Section>}
 
       <Section title="Paneller ve parçaları" sub="Alt panelde hangi paneller olsun, hangi sırayla; her panelin içinde hangi ayrıntılar görünsün. Gizlenen parçalar buradan (ya da sütun başlığındaki ⋯ menüsünden) geri açılır.">
         <ul className="st-dset__list">

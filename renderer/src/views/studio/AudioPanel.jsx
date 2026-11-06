@@ -57,7 +57,7 @@ export function LevelMeter({ getAnalyser, muted, compact = false }) {
 }
 
 /* ───────── ölçer bankası: tek döngü ───────── */
-function useMeterBank() {
+export function useMeterBank() {
   const items = useRef(new Map()); // key → { get, el, state }
   useEffect(() => {
     let raf = 0;
@@ -137,7 +137,7 @@ function Fader({ db, onChange, label }) {
 
 const GROUP_SHORT = Object.fromEntries(ROUTE_GROUPS.map((g) => [g.key, g.short]));
 
-function Strip({ strip, st, audio, bind, status }) {
+export function Strip({ strip, st, audio, bind, status }) {
   const air = audio.airOf ? audio.airOf(strip.id) : null;
   const onAir = air ? air.onAir : audio.routeNow?.[strip.group] && !st.mute;
   const set = (patch) => audio.setStrip(strip.id, patch);
@@ -172,7 +172,7 @@ function Strip({ strip, st, audio, bind, status }) {
   );
 }
 
-function MasterStrip({ audio, bind }) {
+export function MasterStrip({ audio, bind }) {
   const m = audio.settings.master;
   const mon = audio.settings.monitor;
   return (
@@ -322,6 +322,15 @@ function MusicCard({ audio }) {
   );
 }
 
+/** Şeridin bağlantı durumu (canlı / bekliyor / hata) — panelde ve yerleşim bileşenlerinde aynı. */
+export function stripStatus(audio, s) {
+  const status = audio?.micStatus?.status;
+  if (s.kind === "mic") return status === "live" ? "live" : status === "waiting" ? "wait" : "err";
+  if (s.kind === "input" || s.kind === "file") return { live: "live", waiting: "wait", error: "err", file: "err" }[audio.inputStatus?.[s.id]] || null;
+  if (s.kind === "music") return audio.music?.playing ? "live" : null;
+  return null;
+}
+
 /**
  * audio / mixer: useStudioAudio sonucu. Eski çağrı (audio = prefs.audio, setAudio, mixer) da çalışır.
  */
@@ -402,8 +411,7 @@ export default function AudioPanel({ audio: audioProp, mixer, devices = { audio:
         <Part id="strips" label="Kanal şeritleri">
         <div className="mx-strips">
           {audio.strips.map((s) => (
-            <Strip key={s.id} strip={s} st={a.strips[s.id]} audio={audio} bind={bind}
-              status={s.kind === "mic" ? (status === "live" ? "live" : status === "waiting" ? "wait" : "err") : s.kind === "input" || s.kind === "file" ? ({ live: "live", waiting: "wait", error: "err", file: "err" }[audio.inputStatus[s.id]] || null) : s.kind === "music" ? (audio.music.playing ? "live" : null) : null} />
+            <Strip key={s.id} strip={s} st={a.strips[s.id]} audio={audio} bind={bind} status={stripStatus(audio, s)} />
           ))}
         </div>
         </Part>

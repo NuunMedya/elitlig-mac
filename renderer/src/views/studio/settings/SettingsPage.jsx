@@ -4,8 +4,9 @@
 //              LED · Görünüm · Bildirimler
 //   Grafikler  Skorbord · Altyazı · Marka & ön ayarlar · Sponsor & linkler (eskiden alt
 //              panel sekmeleri; aynı bileşenler Studio'dan extraSections ile gelir)
-//   Paneller   Alt panel (sütunlar, panelleri aç / kapat / sırala, parça görünürlüğü) ·
-//              Ses (karıştırıcının tamamı) · Kısayol düğmeleri · Klavye kısayolları
+//   Yerleşim   Ekran yerleşimi (hazır düzenler, bölme / sekme grubu / sekme / pano ağacı,
+//              ekranda olmayanlar) · Kısayollar panosu · Panel parçaları (gizle / göster)
+//   Paneller   Ses (karıştırıcının tamamı) · Klavye kısayolları
 //   Şablonlar  Ayar şablonları (kaydet / uygula / dışa – içe aktar) · Gelişmiş
 //
 // Ayarlar ilgili kod yollarını besler: kodlama (prefs.encoding), geçiş
@@ -30,6 +31,7 @@ import VarThemeSection, { VAR_THEME_SECTION } from "./VarThemeSection"; // [var-
 
 export const SETTINGS_GROUPS = [
   { key: "genel", label: "Genel" },
+  { key: "yerlesim", label: "Yerleşim" },
   { key: "grafik", label: "Grafikler" },
   { key: "panel", label: "Paneller" },
   { key: "sablon", label: "Şablonlar" },
@@ -43,8 +45,8 @@ export const SETTINGS_SECTIONS = [
   { key: "led", label: "LED ekran", icon: "overview", group: "genel" },
   { key: "gorunum", label: "Görünüm", icon: "grid", group: "genel" },
   { key: "bildirim", label: "Bildirimler", icon: "bell", group: "genel" },
-  { key: "panel", label: "Alt panel", icon: "board", group: "panel" },
-  { key: "serit", label: "Kısayol düğmeleri", icon: "zap", group: "panel" },
+  { key: "serit", label: "Kısayollar panosu", icon: "zap", group: "yerlesim" },
+  { key: "panel", label: "Panel parçaları", icon: "eye", group: "yerlesim" },
   { key: "kisayol", label: "Klavye kısayolları", icon: "command", group: "panel" },
   { key: "sablon", label: "Ayar şablonları", icon: "copy", group: "sablon" },
   { key: "gelismis", label: "Gelişmiş", icon: "sliders", group: "sablon" },
@@ -137,6 +139,7 @@ function RailManager({ rail, scenes, ctx = null }) {
 function SettingsPage({
   section, onSection, settings, set, onReset, prefs, setPref, led, scenes, engine, onClose, toast, rail = null, hasModes = false, brandRef = null,
   railCtx = null, extraSections = [], dock = null, setDock = null, resetDock = null, dockDefs = {}, onProfileApplied = null, canReload = true, RoutePicker = null, audio = null,
+  renderRail = null,
 }) {
   const allSections = [...SETTINGS_SECTIONS, ...extraSections.map((x) => ({ group: "panel", ...x }))];
   const enc = prefs.encoding;
@@ -289,7 +292,7 @@ function SettingsPage({
   } else if (section === "gorunum") {
     body = (
       <>
-        <Section title="Çalışma alanı" sub="Ekranların yerleşimi (üst çubuktan da değişir).">
+        <Section title="Çalışma alanı" sub="Ekran bölgesinin (monitörler, geçiş, sahneler) hızlı düzeni; öbür bölmeler korunur. Ekranın tamamı için Ayarlar › Yerleşim ya da üst çubukta Hazır düzen / Düzenle.">
           <div className="st-wsgrid">
             {WORKSPACES.map((w) => (
               <button key={w.key} type="button" className={`st-wscard ${prefs.workspace === w.key ? "is-on" : ""}`} onClick={() => setPref("workspace", w.key)}>
@@ -310,15 +313,25 @@ function SettingsPage({
     );
   } else if (section === "panel") {
     body = dock && setDock
-      ? <DockSettings Section={Section} Choice={Choice} dock={dock} setDock={setDock} resetDock={resetDock} defs={dockDefs} />
+      ? <DockSettings Section={Section} Choice={Choice} dock={dock} setDock={setDock} resetDock={resetDock} defs={dockDefs} partsOnly />
       : <p className="st-hint">Alt panel düzeni yüklenemedi.</p>;
   } else if (section === "sablon") {
     body = <ProfilesSection Section={Section} onApplied={onProfileApplied} canReload={canReload} toast={toast} />;
   } else if (extraSections.some((x) => x.key === section)) {
     const x = extraSections.find((e) => e.key === section);
-    body = <div className="st-set__wide st-set__embed">{x.render()}</div>;
+    body = x.group === "yerlesim" ? x.render({ Section }) : <div className="st-set__wide st-set__embed">{x.render()}</div>;
   } else if (section === "serit") {
-    body = rail ? <RailManager rail={rail} scenes={scenes} ctx={railCtx} /> : <p className="st-hint">Kısayol şeridi yüklenemedi.</p>;
+    const railBoard = renderRail?.(Section);
+    body = railBoard
+      ? (
+        <>
+          {railBoard}
+          <Section title="Düğme ekle" sub="Her düğme (parçacık) işlevseldir; Kısayollar panosuna eklenir. Stüdyoda Düzenle › Kutu ekle ile herhangi bir panoya / sekmeye de konur.">
+            <RailCatalog compact ctx={railCtx} items={[]} scenes={scenes} onAdd={(type, size, opts) => railCtx?.addToRail?.(type, size, opts)} />
+          </Section>
+        </>
+      )
+      : rail ? <RailManager rail={rail} scenes={scenes} ctx={railCtx} /> : <p className="st-hint">Kısayol şeridi yüklenemedi.</p>;
   } else if (section === "kisayol") {
     const row = (a) => (
       <HotkeyRow key={a.key} action={a} keys={settings.hotkeys[a.key] || []}
