@@ -56,7 +56,7 @@ const error = (code, message = ERR[code]) => ({ ok: false, error: { code, messag
  * Kodlayıcı değişmişse (VideoToolbox → x264) eski parçalara geçilmez.
  * → { items: [...kronolojik], durationSec, includesGrowing }
  */
-function selectSegments({ complete = [], growing = null, seconds = 10, minGrowingSec = 0.5 }) {
+function selectSegments({ complete = [], growing = null, seconds = 15, minGrowingSec = 0.5 }) {
   const picked = [];
   let total = 0;
   let encoder = null;
@@ -337,9 +337,9 @@ function createClipStore({ clipsDir, getFfmpegPath, runImpl = ff.run, now = () =
   /**
    * sources: motorun clipSources() çıktısı. → { ok, clip } | { ok:false, error }
    */
-  async function save({ sources, seconds = 10, sessionId = null }) {
+  async function save({ sources, seconds = 15, sessionId = null }) {
     if (!sources) return error("NOT_STREAMING");
-    const want = Math.min(30, Math.max(1, Number(seconds) || 10));
+    const want = Math.min(30, Math.max(1, Number(seconds) || 15));
     const pick = selectSegments({ complete: sources.complete, growing: sources.growing, seconds: want });
     if (pick.durationSec < 1) return error("NO_BUFFER");
     ensureDir();

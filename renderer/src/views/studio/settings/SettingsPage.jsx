@@ -16,11 +16,13 @@ import { AUDIO_KBPS_CHOICES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, RE
 import { RAIL_WIDGETS, addWidget, moveWidget, removeWidget, toggleWidgetSize, widgetOf } from "../shortcuts/railModel";
 import { RailCatalog } from "../shortcuts/ShortcutRail";
 import TransitionsTab from "../scenes/TransitionsTab";
+import VarThemeSection, { VAR_THEME_SECTION } from "./VarThemeSection"; // [var-tema]
 
 export const SETTINGS_SECTIONS = [
   { key: "yayin", label: "Yayın", icon: "broadcast" },
   { key: "kayit", label: "Kayıt", icon: "download" },
   { key: "tekrar", label: "Tekrar", icon: "repeat" },
+  VAR_THEME_SECTION, // [var-tema] Ayarlar › VAR teması
   { key: "gecis", label: "Geçiş", icon: "swap" },
   { key: "led", label: "LED ekran", icon: "overview" },
   { key: "gorunum", label: "Görünüm", icon: "grid" },
@@ -211,6 +213,8 @@ function SettingsPage({ section, onSection, settings, set, onReset, prefs, setPr
         <Toggle checked={Boolean(prefs.replayAudio)} onChange={(v) => setPref("replayAudio", v)} title="Tekrarın sesi yayına gitsin" />
       </Section>
     );
+  } else if (section === VAR_THEME_SECTION.key) { // [var-tema]
+    body = <VarThemeSection prefs={prefs} setPref={setPref} />;
   } else if (section === "gecis") {
     body = <div className="st-set__wide"><TransitionsTab prefs={prefs} setPref={setPref} hasModes={hasModes} brandRef={brandRef} /></div>;
   } else if (section === "led") {

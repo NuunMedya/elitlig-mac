@@ -85,6 +85,8 @@ import ShortcutRail, { useRail } from "./shortcuts/ShortcutRail";
 import EventEntry from "./shortcuts/EventEntry";
 import HealthChip from "./scenes/HealthChip";
 import { useChapters, useLowBitrate, useSilenceWatch } from "./scenes/useOperatorAlerts";
+import { goalScoreAfter, isOwnGoalCode } from "./youtube/chapters"; // [bölüm] gol bölümü: skor + golcü
+import { createGoalTaps } from "./youtube/goalTaps"; // [bölüm] GOL'e basılan anlar
 import { useYoutubeStart } from "./youtube/YoutubeStartDialog"; // [medya] YouTube başlatma penceresi
 import { audioInputFromDraft } from "../../lib/studio/audio"; // [medya] ek ses kaynağı (aygıt / dosya)
 import { interviewClock, useInterview } from "./scenes/useInterview";
@@ -345,12 +347,13 @@ export default function Studio({ auth, go }) {
   const stopEncoder = async ({ askFirst = true } = {}) => {
     if (askFirst && engine.mode === "live" && !(await ask({ title: "Görüntüyü durdur", message: "Yayına görüntü gitmesi kesilir. YouTube yayını açık kalır; yeniden başlatıp devam edebilirsin.", confirmLabel: "Durdur", danger: true }))) return;
     setBusy(true);
-    try { await engine.stop(); } finally { setBusy(false); }
+    try { await chapters.sync.flush?.(); /* [bölüm] son durum YouTube'a */ await engine.stop(); } finally { setBusy(false); }
   };
   const endYoutube = async () => {
     if (!(await ask({ title: "Yayını bitir", message: "Görüntü kesilir ve YouTube yayını kapatılır. Kayıt kanalda kalır.", confirmLabel: "Bitir", danger: true }))) return;
     setBusy(true);
     try {
+      await chapters.sync.flush?.(); // [bölüm] son bölümler YouTube yayını kapanmadan gider
       await engine.stop();
       if (yt.stream?.broadcast_id) await yt.end();
       toast("Yayın bitti.", { tone: "success" });
@@ -679,8 +682,19 @@ export default function Studio({ auth, go }) {
   /* ───────── olay girişi (G sonra H / A kısayolu) ───────── */
   const [picker, setPicker] = useState(null);
   const [saving, setSaving] = useState(false);
+  // [bölüm] GOL'e basılan anlar → gol bölümü (basıştan 15 sn önce başlar, 45 sn).
+  const goalTapsRef = useRef(null);
+  if (!goalTapsRef.current) goalTapsRef.current = createGoalTaps();
+  const addGoalChapter = useStable(({ side, code, playerId, playerName, created } = {}) => {
+    if (!engine.active) return;
+    const at = goalTapsRef.current.take(side) ?? Date.now();
+    const sc = goalScoreAfter({ events: live.events, created, homeTeamId: live.homeTeamId, awayTeamId: live.awayTeamId, manual: live.manual, score: live.score, side, code: code || created?.olay_kodu });
+    const scorer = playerName || live.nameOf(playerId ?? created?.oyuncu_id) || null;
+    chapters.addGoal({ at, goal: { home: live.homeName, away: live.awayName, homeScore: sc.home, awayScore: sc.away, scorer, own: isOwnGoalCode(code || created?.olay_kodu) } });
+  });
   const askEvent = useStable((side, code, title) => {
     if (live.status !== "canli") { toast("Maç canlı değil: önce Maç yönetimi › Reji'den maçı başlat.", { tone: "warn", timeout: 4500 }); return; }
+    if (isGoalCode(code)) goalTapsRef.current.tap(side); // [bölüm]
     const clipKey = isGoalCode(code) && engine.active ? replays.capture({ kind: "goal", angles: liveAngles, seconds: settings.replay.seconds, meta: { side, code, minute: live.minute, period: live.period } }) : null;
     setPicker({ side, code, title, clipKey });
   });
@@ -690,6 +704,7 @@ export default function Studio({ auth, go }) {
   const dockGoalClipsRef = useRef([]);
   const onDockGoalTap = useStable(({ side, code } = {}) => {
     if (!engine.active || !isGoalCode(code)) return;
+    goalTapsRef.current.tap(side); // [bölüm]
     const key = replays.capture({ kind: "goal", angles: liveAngles, seconds: settings.replay.seconds, meta: { side, code, minute: live.minute, period: live.period } });
     if (!key) return;
     const entry = { key, side, timer: null };
@@ -701,7 +716,7 @@ export default function Studio({ auth, go }) {
   });
   const onDockEventCreated = useStable(({ event, playerName, side, code } = {}) => {
     if (!isGoalCode(code || event?.olay_kodu)) return;
-    if (engine.active) chapters.add(`Gol – ${playerName || live.nameOf(event?.oyuncu_id) || (side === "away" ? live.awayName : live.homeName)}`);
+    addGoalChapter({ side, code: code || event?.olay_kodu, playerName, created: event }); // [bölüm]
     const list = dockGoalClipsRef.current;
     // Kendi kalesine golde olayın tarafı GOL'e basılan taraftan farklı olabilir:
     // önce aynı taraf, yoksa bekleyen en eski klip.
@@ -723,7 +738,7 @@ export default function Studio({ auth, go }) {
     try {
       const created = await live.addEvent({ side: picker.side, code: picker.code, playerId });
       if (picker.clipKey) replays.attach(picker.clipKey, { eventId: Number(created?.id) || null, scorer: live.nameOf(playerId), side: picker.side, code: picker.code });
-      if (engine.active && isGoalCode(picker.code)) chapters.add(`Gol – ${live.nameOf(playerId) || (picker.side === "away" ? live.awayName : live.homeName)}`);
+      if (isGoalCode(picker.code)) addGoalChapter({ side: picker.side, code: picker.code, playerId, created }); // [bölüm]
       toast(`${eventLabel(picker.code)} kaydedildi (${live.minute}').`, { tone: "success" });
       setPicker(null);
     } catch (e) {
@@ -731,19 +746,21 @@ export default function Studio({ auth, go }) {
     } finally { setSaving(false); }
   };
   const cancelPicker = useStable(() => {
+    if (picker && isGoalCode(picker.code)) goalTapsRef.current.drop(picker.side); // [bölüm]
     if (picker?.clipKey) replays.attach(picker.clipKey, { eventId: null });
     setPicker(null);
   });
   /* "Olay gir" kısayolu (tür → iki takımın oyuncuları): gol türü seçildiği AN klip kaydı başlar. */
   const beginEvent = useStable((code) => {
     if (!isGoalCode(code) || !engine.active) return null;
+    goalTapsRef.current.tap(null); // [bölüm]
     return replays.capture({ kind: "goal", angles: liveAngles, seconds: settings.replay.seconds, meta: { code, minute: live.minute, period: live.period } }) || null;
   });
   const submitEvent = useStable(async ({ side, code, playerId, clipKey }) => {
     try {
       const created = await live.addEvent({ side, code, playerId });
       if (clipKey) replays.attach(clipKey, { eventId: Number(created?.id) || null, scorer: live.nameOf(playerId), side, code });
-      if (engine.active && isGoalCode(code)) chapters.add(`Gol – ${live.nameOf(playerId) || (side === "away" ? live.awayName : live.homeName)}`);
+      if (isGoalCode(code)) addGoalChapter({ side, code, playerId, created }); // [bölüm]
       toast(`${eventLabel(code)} kaydedildi (${live.minute}').`, { tone: "success" });
       return created;
     } catch (e) {
