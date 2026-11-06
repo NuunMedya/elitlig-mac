@@ -12,6 +12,7 @@ import * as api from "./studioApi";
 import YoutubeStartDialog from "./youtube/YoutubeStartDialog";
 import { parseStamp } from "./youtube/chapters";
 import "./youtube/youtube.css";
+import { Part } from "./dock/parts";
 import {
   BITRATE_MAX_KBPS, BITRATE_MIN_KBPS, BITRATE_PRESETS, FPS_CHOICES, PRIVACY_LABELS, RESOLUTION_CHOICES,
   bitrateAdvice, isRtmpUrl, joinRtmp, recommendedBitrate, streamStatusLabel, uploadNeedMbps, validateBitrate,
@@ -283,6 +284,7 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
       <div className="st-stack">
         {!engine.available && <div className="st-note is-warn"><Icon name="alert" size={14} /> Yayın motoru bu uygulama sürümünde yok. Reji kontrolleri yine çalışır.</div>}
         {engine.available && ff && !ff.available && <div className="st-note is-warn"><Icon name="alert" size={14} /> ffmpeg bulunamadı: yayın ve tekrar için gerekli.</div>}
+        <Part id="youtube" label="YouTube kartı">
         <section className="st-card">
           <header className="st-card__head"><Icon name="video" size={15} /><strong>YouTube</strong>
             {s && <span className={`pill pill--xs ${String(s.status).toLowerCase() === "live" ? "pill--red" : ""}`}>{streamStatusLabel(s.status)}</span>}
@@ -318,9 +320,11 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
             </>
           )}
         </section>
+        </Part>
       </div>
 
       <div className="st-stack">
+        <Part id="rtmp" label="Elle RTMP">
         <section className="st-card">
           <button type="button" className="st-card__head st-card__toggle" onClick={() => setManualOpen((v) => !v)} aria-expanded={manualOpen}>
             <Icon name="link" size={15} /><strong>Elle RTMP (yayın anahtarıyla)</strong><Icon name={manualOpen ? "chevronUp" : "chevronDown"} size={14} />
@@ -334,6 +338,8 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
           )}
           {(startedVia === "manual" || (manualOpen && watchLinkOf(match))) && matchId && <WatchLink matchId={matchId} match={match} toast={toast} />}
         </section>
+        </Part>
+        <Part id="rehearsal" label="Prova">
         <section className="st-card">
           <header className="st-card__head"><Icon name="target" size={15} /><strong>Prova (yayınsız kayıt)</strong></header>
           <p className="st-hint">Görüntü hiçbir yere gönderilmez; yalnız bu bilgisayarda kaydedilir. Tekrar ve özet denemek için.</p>
@@ -341,15 +347,18 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
             ? <button type="button" className="btn btn--block" disabled={busy} onClick={onStop}><Icon name="stop" size={13} /> Provayı bitir</button>
             : <button type="button" className="btn btn--block" disabled={busy || encodingNow || !engine.available} onClick={onRehearsal}><Icon name="play" size={13} /> Provayı başlat</button>}
         </section>
+        </Part>
       </div>
 
       <div className="st-stack">
-        <LocalRecordCard value={localRec} onChange={onLocalRec} engine={engine} recordInfo={recordInfo} onOpenSettings={onOpenSettings} />
-        {chapters && <ChaptersCard chapters={chapters} onAir={engine.active} toast={toast} hasBroadcast={Boolean(openStream)} />}
-        <EncodingCard encoding={encoding} onEncoding={onEncoding} locked={encodingNow} />
+        <Part id="localrec" label="Maçı bilgisayara kaydet"><LocalRecordCard value={localRec} onChange={onLocalRec} engine={engine} recordInfo={recordInfo} onOpenSettings={onOpenSettings} /></Part>
+        {chapters && <Part id="chapters" label="YouTube bölümleri"><ChaptersCard chapters={chapters} onAir={engine.active} toast={toast} hasBroadcast={Boolean(openStream)} /></Part>}
+        <Part id="encoding" label="Görüntü kalitesi"><EncodingCard encoding={encoding} onEncoding={onEncoding} locked={encodingNow} /></Part>
+        <Part id="encoder" label="Kodlayıcı bilgisi">
         <p className="st-hint">
           Kodlayıcı: {ff ? (ff.available ? `ffmpeg ${ff.version || ""} · ${encoderText(ff)}` : "ffmpeg yok") : "bilgi yok"}
         </p>
+        </Part>
       </div>
       {editOpen && (
         <YoutubeStartDialog mode="edit" yt={yt} match={match} homeName={match?.first_team_name} awayName={match?.second_team_name} toast={toast} onClose={() => setEditOpen(false)} />

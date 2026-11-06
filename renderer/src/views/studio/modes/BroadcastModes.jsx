@@ -23,6 +23,8 @@ import ModeTab from "./ModeTab";
 import logoInline from "../../../assets/elitlig-beyaz.png?inline";
 import "./modes.css";
 
+const NOOP = () => {};
+const passiveApi = (api) => ({ ...api, setPreview: NOOP, clearPreview: NOOP });
 const asSources = (s) => (Array.isArray(s) ? { list: s, runtimeRef: null } : { list: s?.list || [], runtimeRef: s?.runtimeRef || null, programIds: s?.programIds || null });
 
 export function useBroadcastModes({ engine, live, g, sources, scenes, settings, audio, replays, toast, ask, matchId: matchIdProp, imagesRef: imagesRefProp } = {}) {
@@ -212,6 +214,17 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     dispatch({ type: "take", mode: "tekrar", transition: ctrl.current.cfg.transition, now: performance.now() });
     return true;
   }, [freeze, say]);
+  /** Verilen kuyruğu (buildReplayQueue biçimi) yayına ver — kısayol şeridindeki "Tekrar kuyruğu". */
+  const playQueue = useCallback(async (q) => {
+    if (!q?.length) return false;
+    const s = stateRef.current;
+    if (s.air === "tekrar" && s.stage === "onair") return ctrl.current.rm.start(q);
+    const ok = await ctrl.current.rm.start(q);
+    if (!ok) return false;
+    if (!s.air) freeze();
+    dispatch({ type: "take", mode: "tekrar", transition: ctrl.current.cfg.transition, now: performance.now() });
+    return true;
+  }, [freeze]);
   const toggleVar = useCallback(() => {
     const s = stateRef.current;
     if (s.air === "var" && s.stage !== "leaving") endOnAir();
@@ -231,7 +244,9 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     label: m.label,
     icon: m.icon,
     count: airMode === m.key ? "●" : m.key === "tekrar" ? (replays?.replays?.length || null) : null,
-    render: () => <ModeTab key={m.key} mode={m.key} api={apiRef.current} />,
+    // passive: çok sütunlu alt panel — sütun kendiliğinden önizlemeyi kipe almaz
+    // (Studio sütuna dokununca setPreview çağırır); tek sekmede eski davranış.
+    render: (opts) => <ModeTab key={m.key} mode={m.key} api={opts?.passive ? passiveApi(apiRef.current) : apiRef.current} />,
   }));
 
   return {
@@ -247,7 +262,7 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     setPreview,
     clearPreview,
     openReplay,
-    replay: { playLatest, stop: () => endOnAir(), playing: airMode === "tekrar", index: rm.player.index, total: rm.player.total, item: rm.player.item },
+    replay: { playLatest, playQueue, stop: () => endOnAir(), playing: airMode === "tekrar", index: rm.player.index, total: rm.player.total, item: rm.player.item },
     var: { toggle: toggleVar, active: airMode === "var" },
     interview: im.iv,
     highlights: hm.hl,

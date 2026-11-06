@@ -15,6 +15,7 @@ import LedRouteControl from "../led/LedRouteControl";
 import { keyText } from "../settings/settings";
 import ReplayPicker from "./ReplayPicker";
 import EventEntry from "./EventEntry";
+import { MORE_WIDGETS } from "./widgetsMore";
 
 const clock = (ms) => {
   const t = Math.max(0, Math.floor(ms / 1000));
@@ -320,7 +321,8 @@ function SceneTile({ ctx, item, big }) {
     </button>
   );
 }
-const scene = { render: (p) => <SceneTile {...p} /> };
+// Katalog önizlemesinde çizilmez: canlı küçük resim kaydı aynı sahneyi şeritten çalmasın.
+const scene = { noPreview: true, render: (p) => <SceneTile {...p} /> };
 
 export const WIDGET_IMPL = {
   golive, mic, transition, lastScene, chapter, fullscreen, replay, moment, var: varW, event,
@@ -328,5 +330,7 @@ export const WIDGET_IMPL = {
   subtitle: gfxToggle("subtitle", "ALTYAZI", "list", "setSubtitleOnAir", "subtitle"),
   interviewBand: gfxToggle("interview", "RÖPORTAJ BANDI", "users", "setInterviewOnAir", "interviewBand"),
   ledMode, interview, led, ready, scene,
+  // ek çeşitler (./widgetsMore.jsx)
+  ...MORE_WIDGETS,
 };
 
