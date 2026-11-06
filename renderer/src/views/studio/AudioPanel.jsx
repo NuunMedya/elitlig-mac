@@ -22,6 +22,7 @@ import {
 import { uid } from "../../lib/studio/layouts";
 import { audioInputFromDraft, scenesText } from "../../lib/studio/audio";
 import { persistFile } from "./SourcesPanel";
+import { Part, usePanelParts } from "./dock/parts";
 import "./modes/modes.css";
 import "./audio/audio.css";
 
@@ -56,7 +57,7 @@ export function LevelMeter({ getAnalyser, muted, compact = false }) {
 }
 
 /* ───────── ölçer bankası: tek döngü ───────── */
-function useMeterBank() {
+export function useMeterBank() {
   const items = useRef(new Map()); // key → { get, el, state }
   useEffect(() => {
     let raf = 0;
@@ -136,7 +137,7 @@ function Fader({ db, onChange, label }) {
 
 const GROUP_SHORT = Object.fromEntries(ROUTE_GROUPS.map((g) => [g.key, g.short]));
 
-function Strip({ strip, st, audio, bind, status }) {
+export function Strip({ strip, st, audio, bind, status }) {
   const air = audio.airOf ? audio.airOf(strip.id) : null;
   const onAir = air ? air.onAir : audio.routeNow?.[strip.group] && !st.mute;
   const set = (patch) => audio.setStrip(strip.id, patch);
@@ -171,7 +172,7 @@ function Strip({ strip, st, audio, bind, status }) {
   );
 }
 
-function MasterStrip({ audio, bind }) {
+export function MasterStrip({ audio, bind }) {
   const m = audio.settings.master;
   const mon = audio.settings.monitor;
   return (
@@ -321,12 +322,22 @@ function MusicCard({ audio }) {
   );
 }
 
+/** Şeridin bağlantı durumu (canlı / bekliyor / hata) — panelde ve yerleşim bileşenlerinde aynı. */
+export function stripStatus(audio, s) {
+  const status = audio?.micStatus?.status;
+  if (s.kind === "mic") return status === "live" ? "live" : status === "waiting" ? "wait" : "err";
+  if (s.kind === "input" || s.kind === "file") return { live: "live", waiting: "wait", error: "err", file: "err" }[audio.inputStatus?.[s.id]] || null;
+  if (s.kind === "music") return audio.music?.playing ? "live" : null;
+  return null;
+}
+
 /**
  * audio / mixer: useStudioAudio sonucu. Eski çağrı (audio = prefs.audio, setAudio, mixer) da çalışır.
  */
 export default function AudioPanel({ audio: audioProp, mixer, devices = { audio: [] }, onRequestMic }) {
   const audio = audioProp?.setStrip ? audioProp : mixer;
   const bind = useMeterBank();
+  const parts = usePanelParts();
   const fileRef = useRef(null);
   const repickRef = useRef(null);
   if (!audio?.settings) return <p className="st-hint st-pad">Ses karıştırıcı hazır değil.</p>;
@@ -373,6 +384,7 @@ export default function AudioPanel({ audio: audioProp, mixer, devices = { audio:
   return (
     <div className="mx">
       {!audio.available && <div className="st-note is-warn"><Icon name="alert" size={14} /> Ses karıştırıcı açılamadı; yayın sessiz gider.</div>}
+      <Part id="status" label="Durum çubuğu">
       <div className="mx-status">
         <span className="mx-status__ctx">Şu an: <b>{ctxLabel}</b></span>
         <span className="mx-status__route">Yayına giden: {ROUTE_GROUPS.filter((g) => now[g.key]).map((g) => <em key={g.key}>{g.label}</em>)}{!ROUTE_GROUPS.some((g) => now[g.key]) && <em className="is-none">hiçbiri</em>}</span>
@@ -384,8 +396,9 @@ export default function AudioPanel({ audio: audioProp, mixer, devices = { audio:
           </button>
         )}
       </div>
+      </Part>
       {audio.killAll && <div className="au-killbar" role="alert"><Icon name="micOff" size={15} /> TÜM SESLER KAPALI — yayına hiç ses gitmiyor. <button type="button" onClick={() => audio.setKillAll(false)}>Sesi aç</button></div>}
-      {Array.isArray(audio.channels) && (
+      {Array.isArray(audio.channels) && parts.visible("onair") && (
         <div className="au-onair">
           <span className="au-onair__head">YAYINA GİDEN:</span>
           {audio.channels.filter((c) => c.onAir).map((c) => <span key={c.key} className="au-badge is-air"><i className="au-dot" /><Icon name={c.icon} size={11} /> {c.label}</span>)}
@@ -393,19 +406,22 @@ export default function AudioPanel({ audio: audioProp, mixer, devices = { audio:
           {!audio.channels.some((c) => c.onAir) && <span className="au-badge is-none">hiç ses gitmiyor</span>}
         </div>
       )}
+      {(parts.visible("strips") || parts.visible("master")) && (
       <div className="mx-console">
+        <Part id="strips" label="Kanal şeritleri">
         <div className="mx-strips">
           {audio.strips.map((s) => (
-            <Strip key={s.id} strip={s} st={a.strips[s.id]} audio={audio} bind={bind}
-              status={s.kind === "mic" ? (status === "live" ? "live" : status === "waiting" ? "wait" : "err") : s.kind === "input" || s.kind === "file" ? ({ live: "live", waiting: "wait", error: "err", file: "err" }[audio.inputStatus[s.id]] || null) : s.kind === "music" ? (audio.music.playing ? "live" : null) : null} />
+            <Strip key={s.id} strip={s} st={a.strips[s.id]} audio={audio} bind={bind} status={stripStatus(audio, s)} />
           ))}
         </div>
-        <MasterStrip audio={audio} bind={bind} />
+        </Part>
+        <Part id="master" label="Ana çıkış"><MasterStrip audio={audio} bind={bind} /></Part>
       </div>
+      )}
       <div className="mx-cards">
-        <RoutingMatrix audio={audio} />
-        <SceneRouting audio={audio} />
-        <section className="st-card">
+        <Part id="routing" label="Yayına giden ses matrisi"><RoutingMatrix audio={audio} /></Part>
+        <Part id="scenes" label="Sahne başına ses"><SceneRouting audio={audio} /></Part>
+        {parts.visible("mic") && <section className="st-card">
           <header className="st-card__head"><Icon name="mic" size={15} /><strong>Mikrofon</strong></header>
           <Field label="Aygıt">
             <select value={mic.deviceId || ""} onChange={(e) => setMicCfg({ deviceId: e.target.value || null })}>
@@ -441,8 +457,8 @@ export default function AudioPanel({ audio: audioProp, mixer, devices = { audio:
               {audio.inputStatus[input.id] === "error" && <small className="text-red">açılamadı</small>}
             </div>
           ))}
-        </section>
-        <MusicCard audio={audio} />
+        </section>}
+        <Part id="music" label="Müzik / arka plan"><MusicCard audio={audio} /></Part>
       </div>
     </div>
   );

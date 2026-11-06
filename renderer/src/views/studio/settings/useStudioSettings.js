@@ -13,5 +13,7 @@ export function useStudioSettings(legacyPrefs) {
     try { store()?.removeItem(SETTINGS_KEY); } catch { /* yoksay */ }
     setSettings(normalizeSettings(DEFAULT_SETTINGS));
   }, []);
-  return { settings, set, reset };
+  /** Depodan yeniden oku (ayar şablonu uygulanınca). */
+  const reload = useCallback(() => setSettings(loadSettings(store())), []);
+  return { settings, set, reset, reload };
 }

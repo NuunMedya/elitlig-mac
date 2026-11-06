@@ -1,7 +1,8 @@
 // Yayın Stüdyosu — YAYIN MODLARI: TEKRAR · VAR · RÖPORTAJ · ÖZET (sözleşme: ./index.js).
 //
-// Her mod kendi dok sekmesinde kurulur; sekme açıkken mod ÖNİZLEME'ye çizilir
-// (previewOverride). "Yayına al" seçilen geçişle PROGRAM'a verir
+// Her mod kendi dok sekmesinde kurulur; içerik seçilince (tekrar satırı / açı, sekmedeki
+// "Önizlemeye al", R / V) mod ÖNİZLEME'ye çizilir [önizleme-geçiş: sekme açmak önizlemeyi değiştirmez]
+// (previewOverride). GEÇİŞ (Studio › take) önizlemedeki yükü seçilen geçişle PROGRAM'a verir
 // (programOverride: geçişi, ek katmanları ve grafikleri kendisi çizer),
 // "Canlıya dön" sahneye geri geçer. Karıştırıcı yalnız şunu yapar:
 //   önizleme: previewOverride ? previewOverride.draw(pctx, { width, height, now }) : sahne
@@ -23,9 +24,13 @@ import ModeTab from "./ModeTab";
 import logoInline from "../../../assets/elitlig-beyaz.png?inline";
 import "./modes.css";
 
+const NOOP = () => {};
+const passiveApi = (api) => ({ ...api, setPreview: NOOP, clearPreview: NOOP });
 const asSources = (s) => (Array.isArray(s) ? { list: s, runtimeRef: null } : { list: s?.list || [], runtimeRef: s?.runtimeRef || null, programIds: s?.programIds || null });
 
-export function useBroadcastModes({ engine, live, g, sources, scenes, settings, audio, replays, toast, ask, matchId: matchIdProp, imagesRef: imagesRefProp } = {}) {
+// [önizleme-geçiş] takeRef: Studio'nun tek GEÇİŞ işlevi (önizleme → program). Sekmelerdeki
+// "Yayına al" da onu çağırır; yoksa (Studio dışı kullanım) kip doğrudan yayına alınır.
+export function useBroadcastModes({ engine, live, g, sources, scenes, settings, audio, replays, toast, ask, matchId: matchIdProp, imagesRef: imagesRefProp, takeRef = null } = {}) {
   const matchId = matchIdProp ?? live?.match?.id ?? null;
   const src = asSources(sources);
   const cfg = useMemo(() => normalizeModeSettings(settings?.value), [settings?.value]);
@@ -35,9 +40,11 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     const cur = normalizeModeSettings(prev);
     return typeof fn === "function" ? fn(cur) : { ...cur, ...fn };
   }), []);
-  const [state, dispatch] = useReducer(modeReducer, MODE_IDLE);
+  const [state, dispatchState] = useReducer(modeReducer, MODE_IDLE);
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Eşzamanlı durum: yükleyip aynı anda GEÇİŞ (önizleme → program) güncel durumu okur [önizleme-geçiş].
+  const dispatch = useCallback((action) => { stateRef.current = modeReducer(stateRef.current, action); dispatchState(action); }, []);
   const toastRef = useRef(toast);
   toastRef.current = toast;
   const say = useCallback((m, o) => toastRef.current?.(m, o || { tone: "warn" }), []);
@@ -169,16 +176,20 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     try { c.getContext("2d").drawImage(p, 0, 0); frozenRef.current = c; } catch { frozenRef.current = null; }
   }, []);
 
-  const takeToAir = useCallback(async (transition, modeArg) => {
+  /**
+   * Kipi yayına al. payload: önizlemenin yükü (lib/studio/previewTake › planTake) —
+   * tekrarda yayına AYNEN o gider (klip, açı, giriş / çıkış, görünüm, hız) [önizleme-geçiş].
+   */
+  const takeToAir = useCallback(async (transition, modeArg, payload) => {
     const s = stateRef.current;
     const mode = modeArg || s.preview;
     if (!mode) { say("Önce bir modu (Tekrar / VAR / Röportaj / Özet) önizlemeye al."); return false; }
     const { rm: R, vr: V, im: I, hm: Hm, cfg: C } = ctrl.current;
-    if (s.air === mode && s.stage === "onair") {
-      if (mode === "tekrar") return R.start(); // yayındayken: seçilenleri hemen oynat
+    if (s.air === mode && (s.stage === "onair" || s.stage === "entering")) {
+      if (mode === "tekrar") return R.start(payload); // yayındayken: önizlemedeki yeni tekrar yayındakinin yerine
       return true;
     }
-    if (mode === "tekrar") { const ok = await R.start(); if (!ok) return false; }
+    if (mode === "tekrar") { const ok = await R.start(payload); if (!ok) return false; }
     if (mode === "var") V.onStart();
     if (mode === "ozet" && !Hm.ready) { say("Önce özeti oluştur (Özet sekmesi)."); return false; }
     if (mode === "roportaj") {
@@ -201,28 +212,66 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
   const clearPreview = useCallback((mode) => dispatch({ type: "clearPreview", mode }), []);
 
   /* ───────── kısayollar / dış işlevler ───────── */
-  const playLatest = useCallback(async () => {
-    const q = ctrl.current.rm.latestQueue();
-    if (!q.length) { say("Henüz tekrar yok: GOL'e bas ya da ÖNEMLİ AN (B) ile kaydet."); return false; }
-    const s = stateRef.current;
-    if (s.air === "tekrar" && s.stage === "onair") return ctrl.current.rm.start(q);
-    const ok = await ctrl.current.rm.start(q);
-    if (!ok) return false;
-    if (!s.air) freeze();
-    dispatch({ type: "take", mode: "tekrar", transition: ctrl.current.cfg.transition, now: performance.now() });
+  // [önizleme-geçiş] Hiçbiri doğrudan yayına vermez: içerik ÖNİZLEME'ye yüklenir, yayına
+  // yalnız GEÇİŞ (Studio › take) alır — önizlemede ne varsa o.
+  /** Tekrarı (seçilen açılarla) önizlemeye yükle. */
+  const loadReplay = useCallback((replay, opts) => {
+    if (!ctrl.current.rm.load(replay, opts)) { say("Bu tekrarın oynatılabilir açısı yok."); return false; }
+    setPreview("tekrar");
     return true;
-  }, [freeze, say]);
+  }, [say, setPreview]);
+  /** Son tekrarı önizlemeye yükle (R). */
+  const loadLatest = useCallback(() => {
+    if (!ctrl.current.rm.loadLatest()) { say("Henüz tekrar yok: GOL'e bas ya da ÖNEMLİ AN (B) ile kaydet."); return false; }
+    setPreview("tekrar");
+    return true;
+  }, [say, setPreview]);
+  /** Birden çok tekrarı sırayla önizlemeye yükle (şeritteki "Tekrar kuyruğu"). */
+  const loadQueue = useCallback((list) => {
+    if (!ctrl.current.rm.loadQueue(list)) { say("Kuyrukta oynatılabilir açı yok."); return false; }
+    setPreview("tekrar");
+    return true;
+  }, [say, setPreview]);
+  /** VAR (V): yayındaysa canlıya döner, değilse önizlemeye alınır. */
   const toggleVar = useCallback(() => {
     const s = stateRef.current;
-    if (s.air === "var" && s.stage !== "leaving") endOnAir();
-    else takeToAir(null, "var");
-  }, [endOnAir, takeToAir]);
-  const openReplay = useCallback((replay) => { ctrl.current.rm.open(replay); setPreview("tekrar"); }, [setPreview]);
+    if (s.air === "var" && s.stage !== "leaving") { endOnAir(); return "end"; }
+    setPreview("var");
+    return "preview";
+  }, [endOnAir, setPreview]);
+  const openReplay = loadReplay;
+  /** Önizlemenin yükü (eşzamanlı): kip önizlemedeyse { mode, payload }, değilse null. */
+  const previewNow = useCallback(() => {
+    const mode = stateRef.current.preview;
+    if (!mode) return null;
+    return { mode, payload: mode === "tekrar" ? ctrl.current.rm.payload() : null };
+  }, []);
+  /** Yayındaki kip (eşzamanlı): { mode, stage, payload } ya da null. */
+  const airNow = useCallback(() => {
+    const s = stateRef.current;
+    if (!s.air || s.stage === "idle") return null;
+    return { mode: s.air, stage: s.stage, payload: s.air === "tekrar" ? ctrl.current.rm.airPayload() : null };
+  }, []);
+  const takeRefRef = useRef(takeRef);
+  takeRefRef.current = takeRef;
+  /** Sekmedeki "Yayına al": önizlemede bu kip varsa tek GEÇİŞ yoluyla yayına, değilse önizlemeye. */
+  const takeMode = useCallback((mode) => {
+    if (stateRef.current.preview !== mode) { setPreview(mode); return false; }
+    const t = takeRefRef.current?.current;
+    if (t) { t(); return true; }
+    return takeToAir(null, mode, previewNow()?.payload);
+  }, [previewNow, setPreview, takeToAir]);
 
   /* ───────── sekmeler ───────── */
+  // Tekrar listesinde satır / açı / kuyruk seçmek önizlemeyi tekrara alır (sütun kipinde de) [önizleme-geçiş].
+  const rmApi = useMemo(() => ({
+    ...rm,
+    setCursor: (v) => { rm.setCursor(v); setPreview("tekrar"); },
+    setSelection: (v) => { rm.setSelection(v); setPreview("tekrar"); },
+  }), [rm, setPreview]);
   const api = {
-    state, cfg, setCfg, takeToAir, endOnAir, setPreview, clearPreview, airMode, previewMode,
-    rm, vr, im, hm, replays, sources: src, scenes, live, g, audio, engine, toast, ask, matchId, imagesRef, brandRef,
+    state, cfg, setCfg, takeToAir, takeMode, endOnAir, setPreview, clearPreview, airMode, previewMode,
+    rm: rmApi, vr, im, hm, replays, sources: src, scenes, live, g, audio, engine, toast, ask, matchId, imagesRef, brandRef,
   };
   const apiRef = useRef(api);
   apiRef.current = api;
@@ -231,7 +280,9 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     label: m.label,
     icon: m.icon,
     count: airMode === m.key ? "●" : m.key === "tekrar" ? (replays?.replays?.length || null) : null,
-    render: () => <ModeTab key={m.key} mode={m.key} api={apiRef.current} />,
+    // Sekme / sütun açmak önizlemeyi değiştirmez (tüm kiplerde pasif) [önizleme-geçiş];
+    // önizleme yalnız içerik seçilince ya da "Önizlemeye al" ile değişir.
+    render: (opts) => <ModeTab key={m.key} mode={m.key} api={opts?.passive ? passiveApi(apiRef.current) : apiRef.current} />,
   }));
 
   return {
@@ -247,8 +298,13 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     setPreview,
     clearPreview,
     openReplay,
-    replay: { playLatest, stop: () => endOnAir(), playing: airMode === "tekrar", index: rm.player.index, total: rm.player.total, item: rm.player.item },
-    var: { toggle: toggleVar, active: airMode === "var" },
+    // [önizleme-geçiş] yükleyiciler (önizlemeye) + eşzamanlı önizleme / yayın durumu (Studio › take)
+    loadReplay, loadLatest, loadQueue, previewNow, airNow,
+    replay: { loadLatest, loadQueue, stop: () => endOnAir(), playing: airMode === "tekrar", index: rm.player.index, total: rm.player.total, item: rm.player.item },
+    // Önizleme ekranındaki tekrar düzenleyicisi (modes/ReplayPreviewOverlay): yakınlaştır / kaydır,
+    // zaman çizelgesi, giriş–çıkış noktası, hız. rate: ağır çekim (yayında anında uygulanır).
+    replayEditor: { rm: rmApi, rate: cfg.rate, setRate: (v) => setCfg((c) => ({ ...c, rate: Math.min(1, Math.max(0.25, Number(v) || 1)) })), sources: src.list, previewing: previewMode === "tekrar", onAir: airMode === "tekrar" },
+    var: { toggle: toggleVar, preview: () => setPreview("var"), active: airMode === "var", previewing: previewMode === "var" },
     interview: im.iv,
     highlights: hm.hl,
     micWarning: airMode === "var" && audio ? !audio.micMuted && !audio.killAll : false,

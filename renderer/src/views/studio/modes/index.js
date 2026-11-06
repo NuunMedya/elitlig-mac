@@ -22,10 +22,11 @@
 //     tabs: [{ key: "tekrar"|"var"|"roportaj"|"ozet", label, icon, count, render: () => JSX }],
 //     previewOverride: null | { id, label, mode, graphics: false, draw(ctx, { width, height, now }) },
 //     programOverride: null | { id, label, mode, graphics: false, draw(ctx, { width, height, now, drawBase? }) },
-//     takeToAir(transition?: { kind, ms } | kind, mode?): Promise<bool>,  endOnAir(transition?): void,
+//     takeToAir(transition?: { kind, ms } | kind, mode?, payload?): Promise<bool>,  endOnAir(transition?): void,
 //     isOnAir, airMode, previewMode, stage ("idle"|"entering"|"onair"|"leaving"),
-//     setPreview(mode), clearPreview(mode?), openReplay(replay),           // ManageDock › onPlayReplay → openReplay + Tekrar sekmesini aç
-//     replay: { playLatest(), stop(), playing, index, total, item },        // R kısayolu
+//     setPreview(mode), clearPreview(mode?), openReplay(replay) = loadReplay(replay, { angles?, angle? }),  // önizlemeye yükler
+//     loadLatest(), loadQueue(list), previewNow(), airNow(),               // [önizleme-geçiş] yükleyiciler + eşzamanlı durum (Studio › take)
+//     replay: { loadLatest(), loadQueue(list), stop(), playing, index, total, item },  // R: önizlemeye (yayına GEÇİŞ)
 //     var: { toggle(), active },                                            // V kısayolu
 //     interview,                                                            // useInterview (üst çubuk RÖPORTAJ düğmesi bunu kullanır)
 //     highlights,                                                           // useHighlights (Studio kendi useHighlights'ını kaldırır)

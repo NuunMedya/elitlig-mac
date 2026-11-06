@@ -2,10 +2,15 @@
 // + karar), konu, düzen (tek / ikili / üçlü), her pencere için canlı kaynak ya
 // da tekrar + açı, döngü / ağır çekim, tarama çizgisi / zaman kodu. Her değişiklik
 // önizlemede ve yayında anında görünür. Yayına alma soldaki yayın kartından (V).
+// Tema (Kırmızı Alarm, Stadyum Broadcast …) buradan hızlıca, Ayarlar › VAR teması
+// sayfasından büyük önizlemeyle seçilir (aynı ayar: modes.var.theme).
 import React from "react";
 import { Field, Icon, Kbd } from "../../../components/ui";
 import { VAR_DECISIONS, VAR_LAYOUTS, VAR_STATES, VAR_TONES, VAR_TOPICS, varLayoutOf } from "../../../lib/studio/var";
 import { angleLabel, anglesOf, metaFor, replayTitle } from "../../../lib/studio/replays";
+import { VAR_THEMES } from "../../../lib/studio/varThemes";
+import VarThemePreview from "./VarThemePreview";
+import "./varTheme.css";
 
 function SlotEditor({ i, slot, vr, sources, replays, meta }) {
   const replay = replays.find((r) => r.id === slot.replayId) || null;
@@ -74,6 +79,18 @@ export default function VarPanel({ vr, sources = [], replays = [], meta = {}, mi
         {legacy && (vr.active
           ? <button type="button" className="btn btn--block st-var__go is-on" onClick={vr.exit}><Icon name="stop" size={14} /> VAR'dan çık <Kbd>V</Kbd></button>
           : <button type="button" className="btn btn--red btn--block st-var__go" onClick={vr.enter}><Icon name="target" size={14} /> VAR'ı yayına al <Kbd>V</Kbd></button>)}
+      </section>
+
+      <section className="st-card">
+        <header className="st-card__head"><Icon name="palette" size={15} /><strong>Tema</strong></header>
+        <div className="vth-quick">
+          {VAR_THEMES.map((t) => (
+            <button key={t.key} type="button" className={`vth-quick__item ${s.theme === t.key ? "is-on" : ""}`} style={{ "--vth-accent": t.accent }} title={t.hint} aria-pressed={s.theme === t.key} onClick={() => vr.set({ theme: t.key })}>
+              <VarThemePreview theme={t.key} layout={s.layout} state={s.state} decision={s.decision} width={192} height={108} />
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </div>
       </section>
 
       <section className="st-card">

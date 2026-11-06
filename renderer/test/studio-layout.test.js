@@ -30,7 +30,7 @@ describe("sahne göçü: önizleme / program yalnız sahne", () => {
 describe("sahne şablonları", () => {
   it("Tek kaynak, Resim içinde resim, Yan yana, Üçlü: kaynaklar sırayla, kutular ekranda", () => {
     const base = defaultScenesConfig();
-    expect(SCENE_TEMPLATES.map((t) => t.key)).toEqual(["empty", "single", "pip", "sbs", "triple", "start", "break", "end"]);
+    expect(SCENE_TEMPLATES.map((t) => t.key).slice(0, 8)).toEqual(["empty", "single", "pip", "sbs", "triple", "start", "break", "end"]);
     expect(templateSourceIds(base, 3)).toEqual(["src_cam1", "src_cam2", "src_cam2"]);
     const pip = sceneFromTemplate(base, "pip").scene;
     expect(pip.layers.map((l) => l.sourceId)).toEqual(["src_cam1", "src_cam2"]);
@@ -102,7 +102,7 @@ describe("ayarlar kalıcılığı", () => {
     expect(n.view.scale).toBe(100);
     expect(n.notify.silenceSec).toBe(10);
     const throwing = { getItem: () => { throw new Error("x"); }, setItem: () => { throw new Error("x"); } };
-    expect(loadSettings(throwing).v).toBe(1);
+    expect(loadSettings(throwing).v).toBe(2); // v2: tekrar süresi göçü (10 → 15 sn)
     expect(saveSettings(throwing, n)).toBe(false);
   });
   it("kısayollar: yeniden atama çakışanı kaldırır, ayrılmış tuşlar atanamaz, keyAction yeni tuşu kullanır", () => {

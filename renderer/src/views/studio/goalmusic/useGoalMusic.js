@@ -12,8 +12,10 @@
 //   gm.teams                   { home: { id, name, music }, away: { … } }
 //   gm.updateTeam(side, fn) · gm.addLink(side, url) · gm.preview(side, trackId)
 //   gm.status                  "idle" | "loading" | "playing" | "fading" ; gm.error
+//   gm.session                 çalarken { side, teamName, plan (musicPlan), startedAt (performance.now, çalmaya başlayınca) }
+//   gm.setPlaySec(side, sec)   takımın çalma süresi (null: süresiz); süre dolarken ses kısılıp durur
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addTrack, fadeLevel, normalizeGoalMusic, pickTrack, playerArgs, readGoalMusic, teamKey, teamMusicOf, updateTeamMusic, writeGoalMusic } from "./goalMusic";
+import { addTrack, fadeLevel, musicPlan, musicProgress, normalizeGoalMusic, normalizePlaySec, pickTrack, playerArgs, readGoalMusic, teamKey, teamMusicOf, updateTeamMusic, writeGoalMusic } from "./goalMusic";
 import { createHiddenPlayer, playerErrorText } from "./youtubePlayer";
 
 const store = () => { try { return window.localStorage; } catch { return null; } };
@@ -48,7 +50,13 @@ export function useGoalMusic({ homeTeamId = null, awayTeamId = null, homeName = 
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
   const playingRef = useRef(null);
-  const setPlay = (v) => { playingRef.current = v; setPlaying(v); };
+  // Çalma oturumu: hangi takım, plan (süre / kısma), çalmaya başladığı an (geri sayım ve otomatik durdurma).
+  const [session, setSessionState] = useState(null);
+  const sessionRef = useRef(null);
+  const setSession = (v) => { sessionRef.current = v; setSessionState(v); };
+  const setPlay = (v) => { playingRef.current = v; setPlaying(v); if (!v) setSession(null); };
+  const namesRef = useRef({ home: homeName, away: awayName });
+  namesRef.current = { home: homeName, away: awayName };
   const toastRef = useRef(toast);
   toastRef.current = toast;
   const say = (m, tone = "warn") => { setError(tone === "error" ? m : null); toastRef.current?.(m, { tone, timeout: 5000 }); };
@@ -62,7 +70,11 @@ export function useGoalMusic({ homeTeamId = null, awayTeamId = null, homeName = 
       playerRef.current = createHiddenPlayer({
         onState: (st) => {
           // 1 çalıyor, 0 bitti, 2 duraklatıldı
-          if (st === 1) setStatus((s) => (s === "fading" ? s : "playing"));
+          if (st === 1) {
+            setStatus((s) => (s === "fading" ? s : "playing"));
+            const ses = sessionRef.current;
+            if (ses && ses.startedAt == null) setSession({ ...ses, startedAt: performance.now() });
+          }
           if (st === 0) { clearFade(); setPlay(null); setStatus("idle"); }
         },
         onError: (code) => { clearFade(); setPlay(null); setStatus("idle"); say(playerErrorText(code), "error"); },
@@ -90,7 +102,10 @@ export function useGoalMusic({ homeTeamId = null, awayTeamId = null, homeName = 
       if (playingRef.current !== side) return false; // bu arada susturuldu
       player.setVolume(cfgRef.current.volume);
       player.unMute?.();
-      player.loadVideoById(playerArgs(track));
+      // Takımın çalma süresi (yoksa süresiz) + bağlantı bitişi → plan; süre dolarken kısılıp durur.
+      const plan = musicPlan(track, teamMusicOf(cfgRef.current, idsRef.current[side]).playSec, cfgRef.current.fadeMs);
+      setSession({ side, teamName: namesRef.current[side] || "", plan, startedAt: null, auto: false });
+      player.loadVideoById(playerArgs(track, plan.lengthSec != null ? plan : null));
       return true;
     } catch (e) {
       setPlay(null);
@@ -119,13 +134,13 @@ export function useGoalMusic({ homeTeamId = null, awayTeamId = null, homeName = 
   }, [startTrack]);
 
   /** Sesi ~fadeMs içinde azaltıp durdur. */
-  const stop = useCallback(async ({ fade = true } = {}) => {
+  const stop = useCallback(async ({ fade = true, ms: fadeMsArg = null } = {}) => {
     clearFade();
     const p = playerRef.current ? await playerRef.current.catch(() => null) : null;
     if (!p || !playingRef.current) { setPlay(null); setStatus("idle"); return; }
     const { player } = p;
     const vol = cfgRef.current.volume;
-    const ms = fade ? cfgRef.current.fadeMs : 0;
+    const ms = fade ? Math.max(0, fadeMsArg ?? cfgRef.current.fadeMs) : 0;
     const finish = () => {
       clearFade();
       try { player.stopVideo(); } catch { /* yoksay */ }
@@ -142,6 +157,21 @@ export function useGoalMusic({ homeTeamId = null, awayTeamId = null, homeName = 
       if (t >= 1) finish();
     }, FADE_STEP_MS);
   }, []);
+
+  // Çalma süresi: süre dolmadan fadeMs önce kısmaya başla, süre dolunca dur (bir kez).
+  const timed = Boolean(session && session.plan?.lengthSec != null && session.startedAt != null);
+  useEffect(() => {
+    if (!timed) return undefined;
+    const t = setInterval(() => {
+      const ses = sessionRef.current;
+      if (!ses || ses.auto || ses.startedAt == null) return;
+      const pr = musicProgress(ses.plan, performance.now() - ses.startedAt);
+      if (!pr.fade) return;
+      sessionRef.current = { ...ses, auto: true };
+      stop({ fade: true, ms: Math.round(pr.remainingSec * 1000) });
+    }, 100);
+    return () => clearInterval(t);
+  }, [timed, stop]);
 
   /** GOL düğmesi / kısayolu: otomatik çal açıksa çalar. */
   const onGoal = useCallback((side) => {
@@ -162,6 +192,11 @@ export function useGoalMusic({ homeTeamId = null, awayTeamId = null, homeName = 
     const id = idsRef.current[side === "away" ? "away" : "home"];
     if (id) setConfig((c) => updateTeamMusic(c, id, fn));
   }, [setConfig]);
+  /** Takımın çalma süresi: saniye (hazır ya da özel) ya da null = süresiz. */
+  const setPlaySec = useCallback((side, sec) => {
+    const id = idsRef.current[side === "away" ? "away" : "home"];
+    if (id) setConfig((c) => updateTeamMusic(c, id, (t) => ({ ...t, playSec: normalizePlaySec(sec) })));
+  }, [setConfig]);
   const addLink = useCallback((side, url, extra = {}) => {
     const id = idsRef.current[side === "away" ? "away" : "home"];
     if (!id) return { ok: false, reason: "Önce maç seç." };
@@ -177,6 +212,6 @@ export function useGoalMusic({ homeTeamId = null, awayTeamId = null, homeName = 
     playing, status, error,
     volume: config.volume, setVolume,
     autoOnGoal: config.autoOnGoal, setAutoOnGoal,
-    updateTeam, addLink,
+    updateTeam, addLink, setPlaySec, session,
   };
 }

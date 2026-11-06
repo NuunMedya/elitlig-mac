@@ -235,7 +235,7 @@ describe("modül yükleme", () => {
     const dlg = await import("../src/views/studio/youtube/YoutubeStartDialog.jsx");
     expect(typeof dlg.default).toBe("function");
     expect(typeof dlg.useYoutubeStart).toBe("function");
-    const ed = await import("../src/views/studio/modes/ReplayEditor.jsx");
-    expect(typeof ed.default).toBe("function");
+    const ed = await import("../src/views/studio/modes/ReplayPreviewOverlay.jsx");
+    expect(ed.default).toBeTruthy(); // memo bileşeni
   });
 });

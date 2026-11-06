@@ -409,45 +409,178 @@ export const TEMPLATE_LAYOUTS = {
   pip: [box(0, 0, 1, 1), null], // ikincisi pipBox("br", 0.3)
   sbs: [box(0.01, 0.2575, 0.485, 0.485), box(0.505, 0.2575, 0.485, 0.485)],
   triple: [box(0.012, 0.1725, 0.655, 0.655), box(0.677, 0.1725, 0.311, 0.311), box(0.677, 0.5165, 0.311, 0.311)],
+  pip_bl: [box(0, 0, 1, 1), pipBox("bl", 0.3)],
+  pip_tr: [box(0, 0, 1, 1), pipBox("tr", 0.3)],
+  pip_tl: [box(0, 0, 1, 1), pipBox("tl", 0.3)],
+  sbsFull: [box(0, 0, 0.5, 1), box(0.5, 0, 0.5, 1)],
+  sbs7030: [box(0.01, 0.1575, 0.685, 0.685), box(0.705, 0.3575, 0.285, 0.285)],
+  row3: [box(0.005, 0.3375, 0.325, 0.325), box(0.3375, 0.3375, 0.325, 0.325), box(0.67, 0.3375, 0.325, 0.325)],
+  quad: [box(0.005, 0.005, 0.49, 0.49), box(0.505, 0.005, 0.49, 0.49), box(0.005, 0.505, 0.49, 0.49), box(0.505, 0.505, 0.49, 0.49)],
+  main3: [box(0.008, 0.13, 0.74, 0.74), box(0.756, 0.13, 0.236, 0.236), box(0.756, 0.382, 0.236, 0.236), box(0.756, 0.634, 0.236, 0.236)],
+  screencam: [box(0.01, 0.1375, 0.725, 0.725), box(0.745, 0.1375, 0.245, 0.245)],
+  interview: [box(0, 0, 0.5, 1), box(0.5, 0, 0.5, 1)],
+};
+
+/** Şablon kategorileri ("Yeni sahne ekle" penceresi). */
+export const TEMPLATE_CATEGORIES = [
+  { key: "kamera", label: "Kamera", icon: "video" },
+  { key: "coklu", label: "Çoklu görüntü", icon: "grid" },
+  { key: "ekran", label: "Başlıyor / ara / bitti", icon: "clock" },
+  { key: "bilgi", label: "Bilgi ekranları", icon: "trophy" },
+  { key: "an", label: "Maç anları", icon: "zap" },
+  { key: "led", label: "LED", icon: "overview" },
+];
+
+// Hazır parçalar (layout dışı katmanlar): bg = gradyan zemin, band = renk bandı, text, clock, image, replay.
+const BG = (color = "#1a0633", color2 = "#54009c") => ({ kind: "color", box: box(0, 0, 1, 1), props: { color, color2, gradient: true, gradientAngle: 135, text: "" } });
+const BAND = (b, color, text = "", textColor = "#ffffff") => ({ kind: "color", box: b, props: { color, gradient: false, text, textColor } });
+const TEXT = (b, text, props = {}) => ({ kind: "text", box: b, text, props: { size: 84, outline: false, background: false, ...props } });
+const CLOCK = (b, props = {}) => ({ kind: "clock", box: b, props: { size: 120, background: false, ...props } });
+
+/**
+ * Sahne şablonları. cat: kategori; slots: kaç kaynak seçilir (slotNames, prefer: tür
+ * önceliği); ready: hazır ekran (geri sayım "yayına alınınca" başlar, readySceneOf);
+ * parts: yuva dışı katmanlar (kendi renk / metin / saat / görsel kaynaklarını oluşturur).
+ * title / subtitle / minutes tanımlıysa şablon penceresinde düzenlenir.
+ */
+export const SCENE_TEMPLATES = [
+  { key: "empty", cat: "kamera", label: "Boş sahne", icon: "plus", slots: 0, hint: "Katmanları kendin ekle" },
+  { key: "single", cat: "kamera", label: "Tek kaynak", icon: "video", slots: 1, hint: "Bir kamera / görsel tam ekran" },
+  { key: "pip", cat: "kamera", label: "Resim içinde resim", icon: "layers", slots: 2, slotNames: ["Büyük görüntü", "Köşedeki kutu (sağ alt)"], hint: "Büyük görüntü + sağ altta küçük kutu" },
+  { key: "sbs", cat: "coklu", label: "Yan yana", icon: "grid", slots: 2, slotNames: ["Sol", "Sağ"], hint: "İki görüntü eşit boyda (50/50)" },
+  { key: "triple", cat: "coklu", label: "Üçlü", icon: "overview", slots: 3, slotNames: ["Büyük görüntü", "Sağ üst", "Sağ alt"], hint: "Bir büyük + iki küçük görüntü" },
+  { key: "start", cat: "ekran", label: "Başlangıç ekranı", icon: "play", slots: 0, ready: true, hint: "“Maç birazdan başlıyor” + geri sayım", title: "MAÇ BİRAZDAN BAŞLIYOR", minutes: 10 },
+  { key: "break", cat: "ekran", label: "Devre arası", icon: "clock", slots: 0, ready: true, hint: "“Devre arası” + ikinci yarıya geri sayım", title: "DEVRE ARASI", minutes: 15 },
+  { key: "end", cat: "ekran", label: "Bitiş ekranı", icon: "flag", slots: 0, ready: true, hint: "“Maç sona erdi · İzlediğiniz için teşekkürler”", title: "MAÇ SONA ERDİ", subtitle: "İzlediğiniz için teşekkürler", minutes: 0 },
+  // ── kamera düzenleri ──
+  { key: "pip_bl", cat: "kamera", label: "PiP sol alt", icon: "layers", slots: 2, slotNames: ["Büyük görüntü", "Sol alttaki kutu"], hint: "Büyük görüntü + sol altta küçük kutu" },
+  { key: "pip_tr", cat: "kamera", label: "PiP sağ üst", icon: "layers", slots: 2, slotNames: ["Büyük görüntü", "Sağ üstteki kutu"], hint: "Büyük görüntü + sağ üstte küçük kutu" },
+  { key: "pip_tl", cat: "kamera", label: "PiP sol üst", icon: "layers", slots: 2, slotNames: ["Büyük görüntü", "Sol üstteki kutu"], hint: "Büyük görüntü + sol üstte küçük kutu" },
+  { key: "screencam", cat: "kamera", label: "Ekran + kamera", icon: "overview", slots: 2, slotNames: ["Ekran / pencere", "Kamera"], prefer: [["screen", "window"], ["camera"]], hint: "Paylaşılan ekran büyük, yanında konuşan kamera" },
+  // ── çoklu ──
+  { key: "sbsFull", cat: "coklu", label: "Yan yana tam boy", icon: "grid", slots: 2, slotNames: ["Sol yarı", "Sağ yarı"], hint: "İki görüntü ekranı ikiye böler (kırparak doldurur)" },
+  { key: "sbs7030", cat: "coklu", label: "Yan yana 70/30", icon: "grid", slots: 2, slotNames: ["Büyük (%70)", "Küçük (%30)"], hint: "Biri büyük, diğeri yanında küçük" },
+  { key: "row3", cat: "coklu", label: "Üçlü yan yana", icon: "grid", slots: 3, slotNames: ["Sol", "Orta", "Sağ"], hint: "Üç görüntü eşit boyda bir sırada" },
+  { key: "quad", cat: "coklu", label: "Dörtlü 2×2", icon: "grid", slots: 4, slotNames: ["Sol üst", "Sağ üst", "Sol alt", "Sağ alt"], hint: "Dört kamera eşit boyda" },
+  { key: "main3", cat: "coklu", label: "Ana + 3 küçük", icon: "overview", slots: 4, slotNames: ["Ana görüntü", "Sağ 1", "Sağ 2", "Sağ 3"], hint: "Büyük ana görüntü, sağda üç küçük kamera" },
+  { key: "interview", cat: "coklu", label: "Röportaj (iki kişi)", icon: "users", slots: 2, slotNames: ["Konuk 1", "Konuk 2"], hint: "İki kişi yan yana, altlarında isim bantları", title: "Konuk 1", subtitle: "Konuk 2",
+    parts: [TEXT(box(0.03, 0.83, 0.42, 0.09), "@title", { size: 46, background: true, bgColor: "#54009c", align: "left" }), TEXT(box(0.55, 0.83, 0.42, 0.09), "@subtitle", { size: 46, background: true, bgColor: "#54009c", align: "left" })] },
+  // ── başlıyor / ara / bitti ──
+  { key: "second", cat: "ekran", label: "İkinci yarı başlıyor", icon: "play", slots: 0, hint: "“İkinci yarı başlıyor” + kısa geri sayım", title: "İKİNCİ YARI BAŞLIYOR", minutes: 3, countdown: true,
+    parts: [BG(), TEXT(box(0.08, 0.2, 0.84, 0.32), "@title"), CLOCK(box(0.3, 0.56, 0.4, 0.22))] },
+  { key: "tech", cat: "ekran", label: "Teknik ara", icon: "alert", slots: 0, hint: "“Kısa bir teknik ara” ekranı", title: "KISA BİR TEKNİK ARA", subtitle: "Birazdan devam ediyoruz",
+    parts: [BG("#140a20", "#3b0764"), TEXT(box(0.08, 0.3, 0.84, 0.24), "@title"), TEXT(box(0.15, 0.56, 0.7, 0.12), "@subtitle", { size: 48, color: "#d8bfff" })] },
+  // ── bilgi ekranları ──
+  { key: "scoreboard", cat: "bilgi", label: "Skorbord tam ekran", icon: "trophy", slots: 0, hint: "Koyu zemin, başlık ve büyük maç saati (skor yayın grafiklerinden)", title: "MAÇ SKORU",
+    parts: [BG("#07040b", "#2a0d4a"), TEXT(box(0.1, 0.1, 0.8, 0.16), "@title", { size: 64, color: "#c4b5fd" }), CLOCK(box(0.25, 0.36, 0.5, 0.3), { mode: "match", size: 220 }), BAND(box(0.25, 0.72, 0.5, 0.08), "#54009c", "CANLI")] },
+  { key: "stats", cat: "bilgi", label: "Devre arası istatistik", icon: "list", slots: 0, hint: "Başlık ve düzenlenebilir istatistik satırları", title: "DEVRE ARASI İSTATİSTİKLERİ", subtitle: "Şut 0 – 0\nİsabetli şut 0 – 0\nKorner 0 – 0\nFaul 0 – 0",
+    parts: [BG("#0d0814", "#3b0764"), TEXT(box(0.08, 0.08, 0.84, 0.14), "@title", { size: 64 }), BAND(box(0.2, 0.28, 0.6, 0.6), "#160d20"), TEXT(box(0.2, 0.3, 0.6, 0.56), "@subtitle", { size: 58 })] },
+  { key: "sponsor", cat: "bilgi", label: "Sponsor ekranı", icon: "handshake", slots: 0, hint: "Başlık ve üç sponsor plakası (sonra görsel ekleyebilirsin)", title: "SPONSORLARIMIZ",
+    parts: [BG("#07040b", "#1d1229"), TEXT(box(0.1, 0.1, 0.8, 0.14), "@title", { size: 64 }), BAND(box(0.05, 0.38, 0.28, 0.28), "#54009c", "SPONSOR 1"), BAND(box(0.36, 0.38, 0.28, 0.28), "#7c3aed", "SPONSOR 2"), BAND(box(0.67, 0.38, 0.28, 0.28), "#c026d3", "SPONSOR 3")] },
+  { key: "social", cat: "bilgi", label: "Bizi takip edin", icon: "share", slots: 0, hint: "Sosyal medya hesabı ekranı", title: "BİZİ TAKİP EDİN", subtitle: "@elitlig · elitlig.com",
+    parts: [BG("#1a0633", "#c026d3"), TEXT(box(0.1, 0.28, 0.8, 0.2), "@title"), TEXT(box(0.1, 0.52, 0.8, 0.14), "@subtitle", { size: 60 })] },
+  // ── maç anları ──
+  { key: "breaking", cat: "an", label: "Son dakika", icon: "bell", slots: 1, slotNames: ["Görüntü"], hint: "Görüntü tam ekran, altta kırmızı “SON DAKİKA” bandı", title: "SON DAKİKA", subtitle: "Haberi buraya yaz",
+    parts: [BAND(box(0, 0.78, 0.22, 0.12), "#ff2d55", "@title"), BAND(box(0.22, 0.78, 0.78, 0.12), "#0b0612"), TEXT(box(0.24, 0.78, 0.74, 0.12), "@subtitle", { size: 52, align: "left" })] },
+  { key: "goal", cat: "an", label: "Gol kutlama", icon: "ball", slots: 1, slotNames: ["Görüntü"], hint: "Görüntü tam ekran, ortada büyük “GOOOL!”", title: "GOOOL!",
+    parts: [BAND(box(0, 0.36, 1, 0.28), "#54009c"), TEXT(box(0.05, 0.36, 0.9, 0.28), "@title", { size: 200, outline: true, outlineWidth: 6 })] },
+  { key: "replay", cat: "an", label: "Tekrar ekranı", icon: "repeat", slots: 0, hint: "Son tekrar döngüde, köşede “TEKRAR” rozeti", title: "TEKRAR",
+    parts: [{ kind: "replay", box: box(0, 0, 1, 1) }, BAND(box(0.03, 0.05, 0.14, 0.07), "#ff2d55", "@title")] },
+  // ── LED ──
+  { key: "ledLogo", cat: "led", label: "LED tam ekran logo", icon: "overview", slots: 0, hint: "Siyah zemin üstünde marka logosu", title: "ELİTLİG",
+    parts: [BAND(box(0, 0, 1, 1), "#000000"), { kind: "image", box: box(0.2, 0.15, 0.6, 0.7), text: "@title" }] },
+  { key: "ledScore", cat: "led", label: "LED skor + saat", icon: "clock", slots: 0, hint: "Siyah zeminde büyük maç saati (skor grafiklerden)", title: "ELİTLİG",
+    parts: [BAND(box(0, 0, 1, 1), "#000000"), TEXT(box(0.1, 0.08, 0.8, 0.18), "@title", { size: 96, color: "#c4b5fd" }), CLOCK(box(0.15, 0.32, 0.7, 0.42), { mode: "match", size: 300 })] },
+  { key: "ledSponsor", cat: "led", label: "LED sponsor", icon: "handshake", slots: 0, hint: "Tam ekran sponsor plakası (gradyan + yazı)", title: "SPONSOR",
+    parts: [{ kind: "color", box: box(0, 0, 1, 1), props: { color: "#54009c", color2: "#c026d3", gradient: true, gradientAngle: 90, text: "@title", textColor: "#ffffff" } }] },
+];
+export const templateOf = (key) => SCENE_TEMPLATES.find((t) => t.key === key) || null;
+export const templatesOfCategory = (cat) => SCENE_TEMPLATES.filter((t) => t.cat === cat);
+
+/** Şablon yuvasının kutusu. */
+export const templateSlotBox = (t, i) => {
+  if (t.key === "pip" && i === 1) return pipBox("br", 0.3);
+  const boxes = TEMPLATE_LAYOUTS[t.key] || TEMPLATE_LAYOUTS.single;
+  return boxes[i] || (t.slots === 1 ? box(0, 0, 1, 1) : boxes[0]);
 };
 
 /**
- * Sahne şablonları. slots: kaç kaynak seçilir; ready: hazır ekran (kendi
- * renk / metin / geri sayım kaynaklarını oluşturur).
+ * Küçük çizim için kutular: [{ x, y, w, h, kind: slot|color|text|clock|image|replay, color? }].
  */
-export const SCENE_TEMPLATES = [
-  { key: "empty", label: "Boş sahne", icon: "plus", slots: 0, hint: "Katmanları kendin ekle" },
-  { key: "single", label: "Tek kaynak", icon: "video", slots: 1, hint: "Bir kamera / görsel tam ekran" },
-  { key: "pip", label: "Resim içinde resim", icon: "layers", slots: 2, hint: "Büyük görüntü + köşede küçük kutu" },
-  { key: "sbs", label: "Yan yana", icon: "grid", slots: 2, hint: "İki görüntü eşit boyda" },
-  { key: "triple", label: "Üçlü", icon: "overview", slots: 3, hint: "Bir büyük + iki küçük görüntü" },
-  { key: "start", label: "Başlangıç ekranı", icon: "play", slots: 0, ready: true, hint: "“Maç birazdan başlıyor” + geri sayım", title: "MAÇ BİRAZDAN BAŞLIYOR", minutes: 10 },
-  { key: "break", label: "Devre arası", icon: "clock", slots: 0, ready: true, hint: "“Devre arası” + ikinci yarıya geri sayım", title: "DEVRE ARASI", minutes: 15 },
-  { key: "end", label: "Bitiş ekranı", icon: "flag", slots: 0, ready: true, hint: "“Maç sona erdi · İzlediğiniz için teşekkürler”", title: "MAÇ SONA ERDİ", subtitle: "İzlediğiniz için teşekkürler", minutes: 0 },
-];
-export const templateOf = (key) => SCENE_TEMPLATES.find((t) => t.key === key) || null;
+export function templatePreview(t) {
+  if (!t) return [];
+  const out = [];
+  const slotsFirst = !t.parts?.some((p) => p.kind === "color" && p.box.w >= 1 && p.box.h >= 1);
+  const slots = Array.from({ length: t.slots || 0 }, (_, i) => ({ ...templateSlotBox(t, i), kind: "slot", n: i + 1 }));
+  if (t.ready) {
+    out.push({ ...box(0, 0, 1, 1), kind: "color", color: "#54009c" }, { ...box(0.12, t.minutes ? 0.24 : 0.36, 0.76, 0.12), kind: "text" });
+    if (t.minutes) out.push({ ...box(0.3, 0.56, 0.4, 0.2), kind: "clock" });
+    return out;
+  }
+  if (slotsFirst) out.push(...slots);
+  for (const p of t.parts || []) out.push({ ...p.box, kind: p.kind, color: p.props?.color });
+  if (!slotsFirst) out.push(...slots);
+  return out;
+}
 
-/** Şablon için varsayılan kaynaklar: önce kameralar, sonra diğer görseller (farklı olanlar). */
-export function templateSourceIds(config, slots) {
-  const order = [...config.sources].sort((a, b) => (a.kind === "camera" ? 0 : 1) - (b.kind === "camera" ? 0 : 1));
+/** Şablon için varsayılan kaynaklar: önce kameralar (ya da yuvanın tercih ettiği tür), sonra diğer görseller. */
+export function templateSourceIds(config, slots, prefer = null) {
+  const visual = config.sources.filter((s) => s.kind !== "audio");
+  const order = [...visual].sort((a, b) => (a.kind === "camera" ? 0 : 1) - (b.kind === "camera" ? 0 : 1));
   const ids = order.map((s) => s.id);
-  return Array.from({ length: slots }, (_, i) => ids[i] ?? ids[ids.length - 1] ?? null).filter(Boolean);
+  const used = new Set();
+  return Array.from({ length: slots }, (_, i) => {
+    const want = prefer?.[i];
+    const hit = want && order.find((s) => want.includes(s.kind) && !used.has(s.id));
+    const id = hit?.id ?? ids.find((x) => !used.has(x)) ?? ids[ids.length - 1] ?? null;
+    if (id) used.add(id);
+    return id;
+  }).filter(Boolean);
 }
 
 /**
- * Şablondan sahne. opts: { sourceIds, name, title, subtitle, minutes }.
+ * Şablondan sahne. opts: { sourceIds, name, title, subtitle, minutes, logoUrl }.
  * Hazır ekranlar zemin (gradyan + başlık) ve geri sayım kaynağı ekler;
  * geri sayım sahne YAYINA ALINDIĞINDA başlar (startOnAir).
  */
 export function sceneFromTemplate(config, key, opts = {}) {
   const r = buildFromTemplate(config, key, opts);
-  if (!r.scene || !templateOf(key)?.ready) return r;
+  const t = templateOf(key);
+  if (!r.scene || !t || !(t.ready || t.parts)) return r;
   const scene = { ...r.scene, template: key };
   return { config: { ...r.config, scenes: r.config.scenes.map((s) => (s.id === scene.id ? scene : s)) }, scene };
 }
 
 /** Hazır ekran sahnesi (şablondan oluşturulmuş: start / break / end), yoksa null. */
 export const readySceneOf = (config, key) => config.scenes.find((s) => s.template === key) || null;
+
+/** Yuva dışı parçaların kaynakları + katmanları. */
+function buildParts(config, t, name, opts) {
+  let c = config;
+  const layers = [];
+  const fill = (v) => (v === "@title" ? String(opts.title ?? t.title ?? "") : v === "@subtitle" ? String(opts.subtitle ?? t.subtitle ?? "") : v);
+  const minutes = Math.max(0, Math.min(180, Number(opts.minutes ?? t.minutes) || 0));
+  t.parts.forEach((p, i) => {
+    let src = null;
+    if (p.kind === "color") src = { ...sourceDefaults("color"), name: `${name} · ${p.box.w >= 1 && p.box.h >= 1 ? "zemin" : `plaka ${i + 1}`}`, ...p.props, text: fill(p.props?.text || "") };
+    else if (p.kind === "text") src = { ...sourceDefaults("text"), name: `${name} · ${p.text === "@subtitle" ? "alt satır" : "başlık"}`, ...p.props, text: fill(p.text) };
+    else if (p.kind === "clock") {
+      const countdown = p.props?.mode !== "match";
+      if (countdown && t.countdown && !minutes) return;
+      src = { ...sourceDefaults("clock"), name: `${name} · ${countdown ? "geri sayım" : "maç saati"}`, ...(countdown ? { mode: "countdown", durationMs: minutes * 60_000, targetAt: null, startOnAir: true } : {}), ...p.props };
+    } else if (p.kind === "replay") src = { ...sourceDefaults("replay"), name: `${name} · son tekrar` };
+    else if (p.kind === "image") {
+      src = opts.logoUrl
+        ? { ...sourceDefaults("image"), name: `${name} · logo`, url: opts.logoUrl }
+        : { ...sourceDefaults("text"), name: `${name} · logo yazısı`, text: fill(p.text || "@title"), size: 220, outline: false, background: false };
+    }
+    if (!src) return;
+    const { config: next, source } = addSource(c, src);
+    c = next;
+    layers.push({ part: p, layer: normalizeLayer(makeLayer(source.id, { ...p.box, fit: p.kind === "image" && opts.logoUrl ? "contain" : defaultFit(source.kind) }), source.kind) });
+  });
+  return { config: c, layers };
+}
 
 function buildFromTemplate(config, key, opts) {
   const t = templateOf(key);
@@ -473,14 +606,16 @@ function buildFromTemplate(config, key, opts) {
     }
     return addScene(c, name, layers);
   }
-  const ids = (opts.sourceIds?.length ? opts.sourceIds : templateSourceIds(config, t.slots)).filter((id) => config.sources.some((s) => s.id === id)).slice(0, t.slots);
+  const ids = (t.slots ? (opts.sourceIds?.length ? opts.sourceIds : templateSourceIds(config, t.slots, t.prefer)) : []).filter((id) => config.sources.some((s) => s.id === id)).slice(0, t.slots);
   const kindOf = (id) => config.sources.find((s) => s.id === id)?.kind;
-  const boxes = TEMPLATE_LAYOUTS[t.key];
-  const layers = ids.map((id, i) => {
-    const b = t.key === "pip" && i === 1 ? pipBox("br", 0.3) : boxes[i] || boxes[0];
-    return normalizeLayer(makeLayer(id, { ...b, fit: t.key === "single" ? defaultFit(kindOf(id)) : "cover" }), kindOf(id));
-  });
-  return addScene(config, name, layers);
+  const slotLayers = ids.map((id, i) => normalizeLayer(makeLayer(id, { ...templateSlotBox(t, i), fit: t.key === "single" ? defaultFit(kindOf(id)) : "cover" }), kindOf(id)));
+  if (!t.parts) return addScene(config, name, slotLayers);
+  const { config: c, layers: partLayers } = buildParts(config, t, name, opts);
+  // Tam ekran zemin yuvaların altında; bantlar / yazılar üstte.
+  const isUnder = ({ part }) => part.box.w >= 1 && part.box.h >= 1 && (part.kind === "color" || part.kind === "replay");
+  const under = partLayers.filter(isUnder).map((x) => x.layer);
+  const over = partLayers.filter((x) => !isUnder(x)).map((x) => x.layer);
+  return addScene(c, name, [...under, ...slotLayers, ...over]);
 }
 
 /**

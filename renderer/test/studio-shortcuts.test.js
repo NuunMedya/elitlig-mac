@@ -9,7 +9,7 @@ describe("kısayol şeridi modeli", () => {
     expect(loadRail(mem()).map((x) => x.type)).toEqual(DEFAULT_RAIL.map((x) => x.type));
     const n = normalizeRail([{ id: "a", type: "mic", size: 2 }, { id: "b", type: "yok" }, { id: "c", type: "mic" }, { type: "scene", opts: { sceneId: "s1" } }, { type: "scene", opts: { sceneId: "s1" } }, { type: "scene", opts: { sceneId: "s2" } }]);
     expect(n.map((x) => x.type)).toEqual(["mic", "scene", "scene"]);
-    expect(n[0]).toMatchObject({ id: "a", size: 2 });
+    expect(n[0]).toMatchObject({ id: "a", w: 2, h: 2 }); // eski size: 2 → 2×2
     expect(n.every((x) => x.id)).toBe(true);
   });
   it("ekle / kaldır / boyutla / taşı", () => {
@@ -17,12 +17,12 @@ describe("kısayol şeridi modeli", () => {
     expect(canAdd(l, "mic")).toBe(false);
     expect(addWidget(l, "mic")).toBe(l);
     l = addWidget(l, "replay");
-    expect(l.at(-1)).toMatchObject({ type: "replay", size: 2 });
+    expect(l.at(-1)).toMatchObject({ type: "replay", w: 2, h: 2 });
     l = addWidget(l, "scene", { opts: { sceneId: "s1" } });
     expect(addWidget(l, "scene", { opts: { sceneId: "s1" } })).toBe(l);
     expect(canAdd(l, "scene")).toBe(true);
     l = toggleWidgetSize(l, "a");
-    expect(l[0].size).toBe(2);
+    expect(l[0]).toMatchObject({ w: 2, h: 2 });
     expect(moveWidget(l, "c", "a").slice(0, 3).map((x) => x.id)).toEqual(["c", "a", "b"]);
     expect(moveWidget(l, "a", "c").slice(0, 3).map((x) => x.id)).toEqual(["b", "c", "a"]);
     expect(moveWidget(l, "a", null).at(-1).id).toBe("a");
@@ -32,7 +32,7 @@ describe("kısayol şeridi modeli", () => {
     const s = mem();
     saveRail(s, [{ id: "x", type: "led", size: 2 }]);
     expect(JSON.parse(s.getItem(RAIL_KEY)).items).toHaveLength(1);
-    expect(loadRail(s)).toEqual([{ id: "x", type: "led", size: 2 }]);
+    expect(loadRail(s)).toEqual([{ id: "x", type: "led", w: 2, h: 2 }]);
   });
   it("parçacıkların tuş eylemleri Ayarlar › Klavye kısayollarında atanabilir", () => {
     const keys = new Set(HOTKEY_ACTIONS.map((a) => a.key));

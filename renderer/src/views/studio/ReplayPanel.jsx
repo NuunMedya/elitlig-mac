@@ -9,15 +9,16 @@
 //          yüklenme durumu, "özete ekle", sil.
 //   Sağ    kuyruk: "Tekrarı yayına ver" (tekrar1/açıA → tekrar1/açıB → tekrar2 …,
 //          aralarda ElitLig logo geçişi), oynarken "Sıradaki" / "Canlıya dön".
-//   Üstte  TEKRAR DÜZENLEYİCİ (modes/ReplayEditor): büyük önizleme, yakınlaştır /
-//          kaydır (yayına da uygulanır), zaman çizelgesi, kare kare, ±1 sn, hız,
-//          "Buradan başlat", açı küçük resimleri.
+//   Düzenleme ÖNİZLEME ekranında (modes/ReplayPreviewOverlay): satıra / açıya tıkla →
+//          önizlemede yakınlaştır / kaydır (yayına da uygulanır), zaman çizelgesi, kare kare,
+//          ±1 sn, hız, giriş–çıkış noktası; burada yalnız kısa bir hatırlatma şeridi.
 import React, { memo, useMemo, useState } from "react";
 import { Icon, Kbd } from "../../components/ui";
 import { PROGRAM_ANGLE, angleLabel, anglesOf, defaultAngles, recordableSources, metaFor, replayOfMatch, replayTitle, secondsText, toggleIn } from "../../lib/studio/replays";
 import { TRANSITIONS } from "../../lib/studio/transitions";
 import UploadLog from "./modes/UploadLog";
-import ReplayEditor from "./modes/ReplayEditor";
+import "./modes/replayEditor.css";
+import { Part } from "./dock/parts";
 
 const STINGERS = [{ key: "cut", label: "Kesme" }, ...TRANSITIONS.filter((t) => t.stinger)];
 
@@ -85,9 +86,14 @@ function ReplayPanelInner({ api }) {
 
   return (
     <div className="st-replays-wrap">
-    {rm.transport && <ReplayEditor rm={rm} rate={rate} onRate={onRate} sources={sources} />}
+    <Part id="editor" label="Önizleme ekranında düzenle notu">
+    {rm.transport && (
+      <p className="rpe-note"><Icon name="search" size={13} /> Tekrarı düzenlemek için bir satıra ya da açıya tıkla: <b>önizleme ekranında</b> yakınlaştır, kaydır, kare kare ilerle, giriş / çıkış seç ({R.seconds || 15} sn'lik klibin istediğin bölümü) ve yayına al.</p>
+    )}
+    </Part>
     <div className="st-replays">
       <section className="st-replays__rec">
+        <Part id="angles" label="Kaydedilecek açılar">
         <h5 className="st-group">Kaydedilecek açılar</h5>
         <label className="toggle"><input type="checkbox" checked={anglePref.program !== false} onChange={(e) => setPref({ program: e.target.checked })} /> Program (yayın görüntüsü)</label>
         {R.multiAngle !== false && R.angleAvailable ? (
@@ -106,21 +112,27 @@ function ReplayPanelInner({ api }) {
             {!rec.length && <p className="st-hint">Açı kaydı için kamera / ekran kaynağı ekle.</p>}
           </>
         ) : <p className="st-hint">Bu sürümde yalnız program açısı kaydedilir.</p>}
-        <button type="button" className="btn btn--block st-moment" onClick={R.onMoment} disabled={!encoding || !R.onMoment} title={encoding ? "Son 10 saniyeyi olaysız tekrar olarak kaydet (B)" : "Tekrar için yayın ya da prova açık olmalı"}>
+        </Part>
+        <Part id="moment" label="ÖNEMLİ AN düğmesi">
+        <button type="button" className="btn btn--block st-moment" onClick={R.onMoment} disabled={!encoding || !R.onMoment} title={encoding ? `Son ${R.seconds || 15} saniyeyi olaysız tekrar olarak kaydet (B)` : "Tekrar için yayın ya da prova açık olmalı"}>
           <Icon name="star" size={15} /> ÖNEMLİ AN <Kbd>B</Kbd>
         </button>
         {!encoding && <p className="st-hint">Tekrar kaydı için yayın ya da <strong>prova</strong> açık olmalı.</p>}
+        </Part>
+        <Part id="rate" label="Hız / ağır çekim">
         <div className={`st-rate ${onAir ? "is-live" : ""}`}>
-          <span className="st-rate__head"><strong>Hız {String(rate).replace(".", ",")}×</strong>{rate < 1 && <em>ağır çekim</em>}{onAir && <em className="is-live">yayında anında uygulanır</em>}</span>
+          <span className="st-rate__head"><strong>Hız {String(rate).replace(".", ",")}×</strong>{rate < 1 && <em>ağır çekim</em>}{onAir && <em>önizlemeye uygulanır · yayına GEÇİŞ ile</em>}</span>
           <input type="range" min={0.25} max={1} step={0.05} value={rate} onChange={(e) => onRate(Math.round(Number(e.target.value) * 20) / 20)} aria-label="Tekrar hızı" />
           <span className="st-chips">{[0.25, 0.5, 0.75, 1].map((v) => <button key={v} type="button" className={`st-chip ${rate === v ? "is-on" : ""}`} onClick={() => onRate(v)}>{String(v).replace(".", ",")}×</button>)}</span>
         </div>
+        </Part>
       </section>
 
+      <Part id="list" label="Tekrar listesi">
       <section className="st-replays__list">
         <header className="st-dock-head">
           <h4>Tekrarlar <span className="muted">({list.length})</span></h4>
-          <span className="st-hint">Satıra tıkla: önizle · kutu: kuyruğa ekle · <Kbd>R</Kbd> sonuncuyu yayına verir.</span>
+          <span className="st-hint">Satıra tıkla: önizle · kutu: kuyruğa ekle · <Kbd>R</Kbd> sonuncuyu önizlemeye alır · yayına GEÇİŞ (<Kbd>Boşluk</Kbd>).</span>
           <span className="st-top__spacer" />
           <label className="toggle small"><input type="checkbox" checked={onlyMatch} onChange={(e) => setOnlyMatch(e.target.checked)} /> Yalnız bu maç</label>
           {selectedCount > 0 && <button type="button" className="btn btn--xs" onClick={() => setSelection({})}>Seçimi temizle</button>}
@@ -164,8 +176,10 @@ function ReplayPanelInner({ api }) {
           {!list.length && !pending.length && <li className="st-hint st-pad">Henüz tekrar yok. GOL'e bas ya da <strong>ÖNEMLİ AN</strong> ile kaydet.</li>}
         </ul>
       </section>
+      </Part>
 
       <section className="st-replays__queue">
+        <Part id="queue" label="Önizleme ve kuyruk">
         <h5 className="st-group">Önizleme ve kuyruk</h5>
         <p className="st-hint">{cursor ? <>Önizlemede: <strong>{replayTitle(cursor.replay, metaFor(cursor.replay, meta))}</strong> · {angleLabel(cursor.angle, sources)}</> : "Önizlemek için listeden bir tekrar seç."}</p>
         {onAir ? (
@@ -175,16 +189,19 @@ function ReplayPanelInner({ api }) {
             {player.index + 1 < player.total && <button type="button" className="btn btn--block" onClick={player.skip}><Icon name="skip" size={13} /> Sıradakine geç</button>}
           </>
         ) : (
-          <p className="st-hint">{queue.length ? `Kuyruk: ${selectedCount} tekrar · ${queue.length} açı · ≈ ${Math.round((queueMs * (1 / (rate || 1))) / 1000)} sn` : "Kuyruk boş: yayına alınca önizlenen klip oynar."}</p>
+          <p className="st-hint">{queue.length ? `Kuyruk: ${selectedCount} tekrar · ${queue.length} açı · ≈ ${Math.round((queueMs * (1 / (rate || 1))) / 1000)} sn` : "Kuyruk boş: yayına önizlenen klip gider."}</p>
         )}
         <p className="st-hint">Aralarda seçili logo geçişi; kuyruk bitince canlıya dönülür. Geçiş türü ve ses solda.</p>
+        </Part>
+        <Part id="between" label="Aradaki geçiş">
         <label className="st-transition__ms md-between">
           Aradaki geçiş
           <select className="select-xs" value={api.cfg.between.kind} onChange={(e) => api.setCfg((c) => ({ ...c, between: { kind: e.target.value } }))}>
             {STINGERS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
           </select>
         </label>
-        <UploadLog />
+        </Part>
+        <Part id="uploads" label="Yükleme günlüğü"><UploadLog /></Part>
       </section>
     </div>
     </div>

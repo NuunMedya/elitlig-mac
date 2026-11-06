@@ -5,6 +5,7 @@
 import React, { memo } from "react";
 import { Field, Icon } from "../../../components/ui";
 import { LedGraphicsPanel } from "../scenes/graphicsBridge";
+import { Part } from "../dock/parts";
 
 const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent || "");
 const CLOSE_KEYS = isMac ? "⌘⇧L" : "Ctrl+Shift+L";
@@ -24,6 +25,7 @@ function LedPanel({ led, scenes, matchId, ledMode, g, live }) {
   const sceneName = (id) => scenes.find((s) => s.id === id)?.name;
   return (
     <div className="st-led">
+      <Part id="output" label="LED ekran çıkışı">
       <section className="st-card">
         <header className="st-card__head"><Icon name="overview" size={15} /><strong>LED ekran çıkışı</strong>
           <span className={`pill pill--xs ${st.open ? "pill--red" : ""}`}>{st.open ? "AÇIK" : "KAPALI"}</span>
@@ -59,7 +61,9 @@ function LedPanel({ led, scenes, matchId, ledMode, g, live }) {
         {p.web && <p className="st-hint">{matchId ? `elitlig.com/led/${matchId}` : "Maç seçilmedi"} · içerik: {ledMode ? String(ledMode) : "varsayılan"} (üst çubuktaki LED seçicisi)</p>}
         {st.open && st.mode && ((st.mode === "web") !== Boolean(p.web)) && <p className="st-hint is-armed">Kaynak değişti: uygulamak için LED çıkışını kapatıp yeniden aç.</p>}
       </section>
+      </Part>
 
+      <Part id="route" label="LED'e ver">
       <section className={`st-card ${p.web ? "is-dim" : ""}`}>
         <header className="st-card__head"><Icon name="arrows" size={15} /><strong>LED'e ver</strong><small className="muted">sahne kutularındaki “LED” düğmesiyle de</small></header>
         <div className="st-var__modes">
@@ -78,11 +82,14 @@ function LedPanel({ led, scenes, matchId, ledMode, g, live }) {
           </Field>
         )}
       </section>
+      </Part>
 
       {LedGraphicsPanel && g && (
+        <Part id="graphics" label="LED grafikleri">
         <section className="st-card st-led__gfx">
           <LedGraphicsPanel g={g} live={live} matchId={matchId} embedded scenes={scenes.map((s) => ({ id: s.id, name: s.name }))} />
         </section>
+        </Part>
       )}
     </div>
   );

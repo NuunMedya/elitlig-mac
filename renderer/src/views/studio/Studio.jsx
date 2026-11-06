@@ -11,7 +11,12 @@
 //
 //   Üst çubuk   yalın: skor + maç, yayın durumu, YAYIN SAĞLIĞI, çalışma alanı,
 //               kısayollar (?), AYARLAR (dişli), PROGRAMDAN ÇIK (yayın sürerken onaylı)
-//   Sol şerit   KISAYOL ŞERİDİ (./shortcuts): düzenlenebilir iki sütunlu ızgara; işlevsel
+//   YERLEŞİM    (./layout) ekranın tamamı yapboz gibi döşenir (dockview): bölmeler, sekme
+//               grupları, panolar (react-grid-layout). Üst çubukta DÜZENLE: sürükle, böl,
+//               birleştir, büyüt / küçült, yüzen pencere, kaldır; "Kutu ekle" (kaldırılanlar
+//               en üstte), "Yeni sekme" (kendi panon), "Hazır düzen". Ayarlar › Yerleşim'de ağaç.
+//               Eski sol şerit / sahne ızgarası / alt panel ilk açılışta buraya göç eder.
+//   Sol şerit   KISAYOL ŞERİDİ (./shortcuts) artık "Kısayollar" panosu: iki sütunlu; işlevsel
 //               parçacıklar (Yayın, Mikrofon, VAR, Tekrar [açı seçimi], Önemli an, Olay gir,
 //               takım GOL'leri, Skorbord çeşidi, Altyazı, Röportaj, Bölüm, LED, sahneler,
 //               gol müziği…). 1×1 / 2×2, sürükle-bırak, sağ tık, "+" katalog; Ayarlar'da da.
@@ -20,9 +25,12 @@
 //               (kırmızı YAYINDA / yeşil ÖNİZLEME / mavi LED). Monitöre sağ tık → Tam ekran.
 //               Program monitörünün hemen altında program ses şeridi yuvası (audio/).
 //   Geçiş       GEÇİŞ (Boşluk), hızlı tür, Son sahneye dön (L). Ayrıntı: Geçişler sekmesi.
-//   Alt panel   TEKRAR (vurgulu, ilk) · Maç yönetimi · Sahneler (kaynaklar sahnelerin
-//               içinden) · Geçişler · Marka & ön ayarlar · Skorbord · Altyazı · Sponsor ·
-//               VAR · Röportaj · Özet · Yayın · Ses · LED ekran
+//   Alt panel   ÇOK SÜTUNLU çalışma alanı (./Dock.jsx, ./dock/): varsayılan Maç yönetimi |
+//               Sahneler | Tekrar | Ses (Tekrar ve Ses sabit); sütun ekle / kaldır / sabitle /
+//               değiştir / genişlik; tek sekme kipi. Yalnız işletim panelleri (Reji, Sahneler,
+//               Tekrar, Ses, VAR, Röportaj, Özet, Yayın, LED, Olay gir); her panelin parçaları
+//               Ayarlar › Alt panel'den gizlenir. Skorbord, Altyazı, Marka & ön ayarlar,
+//               Sponsor & linkler ve Geçişler Ayarlar sayfasında.
 //   Ayarlar     dişli → tam sayfa (settings/): yayın, kayıt kalitesi (+10 dk boyut tahmini),
 //               tekrar, geçiş, LED, görünüm, kısayol düğmeleri, klavye kısayolları, bildirimler
 //
@@ -35,7 +43,7 @@
 // ref'lerde ve yaprak bileşenlerde durur; alt panellere kimliği sabit işlevler
 // verilir — açık açılır menüler kapanmaz, program tuvali sabit hızda çizilir.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Icon, Kbd, MenuButton, Modal, useConfirm, useToast } from "../../components/ui";
+import { Icon, Kbd, Modal, useConfirm, useToast } from "../../components/ui";
 import { setLeaveGuard } from "../../lib/leaveGuard";
 import {
   addLayer, addScene, addSource, duplicateScene, loadScenesConfig, moveLayerTo, moveSceneTo, multiviewTiles, readySceneOf,
@@ -46,10 +54,12 @@ import { backupIngestUrl, encodingPreset, ingestUrl, keyAction, normalizeEncodin
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../lib/studio/transitions";
 import { DEFAULT_BRANDING } from "../../lib/studio/stinger";
 import { micWarning } from "../../lib/studio/var";
-import { FIXED_SHORTCUTS, WORKSPACES, gridCells, gridOverflow, previewVisible, workspaceOf } from "../../lib/studio/scenesWorkspace";
+import { FIXED_SHORTCUTS, workspaceOf } from "../../lib/studio/scenesWorkspace";
+import { loadStage, presetForWorkspace, presetTiles, saveStage } from "../../lib/studio/stageGrid";
 import { scorerLines } from "../../lib/studio/scorebug";
 import { eventLabel, isGoalCode, timerNowMs } from "../../lib/studio/match";
-import { PROGRAM_ANGLE, anglesOf, anglesToRecord, buildReplayQueue, defaultAngles, metaFor, recordableSources, replayBanner, replayTitle } from "../../lib/studio/replays";
+import { PROGRAM_ANGLE, angleLabel, anglesOf, anglesToRecord, buildReplayQueue, defaultAngles, metaFor, recordableSources, replayBanner, replayTitle } from "../../lib/studio/replays";
+import { payloadSummary, planTake, previewStateOf, programStateOf, samePayload, takeAfterLoad, takeLabel } from "../../lib/studio/previewTake"; // [önizleme-geçiş]
 import { useLiveMatch } from "./useLiveMatch";
 import { useStudioSources } from "./useStudioSources";
 import { useAudioMixer } from "./useAudioMixer";
@@ -63,8 +73,8 @@ import { useReplayPlayer } from "./useReplayPlayer";
 import { useHighlights } from "./useHighlights";
 import { useStable } from "./useStable";
 import { errorText } from "./studioApi";
-import Multiview, { Tile, tileWarning, useTileRenderer } from "./Multiview";
-import Dock, { clampDock } from "./Dock";
+import { tileWarning, useTileRenderer } from "./Multiview";
+import { clampDock } from "./Dock";
 import { SourceDialog } from "./SourcesPanel";
 import ReplayPanel from "./ReplayPanel";
 import HighlightsPanel from "./HighlightsPanel";
@@ -73,14 +83,17 @@ import AudioPanel from "./AudioPanel";
 import PlayerPicker from "./PlayerPicker";
 import { ManageDock } from "./manage";
 import Monitor from "./scenes/Monitor";
-import { SceneEditor, SceneRail, ScenesTab, TemplateDialog, templateMenu } from "./scenes/ScenesPanel";
+import { SceneEditor, ScenesTab, TemplateDialog, TemplateGallery } from "./scenes/ScenesPanel";
+import { AnglesTile, ClockTile, LedMonitor, MetersTile, SceneCell, SceneCellPicker, ScenesStrip } from "./stage/StageTiles";
+import ReplayPreviewOverlay from "./modes/ReplayPreviewOverlay";
 import TransitionPanel from "./scenes/TransitionPanel";
-import TransitionsTab from "./scenes/TransitionsTab";
 import FullscreenView from "./scenes/FullscreenView";
-import ShortcutRail, { useRail } from "./shortcuts/ShortcutRail";
+import { useRail } from "./shortcuts/ShortcutRail";
 import EventEntry from "./shortcuts/EventEntry";
 import HealthChip from "./scenes/HealthChip";
 import { useChapters, useLowBitrate, useSilenceWatch } from "./scenes/useOperatorAlerts";
+import { goalScoreAfter, isOwnGoalCode } from "./youtube/chapters"; // [bölüm] gol bölümü: skor + golcü
+import { createGoalTaps } from "./youtube/goalTaps"; // [bölüm] GOL'e basılan anlar
 import { useYoutubeStart } from "./youtube/YoutubeStartDialog"; // [medya] YouTube başlatma penceresi
 import { audioInputFromDraft } from "../../lib/studio/audio"; // [medya] ek ses kaynağı (aygıt / dosya)
 import { interviewClock, useInterview } from "./scenes/useInterview";
@@ -92,9 +105,21 @@ import VarPanel from "./var/VarPanel";
 import { InterviewReviewHost } from "./modes/InterviewPanel";
 import { useLed } from "./led/useLed";
 import LedPanel from "./led/LedPanel";
-import SettingsPage, { WorkspacePic } from "./settings/SettingsPage";
+import SettingsPage from "./settings/SettingsPage";
 import { useStudioSettings } from "./settings/useStudioSettings";
 import { HOTKEY_ACTIONS, keyText, localRecordOptions, recordEstimate, recordQualityOf } from "./settings/settings";
+// ── alt panel çalışma alanı (sütunlar, parçalar) + ayar şablonları ──
+import { useDock } from "./dock/useDock";
+import { panelOf } from "./dock/dockModel";
+// ── ekran yerleşimi (./layout): dockview bölmeleri + panolar ──
+import Workspace from "./layout/Workspace";
+import LayoutToolbar from "./layout/LayoutToolbar";
+import LayoutSettings, { BoardEditor } from "./layout/LayoutSettings";
+import { useLayout } from "./layout/useLayout";
+import { boardPanelId, componentOf, dockPanelIds, panelMeta } from "./layout/layoutModel";
+import { PanelScope, PartsProvider } from "./dock/parts";
+import AutoTransition from "./layout/AutoTransition";
+import { normalizeModeSettings } from "../../lib/studio/modes";
 import logoInline from "../../assets/elitlig-beyaz.png?inline";
 import "./studio.css";
 
@@ -107,8 +132,16 @@ const ProgramAudioStrip = audioStripMod?.default || audioStripMod?.ProgramAudioS
 const goalMusicMod = firstMod(import.meta.glob(["./goalmusic/index.js", "./goalmusic/index.jsx"], { eager: true }));
 const useGoalMusicMod = typeof goalMusicMod?.useGoalMusic === "function" ? goalMusicMod.useGoalMusic : null;
 const GoalMusicButtons = goalMusicMod?.GoalMusicButtons || null;
+const GoalMusicPanel = goalMusicMod?.GoalMusicPanel || null;
+// Yükleme günlüğü (modes/UploadLog) ayrı panel olarak da eklenebilir.
+const UploadLogPanel = firstMod(import.meta.glob("./modes/UploadLog.jsx", { eager: true }))?.default || null;
+const GoalMusicStopPill = goalMusicMod?.GoalMusicStopPill || null; // [gol-müziği] çalarken sahnenin üstünde "MÜZİĞİ KES"
 const useNoGoalMusic = () => null;
 const useGoalMusicSafe = useGoalMusicMod || useNoGoalMusic;
+// "Yayına giden ses" seçicisi (modes/ModeTab) — Ayarlar › Tekrar'da da (modül yoksa gösterilmez).
+const RoutePicker = firstMod(import.meta.glob("./modes/ModeTab.jsx", { eager: true }))?.RoutePicker || null;
+// Eski sekme anahtarları → Ayarlar bölümleri (yapılandırma sekmeleri alt panelden Ayarlar'a taşındı).
+const SETTINGS_TABS = { gecis: "gecis", marka: "marka", skorbord: "skorbord", altyazi: "altyazi", sponsor: "sponsor" };
 
 const PREFS_KEY = "studio.prefs.v1";
 const MATCH_KEY = "studio.match";
@@ -176,19 +209,6 @@ function HelpModal({ hotkeys, onClose }) {
   );
 }
 
-/** Üst çubukta çalışma alanı seçici (küçük çizimler). */
-function WorkspacePicker({ value, onChange }) {
-  return (
-    <div className="st-wsseg" role="radiogroup" aria-label="Çalışma alanı">
-      {WORKSPACES.map((w) => (
-        <button key={w.key} type="button" role="radio" aria-checked={value === w.key} className={value === w.key ? "is-on" : ""} onClick={() => onChange(w.key)} title={`${w.label} — ${w.hint}`}>
-          <WorkspacePic ws={w} />
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export default function Studio({ auth, go }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -205,7 +225,43 @@ export default function Studio({ auth, go }) {
   useEffect(() => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* yoksay */ } }, [prefs]);
   const preset = useMemo(() => encodingPreset(prefs.encoding), [prefs.encoding]);
   const setAnglePref = useCallback((v) => setPref("angles", v), [setPref]);
-  const { settings, set: setSetting, reset: resetSettings } = useStudioSettings(prefs);
+  const { settings, set: setSetting, reset: resetSettings, reload: reloadSettings } = useStudioSettings(prefs);
+
+  /* ───────── alt panel düzeni (./dock): sütunlar, panel sırası, gizli parçalar ───────── */
+  const { dock, setDock, reset: resetDock } = useDock(prefs.tab);
+  const dockRef = useRef(dock);
+  dockRef.current = dock;
+  const dockPanelsRef = useRef([]); // o an kullanılabilen paneller (aşağıda dolar)
+  const [dockFlash, setDockFlash] = useState(null);
+  /* ───────── ekran yerleşimi (./layout): bölmeler, sekme grupları, panolar ───────── */
+  const lay = useLayout({ dockH: prefs.dockH });
+  /** Panele git (üst çubuk, kısayollar, bağlantılar): ekrandaysa öne gelir, değilse eklenir. Yapılandırma sekmeleri Ayarlar'da açılır. */
+  const openPanel = useStable((t) => {
+    const key = String(t || "").replace(/^mode:/, "");
+    if (SETTINGS_TABS[key]) { setSettingsSection(SETTINGS_TABS[key]); return; }
+    if (!panelMeta(key)) return;
+    const c = lay.ctrlRef.current;
+    if (!c) return;
+    const had = c.has(key);
+    c.add(key);
+    setDockFlash(key);
+    setTimeout(() => setDockFlash((f) => (f === key ? null : f)), 1200);
+    if (!had) toast(`“${panelMeta(key).label}” ekrana eklendi (Düzenle ile yerini değiştirebilirsin).`, { tone: "info", timeout: 2600 });
+  });
+
+  /* ───────── sahne alanı ızgarası (stage/StageGrid, lib/studio/stageGrid.js) ───────── */
+  // Monitörler ve araç kutuları hücre ızgarasında; hazır düzenler eski çalışma alanı anahtarlarına eşlenir.
+  const [stage, setStage] = useState(() => loadStage(store, prefs.workspace));
+  useEffect(() => { saveStage(store, stage); }, [stage]);
+  const wsSeenRef = useRef(prefs.workspace);
+  useEffect(() => {
+    // Ayarlar'dan (ya da eski kayıttan) çalışma alanı değişirse eşlenen hazır düzen uygulanır.
+    if (wsSeenRef.current === prefs.workspace) return;
+    wsSeenRef.current = prefs.workspace;
+    const key = presetForWorkspace(prefs.workspace);
+    setStage((st) => (st.preset === key && !st.custom ? st : { ...st, preset: key, custom: false, tiles: presetTiles(key) }));
+    lay.ctrlRef.current?.applyStageTiles?.(presetTiles(key)); // yerleşimde ekran bölgesi yeniden kurulur
+  }, [prefs.workspace]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ───────── maç (yalnız Maç yönetimi'nden seçilir) ───────── */
   const [matchId, setMatchId] = useState(() => { try { return Number(localStorage.getItem(MATCH_KEY)) || null; } catch { return null; } });
@@ -336,12 +392,13 @@ export default function Studio({ auth, go }) {
   const stopEncoder = async ({ askFirst = true } = {}) => {
     if (askFirst && engine.mode === "live" && !(await ask({ title: "Görüntüyü durdur", message: "Yayına görüntü gitmesi kesilir. YouTube yayını açık kalır; yeniden başlatıp devam edebilirsin.", confirmLabel: "Durdur", danger: true }))) return;
     setBusy(true);
-    try { await engine.stop(); } finally { setBusy(false); }
+    try { await chapters.sync.flush?.(); /* [bölüm] son durum YouTube'a */ await engine.stop(); } finally { setBusy(false); }
   };
   const endYoutube = async () => {
     if (!(await ask({ title: "Yayını bitir", message: "Görüntü kesilir ve YouTube yayını kapatılır. Kayıt kanalda kalır.", confirmLabel: "Bitir", danger: true }))) return;
     setBusy(true);
     try {
+      await chapters.sync.flush?.(); // [bölüm] son bölümler YouTube yayını kapanmadan gider
       await engine.stop();
       if (yt.stream?.broadcast_id) await yt.end();
       toast("Yayın bitti.", { tone: "success" });
@@ -350,7 +407,7 @@ export default function Studio({ auth, go }) {
   const topStart = () => {
     if (engine.active) { stopEncoder(); return; }
     if (yt.config.configured && matchId) { startYoutube(); return; }
-    setPref("tab", "yayin");
+    openPanel("yayin");
     toast(yt.config.configured ? "Önce Maç yönetimi sekmesinden maç aç." : "YouTube kanalı bağlı değil: Yayın sekmesinden kanalı bağla, RTMP anahtarı gir ya da prova başlat.", { tone: "warn", timeout: 5000 });
   };
 
@@ -412,10 +469,10 @@ export default function Studio({ auth, go }) {
     if (!(await ask({ title: "Tekrarı sil", message: "Bu tekrar ve tüm açılarının dosyaları bu bilgisayardan silinsin mi? Profile yüklenen gol videosu kalır.", confirmLabel: "Sil", danger: true }))) return;
     replays.remove(r.id);
   });
-  /** Maç yönetiminden bir tekrarı oynat (seçili açılarla, yayına). */
+  /** Maç yönetiminden bir tekrar: ÖNİZLEME'ye yüklenir (yayına GEÇİŞ ile) [önizleme-geçiş]. */
   const playReplay = useStable((r) => {
     if (!r) return;
-    if (hasModes && modes.openReplay) { modes.openReplay(r); setPref("tab", "mode:tekrar"); return; }
+    if (hasModes && modes.loadReplay) { loadReplayAny(r); openPanel("tekrar"); return; }
     const item = replays.replays.find((x) => x.id === r.id) || r;
     player.play(buildReplayQueue([item], { [item.id]: defaultAngles(item, liveAngles) }));
   });
@@ -433,7 +490,7 @@ export default function Studio({ auth, go }) {
 
   /* ───────── program / önizleme ───────── */
   const ws = workspaceOf(prefs.workspace);
-  const studioMode = previewVisible(ws, prefs.studioMode);
+  const studioMode = Boolean(prefs.studioMode) && lay.has("pvw");
   const tKind = transitionKind(prefs.transition);
   const tMs = transitionMs(tKind.key, prefs.transitionMs);
 
@@ -444,7 +501,9 @@ export default function Studio({ auth, go }) {
     drawScene(ctx, resolveScene(cfg, cfg.programSceneId), cfg.sources, src.runtimeRef.current, W, H, { now, matchClockMs: matchClockRef.current?.() ?? null });
   }, [src.runtimeRef]);
   const setModesPref = useCallback((fn) => setPref("modes", fn), [setPref]);
+  const takeRef = useRef(null); // [önizleme-geçiş] tek GEÇİŞ işlevi (aşağıda take) — kip sekmelerindeki "Yayına al" da bunu çağırır
   const modes = useBroadcastModesSafe({
+    takeRef,
     engine: { active: engine.active, mode: engine.mode, program: comp.program, drawScene: drawProgramScene },
     live, g, matchId, imagesRef, toast, ask,
     sources: { list: config.sources, runtimeRef: src.runtimeRef, programIds },
@@ -459,11 +518,32 @@ export default function Studio({ auth, go }) {
   const V = hasModes && modes.var ? modes.var : null;
   const replayPlaying = R ? Boolean(R.playing) : player.playing;
   const varActive = V ? Boolean(V.active) : vr.active;
-  const toggleVar = V ? V.toggle : vr.toggle;
+  // [önizleme-geçiş] V: VAR yayındaysa canlıya döner, değilse önizlemeye (stüdyo modu kapalıysa aynı GEÇİŞ yoluyla yayına).
+  const toggleVar = useStable(() => {
+    if (!V) { vr.toggle(); return; }
+    if (V.toggle() === "preview" && takeAfterLoad({ studioMode })) takeRef.current?.();
+  });
   const interview = hasModes && modes.interview ? modes.interview : iv;
   const showMicWarning = settings.notify.micOpen && (hasModes ? Boolean(modes.micWarning) || legacyMicWarning : legacyMicWarning);
   const stopReplay = useStable(() => { if (R) R.stop(); else player.stop(true); });
-  const playLatestAny = useStable(() => { if (R) R.playLatest(); else playLatest(); });
+  // [önizleme-geçiş] R / "Son tekrar" düğmeleri: son tekrar ÖNİZLEME'ye; "R = doğrudan yayına" açıksa
+  // (ya da stüdyo modu kapalıysa) hemen aynı GEÇİŞ yoluyla yayına — önizlemede görünen aynen gider.
+  const playLatestAny = useStable(() => {
+    if (!R || !modes.loadLatest) { playLatest(); return; }
+    if (modes.loadLatest() && takeAfterLoad({ studioMode, direct: settings.replay.directTake })) takeRef.current?.();
+  });
+  /** Tekrarı (seçilen açılarla) önizlemeye yükle; take: yükleyip aynı GEÇİŞ yoluyla yayına al. */
+  const loadReplayAny = useStable((r, { angles, angle, take: andTake = false } = {}) => {
+    if (!r) return false;
+    if (!modes.loadReplay) {
+      const item = replays.replays.find((x) => x.id === r.id) || r;
+      player.play(buildReplayQueue([item], { [item.id]: angles?.length ? angles : defaultAngles(item, liveAngles) }));
+      return true;
+    }
+    if (!modes.loadReplay(r, { angles, angle })) return false;
+    if (andTake || takeAfterLoad({ studioMode })) takeRef.current?.();
+    return true;
+  });
   modesRef.current = { previewOverride: modes.previewOverride || null, programOverride: modes.programOverride || null };
 
   /* ───────── gol müziği (isteğe bağlı modül: ./goalmusic) ───────── */
@@ -488,36 +568,82 @@ export default function Studio({ auth, go }) {
     setLastSceneId(historyRef.current[0] || null);
   };
 
-  /** Özel kip önizlemedeyse Geçiş onu yayına alır (karıştırıcı geçişi yapar). */
-  // Kip geçişi kendisi çizer (programOverride.draw + drawBase); karıştırıcı yalnız çağırır.
-  const takeMode = useStable(() => {
-    if (!modes.previewOverride) return false;
-    try { Promise.resolve(modes.takeToAir?.({ kind: tKind.key, ms: tMs })).catch(() => {}); } catch { /* yoksay */ }
-    return true;
-  });
-
-  const toProgram = useStable((id) => {
+  /* ───────── [önizleme-geçiş] ÖNİZLEME → PROGRAM: tek doğruluk kaynağı + tek GEÇİŞ ─────────
+     Önizleme durumu = önizlemedeki kip (tekrarda yüküyle: klip, açı, giriş / çıkış, görünüm, hız)
+     ya da önizleme sahnesi (lib/studio/previewTake › previewStateOf). take() planTake'in planını
+     uygular: önizlemede ne varsa AYNEN programa; sonra yayından düşen sahne önizlemeye gelir.
+     Durum eşzamanlı okunur (configRef + modes.previewNow / airNow): yükleyip hemen almak güvenli. */
+  const previewStateNow = () => {
+    const pm = modes.previewNow ? modes.previewNow() : modes.previewMode ? { mode: modes.previewMode, payload: null } : null;
+    return previewStateOf({ previewSceneId: configRef.current.previewSceneId, previewMode: pm?.mode || null, payload: pm?.payload || null });
+  };
+  const programStateNow = () => {
+    const air = modes.airNow ? modes.airNow() : modes.airMode ? { mode: modes.airMode, stage: modes.stage, payload: null } : null;
+    return programStateOf({ programSceneId: configRef.current.programSceneId, airMode: air?.mode || null, airStage: air?.stage || "idle", airPayload: air?.payload || null });
+  };
+  /** Yapılandırmayı hem ref'te (eşzamanlı okuma) hem durumda güncelle. */
+  const applyConfig = (fn) => { configRef.current = fn(configRef.current); setConfig(fn); };
+  const takingRef = useRef(false); // kip yayına alınırken (klip yükleniyor) ikinci GEÇİŞ yok sayılır
+  const take = useStable(async () => {
+    if (takingRef.current) return false;
     const cfg = configRef.current;
-    if (!id && modes.previewOverride && takeMode()) return;
-    const target = id || cfg.previewSceneId;
-    if (!target) return;
-    const swap = (c) => startSceneCountdowns({ ...c, programSceneId: target, previewSceneId: studioMode ? (target === c.previewSceneId && !id ? c.programSceneId : c.previewSceneId) : target }, target);
-    if (modes.isOnAir || modes.programOverride) {
-      // Özel kipten sahneye dön: kip çıkış geçişini kendisi çizer (öbür ucu drawBase = yeni program sahnesi).
-      try { if (modes.endOnAir) modes.endOnAir({ kind: tKind.key, ms: tMs }); else modes.onTransitionTake?.(target); } catch { /* yoksay */ }
-      restartVideosIn(target); pushHistory(cfg.programSceneId, target); setConfig(swap); return;
+    const plan = planTake({ preview: previewStateNow(), program: programStateNow(), studioMode });
+    const tr = { kind: tKind.key, ms: tMs };
+    if (plan.type === "none") {
+      // Eski yol (yayın modları modülü yokken): VAR / tekrar yayındaysa önizleme sahnesine dön.
+      const target = cfg.previewSceneId || cfg.programSceneId;
+      if (!target || (!vr.active && !player.playing)) return false;
+      if (vr.active) vr.exit(); else player.stop(true);
+      restartVideosIn(target); pushHistory(cfg.programSceneId, target);
+      applyConfig((c) => startSceneCountdowns({ ...c, programSceneId: target, previewSceneId: studioMode ? c.programSceneId : target }, target));
+      return true;
     }
-    if (vr.active) { vr.exit(); restartVideosIn(target); pushHistory(cfg.programSceneId, target); setConfig(swap); return; }
-    if (player.playing) { restartVideosIn(target); pushHistory(cfg.programSceneId, target); setConfig(swap); player.stop(true); return; }
-    if (target === cfg.programSceneId) return;
+    if (plan.type === "mode") {
+      takingRef.current = true;
+      let ok = false;
+      // Geçiş: Ayarlar › Tekrar "Yayına alma geçişi" (kip ayarı), yoksa seçili geçiş.
+      const modeTr = modes.settings?.transition || tr;
+      try { ok = Boolean(await modes.takeToAir?.(modeTr, plan.mode, plan.payload)); } catch { ok = false; } finally { takingRef.current = false; }
+      if (!ok) return false;
+      // Önizleme tutarlı: kip yayına gitti → önizlemeye kipten önceki (alttaki) sahne gelir; ikinci GEÇİŞ geri döner.
+      // Bu arada önizlemeye başka içerik yüklendiyse ona dokunulmaz.
+      const pvAfter = modes.previewNow?.();
+      if (pvAfter?.mode === plan.mode && (plan.mode !== "tekrar" || samePayload(pvAfter.payload, plan.payload))) {
+        modes.clearPreview?.(plan.mode);
+        if (plan.nextPreviewSceneId && studioMode) applyConfig((c) => ({ ...c, previewSceneId: plan.nextPreviewSceneId }));
+      }
+      return true;
+    }
+    // Sahne: yayındaki kip (tekrar / VAR / röportaj / özet) çıkış geçişiyle biter; öbür ucu yeni program sahnesi.
+    const target = plan.to;
+    const swap = (c) => startSceneCountdowns({ ...c, programSceneId: target, previewSceneId: plan.nextPreviewSceneId || target }, target);
+    if (plan.endMode) {
+      try { if (modes.endOnAir) modes.endOnAir(tr); else modes.onTransitionTake?.(target); } catch { /* yoksay */ }
+      restartVideosIn(target); pushHistory(cfg.programSceneId, target); applyConfig(swap); return true;
+    }
+    if (vr.active) { vr.exit(); restartVideosIn(target); pushHistory(cfg.programSceneId, target); applyConfig(swap); return true; }
+    if (player.playing) { restartVideosIn(target); pushHistory(cfg.programSceneId, target); applyConfig(swap); player.stop(true); return true; }
     restartVideosIn(target);
     comp.startTransition(cfg.programSceneId, target, tKind.key, tMs);
     pushHistory(cfg.programSceneId, target);
-    setConfig(swap);
+    applyConfig(swap);
+    return true;
+  });
+  takeRef.current = () => { take(); };
+  /** Sahneyi önizlemeye yükle (önizlemedeki kip bırakılır: önizlemede artık bu sahne var). */
+  const loadSceneToPreview = (id) => {
+    if (!id) return;
+    modes.clearPreview?.();
+    applyConfig((c) => (c.previewSceneId === id ? c : { ...c, previewSceneId: id }));
+  };
+  /** GEÇİŞ (id yok) ya da "bu sahneyi yayına" (id): önce önizlemeye yüklenir, sonra aynı take. */
+  const toProgram = useStable((id) => {
+    if (id) loadSceneToPreview(id);
+    return take();
   });
   const toPreview = useStable((id) => {
-    if (!studioMode) { toProgram(id); return; }
-    setConfig((c) => ({ ...c, previewSceneId: id }));
+    loadSceneToPreview(id);
+    if (!studioMode) take();
   });
   const backToLastScene = useStable(() => {
     const id = historyRef.current.find((x) => configRef.current.scenes.some((s) => s.id === x));
@@ -530,7 +656,9 @@ export default function Studio({ auth, go }) {
 
   /* ───────── sahne / katman / kaynak işlemleri (kimliği sabit) ───────── */
   const [selectedLayerId, setSelectedLayerId] = useState(null);
-  const [editSceneId, setEditSceneId] = useState(null);
+  const [editSceneId, setEditSceneId] = useState(null); // isteğe bağlı TAM EKRAN düzenleyici
+  const [inlineSceneId, setInlineSceneId] = useState(null); // Sahneler sekmesinde yanda katman paneli
+  const [gallery, setGallery] = useState(null); // "Yeni sahne ekle" penceresi { anchor }
   const [tplKey, setTplKey] = useState(null);
   const [dialog, setDialog] = useState(null); // { initial, toScene }
   const [settingsSection, setSettingsSection] = useState(null); // açıkken bölüm anahtarı
@@ -544,7 +672,7 @@ export default function Studio({ auth, go }) {
     void angleOptions;
     if (clean.kind === "audio") {
       setAudio((a) => ({ ...a, inputs: [...(a.inputs || []), audioInputFromDraft(clean)] })); // [medya] aygıt ya da ses / video dosyası
-      setPref("tab", "ses");
+      openPanel("ses");
       toast("Ses girişi Ses sekmesine eklendi.", { tone: "success" });
       return;
     }
@@ -574,6 +702,7 @@ export default function Studio({ auth, go }) {
     if (sc.id === configRef.current.programSceneId && engine.active) { toast("Yayındaki sahne silinemez: önce başka bir sahneyi yayına al.", { tone: "warn" }); return; }
     if (!(await ask({ title: "Sahneyi sil", message: `“${sc.name}” silinsin mi? Kaynaklar silinmez.`, confirmLabel: "Sil", danger: true }))) return;
     if (editSceneId === sc.id) closeEditor();
+    if (inlineSceneId === sc.id) setInlineSceneId(null);
     setConfig((c) => removeScene(c, sc.id));
   });
   const recordable = useMemo(() => recordableSources(config.sources).map((s) => ({ id: s.id, name: s.name })), [config.sources]);
@@ -581,19 +710,20 @@ export default function Studio({ auth, go }) {
   const editSource = useStable((s) => setDialog({ initial: { ...s, angleOptions: recordable } }));
   const placeNewScene = (next, scene, { edit = false } = {}) => {
     if (!scene) return next;
-    if (edit) setTimeout(() => setEditSceneId(scene.id), 0);
+    // Yeni sahne seçilir: katmanları Sahneler sekmesinde yandaki panelde (açılır pencere yok).
+    setTimeout(() => { setInlineSceneId(scene.id); setSelectedLayerId(null); if (edit) openPanel("sahne"); }, 0);
     return studioMode ? { ...next, previewSceneId: scene.id } : next;
   };
   const createFromTemplate = useStable((key, opts) => {
     setTplKey(null);
     setConfig((c) => { const { config: next, scene } = sceneFromTemplate(c, key, opts); return placeNewScene(next, scene); });
-    toast("Sahne oluşturuldu ve önizlemeye alındı. “Düzenle” ile katmanları değiştirebilirsin.", { tone: "success", timeout: 4000 });
+    toast("Sahne oluşturuldu ve önizlemeye alındı. Katmanları Sahneler sekmesinde yandaki panelden değiştirebilirsin.", { tone: "success", timeout: 4000 });
   });
   const onTemplate = useStable((key) => {
     if (key === "empty") { setConfig((c) => { const { config: next, scene } = addScene(c); return placeNewScene(next, scene, { edit: true }); }); return; }
     setTplKey(key);
   });
-  const addMenu = useMemo(() => templateMenu(onTemplate), [onTemplate]);
+  const openGallery = useCallback((anchor) => setGallery({ anchor: anchor || null }), []);
   // Hazır ekranlar: varsa önizlemeye (ya da yayına), yoksa şablondan oluşturulur.
   const onReady = useStable((key, air = false) => {
     let id = readySceneOf(configRef.current, key)?.id || null;
@@ -613,7 +743,9 @@ export default function Studio({ auth, go }) {
     onPreview: toPreview,
     onProgram: toProgram,
     onToLed: (id) => { led.toScene(id); },
-    onEdit: (id) => { setSelectedLayerId(null); setEditSceneId(id); },
+    // Düzenle: Sahneler sekmesinde seç, katmanlar yanda (açılır pencere yok). Tam ekran isteğe bağlı.
+    onEdit: (id) => { setSelectedLayerId(null); setInlineSceneId(id); openPanel("sahne"); },
+    onEditFull: (id) => { setInlineSceneId(id); setEditSceneId(id); },
     onTemplate,
     onRenameScene: (id, name) => setConfig((c) => renameScene(c, id, name)),
     onDuplicateScene: (id) => setConfig((c) => { const { config: next, scene } = duplicateScene(c, id); return scene && studioMode ? { ...next, previewSceneId: scene.id } : next; }),
@@ -636,7 +768,8 @@ export default function Studio({ auth, go }) {
     const i = configRef.current.scenes.findIndex((s) => s.id === t.id);
     const n = configRef.current.scenes.length;
     return [
-      { label: "Düzenle…", icon: "pencil", onClick: () => sceneActions.onEdit(t.id) },
+      { label: "Düzenle (katmanlar yanda)", icon: "pencil", onClick: () => sceneActions.onEdit(t.id) },
+      { label: "Tam ekran düzenle…", icon: "overview", onClick: () => sceneActions.onEditFull(t.id) },
       { label: "Önizlemeye al", icon: "eye", onClick: () => toPreview(t.id) },
       { label: "Yayına al", icon: "play", onClick: () => toProgram(t.id) },
       { label: "LED'e ver", icon: "overview", onClick: () => sceneActions.onToLed(t.id) },
@@ -663,8 +796,19 @@ export default function Studio({ auth, go }) {
   /* ───────── olay girişi (G sonra H / A kısayolu) ───────── */
   const [picker, setPicker] = useState(null);
   const [saving, setSaving] = useState(false);
+  // [bölüm] GOL'e basılan anlar → gol bölümü (basıştan 15 sn önce başlar, 45 sn).
+  const goalTapsRef = useRef(null);
+  if (!goalTapsRef.current) goalTapsRef.current = createGoalTaps();
+  const addGoalChapter = useStable(({ side, code, playerId, playerName, created } = {}) => {
+    if (!engine.active) return;
+    const at = goalTapsRef.current.take(side) ?? Date.now();
+    const sc = goalScoreAfter({ events: live.events, created, homeTeamId: live.homeTeamId, awayTeamId: live.awayTeamId, manual: live.manual, score: live.score, side, code: code || created?.olay_kodu });
+    const scorer = playerName || live.nameOf(playerId ?? created?.oyuncu_id) || null;
+    chapters.addGoal({ at, goal: { home: live.homeName, away: live.awayName, homeScore: sc.home, awayScore: sc.away, scorer, own: isOwnGoalCode(code || created?.olay_kodu) } });
+  });
   const askEvent = useStable((side, code, title) => {
     if (live.status !== "canli") { toast("Maç canlı değil: önce Maç yönetimi › Reji'den maçı başlat.", { tone: "warn", timeout: 4500 }); return; }
+    if (isGoalCode(code)) goalTapsRef.current.tap(side); // [bölüm]
     const clipKey = isGoalCode(code) && engine.active ? replays.capture({ kind: "goal", angles: liveAngles, seconds: settings.replay.seconds, meta: { side, code, minute: live.minute, period: live.period } }) : null;
     setPicker({ side, code, title, clipKey });
   });
@@ -674,6 +818,7 @@ export default function Studio({ auth, go }) {
   const dockGoalClipsRef = useRef([]);
   const onDockGoalTap = useStable(({ side, code } = {}) => {
     if (!engine.active || !isGoalCode(code)) return;
+    goalTapsRef.current.tap(side); // [bölüm]
     const key = replays.capture({ kind: "goal", angles: liveAngles, seconds: settings.replay.seconds, meta: { side, code, minute: live.minute, period: live.period } });
     if (!key) return;
     const entry = { key, side, timer: null };
@@ -685,7 +830,7 @@ export default function Studio({ auth, go }) {
   });
   const onDockEventCreated = useStable(({ event, playerName, side, code } = {}) => {
     if (!isGoalCode(code || event?.olay_kodu)) return;
-    if (engine.active) chapters.add(`Gol – ${playerName || live.nameOf(event?.oyuncu_id) || (side === "away" ? live.awayName : live.homeName)}`);
+    addGoalChapter({ side, code: code || event?.olay_kodu, playerName, created: event }); // [bölüm]
     const list = dockGoalClipsRef.current;
     // Kendi kalesine golde olayın tarafı GOL'e basılan taraftan farklı olabilir:
     // önce aynı taraf, yoksa bekleyen en eski klip.
@@ -707,7 +852,7 @@ export default function Studio({ auth, go }) {
     try {
       const created = await live.addEvent({ side: picker.side, code: picker.code, playerId });
       if (picker.clipKey) replays.attach(picker.clipKey, { eventId: Number(created?.id) || null, scorer: live.nameOf(playerId), side: picker.side, code: picker.code });
-      if (engine.active && isGoalCode(picker.code)) chapters.add(`Gol – ${live.nameOf(playerId) || (picker.side === "away" ? live.awayName : live.homeName)}`);
+      if (isGoalCode(picker.code)) addGoalChapter({ side: picker.side, code: picker.code, playerId, created }); // [bölüm]
       toast(`${eventLabel(picker.code)} kaydedildi (${live.minute}').`, { tone: "success" });
       setPicker(null);
     } catch (e) {
@@ -715,19 +860,21 @@ export default function Studio({ auth, go }) {
     } finally { setSaving(false); }
   };
   const cancelPicker = useStable(() => {
+    if (picker && isGoalCode(picker.code)) goalTapsRef.current.drop(picker.side); // [bölüm]
     if (picker?.clipKey) replays.attach(picker.clipKey, { eventId: null });
     setPicker(null);
   });
   /* "Olay gir" kısayolu (tür → iki takımın oyuncuları): gol türü seçildiği AN klip kaydı başlar. */
   const beginEvent = useStable((code) => {
     if (!isGoalCode(code) || !engine.active) return null;
+    goalTapsRef.current.tap(null); // [bölüm]
     return replays.capture({ kind: "goal", angles: liveAngles, seconds: settings.replay.seconds, meta: { code, minute: live.minute, period: live.period } }) || null;
   });
   const submitEvent = useStable(async ({ side, code, playerId, clipKey }) => {
     try {
       const created = await live.addEvent({ side, code, playerId });
       if (clipKey) replays.attach(clipKey, { eventId: Number(created?.id) || null, scorer: live.nameOf(playerId), side, code });
-      if (engine.active && isGoalCode(code)) chapters.add(`Gol – ${live.nameOf(playerId) || (side === "away" ? live.awayName : live.homeName)}`);
+      if (isGoalCode(code)) addGoalChapter({ side, code, playerId, created }); // [bölüm]
       toast(`${eventLabel(code)} kaydedildi (${live.minute}').`, { tone: "success" });
       return created;
     } catch (e) {
@@ -753,10 +900,10 @@ export default function Studio({ auth, go }) {
     const act = keyAction(e, { pendingGoal: goalArmed, hotkeys: settings.hotkeys });
     if (!act) return;
     if (act.type === "goalCancel") { setGoalArmed(false); return; }
-    if (editSceneId && act.type !== "mic") return; // düzenleyicide yalnız mikrofon kısayolu
+    if (editSceneId && act.type !== "mic" && act.type !== "goalMusicStop") return; // düzenleyicide yalnız mikrofon ve müziği kes
     e.preventDefault();
     if (act.type === "mic") toggleMic();
-    else if (act.type === "replay") { if (replayPlaying) stopReplay(); else playLatestAny(); }
+    else if (act.type === "replay") playLatestAny(); // [önizleme-geçiş] son tekrar önizlemeye (yayındaysa GEÇİŞ yerine koyar)
     else if (act.type === "moment") captureMoment();
     else if (act.type === "scene") { const id = sceneAtHotkey(configRef.current, act.index); if (id) toPreview(id); }
     else if (act.type === "transition") toProgram();
@@ -770,6 +917,7 @@ export default function Studio({ auth, go }) {
     else if (act.type === "goalHome") askGoal("home");
     else if (act.type === "goalAway") askGoal("away");
     else if (act.type === "goalMusic") { if (goalMusic?.playing) goalMusic.stop?.(); else goalMusic?.play?.(); }
+    else if (act.type === "goalMusicStop") { if (goalMusic?.playing) goalMusic.stop?.(); } // [gol-müziği] K: müziği kes
     else if (act.type === "subtitle") { if (g?.matchId) g.setSubtitleOnAir?.(!g.subtitle?.onAir); }
     else if (act.type === "interviewBand") { if (g?.matchId) g.setInterviewOnAir?.(!g.interview?.onAir); }
     else if (act.type === "interview") { if (interview?.recording) interview.stop(); else if (interview?.available && engine.active) interview.start(); }
@@ -806,7 +954,7 @@ export default function Studio({ auth, go }) {
   const st = engine.status;
   const onAir = engine.active;
   const variant = bugVariantOf(config);
-  const setTab = useCallback((t) => setPref("tab", t), [setPref]);
+  const setTab = openPanel;
   const setDockH = useCallback((h) => setPref("dockH", clampDock(h)), [setPref]);
   const setEncoding = useCallback((v) => setPref("encoding", normalizeEncoding(v)), [setPref]);
   const localRec = useMemo(() => ({ enabled: settings.record.enabled, dir: settings.record.dir }), [settings.record.enabled, settings.record.dir]);
@@ -820,34 +968,18 @@ export default function Studio({ auth, go }) {
   const exitStudio = useCallback(() => { go?.("today"); }, [go]);
 
   const gfxProps = { g, matchId, live, scenes: sceneList };
-  const modeTabs = hasModes ? (modes.tabs || []).map((t) => ({ key: `mode:${t.key}`, label: t.label, icon: t.icon || "sparkles", count: t.count ?? null, mode: t.key })) : [];
-  // TEKRAR en başta ve vurgulu: en sık açılan, en hızlı ulaşılması gereken düzenleme alanı.
-  const replayTab = hasModes
-    ? { ...(modeTabs.find((t) => t.mode === "tekrar") || { key: "mode:tekrar", label: "Tekrar", icon: "repeat" }), accent: true, count: replays.replays.length || null }
-    : { key: "tekrar", label: "Tekrar & Özet", icon: "repeat", count: replays.replays.length || null, accent: true };
-  const TABS = [
-    replayTab,
-    { key: "yonetim", label: "Maç yönetimi", icon: "board" },
-    { key: "sahne", label: "Sahneler", icon: "layers", count: config.scenes.length || null },
-    { key: "gecis", label: "Geçişler", icon: "swap" },
-    ...((BrandTab || PresetsTab) && g ? [{ key: "marka", label: "Marka & ön ayarlar", icon: "palette" }] : []),
-    ...(ScoreboardTab && g ? [{ key: "skorbord", label: "Skorbord", icon: "trophy" }] : []),
-    ...(SubtitlePanel && g ? [{ key: "altyazi", label: "Altyazı", icon: "list" }] : []),
-    ...((SponsorPanel || LinksPanel) && g ? [{ key: "sponsor", label: "Sponsor & linkler", icon: "handshake" }] : []),
-    ...(hasModes ? modeTabs.filter((t) => t.mode !== "tekrar") : [{ key: "var", label: "VAR", icon: "target", count: vr.active ? "●" : null }]),
-    { key: "yayin", label: "Yayın", icon: "broadcast", count: onAir ? "●" : null },
-    { key: "ses", label: "Ses", icon: "mic" },
-    { key: "led", label: "LED ekran", icon: "overview", count: led.status.open ? "●" : null },
-  ];
-  const tab = TABS.some((t) => t.key === prefs.tab) ? prefs.tab : "yonetim";
-  const modeTab = tab.startsWith("mode:") ? (modes.tabs || []).find((t) => `mode:${t.key}` === tab) : null;
-  const replayTabKey = replayTab.key;
+  const replayTabKey = "tekrar";
 
   const programTitle = modes.programOverride ? modes.programOverride.label || "Özel kip" : vr.active ? "VAR kontrolü" : player.playing ? "Tekrar" : programScene?.name || "—";
-  const previewTitle = modes.previewOverride ? modes.previewOverride.label || "Özel kip" : previewScene?.name || "—";
+  // [önizleme-geçiş] Önizleme başlığı / GEÇİŞ düğmesi, take() ile aynı durumdan (previewStateNow) okunur.
+  const pvState = previewStateNow();
+  const pvPayload = pvState.kind === "replay" && !pvState.empty ? pvState : null;
+  const pvFirst = pvPayload?.items?.[0] || null;
+  const previewTitle = pvFirst
+    ? [`Tekrar · ${replayTitle(pvFirst.replay, metaFor(pvFirst.replay, replays.meta))}`, angleLabel(pvFirst.angle, config.sources), payloadSummary(pvPayload)].filter(Boolean).join(" · ")
+    : modes.previewOverride ? modes.previewOverride.label || "Özel kip" : previewScene?.name || "—";
   const programIdForTally = player.playing || vr.active || modes.programOverride ? null : config.programSceneId;
-  const canTake = Boolean(modes.previewOverride) || config.previewSceneId !== config.programSceneId || player.playing || vr.active || Boolean(modes.programOverride);
-  const hints = settings.view.hints;
+  const canTake = planTake({ preview: pvState, program: programStateNow(), studioMode }).type !== "none" || player.playing || vr.active;  const hints = settings.view.hints;
   const zoom = settings.view.scale / 100;
 
   /* ───────── monitör sağ tık menüsü ve tam ekran ───────── */
@@ -867,16 +999,36 @@ export default function Studio({ auth, go }) {
 
   /* ───────── program ses şeridi yuvası (audio/ProgramAudioStrip, başka modül) ───────── */
   const programAudio = ProgramAudioStrip ? <ProgramAudioStrip mixer={mixer} config={config} programIds={programIds} /> : null;
+  const hasMetersTile = lay.has("olcer");
+
+  /* ───────── önizlemede tekrar düzenleme (modes/ReplayPreviewOverlay) ───────── */
+  // Tekrar kipi önizlemedeyken önizleme monitörü düzenleyiciye döner: yakınlaştır / kaydır,
+  // zaman çizelgesi, giriş–çıkış, hız; "Yayına al" seçilen bölümü yayına verir.
+  const RE = hasModes && modes.replayEditor ? modes.replayEditor : null;
+  const replayEditing = Boolean(RE && RE.previewing && RE.rm?.transport);
+  const [pvwBox, setPvwBox] = useState({ w: 0, h: 0 });
+  const pickAngle = useStable((r, angle) => {
+    if (!r) return;
+    if (!RE || !modes.openReplay) { toast("Tekrar düzenleme için yayın modları modülü gerekli.", { tone: "info" }); return; }
+    if (!RE.previewing || RE.rm.cursor?.replayId !== r.id) modes.openReplay(r);
+    RE.rm.setCursor({ replayId: r.id, angle });
+  });
 
   const previewMonitor = (
-    <figure className={`st-monitor is-preview ${modes.previewOverride ? "is-mode" : ""}`} onContextMenu={onMonitorMenu("preview")}>
+    <figure className={`st-monitor is-preview ${modes.previewOverride ? "is-mode" : ""} ${replayEditing ? "is-replayedit" : ""}`} onContextMenu={onMonitorMenu("preview")}>
       <figcaption>
         <span className="st-tag is-pvw">ÖNİZLEME</span>
         <span className="st-monitor__name">{previewTitle}</span>
+        {replayEditing && <span className="st-monitor__hint">tekerlek: yakınlaştır · sürükle: kaydır · I / O: giriş / çıkış</span>}
         <span className="st-top__spacer" />
-        {!modes.previewOverride && previewScene && <button type="button" className="st-monitor__btn" onClick={() => sceneActions.onEdit(previewScene.id)} title="Önizlemedeki sahneyi düzenle"><Icon name="pencil" size={11} /> Düzenle</button>}
+        {!modes.previewOverride && previewScene && <button type="button" className="st-monitor__btn" onClick={() => sceneActions.onEdit(previewScene.id)} title="Önizlemedeki sahnenin katmanları (Sahneler sekmesinde, yanda)"><Icon name="pencil" size={11} /> Düzenle</button>}
       </figcaption>
-      <Monitor canvas={comp.preview} className="st-monitor__screen" />
+      <Monitor canvas={comp.preview} className="st-monitor__screen" onBox={setPvwBox}>
+        {replayEditing && (
+          <ReplayPreviewOverlay rm={RE.rm} rate={RE.rate} onRate={RE.setRate} sources={RE.sources || config.sources} box={pvwBox}
+            onTake={() => toProgram()} canTake={canTake} />
+        )}
+      </Monitor>
     </figure>
   );
   const programMonitor = (
@@ -891,8 +1043,8 @@ export default function Studio({ auth, go }) {
         {ledId && ledId === programIdForTally && <span className="st-tag is-led" title="LED ekran bu sahneyi gösteriyor">LED</span>}
       </figcaption>
       <Monitor canvas={comp.program} className="st-monitor__screen" />
-      {/* Program ses şeridi yuvası: ./audio/ProgramAudioStrip.jsx varsa burada çizilir. */}
-      {programAudio && <div className="st-pgmaudio">{programAudio}</div>}
+      {/* Program ses şeridi yuvası: ./audio/ProgramAudioStrip.jsx varsa burada (düzende "Ses ölçerleri" kutusu yoksa). */}
+      {programAudio && !hasMetersTile && <div className="st-pgmaudio">{programAudio}</div>}
       {showMicWarning && <div className="st-micwarn" role="alert"><Icon name="mic" size={22} /> MİKROFON AÇIK <button type="button" onClick={toggleMic}>Kapat (M)</button></div>}
       {silentMs > 0 && !showMicWarning && (
         <div className="st-silence" role="alert"><Icon name="micOff" size={15} /> Sessiz yayın: {Math.round(silentMs / 1000)} sn'dir ses yok {muted ? <button type="button" onClick={toggleMic}>Mikrofonu aç (M)</button> : <span>— mikrofonu kontrol et</span>}</div>
@@ -912,89 +1064,93 @@ export default function Studio({ auth, go }) {
     onLed: t.id === ledId, bad: tileWarning(config, src.runtimeRef.current, t), onPreview: toPreview, onProgram: toProgram, onToLed: sceneActions.onToLed, onEdit: sceneActions.onEdit, menu: tileMenu(t),
   });
 
-  let stage;
-  if (ws.monitors === "grid") {
-    const cells = gridCells(ws, tiles);
-    const more = gridOverflow(ws, tiles);
-    stage = (
-      <main className={`st-stage is-grid is-g${ws.grid}`}>
-        <div className="st-gridwrap">
-          <div className={`st-grid is-${ws.grid}`}>
-            {cells.map((c) => (c.type === "tile"
-              ? <div key={c.key} className="st-grid__cell"><Tile {...tileProps(c.tile)} size="grid" large={ws.grid === 2} /></div>
-              : <div key={c.key} className="st-grid__cell is-empty"><MenuAdd items={addMenu} /></div>))}
-          </div>
-          {more > 0 && <p className="st-hint st-grid__more">+{more} sahne daha: Sahneler sekmesinde ya da 3×3 / Büyük program düzeninde.</p>}
-        </div>
-        <div className="st-gridside">
-          {programMonitor}
-          <div className="st-gridside__row">
-            {studioMode && previewMonitor}
-            {transition("column")}
-          </div>
-        </div>
-      </main>
+  /** Izgara kutusunun içeriği (tür başına). Monitörler tek tuvali paylaşır: düzende tekildirler. */
+  const renderStageTile = (t) => {
+    switch (t.type) {
+      case "preview": return studioMode || lay.edit ? previewMonitor : <div className="stg-box"><p className="st-hint" style={{ margin: "auto" }}>Stüdyo modu kapalı: sahneye tık doğrudan yayına.</p></div>;
+      case "program": return programMonitor;
+      case "transition": return transition(t.w > t.h * 1.2 ? "row" : "column");
+      case "scenes": return <ScenesStrip tiles={tiles} tileProps={tileProps} onAddScene={openGallery} version={src.version} />;
+      case "scene": return <SceneCell tile={t} tiles={tiles} tileProps={tileProps} onAddScene={openGallery} version={src.version} />;
+      case "led": return <LedMonitor led={led} configRef={configRef} runtimeRef={src.runtimeRef} graphicsRef={graphicsSnapRef} matchClockRef={matchClockRef} matchId={matchId} scenes={sceneList} programId={config.programSceneId} previewId={config.previewSceneId} onOpenTab={() => setTab("led")} />;
+      case "angles": return <AnglesTile replays={replays.replays} meta={replays.meta} sources={config.sources} cursor={RE?.previewing ? RE.rm.cursor : null} onPick={pickAngle} />;
+      case "meters": return <MetersTile strip={programAudio} mixer={mixer} muted={muted} />;
+      case "clock": return <ClockTile minute={live.match ? live.minute : null} period={live.match ? live.period : null} />;
+      default: return null;
+    }
+  };
+  /** Sahne hücresi paneli: düzenle kipinde numara seçici (panel kimliği "sceneCell~n" değişir). */
+  const sceneCellPanel = (index, panelId) => {
+    const t = { id: panelId, type: "scene", x: 0, y: 0, w: 3, h: 3, opts: { index } };
+    return (
+      <>
+        {renderStageTile(t)}
+        {lay.edit && <div className="lw-cellpick"><SceneCellPicker tile={t} tiles={tiles} onPick={(i) => { const c = lay.ctrlRef.current; if (!c || c.has(`sceneCell~${i}`)) return; c.add(`sceneCell~${i}`, { panel: panelId }); c.remove(panelId); }} /></div>}
+      </>
     );
-  } else if (ws.monitors === "rail") {
-    stage = (
-      <main className="st-stage is-rail">
-        {programMonitor}
-        <aside className="st-rail">
-          {studioMode && previewMonitor}
-          {transition("row")}
-          <SceneRail config={config} runtimeRef={src.runtimeRef} register={registerTile} version={src.version} studioMode={studioMode}
-            previewId={modes.previewOverride ? null : config.previewSceneId} programId={programIdForTally} ledId={ledId} actions={{ ...sceneActions, tileMenu }} addMenu={addMenu} />
-        </aside>
-      </main>
-    );
-  } else if (ws.monitors === "single") {
-    stage = (
-      <main className="st-stage is-solo">
-        {programMonitor}
-        <div className="st-solo__side">{transition("column")}</div>
-      </main>
-    );
-  } else {
-    stage = (
-      <main className={`st-stage ${studioMode ? "is-dual" : "is-single"}`}>
-        {studioMode && previewMonitor}
-        {transition("column")}
-        {programMonitor}
-      </main>
-    );
-  }
+  };
 
   /* ───────── kısayol şeridi bağlamı (parçacıkların okuduğu durum + eylemler) ───────── */
+  // Tekrar hızı: yayın modları varsa kip ayarı (prefs.modes.rate), yoksa eski tercih.
+  const replayRateNow = hasModes ? normalizeModeSettings(prefs.modes).rate : prefs.replayRate;
+  const setReplayRateAny = useStable((v) => {
+    const r = Math.round(Math.min(1, Math.max(0.25, Number(v) || 1)) * 20) / 20;
+    if (hasModes) setPref("modes", (m) => ({ ...normalizeModeSettings(m), rate: r })); else setReplayRate(r);
+  });
+  /** Seçilen tekrarlar sırayla (her biri varsayılan açılarıyla) ÖNİZLEME'ye; yayına GEÇİŞ ile [önizleme-geçiş]. */
+  const playReplayQueue = useStable(async (list) => {
+    const ids = (list || []).map((r) => r.id);
+    const items = ids.map((id) => replays.replays.find((r) => r.id === id)).filter(Boolean);
+    if (hasModes && modes.loadQueue) {
+      if (!modes.loadQueue(items)) return false;
+      if (takeAfterLoad({ studioMode })) takeRef.current?.();
+      return true;
+    }
+    const q = buildReplayQueue(items, Object.fromEntries(items.map((r) => [r.id, defaultAngles(r, liveAngles)])), { order: ids });
+    if (!q.length) { toast("Kuyrukta oynatılabilir açı yok.", { tone: "warn" }); return false; }
+    player.play(q);
+    return true;
+  });
+  /** Skor −: o takımın (yararına yazılan) son golünü sil (onaylı). */
+  const goalUndo = useStable(async (side) => {
+    const sideOf = (ev) => {
+      const s = Number(ev.takim_id) === Number(live.homeTeamId) ? "home" : Number(ev.takim_id) === Number(live.awayTeamId) ? "away" : null;
+      if (!s) return null;
+      return String(ev.olay_kodu || "").toUpperCase() === "GOAL_OWN" ? (s === "home" ? "away" : "home") : s;
+    };
+    const goals = (live.events || []).filter((ev) => isGoalCode(ev.olay_kodu) && sideOf(ev) === side);
+    const last = goals.sort((a, b) => (Number(b.devre) - Number(a.devre)) || (Number(b.dakika) - Number(a.dakika)) || (Number(b.id) - Number(a.id)))[0];
+    const name = side === "home" ? live.homeName : live.awayName;
+    if (!last) { toast(`${name}: geri alınacak gol yok.`, { tone: "info" }); return; }
+    if (!(await ask({ title: "Golü geri al", message: `${name} golü (${last.dakika ?? 0}') silinsin mi? Skor olaylardan yeniden hesaplanır.`, confirmLabel: "Sil", danger: true }))) return;
+    try { await live.removeEvent(Number(last.id)); toast("Gol silindi.", { tone: "success" }); } catch (e) { toast(errorText(e, "Gol silinemedi."), { tone: "error" }); }
+  });
   const latestReplay = replays.latest;
-  const pickAngles = (r, angles) => ({ ...r, angles: (r.angles || []).filter((a) => angles.includes(a.angle)) });
   const railCtx = {
     hints, hotkeys: settings.hotkeys, railPopRef, scenes: sceneList, score: live.match ? live.score : null, momentSeconds: settings.replay.seconds,
     live: { onAir, mode: engine.mode, since: engine.since, busy, start: topStart, stop: () => stopEncoder(), openTab: () => setTab("yayin") },
     mic: { muted, toggle: toggleMic, analyser: () => mixer.micAnalyser(true) },
-    transition: { canTake, take: () => toProgram(), label: modes.previewOverride ? "YAYINA AL" : "GEÇİŞ", kind: tKind, onKind: (k) => setPref("transition", k), lastSceneName: lastSceneId ? resolveScene(config, lastSceneId)?.name : null, lastScene: backToLastScene },
-    chapter: { add: addChapter, count: chapters.chapters.length },
+    mixer: mixer?.setStrip ? mixer : null, // çok kanallı karıştırıcı parçacığı
+    clock: { live },                        // maç saati parçacığı
+    toast,
+    goalUndo: live.match ? goalUndo : null,
+    transition: { canTake, take: () => toProgram(), label: takeLabel(pvState), kind: tKind, onKind: (k) => setPref("transition", k), lastSceneName: lastSceneId ? resolveScene(config, lastSceneId)?.name : null, lastScene: backToLastScene },
+    chapter: { add: addChapter, count: chapters.chapters.length, items: chapters.chapters, startAt: chapters.startAt },
     fullscreen: (target) => setFullscreen(target),
     replay: {
       list: replays.replays, meta: replays.meta, sources: config.sources, recordAngles: liveAngles, playing: replayPlaying,
       previewing: hasModes && modes.previewMode === "tekrar",
       latestInfo: latestReplay ? { title: replayTitle(latestReplay, metaFor(latestReplay, replays.meta)), angles: anglesOf(latestReplay).length } : null,
-      preview: (r, angles) => {
-        if (hasModes && modes.openReplay) { modes.openReplay(pickAngles(r, angles), { angles }); return; }
-        toast("Önizleme için özel kip modülü yok: tekrar doğrudan yayına verilir.", { tone: "info" });
-      },
-      take: async (r, angles) => {
-        if (hasModes && modes.openReplay && modes.takeToAir) {
-          modes.openReplay(pickAngles(r, angles), { angles });
-          await new Promise((res) => setTimeout(res, 220)); // seçim önizlemeye işlensin
-          await modes.takeToAir(null, "tekrar");
-          return;
-        }
-        player.play(buildReplayQueue([r], { [r.id]: angles }));
-      },
-      stop: stopReplay, playLatest: playLatestAny, openTab: () => setTab(replayTabKey),
+      // [önizleme-geçiş] preview: önizlemeye yükle · take: önizlemeye yükle + aynı GEÇİŞ (bekleme / zamanlayıcı yok:
+      // durum eşzamanlı okunur, önizlemede görünen aynen yayına gider) · playLatest: R ile aynı.
+      preview: (r, angles) => loadReplayAny(r, { angles }),
+      take: async (r, angles) => { loadReplayAny(r, { angles, take: true }); },
+      direct: Boolean(settings.replay.directTake) || !studioMode,
+      stop: stopReplay, playLatest: playLatestAny, loadLatest: playLatestAny, openTab: () => setTab(replayTabKey),
+      rate: replayRateNow, setRate: setReplayRateAny, playQueue: playReplayQueue,
     },
     moment: captureMoment,
-    var: { active: varActive, toggle: toggleVar },
+    var: { active: varActive, previewing: hasModes && modes.previewMode === "var", toggle: toggleVar },
     event: { live: live.status === "canli", minute: live.match ? live.minute : null, homeName: live.homeName, awayName: live.awayName, squads: live.squads, begin: beginEvent, submit: submitEvent, cancel: cancelEvent },
     goal: (side) => askGoal(side),
     goalMusic, GoalMusicButtons,
@@ -1002,11 +1158,149 @@ export default function Studio({ auth, go }) {
     interview,
     led, openLedTab: () => setTab("led"),
     ready: { ids: readyIds, go: onReady },
+    // Ayarlar › Kısayollar panosu kataloğu: düğmeyi panoya ekle.
+    addToRail: (type, size, opts) => {
+      const sz = String(size || "1x1").split("x").map((n) => Number(n) || 1);
+      lay.setLayout((l) => {
+        const b = l.boards.rail;
+        if (!b) return l;
+        const m = componentOf(`w:${type}`);
+        if (!m) return l;
+        const bottom = b.items.reduce((mx, it) => Math.max(mx, it.y + it.h), 0);
+        return { ...l, boards: { ...l.boards, rail: { ...b, items: [...b.items, { i: `i${Date.now().toString(36)}`, t: m.key, x: 0, y: bottom, w: Math.min(b.cols, sz[0] >= 2 ? 2 : 1), h: (sz[1] >= 2 ? 2 : 1) * 2, ...(opts ? { o: opts } : {}) }] } } };
+      });
+    },
     sceneTile: { register: registerTile, programId: programIdForTally, previewId: studioMode && !modes.previewOverride ? config.previewSceneId : null, onPreview: toPreview, onProgram: toProgram },
   };
-  const railHasGoLive = rail.items.some((x) => x.type === "golive");
+  // Ekrandaki panolarda "Yayın" parçacığı varsa üst çubuktaki düğme gizlenir.
+  const railHasGoLive = Object.entries(lay.layout.boards).some(([id, b]) => lay.has(boardPanelId(id)) && b.items.some((x) => x.t === "w:golive"));
+
+  /* ───────── alt panel panelleri (yalnız işletim; yapılandırma Ayarlar'da) ─────────
+     render({ passive }): passive = çok sütunlu kip (özel kip sütunu önizlemeyi kendiliğinden almaz). */
+  const requestMic = async () => { try { await window.elitlig?.studio?.requestMediaAccess?.("microphone"); } catch { /* yoksay */ } setAudio((a) => ({ ...a, mic: { ...a.mic, nonce: Date.now() } })); src.refreshDevices(); };
+  const audioPanel = () => (StudioAudioPanel && useStudioAudioMod
+    ? <StudioAudioPanel audio={mixer} mixer={mixer} setAudio={setAudio} devices={src.devices} onRequestMic={requestMic} />
+    : <AudioPanel audio={prefs.audio} setAudio={setAudio} mixer={mixer} devices={src.devices} onRequestMic={requestMic} />);
+  const modeTabOf = (key) => (hasModes ? (modes.tabs || []).find((t) => t.key === key) : null);
+  const modeRender = (key) => {
+    const t = modeTabOf(key);
+    return t ? (o) => <div className={`st-modewrap is-${key}`}>{t.render(o)}</div> : null;
+  };
+  const legacyTekrar = () => (
+    <div className="st-tekrar">
+      <div className="st-seg st-seg--tabs">
+        <button type="button" className={prefs.replayView !== "ozet" ? "is-on" : ""} onClick={() => setPref("replayView", "tekrar")}><Icon name="repeat" size={12} /> Tekrarlar</button>
+        <button type="button" className={prefs.replayView === "ozet" ? "is-on" : ""} onClick={() => setPref("replayView", "ozet")}><Icon name="sparkles" size={12} /> Özet çıkar</button>
+      </div>
+      {prefs.replayView === "ozet"
+        ? <HighlightsPanel replays={replays.replays} meta={replays.meta} sources={config.sources} matchId={matchId} live={live} recordAngles={liveAngles} hl={hl} imagesRef={imagesRef} ask={ask} toast={toast} />
+        : <ReplayPanel replays={replays.replays} pending={replays.pending} meta={replays.meta} sources={config.sources} matchId={matchId}
+            anglePref={prefs.angles} onAnglePref={setAnglePref} angleStatus={angleRec.status} angleAvailable={angleRec.available} multiAngle={replays.multiAngle} encoding={onAir}
+            player={player} rate={prefs.replayRate} onRate={setReplayRate} replayAudio={prefs.replayAudio} onReplayAudio={(v) => setPref("replayAudio", v)}
+            onMoment={captureMoment} onPlay={player.play} onStop={() => player.stop(true)} onSkip={player.skip} onUpdate={replays.update} onRemove={removeReplay}
+            onRetry={replays.retry} onDismiss={replays.dismissPending} uploadOf={replays.uploadOf} recordAngles={liveAngles} />}
+    </div>
+  );
+  const dockDefs = {};
+  const defPanel = (key, render, extra = {}) => { if (render) dockDefs[key] = { ...panelOf(key), ...extra, render }; };
+  defPanel("yonetim", () => <ManageDock matchId={matchId} match={live.match} live={live} onOpenMatch={setMatchId} graphics={hasGraphics ? g : undefined} scenes={sceneList} replays={replays.replays} onPlayReplay={playReplay} onGoalTap={onDockGoalTap} onEventCreated={onDockEventCreated} goalMusic={goalMusic || undefined} />,
+    { count: live.status === "canli" ? "●" : null });
+  defPanel("sahne", () => (
+    <ScenesTab config={config} configRef={configRef} runtimeRef={src.runtimeRef} register={registerTile} version={src.version} studioMode={studioMode} ledId={ledId} actions={{ ...sceneActions, tileMenu }} libActions={libActions}
+      selectedSceneId={inlineSceneId} onSelectScene={setInlineSceneId} selectedLayerId={selectedLayerId} onSelectLayer={setSelectedLayerId}
+      outW={preset.width} outH={preset.height} overrideRef={overrideRef} matchClockRef={matchClockRef} onAddScene={openGallery} />
+  ),
+    { count: config.scenes.length || null });
+  defPanel("tekrar", hasModes ? modeRender("tekrar") : legacyTekrar, { count: replays.replays.length || null, ...(hasModes ? {} : { label: "Tekrar & Özet" }) });
+  defPanel("ses", audioPanel, { count: muted ? null : "●" });
+  defPanel("var", hasModes ? modeRender("var") : () => <VarPanel vr={vr} sources={config.sources} replays={replays.replays} meta={replays.meta} micMuted={muted} onToggleMic={toggleMic} />,
+    { count: varActive ? "●" : null });
+  defPanel("roportaj", modeRender("roportaj"), { count: modeTabOf("roportaj")?.count ?? null });
+  defPanel("ozet", modeRender("ozet"), { count: modeTabOf("ozet")?.count ?? null });
+  defPanel("yayin", () => (
+    <div className="st-bcastwrap">
+      <BroadcastPanel yt={yt} engine={engine} busy={busy} matchId={matchId} matchName={matchName} match={live.match} startedVia={onAir ? startedVia : null} encoding={prefs.encoding} onEncoding={setEncoding}
+        onStartYoutube={startYoutube} onStartManual={startManual} onRehearsal={startRehearsal} onStop={() => stopEncoder({ askFirst: false })} onEndYoutube={endYoutube} toast={toast} ask={ask}
+        localRec={localRec} onLocalRec={setLocalRec} recordInfo={recordInfo} onOpenSettings={() => openSettings("kayit")}
+        chapters={{ ...chapters, onAdd: addChapter, onRemove: chapters.remove, onClear: chapters.clear }} />
+    </div>
+  ), { count: onAir ? "●" : null });
+  defPanel("led", () => <LedPanel led={led} scenes={config.scenes} matchId={matchId} ledMode={g?.ledMode} g={hasGraphics ? g : null} live={live} />, { count: led.status.open ? "●" : null });
+  defPanel("olaylar", () => <div className="st-dock-events"><EventEntry ctx={railCtx} onClose={() => {}} /></div>);
+  dockPanelsRef.current = Object.keys(dockDefs);
+  defPanel("bolumler", () => <PanelScope panel="yayin" only="chapters"><div className="st-bcastwrap lw-solo" data-solo-panel="yayin" data-solo-part="chapters">{dockDefs.yayin.render({ passive: true })}</div></PanelScope>, { count: chapters.chapters.length || null });
+  if (GoalMusicPanel) defPanel("golMuzigi", () => (goalMusic ? <div className="lw-pad"><GoalMusicPanel gm={goalMusic} /></div> : <p className="st-hint st-pad">Gol müziği için maç aç (takımların müzikleri).</p>), { count: goalMusic?.playing ? "●" : null });
+  if (UploadLogPanel) defPanel("yukleme", () => <div className="lw-pad"><UploadLogPanel defaultOpen /></div>);
+
+  /* ───────── ekran yerleşimi: panel / bileşen sözleşmesi (./layout) ───────── */
+  const STAGE_KIND = { pvw: "preview", pgm: "program", gecis: "transition", sahneSerit: "scenes", ledPvw: "led", acilar: "angles", olcer: "meters", saat: "clock" };
+  const renderLayoutPanel = (kind, opts, panelId) => {
+    if (kind === "sceneCell") return sceneCellPanel(Number(opts?.index) || 0, panelId);
+    if (kind === "gecis") return <AutoTransition render={transition} />;
+    if (STAGE_KIND[kind]) return renderStageTile({ id: panelId, type: STAGE_KIND[kind], x: 0, y: 0, w: 4, h: 4 });
+    const d = dockDefs[kind];
+    return d ? d.render({ passive: true, column: true }) : null;
+  };
+  const layoutValue = {
+    renderPanel: renderLayoutPanel,
+    panelBody: (kind) => dockDefs[kind]?.render({ passive: true, column: true }) ?? null,
+    panelInfo: (kind) => {
+      const m = panelMeta(kind);
+      const d = dockDefs[kind];
+      return { icon: d?.icon || m?.icon, count: d?.count || null, accent: Boolean(m?.mode), pvw: hasModes && Boolean(m?.mode) && modes.previewMode === m.mode, flash: dockFlash === kind };
+    },
+    onActivate: (k) => onDockActivate(k), onDeactivate: (k) => onDockDeactivate(k),
+    railCtx, mixer: mixer?.setStrip ? mixer : null, zoom, setEdit: lay.setEdit,
+    transition,
+    clock: { minute: live.match ? live.minute : null, period: live.match ? live.period : null },
+    meters: { strip: programAudio, mixer, muted },
+    angles: { replays: replays.replays, meta: replays.meta, sources: config.sources, cursor: RE?.previewing ? RE.rm.cursor : null, onPick: pickAngle },
+    reji: { matchId, live, ready: Boolean(live.match && Number(live.match.id) === Number(matchId)), onGoalTap: onDockGoalTap, onEventCreated: onDockEventCreated, goalMusic },
+    GoalMusicPanel, GoalMusicButtons, EventEntry,
+  };
+  // Kısayol tuşu (Olay gir): panolardaki parçacığın açılır paneli.
+  railPopRef.current = (type) => Boolean(lay.ctrlRef.current?.openWidgetPop?.(type));
+  // [önizleme-geçiş] Sütuna / sekmeye dokunmak ya da sütunu kaldırmak önizlemeyi DEĞİŞTİRMEZ:
+  // önizleme yalnız içerik seçilince (sahne, tekrar / açı, "Önizlemeye al", R / V) değişir.
+  const onDockActivate = useStable(() => {});
+  const onDockDeactivate = useStable(() => {});
+  // Önizlemeye bir sahne gelince (ör. yeni sahne oluşturuldu) önizlemedeki kip bırakılır: önizlemede o sahne görünür.
+  const lastPvwRef = useRef(config.previewSceneId);
+  useEffect(() => {
+    if (lastPvwRef.current === config.previewSceneId) return;
+    lastPvwRef.current = config.previewSceneId;
+    if (hasModes && modes.previewMode && !takingRef.current) modes.clearPreview?.(modes.previewMode);
+  }, [config.previewSceneId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ───────── Ayarlar: alt panelden taşınan yapılandırma bölümleri ───────── */
+  const settingsExtra = [
+    ...(ScoreboardTab && g ? [{ key: "skorbord", label: "Skorbord", icon: "trophy", group: "grafik", render: () => <ScoreboardTab {...gfxProps} /> }] : []),
+    ...(SubtitlePanel && g ? [{ key: "altyazi", label: "Altyazı", icon: "list", group: "grafik", render: () => <SubtitlePanel {...gfxProps} /> }] : []),
+    ...((BrandTab || PresetsTab) && g ? [{ key: "marka", label: "Marka & ön ayarlar", icon: "palette", group: "grafik", render: () => <div className="st-gfxpair is-brand">{BrandTab && <BrandTab {...gfxProps} />}{PresetsTab && <PresetsTab {...gfxProps} />}</div> }] : []),
+    ...((SponsorPanel || LinksPanel) && g ? [{ key: "sponsor", label: "Sponsor & linkler", icon: "handshake", group: "grafik", render: () => <div className="st-gfxpair">{SponsorPanel && <SponsorPanel {...gfxProps} />}{LinksPanel && <LinksPanel {...gfxProps} />}</div> }] : []),
+    { key: "ses", label: "Ses", icon: "mic", group: "panel", render: audioPanel },
+    { key: "yerlesim", label: "Ekran yerleşimi", icon: "board", group: "yerlesim", render: ({ Section }) => <LayoutSettings Section={Section} layout={lay.layout} setLayout={lay.setLayout} ctrl={() => lay.ctrlRef.current} ctxLabel={layoutValue} onAsk={ask} /> },
+  ];
+  const railBoardEditor = (Section) => (lay.layout.boards.rail
+    ? (
+      <Section title="Kısayollar panosu" sub="Eski sol şerit artık bir pano: düğmeleri burada ya da stüdyoda Düzenle kipinde sürükleyerek taşı, köşeden boyutla; başka panolara / sekmelere de taşıyabilirsin.">
+        <BoardEditor id="rail" board={lay.layout.boards.rail} layout={lay.layout} setLayout={lay.setLayout} c={lay.ctrlRef.current} ctxLabel={layoutValue} />
+        {!lay.has(boardPanelId("rail")) && <button type="button" className="btn btn--sm" onClick={() => lay.ctrlRef.current?.add(boardPanelId("rail"), { direction: "left" })}><Icon name="plus" size={13} /> Kısayollar panosunu ekrana geri koy</button>}
+      </Section>
+    ) : null);
+  /** Ayar şablonu uygulandı: canlı uygulanabilenleri hemen yeniden oku. Dönüş: yeniden yükleme gerekiyor mu. */
+  const onProfileApplied = useStable((groups) => {
+    if (groups.includes("prefs")) setPrefs(readPrefs());
+    if (groups.includes("settings")) reloadSettings();
+    if (groups.includes("rail")) rail.reload?.();
+    if (groups.includes("dock")) { try { setDock(JSON.parse(localStorage.getItem("studio.dock.v1") || "null")); } catch { /* yoksay */ } }
+    if (groups.includes("layout")) lay.reload();
+    if (groups.includes("led")) { try { const v = JSON.parse(localStorage.getItem("studio.led.v2") || "null"); if (v && led.setPref) led.setPref(v); } catch { /* yoksay */ } }
+    return groups.some((k) => !["prefs", "settings", "rail", "dock", "led", "layout"].includes(k));
+  });
 
   return (
+    <PartsProvider dock={dock} setDock={setDock}>
     <div ref={rootRef} className={`studio ws-${ws.key} ${hints ? "" : "no-hints"} ${showMicWarning ? "is-micwarn" : ""}`} style={settings.view.scale !== 100 ? { zoom } : undefined} onPointerDown={mixer.resume}>
       <header className="st-top">
         <div className="st-top__title"><Icon name="broadcast" size={17} strokeWidth={2.2} /><strong>Yayın Stüdyosu</strong></div>
@@ -1016,7 +1310,7 @@ export default function Studio({ auth, go }) {
         <StatusPill state={st.state} since={engine.since} />
         <HealthChip status={st} getStats={comp.getStats} targetFps={preset.fps} encoding={onAir} />
         <span className="st-top__spacer" />
-        <WorkspacePicker value={ws.key} onChange={(k) => setPref("workspace", k)} />
+        <LayoutToolbar edit={lay.edit} setEdit={lay.setEdit} ctrlRef={lay.ctrlRef} preset={lay.layout.preset} onSettings={() => openSettings("yerlesim")} />
         {!railHasGoLive && (
           <button type="button" className={`btn ${onAir ? "" : "btn--red"} st-golive`} disabled={busy} onClick={topStart}>
             <Icon name={onAir ? "stop" : "broadcast"} size={14} /> {onAir ? (engine.mode === "rehearsal" ? "Provayı bitir" : "Yayını durdur") : "Yayını başlat"}
@@ -1029,65 +1323,9 @@ export default function Studio({ auth, go }) {
       </header>
 
       <div className="st-shell">
-        <ShortcutRail items={rail.items} setItems={rail.setItems} reset={rail.reset} ctx={railCtx} zoom={zoom} onOpenSettings={() => openSettings("serit")} />
-
         <div className="st-body">
-          {stage}
-
-          {ws.strip && (
-            <Multiview tiles={tiles} config={config} runtimeRef={src.runtimeRef} register={registerTile} version={src.version} studioMode={studioMode}
-              previewId={modes.previewOverride ? null : config.previewSceneId} programId={programIdForTally} ledId={ledId}
-              onPreview={toPreview} onProgram={toProgram} onToLed={sceneActions.onToLed} onEdit={sceneActions.onEdit} tileMenu={tileMenu} addMenu={addMenu} />
-          )}
-
-          <Dock tabs={TABS} tab={tab} onTab={setTab} height={prefs.dockH} onHeight={setDockH} extra={<button type="button" className="st-dock__settings" onClick={() => openSettings()}><Icon name="sliders" size={13} /> Ayarlar</button>}>
-            {tab === "yonetim" && <ManageDock matchId={matchId} match={live.match} live={live} onOpenMatch={setMatchId} graphics={hasGraphics ? g : undefined} scenes={sceneList} replays={replays.replays} onPlayReplay={playReplay} onGoalTap={onDockGoalTap} onEventCreated={onDockEventCreated} goalMusic={goalMusic || undefined} />}
-            {tab === "marka" && (
-              <div className="st-gfxpair is-brand">
-                {BrandTab && <BrandTab {...gfxProps} />}
-                {PresetsTab && <PresetsTab {...gfxProps} />}
-              </div>
-            )}
-            {tab === "skorbord" && ScoreboardTab && <ScoreboardTab {...gfxProps} />}
-            {tab === "altyazi" && SubtitlePanel && <SubtitlePanel {...gfxProps} />}
-            {tab === "sponsor" && <div className="st-gfxpair">{SponsorPanel && <SponsorPanel {...gfxProps} />}{LinksPanel && <LinksPanel {...gfxProps} />}</div>}
-            {tab === "sahne" && <ScenesTab config={config} runtimeRef={src.runtimeRef} register={registerTile} version={src.version} studioMode={studioMode} ledId={ledId} actions={{ ...sceneActions, tileMenu }} libActions={libActions} />}
-            {tab === "gecis" && <TransitionsTab prefs={prefs} setPref={setPref} hasModes={hasModes} brandRef={brandRef} onOpenBrand={g ? () => setTab("marka") : null} />}
-            {modeTab && <div className={`st-modewrap is-${modeTab.key}`}>{modeTab.render?.()}</div>}
-            {!hasModes && tab === "tekrar" && (
-              <div className="st-tekrar">
-                <div className="st-seg st-seg--tabs">
-                  <button type="button" className={prefs.replayView !== "ozet" ? "is-on" : ""} onClick={() => setPref("replayView", "tekrar")}><Icon name="repeat" size={12} /> Tekrarlar</button>
-                  <button type="button" className={prefs.replayView === "ozet" ? "is-on" : ""} onClick={() => setPref("replayView", "ozet")}><Icon name="sparkles" size={12} /> Özet çıkar</button>
-                </div>
-                {prefs.replayView === "ozet"
-                  ? <HighlightsPanel replays={replays.replays} meta={replays.meta} sources={config.sources} matchId={matchId} live={live} recordAngles={liveAngles} hl={hl} imagesRef={imagesRef} ask={ask} toast={toast} />
-                  : <ReplayPanel replays={replays.replays} pending={replays.pending} meta={replays.meta} sources={config.sources} matchId={matchId}
-                      anglePref={prefs.angles} onAnglePref={setAnglePref} angleStatus={angleRec.status} angleAvailable={angleRec.available} multiAngle={replays.multiAngle} encoding={onAir}
-                      player={player} rate={prefs.replayRate} onRate={setReplayRate} replayAudio={prefs.replayAudio} onReplayAudio={(v) => setPref("replayAudio", v)}
-                      onMoment={captureMoment} onPlay={player.play} onStop={() => player.stop(true)} onSkip={player.skip} onUpdate={replays.update} onRemove={removeReplay}
-                      onRetry={replays.retry} onDismiss={replays.dismissPending} uploadOf={replays.uploadOf} recordAngles={liveAngles} />}
-              </div>
-            )}
-            {!hasModes && tab === "var" && <VarPanel vr={vr} sources={config.sources} replays={replays.replays} meta={replays.meta} micMuted={muted} onToggleMic={toggleMic} />}
-            {tab === "yayin" && (
-              <div className="st-bcastwrap">
-                <BroadcastPanel yt={yt} engine={engine} busy={busy} matchId={matchId} matchName={matchName} match={live.match} startedVia={onAir ? startedVia : null} encoding={prefs.encoding} onEncoding={setEncoding}
-                  onStartYoutube={startYoutube} onStartManual={startManual} onRehearsal={startRehearsal} onStop={() => stopEncoder({ askFirst: false })} onEndYoutube={endYoutube} toast={toast} ask={ask}
-                  localRec={localRec} onLocalRec={setLocalRec} recordInfo={recordInfo} onOpenSettings={() => openSettings("kayit")}
-                  chapters={{ ...chapters, onAdd: addChapter, onRemove: chapters.remove, onClear: chapters.clear }} />
-              </div>
-            )}
-            {tab === "ses" && StudioAudioPanel && useStudioAudioMod && (
-              <StudioAudioPanel audio={mixer} mixer={mixer} setAudio={setAudio} devices={src.devices}
-                onRequestMic={async () => { try { await window.elitlig?.studio?.requestMediaAccess?.("microphone"); } catch { /* yoksay */ } setAudio((a) => ({ ...a, mic: { ...a.mic, nonce: Date.now() } })); src.refreshDevices(); }} />
-            )}
-            {tab === "ses" && !(StudioAudioPanel && useStudioAudioMod) && (
-              <AudioPanel audio={prefs.audio} setAudio={setAudio} mixer={mixer} devices={src.devices}
-                onRequestMic={async () => { try { await window.elitlig?.studio?.requestMediaAccess?.("microphone"); } catch { /* yoksay */ } setAudio((a) => ({ ...a, mic: { ...a.mic, nonce: Date.now() } })); src.refreshDevices(); }} />
-            )}
-            {tab === "led" && <LedPanel led={led} scenes={config.scenes} matchId={matchId} ledMode={g?.ledMode} g={hasGraphics ? g : null} live={live} />}
-          </Dock>
+          {/* ── ekran yerleşimi: bölmeler, sekme grupları, panolar (./layout) ── */}
+          <Workspace layout={lay.layout} setLayout={lay.setLayout} edit={lay.edit} ctrlRef={lay.ctrlRef} value={layoutValue} />
 
           {editSceneId && (
             <SceneEditor config={config} configRef={configRef} runtimeRef={src.runtimeRef} sceneId={editSceneId} selectedLayerId={selectedLayerId} onSelectLayer={setSelectedLayerId}
@@ -1098,7 +1336,9 @@ export default function Studio({ auth, go }) {
 
         {settingsSection && (
           <SettingsPage section={settingsSection} onSection={setSettingsSection} settings={settings} set={setSetting} prefs={prefs} setPref={setPref} led={led} scenes={sceneList} engine={engine} toast={toast}
-            rail={rail} hasModes={hasModes} brandRef={brandRef}
+            rail={rail} railCtx={railCtx} hasModes={hasModes} brandRef={brandRef}
+            extraSections={settingsExtra} dock={dock} setDock={setDock} resetDock={resetDock} dockDefs={dockDefs} renderRail={railBoardEditor}
+            onProfileApplied={onProfileApplied} canReload={!onAir} RoutePicker={RoutePicker} audio={mixer}
             onClose={() => setSettingsSection(null)}
             onReset={async () => { if (await ask({ title: "Stüdyo ayarlarını sıfırla", message: "Kodlayıcı, kayıt kalitesi, kısayollar, uyarılar ve görünüm ayarları varsayılana döner. Sahneler ve kaynaklar silinmez.", confirmLabel: "Sıfırla", danger: true })) { resetSettings(); toast("Stüdyo ayarları sıfırlandı.", { tone: "success" }); } }} />
         )}
@@ -1109,7 +1349,8 @@ export default function Studio({ auth, go }) {
           <span className="st-rmenu__title">{monMenu.target === "program" ? "Program" : "Önizleme"}</span>
           <button type="button" role="menuitem" onClick={() => { setFullscreen(monMenu.target); setMonMenu(null); }}><Icon name="overview" size={13} /> Tam ekran göster</button>
           {monMenu.target === "preview" && <button type="button" role="menuitem" disabled={!canTake} onClick={() => { toProgram(); setMonMenu(null); }}><Icon name="chevronRight" size={13} /> Yayına al (Geçiş)</button>}
-          {monMenu.target === "preview" && !modes.previewOverride && previewScene && <button type="button" role="menuitem" onClick={() => { sceneActions.onEdit(previewScene.id); setMonMenu(null); }}><Icon name="pencil" size={13} /> Sahneyi düzenle</button>}
+          {monMenu.target === "preview" && !modes.previewOverride && previewScene && <button type="button" role="menuitem" onClick={() => { sceneActions.onEdit(previewScene.id); setMonMenu(null); }}><Icon name="pencil" size={13} /> Sahneyi düzenle (katmanlar)</button>}
+          {monMenu.target === "preview" && !modes.previewOverride && previewScene && <button type="button" role="menuitem" onClick={() => { sceneActions.onEditFull(previewScene.id); setMonMenu(null); }}><Icon name="overview" size={13} /> Tam ekran düzenle</button>}
           {monMenu.target === "program" && lastSceneId && <button type="button" role="menuitem" onClick={() => { backToLastScene(); setMonMenu(null); }}><Icon name="undo" size={13} /> Son sahneye dön</button>}
         </div>
       )}
@@ -1128,16 +1369,15 @@ export default function Studio({ auth, go }) {
         <SourceDialog initial={dialog.initial} cameraCount={config.sources.filter((s) => s.kind === "camera").length} devices={src.devices} access={src.access}
           onRequestAccess={src.requestAccess} onRefreshDevices={src.refreshDevices} onSave={saveSource} onClose={closeDialog} />
       )}
+      {gallery && <TemplateGallery anchor={gallery.anchor} onTemplate={onTemplate} onClose={() => setGallery(null)} />}
       {tplKey && <TemplateDialog tplKey={tplKey} config={config} onCreate={createFromTemplate} onClose={() => setTplKey(null)} />}
       {help && <HelpModal hotkeys={settings.hotkeys} onClose={() => setHelp(false)} />}
       {/* ── röportaj: kayıt bitince inceleme (izle → web sitesine yükle / sil) ── */}
       <InterviewReviewHost iv={interview} />
+      {/* [gol-müziği] çalarken büyük "MÜZİĞİ KES" hapı (portal: düzenden bağımsız, sahnenin üstünde ortada) */}
+      {GoalMusicStopPill && goalMusic && <GoalMusicStopPill gm={goalMusic} hotkey={settings.hotkeys.goalMusicStop?.[0] ? keyText(settings.hotkeys.goalMusicStop[0]) : null} />}
       {ytStart.dialog /* [medya] YouTube başlatma penceresi */}
     </div>
+    </PartsProvider>
   );
-}
-
-/** Boş ızgara hücresi: "Sahne ekle". */
-function MenuAdd({ items }) {
-  return <div className="st-grid__add"><MenuButton label="Sahne ekle" icon="plus" text="Sahne ekle" size={13} align="start" items={items} /></div>;
 }

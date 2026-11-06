@@ -1,8 +1,13 @@
 // Yayın Stüdyosu · AYARLAR sayfası (dişli simgesi): stüdyonun üstünde tam sayfa.
 //
-//   Yayın · Kayıt (kayıt kalitesi + 10 dk boyut tahmini) · Tekrar · Geçiş (Geçişler
-//   sekmesiyle aynı bileşen) · LED · Görünüm · Kısayol düğmeleri (sol şerit) ·
-//   Klavye kısayolları (aynı eylemler) · Bildirimler · Gelişmiş
+//   Genel      Yayın · Kayıt (kayıt kalitesi + 10 dk boyut tahmini) · Tekrar · Geçiş ·
+//              LED · Görünüm · Bildirimler
+//   Grafikler  Skorbord · Altyazı · Marka & ön ayarlar · Sponsor & linkler (eskiden alt
+//              panel sekmeleri; aynı bileşenler Studio'dan extraSections ile gelir)
+//   Yerleşim   Ekran yerleşimi (hazır düzenler, bölme / sekme grubu / sekme / pano ağacı,
+//              ekranda olmayanlar) · Kısayollar panosu · Panel parçaları (gizle / göster)
+//   Paneller   Ses (karıştırıcının tamamı) · Klavye kısayolları
+//   Şablonlar  Ayar şablonları (kaydet / uygula / dışa – içe aktar) · Gelişmiş
 //
 // Ayarlar ilgili kod yollarını besler: kodlama (prefs.encoding), geçiş
 // (prefs.transition / transitionMs), çalışma alanı, LED tercihleri ve
@@ -13,21 +18,38 @@ import { BITRATE_PRESETS, FPS_CHOICES, RESOLUTION_CHOICES, encodingPreset, recom
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../../lib/studio/transitions";
 import { WORKSPACES, FIXED_SHORTCUTS } from "../../../lib/studio/scenesWorkspace";
 import { AUDIO_KBPS_CHOICES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, RECORD_QUALITIES, RESERVED_KEYS, bindHotkey, keyText, recordEstimate } from "./settings";
-import { RAIL_WIDGETS, addWidget, moveWidget, removeWidget, toggleWidgetSize, widgetOf } from "../shortcuts/railModel";
+import { RAIL_SIZES, RAIL_WIDGETS, addWidget, moveWidget, removeWidget, resizeWidget, sizeKey, sizesOf, widgetOf } from "../shortcuts/railModel";
 import { RailCatalog } from "../shortcuts/ShortcutRail";
 import TransitionsTab from "../scenes/TransitionsTab";
+import { normalizeModeSettings } from "../../../lib/studio/modes";
+import { TRANSITIONS } from "../../../lib/studio/transitions";
+import DockSettings from "./DockSettings";
+import ProfilesSection from "./ProfilesSection";
+import "./settings.css";
+import "../dock/dock.css";
+import VarThemeSection, { VAR_THEME_SECTION } from "./VarThemeSection"; // [var-tema]
 
+export const SETTINGS_GROUPS = [
+  { key: "genel", label: "Genel" },
+  { key: "yerlesim", label: "Yerleşim" },
+  { key: "grafik", label: "Grafikler" },
+  { key: "panel", label: "Paneller" },
+  { key: "sablon", label: "Şablonlar" },
+];
 export const SETTINGS_SECTIONS = [
-  { key: "yayin", label: "Yayın", icon: "broadcast" },
-  { key: "kayit", label: "Kayıt", icon: "download" },
-  { key: "tekrar", label: "Tekrar", icon: "repeat" },
-  { key: "gecis", label: "Geçiş", icon: "swap" },
-  { key: "led", label: "LED ekran", icon: "overview" },
-  { key: "gorunum", label: "Görünüm", icon: "grid" },
-  { key: "serit", label: "Kısayol düğmeleri", icon: "zap" },
-  { key: "kisayol", label: "Klavye kısayolları", icon: "command" },
-  { key: "bildirim", label: "Bildirimler", icon: "bell" },
-  { key: "gelismis", label: "Gelişmiş", icon: "sliders" },
+  { key: "yayin", label: "Yayın", icon: "broadcast", group: "genel" },
+  { key: "kayit", label: "Kayıt", icon: "download", group: "genel" },
+  { key: "tekrar", label: "Tekrar", icon: "repeat", group: "genel" },
+  { ...VAR_THEME_SECTION, group: "grafik" }, // [var-tema] Ayarlar › Grafikler › VAR teması
+  { key: "gecis", label: "Geçiş", icon: "swap", group: "genel" },
+  { key: "led", label: "LED ekran", icon: "overview", group: "genel" },
+  { key: "gorunum", label: "Görünüm", icon: "grid", group: "genel" },
+  { key: "bildirim", label: "Bildirimler", icon: "bell", group: "genel" },
+  { key: "serit", label: "Kısayollar panosu", icon: "zap", group: "yerlesim" },
+  { key: "panel", label: "Panel parçaları", icon: "eye", group: "yerlesim" },
+  { key: "kisayol", label: "Klavye kısayolları", icon: "command", group: "panel" },
+  { key: "sablon", label: "Ayar şablonları", icon: "copy", group: "sablon" },
+  { key: "gelismis", label: "Gelişmiş", icon: "sliders", group: "sablon" },
 ];
 
 function Choice({ on, title, text, onClick, disabled }) {
@@ -84,7 +106,7 @@ function HotkeyRow({ action, keys, onBind, onReset }) {
 }
 
 /** Sol şeritteki kısayol düğmeleri: sıra, boyut, kaldır (+ katalog). */
-function RailManager({ rail, scenes }) {
+function RailManager({ rail, scenes, ctx = null }) {
   const { items, setItems, reset } = rail;
   const nameOf = (it) => (it.type === "scene" ? `Sahne · ${scenes.find((s) => s.id === it.opts?.sceneId)?.name || "?"}` : widgetOf(it.type)?.label || it.type);
   return (
@@ -96,8 +118,7 @@ function RailManager({ rail, scenes }) {
               <Icon name={widgetOf(it.type)?.icon || "zap"} size={14} />
               <span className="st-railman__name">{nameOf(it)}</span>
               <div className="st-seg">
-                <button type="button" className={it.size === 1 ? "is-on" : ""} onClick={() => it.size !== 1 && setItems((c) => toggleWidgetSize(c, it.id))}>1×1</button>
-                <button type="button" className={it.size === 2 ? "is-on" : ""} onClick={() => it.size !== 2 && setItems((c) => toggleWidgetSize(c, it.id))}>2×2</button>
+                {sizesOf(it.type).map((sz) => <button key={sz} type="button" className={sizeKey(it) === sz ? "is-on" : ""} onClick={() => setItems((c) => resizeWidget(c, it.id, sz))}>{RAIL_SIZES[sz].label}</button>)}
               </div>
               <button type="button" className="icon-btn icon-btn--xs" disabled={i === 0} onClick={() => setItems((c) => moveWidget(c, it.id, c[i - 1]?.id))} title="Yukarı"><Icon name="chevronUp" size={13} /></button>
               <button type="button" className="icon-btn icon-btn--xs" disabled={i === items.length - 1} onClick={() => setItems((c) => moveWidget(c, it.id, c[i + 1]?.id))} title="Aşağı"><Icon name="chevronDown" size={13} /></button>
@@ -108,14 +129,19 @@ function RailManager({ rail, scenes }) {
         </ol>
         <button type="button" className="btn btn--sm btn--ghost" onClick={reset}><Icon name="undo" size={13} /> Varsayılan düzene dön</button>
       </Section>
-      <Section title="Kısayol ekle" sub={`${RAIL_WIDGETS.length} parçacık: her biri işlevseldir (durumunu gösterir, açılır panelle seçim yapar).`}>
-        <RailCatalog compact items={items} scenes={scenes} onAdd={(type, size, opts) => setItems((c) => addWidget(c, type, { size, opts }))} />
+      <Section title="Kısayol ekle" sub={`${RAIL_WIDGETS.length} parçacık çeşidi: her biri işlevseldir (durumunu gösterir, açılır panelle seçim yapar). Boyutlar 1×1, 1×2, 2×1, 2×2.`}>
+        <RailCatalog compact ctx={ctx} items={items} scenes={scenes} onAdd={(type, size, opts) => setItems((c) => addWidget(c, type, { size, opts }))} />
       </Section>
     </>
   );
 }
 
-function SettingsPage({ section, onSection, settings, set, onReset, prefs, setPref, led, scenes, engine, onClose, toast, rail = null, hasModes = false, brandRef = null }) {
+function SettingsPage({
+  section, onSection, settings, set, onReset, prefs, setPref, led, scenes, engine, onClose, toast, rail = null, hasModes = false, brandRef = null,
+  railCtx = null, extraSections = [], dock = null, setDock = null, resetDock = null, dockDefs = {}, onProfileApplied = null, canReload = true, RoutePicker = null, audio = null,
+  renderRail = null,
+}) {
+  const allSections = [...SETTINGS_SECTIONS, ...extraSections.map((x) => ({ group: "panel", ...x }))];
   const enc = prefs.encoding;
   const preset = encodingPreset(enc);
   const est = recordEstimate(settings.record, { streamVideoKbps: preset.videoBitrateKbps, audioKbps: settings.stream.audioKbps });
@@ -198,19 +224,54 @@ function SettingsPage({ section, onSection, settings, set, onReset, prefs, setPr
       </>
     );
   } else if (section === "tekrar") {
+    // Yayın modları varsa hız / aradaki geçiş kip ayarlarında (prefs.modes), yoksa eski tercihte.
+    const mcfg = hasModes ? normalizeModeSettings(prefs.modes) : null;
+    const rate = mcfg ? mcfg.rate : Number(prefs.replayRate) || 1;
+    const setRate = (r) => (mcfg ? setPref("modes", (m) => ({ ...normalizeModeSettings(m), rate: r })) : setPref("replayRate", r));
+    const stingers = [{ key: "cut", label: "Kesme" }, ...TRANSITIONS.filter((t) => t.stinger)];
     body = (
-      <Section title="Tekrar varsayılanları" sub="GOL ve ÖNEMLİ AN tekrarlarına uygulanır.">
-        <Field label={`Golden önce kaydedilen süre · ${settings.replay.seconds} sn`} hint="Gol / önemli ana basıldığı andan geriye doğru yazılan süre.">
-          <input type="range" min={5} max={30} step={1} value={settings.replay.seconds} onChange={(e) => set("replay", { seconds: Number(e.target.value) })} />
-        </Field>
-        <Field label={`Oynatma hızı · ${String(prefs.replayRate).replace(".", ",")}×`}>
-          <div className="st-seg">{[0.25, 0.5, 0.75, 1].map((r) => <button key={r} type="button" className={Number(prefs.replayRate) === r ? "is-on" : ""} onClick={() => setPref("replayRate", r)}>{String(r).replace(".", ",")}×</button>)}</div>
-        </Field>
-        <Toggle checked={prefs.angles?.program !== false} onChange={(v) => setPref("angles", (a) => ({ ...a, program: v }))} title="Program açısını kaydet" text="Yayına giden görüntü" />
-        <Toggle checked={prefs.angles?.all !== false} onChange={(v) => setPref("angles", (a) => ({ ...a, all: v }))} title="Tüm kameraları ayrı açı olarak kaydet" text="Her kamera / ekran kaynağı kendi tekrar açısı olur" />
-        <Toggle checked={Boolean(prefs.replayAudio)} onChange={(v) => setPref("replayAudio", v)} title="Tekrarın sesi yayına gitsin" />
-      </Section>
+      <>
+        <Section title="Tekrar varsayılanları" sub="GOL ve ÖNEMLİ AN tekrarlarına uygulanır.">
+          <Field label={`Golden önce kaydedilen süre · ${settings.replay.seconds} sn`} hint="Gol / önemli ana basıldığı andan geriye doğru yazılan süre.">
+            <input type="range" min={5} max={30} step={1} value={settings.replay.seconds} onChange={(e) => set("replay", { seconds: Number(e.target.value) })} />
+          </Field>
+          <Field label={`Oynatma hızı · ${String(rate).replace(".", ",")}×`}>
+            <div className="st-seg">{[0.25, 0.5, 0.75, 1].map((r) => <button key={r} type="button" className={Number(rate) === r ? "is-on" : ""} onClick={() => setRate(r)}>{String(r).replace(".", ",")}×</button>)}</div>
+          </Field>
+          {/* [önizleme-geçiş] R kısayolu: varsayılan son tekrarı ÖNİZLEME'ye yükler; açıksa aynı GEÇİŞ yoluyla hemen yayına alır. */}
+          <Toggle checked={Boolean(settings.replay.directTake)} onChange={(v) => set("replay", { directTake: v })} title="R = doğrudan yayına"
+            text="Kapalıyken R (ve “Son tekrar” düğmeleri) son tekrarı önizlemeye yükler, yayına GEÇİŞ alır. Açıkken önizlemeye yükleyip hemen aynı geçişle yayına verir." />
+          {mcfg && (
+            <Field label="Tekrarlar arasındaki geçiş">
+              <select value={mcfg.between.kind} onChange={(e) => setPref("modes", (m) => ({ ...normalizeModeSettings(m), between: { kind: e.target.value } }))}>
+                {stingers.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+            </Field>
+          )}
+          {mcfg && (
+            <Field label="Yayına alma geçişi (Tekrar / VAR / Röportaj / Özet)">
+              <select value={mcfg.transition.kind} onChange={(e) => setPref("modes", (m) => ({ ...normalizeModeSettings(m), transition: { kind: e.target.value } }))}>
+                {TRANSITIONS.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+            </Field>
+          )}
+        </Section>
+        <Section title="Kaydedilecek açılar" sub="Tekrar panelindeki “Kaydedilecek açılar” ile aynı.">
+          <Toggle checked={prefs.angles?.program !== false} onChange={(v) => setPref("angles", (a) => ({ ...a, program: v }))} title="Program açısını kaydet" text="Yayına giden görüntü" />
+          <Toggle checked={prefs.angles?.all !== false} onChange={(v) => setPref("angles", (a) => ({ ...a, all: v }))} title="Tüm kameraları ayrı açı olarak kaydet" text="Her kamera / ekran kaynağı kendi tekrar açısı olur" />
+          {!hasModes && <Toggle checked={Boolean(prefs.replayAudio)} onChange={(v) => setPref("replayAudio", v)} title="Tekrarın sesi yayına gitsin" />}
+        </Section>
+        {RoutePicker && audio?.setRoute && (
+          <Section title="Yayına giden ses" sub="Tekrar / VAR ve özet oynarken yayına hangi sesler gitsin (alt paneldeki seçiciyle aynı).">
+            <RoutePicker audio={audio} context="replay" />
+            <RoutePicker audio={audio} context="highlight" />
+          </Section>
+        )}
+        <p className="st-hint st-set__wide">Panelin her ayrıntısı (katmanlar, kuyruk, düzenleyici…) için: Ayarlar › Alt panel › Tekrar › Parçalar › “Paneli burada aç”.</p>
+      </>
     );
+  } else if (section === VAR_THEME_SECTION.key) { // [var-tema]
+    body = <VarThemeSection prefs={prefs} setPref={setPref} />;
   } else if (section === "gecis") {
     body = <div className="st-set__wide"><TransitionsTab prefs={prefs} setPref={setPref} hasModes={hasModes} brandRef={brandRef} /></div>;
   } else if (section === "led") {
@@ -234,7 +295,7 @@ function SettingsPage({ section, onSection, settings, set, onReset, prefs, setPr
   } else if (section === "gorunum") {
     body = (
       <>
-        <Section title="Çalışma alanı" sub="Ekranların yerleşimi (üst çubuktan da değişir).">
+        <Section title="Çalışma alanı" sub="Ekran bölgesinin (monitörler, geçiş, sahneler) hızlı düzeni; öbür bölmeler korunur. Ekranın tamamı için Ayarlar › Yerleşim ya da üst çubukta Hazır düzen / Düzenle.">
           <div className="st-wsgrid">
             {WORKSPACES.map((w) => (
               <button key={w.key} type="button" className={`st-wscard ${prefs.workspace === w.key ? "is-on" : ""}`} onClick={() => setPref("workspace", w.key)}>
@@ -253,8 +314,27 @@ function SettingsPage({ section, onSection, settings, set, onReset, prefs, setPr
         </Section>
       </>
     );
+  } else if (section === "panel") {
+    body = dock && setDock
+      ? <DockSettings Section={Section} Choice={Choice} dock={dock} setDock={setDock} resetDock={resetDock} defs={dockDefs} partsOnly />
+      : <p className="st-hint">Alt panel düzeni yüklenemedi.</p>;
+  } else if (section === "sablon") {
+    body = <ProfilesSection Section={Section} onApplied={onProfileApplied} canReload={canReload} toast={toast} />;
+  } else if (extraSections.some((x) => x.key === section)) {
+    const x = extraSections.find((e) => e.key === section);
+    body = x.group === "yerlesim" ? x.render({ Section }) : <div className="st-set__wide st-set__embed">{x.render()}</div>;
   } else if (section === "serit") {
-    body = rail ? <RailManager rail={rail} scenes={scenes} /> : <p className="st-hint">Kısayol şeridi yüklenemedi.</p>;
+    const railBoard = renderRail?.(Section);
+    body = railBoard
+      ? (
+        <>
+          {railBoard}
+          <Section title="Düğme ekle" sub="Her düğme (parçacık) işlevseldir; Kısayollar panosuna eklenir. Stüdyoda Düzenle › Kutu ekle ile herhangi bir panoya / sekmeye de konur.">
+            <RailCatalog compact ctx={railCtx} items={[]} scenes={scenes} onAdd={(type, size, opts) => railCtx?.addToRail?.(type, size, opts)} />
+          </Section>
+        </>
+      )
+      : rail ? <RailManager rail={rail} scenes={scenes} ctx={railCtx} /> : <p className="st-hint">Kısayol şeridi yüklenemedi.</p>;
   } else if (section === "kisayol") {
     const row = (a) => (
       <HotkeyRow key={a.key} action={a} keys={settings.hotkeys[a.key] || []}
@@ -307,13 +387,22 @@ function SettingsPage({ section, onSection, settings, set, onReset, prefs, setPr
     <div className="st-set" role="dialog" aria-label="Stüdyo ayarları">
       <nav className="st-set__nav">
         <header><Icon name="sliders" size={16} /><strong>Ayarlar</strong></header>
-        {SETTINGS_SECTIONS.map((s) => (
-          <button key={s.key} type="button" className={section === s.key ? "is-on" : ""} onClick={() => onSection(s.key)}><Icon name={s.icon} size={14} /> {s.label}</button>
-        ))}
+        {SETTINGS_GROUPS.map((grp) => {
+          const list = allSections.filter((s) => s.group === grp.key);
+          if (!list.length) return null;
+          return (
+            <React.Fragment key={grp.key}>
+              <h6 className="st-set__navgroup">{grp.label}</h6>
+              {list.map((s) => (
+                <button key={s.key} type="button" className={section === s.key ? "is-on" : ""} onClick={() => onSection(s.key)}><Icon name={s.icon} size={14} /> {s.label}</button>
+              ))}
+            </React.Fragment>
+          );
+        })}
       </nav>
       <div className="st-set__main">
         <header className="st-set__head">
-          <h2>{SETTINGS_SECTIONS.find((s) => s.key === section)?.label}</h2>
+          <h2>{allSections.find((s) => s.key === section)?.label}</h2>
           <span className="st-top__spacer" />
           <button type="button" className="btn btn--primary btn--sm" onClick={onClose}><Icon name="check" size={13} /> Kapat</button>
         </header>

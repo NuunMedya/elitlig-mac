@@ -3,7 +3,8 @@
 //   stream    kodlayıcı tercihi, anahtar kare aralığı, ses bit hızı (çözünürlük /
 //             fps / görüntü bit hızı Yayın sekmesiyle ortak: prefs.encoding)
 //   record    yerel kayıt: açık mı, klasör, KAYIT KALİTESİ (yayından ayrı)
-//   replay    gol öncesi kaç saniye tekrar yazılsın
+//   replay    gol öncesi kaç saniye tekrar yazılsın (varsayılan 15; v1 kayıtlarındaki eski
+//             varsayılan 10, kullanıcı değiştirmemiş sayılıp 15'e taşınır — migrateReplaySeconds)
 //   view      ipuçları ve kısayol rozetleri, arayüz ölçeği
 //   hotkeys   ana eylemlerin tuşları (yeniden atanabilir)
 //   notify    mikrofon açık uyarısı (VAR), düşük bit hızı, sessiz yayın
@@ -37,10 +38,10 @@ export const HOTKEY_ACTIONS = [
   { key: "transition", label: "Önizlemeyi yayına geçir (Geçiş)", default: [" ", "Enter"] },
   { key: "lastScene", label: "Son sahneye dön", default: ["l"] },
   { key: "mic", label: "Mikrofonu aç / kapat", default: ["m"] },
-  { key: "replay", label: "Son tekrarı yayına ver / canlıya dön", default: ["r"] },
+  { key: "replay", label: "Son tekrarı önizlemeye al (Ayarlar › Tekrar: R = doğrudan yayına)", default: ["r"] },
   { key: "moment", label: "Önemli an: son saniyeleri tekrar olarak kaydet", default: ["b"] },
   { key: "goalArm", label: "Gol (sonra H: ev sahibi, A: deplasman)", default: ["g"] },
-  { key: "var", label: "VAR kontrolünü aç / kapat", default: ["v"] },
+  { key: "var", label: "VAR önizlemeye / yayındaysa canlıya dön", default: ["v"] },
   { key: "chapter", label: "Bölüm işareti (YouTube bölümleri)", default: ["c"] },
   { key: "help", label: "Kısayol yardımı", default: ["?"] },
   // Kısayol şeridindeki parçacıklarla aynı eylemler (varsayılan tuşu yok; Ayarlar › Kısayollar'dan atanır).
@@ -48,6 +49,7 @@ export const HOTKEY_ACTIONS = [
   { key: "goalHome", label: "Ev sahibine GOL (golcü seçilir)", default: [] },
   { key: "goalAway", label: "Deplasmana GOL (golcü seçilir)", default: [] },
   { key: "goalMusic", label: "Gol müziği çal / durdur", default: [] },
+  { key: "goalMusicStop", label: "Gol müziğini KES (çalarken)", default: ["k"] },
   { key: "subtitle", label: "Altyazıyı aç / kapat", default: [] },
   { key: "interviewBand", label: "Röportaj bandını aç / kapat", default: [] },
   { key: "interview", label: "Röportaj kaydını başlat / bitir", default: [] },
@@ -58,10 +60,12 @@ export const DEFAULT_HOTKEYS = Object.fromEntries(HOTKEY_ACTIONS.map((a) => [a.k
 export const RESERVED_KEYS = new Set(["1", "2", "3", "4", "5", "6", "7", "8", "9", "h", "a", "e", "d", "Escape", "Tab"]);
 
 export const DEFAULT_SETTINGS = {
-  v: 1,
+  v: 2,
   stream: { encoder: "auto", keyframeSec: 2, audioKbps: 128 },
   record: { enabled: false, dir: null, quality: "stream", customKbps: 10000, customHeight: 1080 },
-  replay: { seconds: 10 },
+  // tekrar klibi 15 sn: önizlemede giriş–çıkışla istenen bölüm seçilir. directTake: R kısayolu
+  // son tekrarı önizlemeye yükleyip AYNI GEÇİŞ yoluyla hemen yayına alır [önizleme-geçiş]
+  replay: { seconds: 15, directTake: false },
   view: { hints: true, tooltips: true, scale: 100 },
   hotkeys: DEFAULT_HOTKEYS,
   notify: { micOpen: true, lowBitrate: true, silence: true, silenceSec: 30 },
@@ -88,11 +92,25 @@ function normHotkeys(raw) {
   return out;
 }
 
+/** Eski varsayılan tekrar süresi (v1). */
+export const LEGACY_REPLAY_SECONDS = 10;
+/**
+ * Tekrar süresi göçü: v1 kaydında süre eski varsayılanda (10 sn) ise kullanıcı
+ * değiştirmemiş sayılır → yeni varsayılan (15 sn). Başka bir değer seçildiyse
+ * ya da kayıt v2 ise (kullanıcı 10'u bilerek seçtiyse) dokunulmaz.
+ */
+export function migrateReplaySeconds(r) {
+  const sec = r?.replay?.seconds;
+  if (sec == null) return undefined;
+  const v = Number(r?.v) || 1;
+  return v < 2 && Number(sec) === LEGACY_REPLAY_SECONDS ? DEFAULT_SETTINGS.replay.seconds : sec;
+}
+
 export function normalizeSettings(raw) {
   const r = raw && typeof raw === "object" ? raw : {};
   const d = DEFAULT_SETTINGS;
   return {
-    v: 1,
+    v: 2,
     stream: {
       encoder: pick(r.stream?.encoder, ENCODER_PREFS.map((e) => e.key), d.stream.encoder),
       keyframeSec: pick(Number(r.stream?.keyframeSec), KEYFRAME_CHOICES, d.stream.keyframeSec),
@@ -105,7 +123,7 @@ export function normalizeSettings(raw) {
       customKbps: clamp(Math.round(num(r.record?.customKbps, d.record.customKbps)), 1000, 50000),
       customHeight: pick(Number(r.record?.customHeight), [720, 1080], d.record.customHeight),
     },
-    replay: { seconds: clamp(Math.round(num(r.replay?.seconds, d.replay.seconds)), 5, 30) },
+    replay: { seconds: clamp(Math.round(num(migrateReplaySeconds(r), d.replay.seconds)), 5, 30), directTake: bool(r.replay?.directTake, d.replay.directTake) },
     view: {
       hints: bool(r.view?.hints, d.view.hints),
       tooltips: bool(r.view?.tooltips, d.view.tooltips),

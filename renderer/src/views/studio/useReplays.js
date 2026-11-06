@@ -1,7 +1,7 @@
 // Yayın Stüdyosu — TEKRARLAR (çok açılı) ve gol klibi yüklemesi.
 //
 //   1. GOL'e basıldığı AN capture({ kind: "goal" }): ana süreç seçili açıların
-//      (program + kaynaklar) son 10 saniyesini yazar — golcü seçimi beklenmez.
+//      (program + kaynaklar) son 15 saniyesini (Ayarlar › Tekrar) yazar — golcü seçimi beklenmez.
 //   2. Olay sunucuya yazılınca attach(key, { eventId, scorer }) tekrarı olaya
 //      bağlar (studio.updateReplay) ve PROGRAM açısını oyuncunun profiline
 //      gol videosu olarak yükler (studio.uploadClip). Hata → "yeniden dene".
@@ -71,7 +71,10 @@ export function useReplays(matchId) {
    * Tekrar kaydet. angles: ["program", kaynakId…]; meta: { side, code, minute, period }.
    * Dönüş: anahtar (attach için).
    */
-  const capture = useCallback(({ kind = "moment", angles = [PROGRAM_ANGLE], label = null, eventId = null, seconds: secs = null, meta: info = {} }) => {
+  const capture = useCallback(({ kind = "moment", angles: wanted = [PROGRAM_ANGLE], label = null, eventId = null, seconds: secs = null, meta: info = {} }) => {
+    // Gol klibi web sitesine PROGRAM açısından yüklenir: "Kaydedilecek açılar"da program
+    // kapalı olsa bile gollerde her zaman kaydedilir (yoksa yükleme hiç başlamıyordu).
+    const angles = kind === "goal" && !(wanted || []).includes(PROGRAM_ANGLE) ? [PROGRAM_ANGLE, ...(wanted || [])] : (wanted || [PROGRAM_ANGLE]);
     const seconds = Math.round(Math.min(60, Math.max(3, Number(secs) || REPLAY_SECONDS)));
     const key = `rp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const m = { ...info, matchId: Number(matchRef.current) || null, at: Date.now() };
@@ -113,10 +116,11 @@ export function useReplays(matchId) {
   const upload = useCallback(async (replay) => {
     const m = metaRef.current[replay.id] || {};
     const eventId = replay.eventId || m.eventId;
-    const prog = replay.angles.find((a) => a.angle === PROGRAM_ANGLE);
+    // Önce program açısı; yoksa (eski kayıtlar) dosyası olan ilk kamera açısı.
+    const prog = replay.angles.find((a) => a.angle === PROGRAM_ANGLE && a.url !== null) || replay.angles.find((a) => a.url) || replay.angles[0] || null;
     const mid = Number(m.matchId || matchRef.current);
     // Yüklenemiyorsa sessizce geçme: kullanıcı nedenini görsün.
-    const why = !prog ? "Tekrar dosyası yok (program açısı kaydedilmemiş)." : !eventId ? "Olay bağlı değil: golcü seçilmeden yüklenemez." : !mid ? "Maç seçilmedi: Maç yönetimi'nden maç aç." : null;
+    const why = !prog ? "Tekrar dosyası yok: bu tekrarda kayıtlı açı bulunamadı." : !eventId ? "Olay bağlı değil: golcü seçilmeden yüklenemez." : !mid ? "Maç seçilmedi: Maç yönetimi'nden maç aç." : null;
     if (why) { setUploads((u) => ({ ...u, [replay.id]: { status: "failed", error: why } })); return; }
     setUploads((u) => ({ ...u, [replay.id]: { status: "uploading" } }));
     try {
@@ -124,7 +128,7 @@ export function useReplays(matchId) {
       const res = await studio()?.uploadClip?.({
         matchId: mid,
         eventId: Number(eventId),
-        ...(legacy ? { name: String(replay.id).slice(5) } : { replayId: replay.id, angle: PROGRAM_ANGLE }),
+        ...(legacy ? { name: String(replay.id).slice(5) } : { replayId: replay.id, angle: prog.angle || PROGRAM_ANGLE }),
         durationMs: Math.round(prog.durationMs || replay.durationMs || 0),
         width: prog.width,
         height: prog.height,

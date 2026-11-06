@@ -8,6 +8,8 @@
 //   both    canlı kaynak ve tekrar yan yana
 // Çıkışta önceki programa tek tıkla dönülür (program sahnesi VAR'da değişmez).
 
+import { DEFAULT_VAR_THEME, normalizeVarTheme } from "./varThemes";
+
 export const VAR_MODES = [
   { key: "bg", label: "Yalnız VAR arka planı", hint: "Hakem ekrana giderken / karar beklenirken" },
   { key: "replay", label: "VAR + pozisyon tekrarı", hint: "Tekrar ve açı seç; döngü, ağır çekim" },
@@ -139,6 +141,7 @@ export function normalizeVarV2(v) {
     topic: String(x.topic ?? "OLASI PENALTI").slice(0, 40),
     scan: x.scan !== false,
     timecode: x.timecode !== false,
+    theme: normalizeVarTheme(x.theme || DEFAULT_VAR_THEME),
   };
 }
 
@@ -168,23 +171,28 @@ export const activeSlots = (v) => {
  *   panes   [{ rect, index, big }]
  *   footer  alt karar bandı (raydan raya)
  */
-export function varLayoutV2(layout, W, H) {
+export function varLayoutV2(layout, W, H, opts = {}) {
   const L = varLayoutOf(layout);
+  // Tema ölçüleri (oran, varThemes.js): rail yan ray genişliği (0 = ray yok), side
+  // raysız kenar payı, header / footer bant yükseklikleri, vpad dikey boşluk,
+  // edge sahnenin iç payı, gap pencere arası.
+  const q = { rail: 0.034, side: 0.03, header: 0.085, footer: 0.1, vpad: 0.03, edge: 0.012, gap: 0.016, ...(opts || {}) };
   const o = Math.max(2, Math.round(H * 0.012));
-  const rw = Math.round(W * 0.034);
+  const rw = q.rail > 0 ? Math.round(W * q.rail) : 0;
+  const side = rw || Math.round(W * q.side);
   const frame = { x: o, y: o, w: W - o * 2, h: H - o * 2 };
-  const rails = [
+  const rails = rw ? [
     { x: o, y: o, w: rw - o, h: H - o * 2 },
     { x: W - rw, y: o, w: rw - o, h: H - o * 2 },
-  ];
-  const vpad = Math.round(H * 0.03);
-  const header = { x: rw, y: vpad, w: W - rw * 2, h: Math.round(H * 0.085) };
-  const fh = Math.round(H * 0.1);
-  const footer = { x: rw, y: H - vpad - fh, w: W - rw * 2, h: fh };
-  const sx = rw + Math.round(W * 0.012);
+  ] : [];
+  const vpad = Math.round(H * q.vpad);
+  const header = { x: side, y: vpad, w: W - side * 2, h: Math.round(H * q.header) };
+  const fh = Math.round(H * q.footer);
+  const footer = { x: side, y: H - vpad - fh, w: W - side * 2, h: fh };
+  const sx = side + Math.round(W * q.edge);
   const top = header.y + header.h + vpad;
   const stage = { x: sx, y: top, w: W - sx * 2, h: footer.y - vpad - top };
-  const gap = Math.round(W * 0.016);
+  const gap = Math.round(W * q.gap);
   let panes;
   if (L.key === "two") {
     const half = (stage.w - gap) / 2;
