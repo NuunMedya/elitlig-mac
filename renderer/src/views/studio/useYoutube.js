@@ -6,9 +6,13 @@
 //   POST /matches/:id/end yayını bitir
 //   POST /youtube/connect  → { auth_url } tarayıcıda Google girişi; sunucu jetonu saklar
 //   POST /youtube/disconnect
+//   GET  /matches/:id/youtube-draft   başlatma penceresinin ön dolumu (başlık, açıklama, gizlilik…)
+//   PATCH /matches/:id/youtube        yayın sürerken başlık / açıklama / gizlilik / etiket
+// open(settings): başlatma penceresindeki ayarlarla (youtube/templates.js startBody).
 // Bağlanırken yapılandırma 2 dakika boyunca 3 sn'de bir yoklanır.
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./studioApi";
+import { startBody } from "./youtube/templates";
 
 export function useYoutube(matchId, { encodingLive }) {
   const [config, setConfig] = useState({ loading: true, configured: false, privacy: "public" });
@@ -78,11 +82,30 @@ export function useYoutube(matchId, { encodingLive }) {
     return () => clearInterval(t);
   }, [config.configured, encodingLive, refresh]);
 
-  const open = useCallback(async () => {
-    const s = await api.must(api.createMatchStream(matchId, { privacy }), "YouTube yayını açılamadı.");
+  /** Yayını aç: settings (pencereden) varsa onunla, yoksa yalnız gizlilik. */
+  const open = useCallback(async (settings) => {
+    const body = settings ? startBody(settings) : { privacy };
+    const s = await api.must(api.createMatchStream(matchId, body), "YouTube yayını açılamadı.");
     setStream(s);
+    if (body.privacy) setPrivacy(body.privacy);
     return s;
   }, [matchId, privacy]);
+
+  /** Sunucu taslağı (pencere ön dolumu); uç yoksa null. */
+  const loadDraft = useCallback(async () => {
+    if (!matchId) return null;
+    const r = await api.getYoutubeDraft(matchId);
+    return r.ok ? r.data || null : null;
+  }, [matchId]);
+
+  /** Yayın sürerken ayarları güncelle (başlık, açıklama, gizlilik, etiketler). */
+  const updateSettings = useCallback(async (settings) => {
+    const data = await api.must(api.updateYoutube(matchId, startBody(settings, { edit: true })), "YouTube ayarları kaydedilemedi.");
+    const next = data?.live_stream ?? null;
+    if (next) setStream(next);
+    else refresh();
+    return data;
+  }, [matchId, refresh]);
 
   const end = useCallback(async () => {
     const s = await api.must(api.endMatchStream(matchId), "Yayın kapatılamadı.");
@@ -90,5 +113,5 @@ export function useYoutube(matchId, { encodingLive }) {
     return s;
   }, [matchId]);
 
-  return { config, stream, privacy, setPrivacy, refresh, open, end, connect, disconnect, connecting, reloadConfig: loadConfig };
+  return { config, stream, privacy, setPrivacy, refresh, open, end, connect, disconnect, connecting, reloadConfig: loadConfig, loadDraft, updateSettings, matchId };
 }

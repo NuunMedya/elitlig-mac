@@ -2,10 +2,13 @@
 //
 //   useSilenceWatch   yayındayken mikrofon N sn sessizse uyarı (yarım saniyede bir RMS)
 //   useLowBitrate     kodlayıcı bit hızı hedefin %60'ının altında 10 sn kalırsa bildirim
-//   useChapters       "Bölüm işareti" + gollerden YouTube bölüm listesi (maç başına saklanır)
+//   useChapters       "Bölüm işareti" + gollerden YouTube BÖLÜMLERİ (maç başına saklanır,
+//                     yayındayken YouTube açıklamasına kendiliğinden gönderilir — youtube/chapters.js)
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { chapterStamp, youtubeChapters } from "../../../lib/studio/broadcast";
+import { chapterStamp } from "../../../lib/studio/broadcast";
 import { isLowBitrate, silenceStep } from "../settings/settings";
+import * as api from "../studioApi";
+import { chapterRules, chapterSignature, chaptersText, nextChapterStart, normalizeChapters } from "../youtube/chapters";
 
 const rms = (buf) => {
   let sum = 0;
@@ -58,33 +61,99 @@ export function useLowBitrate({ status, targetKbps, active, enabled, toast }) {
 
 const KEY = "studio.chapters.v1";
 const readAll = () => { try { return JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch { return {}; } };
+const SYNC_DEBOUNCE_MS = 6000;
 
 /**
- * Bölümler (maç başına): { startAt, items: [{ id, at, label }] }. startAt = ilk yayın /
- * prova başlangıcı (YouTube kaydının 00:00'ı). since: engine.since.
+ * YouTube BÖLÜMLERİ (maç başına, kalıcı): { startAt, startKind, items: [{ id, at, label, kind }], sync }.
+ *   startAt  YouTube kaydının 0:00'ı = bu maçta İLK canlı yayın başlangıcı (engine.since).
+ *            Yeniden bağlanmada sıfırlanmaz; provadan sonra ilk gerçek yayın provayı geçersiz kılar.
+ *   items    goller (kind "goal") ve "Bölüm" işaretleri (kind "mark"); adlandır, sil, zamanı kaydır.
+ *   sync     YouTube'a gönderim: POST /matches/:id/chapters (yayındayken her değişiklikten
+ *            ~6 sn sonra, görüntü durunca / yayın bitince hemen; elle "YouTube'a gönder").
+ * opts: { mode: "live" | "rehearsal" | null, active, broadcastId } — gönderim yalnız açık bir
+ * YouTube yayını (broadcastId) varken kendiliğinden yapılır.
  */
-export function useChapters(matchId, since) {
+export function useChapters(matchId, since, opts = {}) {
+  const { mode = null, active = false, broadcastId = null } = opts;
   const key = String(matchId || "none");
   const [all, setAll] = useState(readAll);
   useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(all)); } catch { /* yoksay */ } }, [all]);
-  const entry = all[key] || { startAt: null, items: [] };
+  const entry = all[key] || { startAt: null, startKind: null, items: [] };
+  const patchEntry = useCallback((fn) => setAll((a) => ({ ...a, [key]: fn(a[key] || { startAt: null, startKind: null, items: [] }) })), [key]);
+
+  // Başlangıç (0:00): ilk canlı yayın; yeniden bağlanmada korunur.
   useEffect(() => {
     if (!since) return;
-    setAll((a) => (a[key]?.startAt ? a : { ...a, [key]: { startAt: since, items: a[key]?.items || [] } }));
-  }, [key, since]);
-  const add = useCallback((label = "Bölüm") => {
+    patchEntry((cur) => nextChapterStart(cur, { since, mode: mode || "live" }));
+  }, [since, mode, patchEntry]);
+
+  const add = useCallback((label = "Bölüm", { kind } = {}) => {
     const at = Date.now();
-    setAll((a) => {
-      const cur = a[key] || { startAt: null, items: [] };
-      return { ...a, [key]: { startAt: cur.startAt || at, items: [...cur.items, { id: `ch_${at.toString(36)}`, at, label: String(label).slice(0, 80) }] } };
-    });
-  }, [key]);
-  const remove = useCallback((id) => setAll((a) => ({ ...a, [key]: { ...(a[key] || {}), items: (a[key]?.items || []).filter((x) => x.id !== id) } })), [key]);
-  const clear = useCallback(() => setAll((a) => ({ ...a, [key]: { startAt: null, items: [] } })), [key]);
+    const k = kind || (/^gol\b/i.test(String(label)) ? "goal" : "mark");
+    patchEntry((cur) => ({ ...cur, startAt: cur.startAt || at, items: [...(cur.items || []), { id: `ch_${at.toString(36)}${Math.random().toString(36).slice(2, 5)}`, at, label: String(label).slice(0, 80), kind: k }] }));
+  }, [patchEntry]);
+  const remove = useCallback((id) => patchEntry((cur) => ({ ...cur, items: (cur.items || []).filter((x) => x.id !== id) })), [patchEntry]);
+  const rename = useCallback((id, label) => patchEntry((cur) => ({ ...cur, items: (cur.items || []).map((x) => (x.id === id ? { ...x, label: String(label || "").slice(0, 80) } : x)) })), [patchEntry]);
+  /** Zamanı kaydır (ms, + ileri / − geri); 0:00'ın altına inmez. */
+  const nudge = useCallback((id, deltaMs) => patchEntry((cur) => ({ ...cur, items: (cur.items || []).map((x) => (x.id === id ? { ...x, at: Math.max(cur.startAt || 0, x.at + deltaMs) } : x)) })), [patchEntry]);
+  /** Zamanı doğrudan ayarla (yayın başından ms). */
+  const setTime = useCallback((id, atMs) => patchEntry((cur) => ({ ...cur, items: (cur.items || []).map((x) => (x.id === id ? { ...x, at: (cur.startAt || 0) + Math.max(0, atMs) } : x)) })), [patchEntry]);
+  const clear = useCallback(() => patchEntry(() => ({ startAt: null, startKind: null, items: [] })), [patchEntry]);
+  /** 0:00'ı şimdiye al (yayın YouTube'da geç başladıysa). */
+  const resetStart = useCallback((at = Date.now()) => patchEntry((cur) => ({ ...cur, startAt: at, startKind: cur.startKind || "live" })), [patchEntry]);
+
   const items = useMemo(() => {
     const start = entry.startAt || 0;
-    return entry.items.map((c) => ({ ...c, atMs: Math.max(0, c.at - start), stamp: chapterStamp(Math.max(0, c.at - start)) }));
+    return [...(entry.items || [])].sort((a, b) => a.at - b.at).map((c) => ({ ...c, kind: c.kind || (/^gol\b/i.test(c.label) ? "goal" : "mark"), atMs: Math.max(0, c.at - start), stamp: chapterStamp(Math.max(0, c.at - start)) }));
   }, [entry]);
-  const text = useMemo(() => youtubeChapters(items), [items]);
-  return { chapters: items, add, remove, clear, text };
+  const normalized = useMemo(() => normalizeChapters(items), [items]);
+  const text = useMemo(() => chaptersText(normalized), [normalized]);
+  const rules = useMemo(() => chapterRules(normalized), [normalized]);
+  const signature = chapterSignature(normalized);
+
+  /* ───────── YouTube'a gönderim ───────── */
+  const sync = entry.sync || {};
+  const [sending, setSending] = useState(false);
+  const sigRef = useRef(signature);
+  sigRef.current = signature;
+  const normRef = useRef(normalized);
+  normRef.current = normalized;
+  const sendingRef = useRef(false);
+  const send = useCallback(async ({ quiet = false } = {}) => {
+    if (!matchId || sendingRef.current) return { ok: false };
+    const chapters = normRef.current;
+    const sig = sigRef.current;
+    sendingRef.current = true;
+    setSending(true);
+    try {
+      const r = await api.postChapters(matchId, chapters);
+      const ok = Boolean(r.ok && r.data?.ok !== false);
+      const error = ok ? null : api.notSupported(r) ? "Sunucu bölüm göndermeyi henüz desteklemiyor: “Kopyala” ile açıklamaya yapıştır." : r.offline ? "Bağlantı yok: bölümler gönderilemedi." : r.error?.message || r.data?.message || "Bölümler gönderilemedi.";
+      patchEntry((cur) => ({ ...cur, sync: { ...(cur.sync || {}), lastAt: Date.now(), ...(ok ? { sentSig: sig, applied: r.data?.applied ?? true, error: null, description: r.data?.description ?? null } : { error, failedSig: sig, unsupported: api.notSupported(r) }) } }));
+      return { ok, error, quiet };
+    } finally { sendingRef.current = false; setSending(false); }
+  }, [matchId, patchEntry]);
+
+  const hasMarks = items.length > 0;
+  const dirty = hasMarks && signature !== sync.sentSig;
+  const canAuto = Boolean(matchId && broadcastId && !sync.unsupported);
+  // Yayındayken her değişiklikten sonra (bekleyip) kendiliğinden.
+  useEffect(() => {
+    if (!canAuto || !active || !dirty || signature === sync.failedSig) return undefined;
+    const t = setTimeout(() => { send({ quiet: true }); }, SYNC_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [canAuto, active, dirty, signature, sync.failedSig, send]);
+  // Görüntü durunca / yayın bitince: bekleyen değişiklik hemen gider.
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (wasActive.current && !active && canAuto && dirty) send({ quiet: true });
+    wasActive.current = active;
+  }, [active, canAuto, dirty, send]);
+
+  const status = sending ? "sending" : sync.error && sync.failedSig === signature ? "error" : !hasMarks ? "empty" : dirty ? (canAuto ? "pending" : "local") : "sent";
+  return {
+    chapters: items, normalized, text, rules, add, remove, rename, nudge, setTime, clear, resetStart,
+    startAt: entry.startAt, startKind: entry.startKind,
+    sync: { send, status, lastAt: sync.lastAt || null, error: sync.error || null, applied: sync.applied ?? null, auto: canAuto, unsupported: Boolean(sync.unsupported), dirty },
+  };
 }
