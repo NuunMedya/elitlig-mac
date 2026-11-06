@@ -5,7 +5,6 @@
 // seçimle aynı ayar; yayında anında değişir). Kendi içinde bağımsız bileşen:
 // Ayarlar sayfasına yalnız bölüm anahtarı + bu bileşen eklenir.
 import React, { useState } from "react";
-import { Field } from "../../../components/ui";
 import { VAR_DECISIONS, VAR_LAYOUTS, VAR_STATES } from "../../../lib/studio/var";
 import { VAR_THEMES, varThemeFromPrefs, varThemeOf, withVarTheme } from "../../../lib/studio/varThemes";
 import VarThemePreview from "../var/VarThemePreview";
@@ -28,12 +27,11 @@ export default function VarThemeSection({ prefs, setPref }) {
   return (
     <>
       <section className="st-set__card">
-        <header><h3>Seçili tema · {t.label}</h3><p>VAR yayına alındığında programda bu görünüm çizilir. VAR sekmesinden de hızlıca değiştirilebilir.</p></header>
+        <header><h3>Seçili tema · {t.label}</h3><p>Canlı önizleme: VAR yayına alındığında programda bu görünüm çizilir. VAR sekmesinden de hızlıca değiştirilebilir.</p></header>
         <div className="st-set__card-body">
           <div className="vth-stage">
             <div className="vth-stage__view">
               <VarThemePreview theme={current} layout={layout} state={state} decision={decision} width={960} height={540} animate fluid title={`${t.label} önizlemesi`} />
-              <span className="vth-stage__tag">Canlı önizleme</span>
             </div>
             <div className="vth-stage__ctl">
               <label>Düzen
@@ -43,9 +41,9 @@ export default function VarThemeSection({ prefs, setPref }) {
                 <span className="st-seg st-seg--xs">{VAR_STATES.map((x) => <button key={x.key} type="button" className={state === x.key ? "is-on" : ""} onClick={() => setState(x.key)}>{x.label}</button>)}</span>
               </label>
               {state === "decision" && (
-                <Field label="Karar">
+                <label>Karar
                   <select value={decision} onChange={(e) => setDecision(e.target.value)}>{VAR_DECISIONS.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}</select>
-                </Field>
+                </label>
               )}
             </div>
           </div>
