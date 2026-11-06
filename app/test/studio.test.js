@@ -30,7 +30,7 @@ test("yayın komutu: tee ile RTMP (onfail=ignore) + 2 sn'lik TS halkası, 2 sn a
   assert.equal(at("-g"), "60");
   assert.equal(at("-b:v"), "4500k");
   assert.equal(at("-maxrate"), "4500k");
-  assert.equal(at("-bufsize"), "9000k");
+  assert.equal(at("-bufsize"), "4500k");
   assert.equal(at("-force_key_frames"), "expr:gte(t,n_forced*2)");
   assert.equal(at("-c:a"), "aac");
   assert.equal(at("-b:a"), "160k");
@@ -331,6 +331,7 @@ function setupEngine(extra = {}) {
     tempRoot: tmp("studio-engine-"),
     spawnImpl,
     timers,
+    relay: false, // eski tee/fifo yolu (aktarıcı: studio-relay.test.js)
     ...extra,
   });
   engine.events.on("status", (s) => statuses.push(s));

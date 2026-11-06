@@ -259,15 +259,17 @@ const MAX_SPEED_LEVEL = X264_PRESETS.length - 1;
 const presetFor = (list, level) => list[Math.min(list.length - 1, Math.max(0, Math.round(Number(level) || 0)))];
 
 /**
- * Video kodlayıcı seçenekleri: sabit bit hızı (CBR: -maxrate = -b:v, -bufsize = 2×),
- * 2 sn'de bir anahtar kare, High profil, açık H.264 seviyesi, düşük gecikme ayarları.
+ * Video kodlayıcı seçenekleri: sabit bit hızı (YouTube CBR önerisi:
+ * -minrate = -b:v = -maxrate, -bufsize = 1× bit hızı → 1 sn'lik VBV, bit hızı
+ * dalgalanmaz), 2 sn'de bir anahtar kare (-g = -keyint_min = 2 × fps; sahne
+ * değişiminde ek anahtar kare yok), High profil, açık H.264 seviyesi.
  * width / height verilmezse 1080p varsayılır (seviye hesabı için).
  */
 function videoEncoderArgs(encoder, { videoBitrateKbps, fps, width = 1920, height = 1080, keyframeSeconds = 2, speedLevel = 0 }) {
   const vb = videoBitrateKbps;
   const gop = Math.max(1, Math.round(fps * keyframeSeconds));
   const level = computeH264Level({ width, height, fps });
-  const rate = ["-b:v", `${vb}k`, "-maxrate", `${vb}k`, "-bufsize", `${vb * 2}k`, "-g", String(gop), "-keyint_min", String(gop)];
+  const rate = ["-b:v", `${vb}k`, "-minrate", `${vb}k`, "-maxrate", `${vb}k`, "-bufsize", `${vb}k`, "-g", String(gop), "-keyint_min", String(gop)];
   switch (encoder) {
     case ENCODERS.videotoolbox:
       return ["-c:v", ENCODERS.videotoolbox, "-allow_sw", "1", "-realtime", "1", "-profile:v", "high", "-level", level, ...rate];
@@ -284,7 +286,7 @@ function videoEncoderArgs(encoder, { videoBitrateKbps, fps, width = 1920, height
       // Profil sayıyla verilir (100 = High; h264_mf'in adlı profil seçeneği yok).
       return ["-c:v", ENCODERS.mf, "-hw_encoding", "1", "-rate_control", "cbr", "-scenario", "live_streaming", "-profile:v", "100", ...rate, "-bsf:v", `h264_metadata=level=${level}`];
     default:
-      return ["-c:v", ENCODERS.libx264, "-preset", presetFor(X264_PRESETS, speedLevel), "-profile:v", "high", "-level", level, "-sc_threshold", "0", ...rate, "-x264-params", "nal-hrd=cbr"];
+      return ["-c:v", ENCODERS.libx264, "-preset", presetFor(X264_PRESETS, speedLevel), "-profile:v", "high", "-level", level, "-sc_threshold", "0", ...rate, "-x264-params", "nal-hrd=cbr:force-cfr=1"];
   }
 }
 
@@ -330,7 +332,45 @@ const fifoOptionString = (opts = RTMP_FIFO_OPTIONS) => Object.entries(opts).map(
  * Motor, düşen yan çıkışın hangisi olduğunu buradan anlar (yerel kayıt düşerse
  * yayın sürer).
  */
-const streamSlaves = ({ url = null, localFile = null } = {}) => [url ? "rtmp" : null, localFile ? "local" : null, "segment"].filter(Boolean);
+const streamSlaves = ({ url = null, relayUrl = null, localFile = null } = {}) => [url || relayUrl ? "rtmp" : null, localFile ? "local" : null, "segment"].filter(Boolean);
+
+/**
+ * Aktarıcıya (relay.js) giden MPEG-TS çıkışı: tcp://127.0.0.1:<port>. fifo
+ * varsa ayrı iş parçacığında yazılır ve yerel soket yavaşlarsa paket atılır
+ * (kodlayıcı, halka ve yerel kayıt hiç beklemez); atıldıktan sonra anahtar
+ * kareyle sürer. onfail=ignore: soket koparsa motor süreci yeniden başlatır.
+ */
+const RELAY_FIFO_OPTIONS = Object.freeze({ drop_pkts_on_overflow: 1, restart_with_keyframe: 1, queue_size: 600 });
+const relaySlave = (relayUrl, fifo, select = "") => `[f=mpegts:onfail=ignore${select}${fifo ? `:use_fifo=1:fifo_options=${fifoOptionString(RELAY_FIFO_OPTIONS)}` : ""}]${relayUrl}`;
+const rtmpSlave = (url, fifo, select = "") => `[f=flv:onfail=ignore:flvflags=no_duration_filesize${select}${fifo ? `:use_fifo=1:fifo_options=${fifoOptionString()}` : ""}]${url}`;
+const networkSlave = ({ url, relayUrl, fifo, select = "" }) => (relayUrl ? relaySlave(relayUrl, fifo, select) : url ? rtmpSlave(url, fifo, select) : null);
+/** Günlük düzeyi: yalnız doğrudan RTMP + fifo'da info (fifo'nun "Recovery successful" satırı). */
+const streamLogLevel = ({ url, relayUrl, fifo }) => (url && fifo && !relayUrl ? "level+info" : "level+warning");
+
+/**
+ * RTMP aktarıcısı (relay.js): kodlayıcının MPEG-TS çıktısı stdin'den, yeniden
+ * kodlamadan (-c copy) FLV olarak RTMP(S)'ye. Kopunca yalnız bu süreç yeniden
+ * başlar. -rw_timeout: ölü soket 10 sn'de fark edilir (ffmpeg hata verip çıkar);
+ * -tcp_nodelay: küçük paketler beklemeden gider; flvflags no_duration_filesize:
+ * canlı FLV'de geri dönüp süre / boyut yazılmaz. -progress: gönderilen bayt
+ * (total_size) bağlantının canlı olduğunu gösterir (askı buradan anlaşılır).
+ */
+function buildRelayArgs({ url, rwTimeoutMs = 10000 } = {}) {
+  const rtmp = /^rtmps?:/i.test(String(url || ""));
+  return [
+    "-hide_banner", "-nostdin", "-y", "-loglevel", "level+warning", "-nostats",
+    "-progress", "pipe:1", "-stats_period", "1",
+    "-fflags", "+genpts+discardcorrupt", "-thread_queue_size", "1024",
+    "-probesize", "2000000", "-analyzeduration", "2000000",
+    "-f", "mpegts", "-i", "pipe:0",
+    "-map", "0:v:0", "-map", "0:a:0?",
+    "-c", "copy",
+    "-max_muxing_queue_size", "1024",
+    "-f", "flv", "-flvflags", "no_duration_filesize",
+    ...(rtmp ? ["-rw_timeout", String(Math.round(rwTimeoutMs * 1000)), "-tcp_nodelay", "1"] : []),
+    url,
+  ];
+}
 
 /** ffmpeg sürümü -fps_mode'u (5.1+) biliyor mu; bilinmeyen (git) sürümde evet. */
 const supportsFpsMode = (version) => {
@@ -355,16 +395,17 @@ const supportsFpsMode = (version) => {
  * İlerleme stdout'a (-progress pipe:1); günlük stderr'e, düzey önekli
  * ("[warning] …"; fifo'nun "Recovery successful" satırı info düzeyindedir).
  */
-function buildStreamArgs({ url = null, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec = null, segmentSeconds = 2, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska", fifo = false, localFile = null, localEncode = null, speedLevel = 0, fpsMode = true, platform = process.platform }) {
+function buildStreamArgs({ url = null, relayUrl = null, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec = null, segmentSeconds = 2, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska", fifo = false, localFile = null, localEncode = null, speedLevel = 0, fpsMode = true, platform = process.platform }) {
   if (localFile && localEncode) {
-    return buildDualEncodeArgs({ url, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec, segmentSeconds, segmentStart, listFile, inputFormat, fifo, localFile, localEncode, speedLevel, fpsMode, platform });
+    return buildDualEncodeArgs({ url, relayUrl, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec, segmentSeconds, segmentStart, listFile, inputFormat, fifo, localFile, localEncode, speedLevel, fpsMode, platform });
   }
   const outputs = [];
-  if (url) outputs.push(`[f=flv:onfail=ignore:flvflags=no_duration_filesize${fifo ? `:use_fifo=1:fifo_options=${fifoOptionString()}` : ""}]${url}`);
+  const net = networkSlave({ url, relayUrl, fifo });
+  if (net) outputs.push(net);
   if (localFile) outputs.push(`[f=matroska:onfail=ignore]${teeEscape(localFile, platform)}`);
   outputs.push(`[f=segment:segment_time=${segmentSeconds}:segment_time_delta=0.05:segment_format=mpegts:reset_timestamps=1:segment_start_number=${segmentStart}:segment_list=${listFile}:segment_list_type=csv:onfail=abort]${SEGMENT_PATTERN}`);
   return [
-    "-hide_banner", "-nostdin", "-loglevel", url && fifo ? "level+info" : "level+warning", "-nostats",
+    "-hide_banner", "-nostdin", "-loglevel", streamLogLevel({ url, relayUrl, fifo }), "-nostats",
     "-progress", "pipe:1", "-stats_period", "1",
     "-fflags", "+genpts+discardcorrupt", "-thread_queue_size", "1024",
     // MediaRecorder başlığı iz bilgisini taşır; uzun yoklama yalnız başlangıç gecikmesi ekler.
@@ -407,12 +448,13 @@ function specifyStream(args, spec) {
  * İşlemci: ikinci kodlama donanım kodlayıcıda ucuzdur; motor libx264'te bu
  * yolu yalnız açıkça izin verilirse kullanır (allowSoftware).
  */
-function buildDualEncodeArgs({ url, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec = null, segmentSeconds, segmentStart, listFile, inputFormat, fifo, localFile, localEncode, speedLevel, fpsMode, platform }) {
+function buildDualEncodeArgs({ url, relayUrl = null, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec = null, segmentSeconds, segmentStart, listFile, inputFormat, fifo, localFile, localEncode, speedLevel, fpsMode, platform }) {
   const L = localEncode;
   const pf = encoderPixelFormat(encoder);
   const outputs = [];
   const sel = (spec) => `select=\\'${spec}\\'`;
-  if (url) outputs.push(`[f=flv:onfail=ignore:flvflags=no_duration_filesize:${sel("v:0,a")}${fifo ? `:use_fifo=1:fifo_options=${fifoOptionString()}` : ""}]${url}`);
+  const net = networkSlave({ url, relayUrl, fifo, select: `:${sel("v:0,a")}` });
+  if (net) outputs.push(net);
   outputs.push(`[f=matroska:onfail=ignore:${sel("v:1,a")}]${teeEscape(localFile, platform)}`);
   outputs.push(`[f=segment:segment_time=${segmentSeconds}:segment_time_delta=0.05:segment_format=mpegts:reset_timestamps=1:segment_start_number=${segmentStart}:segment_list=${listFile}:segment_list_type=csv:onfail=abort:${sel("v:0,a")}]${SEGMENT_PATTERN}`);
   const graph = [
@@ -422,7 +464,7 @@ function buildDualEncodeArgs({ url, width, height, fps, videoBitrateKbps, audioB
   ].join(";");
   const cfr = (spec, rate) => (fpsMode ? [`-fps_mode:${spec}`, "cfr", `-r:${spec}`, String(rate)] : [`-r:${spec}`, String(rate)]);
   return [
-    "-hide_banner", "-nostdin", "-loglevel", url && fifo ? "level+info" : "level+warning", "-nostats",
+    "-hide_banner", "-nostdin", "-loglevel", streamLogLevel({ url, relayUrl, fifo }), "-nostats",
     "-progress", "pipe:1", "-stats_period", "1",
     "-fflags", "+genpts+discardcorrupt", "-thread_queue_size", "1024",
     "-probesize", "1000000", "-analyzeduration", "1000000",
@@ -581,6 +623,8 @@ module.exports = {
   teeEscape,
   fifoOptionString,
   streamSlaves,
+  buildRelayArgs,
+  RELAY_FIFO_OPTIONS,
   supportsFpsMode,
   RTMP_FIFO_OPTIONS,
   X264_PRESETS,
