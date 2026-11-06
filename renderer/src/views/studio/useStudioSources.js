@@ -6,6 +6,15 @@
 // yenilenir. Kaynak ayarı (aygıt, çözünürlük, ekran, dosya) değişince akış
 // yeniden alınır; kamera çıkarılınca iz "ended" olur, aygıt geri takılınca
 // (devicechange) kendiliğinden yeniden bağlanır.
+//
+// Kalıcılık (uygulama yeniden açılınca kendiliğinden yüklenir):
+//   kamera          aygıt kimliği, değişmişse etiketi (resolveCameraDevice)
+//   ekran / pencere ekran kimliği; pencere kimliği oturumdan oturuma değiştiği için
+//                   bulunamazsa aynı türde ve aynı adla eşleşen pencere / ekran seçilir
+//                   (yeni kimlik kalıcı yazılır)
+//   görsel / video  dosyanın tam yolu ana süreçte izin listesinde; adres
+//                   elitlig-studio://media/<kimlik>/<ad> (blob: değil). Dosya silinmiş /
+//                   taşınmışsa durum "file": "Dosya bulunamadı, yeniden seç".
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RESOLUTIONS, resolveCameraDevice } from "../../lib/studio/layouts";
 
@@ -32,6 +41,43 @@ function makeVideo() {
 
 /** Ekran seçimi ana süreçte tek kanaldan geçer; seçimler sırayla yapılır. */
 let screenLock = Promise.resolve();
+
+/** Ekran / pencere listesi (küçük resimsiz, 3 sn önbellek: açılışta birçok kaynak aynı listeyi kullanır). */
+let screensCache = { at: 0, list: null };
+async function listScreensQuick() {
+  if (screensCache.list && Date.now() - screensCache.at < 3000) return screensCache.list;
+  const list = await studio()?.listScreens?.({ thumbnails: false });
+  screensCache = { at: Date.now(), list: Array.isArray(list) ? list : null };
+  return screensCache.list;
+}
+const isWindowId = (id) => String(id || "").startsWith("window:");
+
+/**
+ * Kayıtlı ekran / pencere → bugünkü kimlik. Kimlik varsa o; yoksa aynı türde aynı
+ * adlı (pencere adı değişebildiği için önce tam, sonra baştan eşleşme). null: bulunamadı.
+ */
+export function matchScreen(source, list) {
+  if (!Array.isArray(list) || !source?.screenId) return source?.screenId || null;
+  if (list.some((x) => x.id === source.screenId)) return source.screenId;
+  const wantWindow = source.kind === "window" || isWindowId(source.screenId);
+  const same = list.filter((x) => (x.kind === "window" || isWindowId(x.id)) === wantWindow);
+  const name = String(source.screenName || "").trim();
+  if (name) {
+    const exact = same.find((x) => x.name === name);
+    if (exact) return exact.id;
+    const head = name.slice(0, 24);
+    const loose = same.find((x) => String(x.name || "").startsWith(head) || name.startsWith(String(x.name || "_").slice(0, 24)));
+    if (loose) return loose.id;
+  }
+  // Tek ekranlı sistem: ekran kimliği değiştiyse tek ekran.
+  if (!wantWindow && same.length === 1) return same[0].id;
+  return null;
+}
+
+const isStudioMedia = (url) => typeof url === "string" && url.startsWith("elitlig-studio:");
+const missingText = (source) => (source.fileMissing || source.fileName || source.filePath
+  ? `Dosya bulunamadı${source.fileName ? ` (${source.fileName})` : ""}: yeniden seç.`
+  : null);
 
 /**
  * sources: görsel kaynaklar. opts.onResolve(id, patch): kamera kimliği kalıcı
@@ -99,8 +145,8 @@ export function useStudioSources(sources, { onResolve, replayUrlOf } = {}) {
       }
       case "screen":
       case "window": return `screen|${source.screenId || ""}|${source.nonce || 0}`;
-      case "image": return `image|${source.url || ""}`;
-      case "video": return `video|${source.url || ""}|${source.loop !== false}`;
+      case "image": return `image|${source.url || ""}|${source.fileMissing ? 1 : 0}`;
+      case "video": return `video|${source.url || ""}|${source.loop !== false}|${source.fileMissing ? 1 : 0}`;
       case "slideshow": return `slides|${(source.images || []).join("|").length}|${(source.images || []).length}|${(source.images || [])[0]?.slice(-40) || ""}|${source.intervalMs}`;
       case "replay": return `replay|${replayUrlOf?.(source) || ""}`;
       default: return `${source.kind}`;
@@ -138,7 +184,20 @@ export function useStudioSources(sources, { onResolve, replayUrlOf } = {}) {
         if (!source.screenId) { set(id, { status: "missing", message: "Ekran ya da pencere seçilmedi." }); return; }
         const run = screenLock.then(async () => {
           if (!still()) return null;
-          const ok = await studio()?.selectScreen?.(source.screenId);
+          // Yeniden açılışta pencere kimliği değişir: adıyla bul, yeni kimliği kalıcı yaz.
+          let screenId = source.screenId;
+          try {
+            const list = await listScreensQuick();
+            if (list) {
+              screenId = matchScreen(source, list);
+              if (!screenId) throw Object.assign(new Error(`${source.kind === "window" ? "Pencere" : "Ekran"} bulunamadı: “${source.screenName || source.name}”. Uygulamayı aç ya da kaynağı yeniden seç.`), { name: "NotFoundError" });
+              if (screenId !== source.screenId) {
+                const found = list.find((x) => x.id === screenId);
+                resolveRef.current?.(id, { screenId, screenName: found?.name || source.screenName });
+              }
+            }
+          } catch (e) { if (e?.name === "NotFoundError") throw e; }
+          const ok = await studio()?.selectScreen?.(screenId);
           if (ok === false) throw Object.assign(new Error("Seçilen ekran / pencere artık yok."), { name: "NotFoundError" });
           return md().getDisplayMedia({ video: { frameRate: 30 }, audio: false });
         });
@@ -154,32 +213,36 @@ export function useStudioSources(sources, { onResolve, replayUrlOf } = {}) {
         return;
       }
       if (source.kind === "image") {
-        if (!source.url) { set(id, { status: "file", message: "Görseli yeniden seç." }); return; }
+        if (!source.url || source.fileMissing) { set(id, { status: "file", message: missingText(source) || "Görseli yeniden seç." }); return; }
         const el = new Image();
         el.decoding = "async";
+        if (isStudioMedia(source.url)) el.crossOrigin = "anonymous";
         el.onload = () => { if (still()) set(id, { status: "live", el }); };
-        el.onerror = () => { if (still()) set(id, { status: "error", message: "Görsel açılamadı." }); };
+        el.onerror = () => { if (still()) set(id, isStudioMedia(source.url) ? { status: "file", message: missingText({ ...source, fileMissing: true }) } : { status: "error", message: "Görsel açılamadı." }); };
         el.src = source.url;
         set(id, { el });
         return;
       }
       if (source.kind === "video") {
-        if (!source.url) { set(id, { status: "file", message: "Video dosyasını yeniden seç (dosyalar oturumlar arasında saklanmaz)." }); return; }
+        if (!source.url || source.fileMissing) { set(id, { status: "file", message: missingText(source) || "Video dosyasını seç." }); return; }
         const el = makeVideo();
         el.loop = source.loop !== false;
+        // Kalıcı yerel dosya (elitlig-studio://media): CORS'lu yükle → tuval kirlenmez, ses karıştırıcıya bağlanabilir.
+        if (isStudioMedia(source.url)) el.crossOrigin = "anonymous";
         el.src = source.url;
         el.onloadeddata = () => { if (still()) set(id, { status: "live", el }); };
-        el.onerror = () => { if (still()) set(id, { status: "error", message: "Video açılamadı." }); };
+        el.onerror = () => { if (still()) set(id, isStudioMedia(source.url) ? { status: "file", message: missingText({ ...source, fileMissing: true }) } : { status: "error", message: "Video açılamadı." }); };
         el.play().catch(() => {});
         set(id, { el });
         return;
       }
       if (source.kind === "slideshow") {
         const urls = (source.images || []).filter(Boolean);
-        if (!urls.length) { set(id, { status: "file", message: "Slayt için görsel seç." }); return; }
+        if (!urls.length) { set(id, { status: "file", message: source.missingImages ? "Slayt görselleri bulunamadı: yeniden seç." : "Slayt için görsel seç." }); return; }
         const images = urls.map((u) => {
           const im = new Image();
           im.decoding = "async";
+          if (isStudioMedia(u)) im.crossOrigin = "anonymous";
           im.onload = () => { if (still()) set(id, { status: "live" }); };
           im.src = u;
           return im;

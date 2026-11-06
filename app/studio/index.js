@@ -26,7 +26,9 @@
 //           studio:interview:list, studio:interview:delete, studio:interview:upload,
 //           studio:interview:reveal,
 //           studio:displays, studio:led:open, studio:led:close, studio:led:status,
-//           studio:led:getState
+//           studio:led:getState,
+//           studio:media:allow (preload: webUtils yolu), studio:media:pick (dosya penceresi),
+//           studio:media:check, studio:media:forget  (media.js — kalıcı yerel dosya kaynakları)
 //   send:   studio:chunk (program parçası), studio:angleChunk { id, data },
 //           studio:renderChunk { id, data }, studio:led:sendState (yanıt yok)
 //   olay:   studio:status, studio:restartRecorder, studio:angles:status,
@@ -37,7 +39,7 @@
 //
 // Depolama (userData): clips/ (eski klipler, 24 sa), replays/<kimlik>/ (7 gün),
 // highlights/ (7 gün), interviews/ (7 gün), logs/studio-*.log (son 20),
-// studio-settings.json (son kayıt klasörü). Geçici parça halkaları:
+// studio-settings.json (son kayıt klasörü), studio-media.json (seçilen yerel dosyaların izin listesi). Geçici parça halkaları:
 // <temp>/elitlig-studio/. Yerel tam kayıt: seçilen klasör (varsayılan
 // ~/Movies/ElitLig, Windows: Videolar\ElitLig).
 "use strict";
@@ -56,6 +58,7 @@ const { createDiagnostics } = require("./diag");
 const { remuxParts, defaultRecordDir, createSettings } = require("./localrecord");
 const { createInterviews } = require("./interview");
 const { createLedManager } = require("./led");
+const { createMediaLibrary, dialogFilters } = require("./media");
 const ff = require("./ffmpeg");
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -268,7 +271,9 @@ function registerStudio({
 
   /* ---------------------------------- şema ---------------------------------- */
 
-  protocol.handle(STUDIO_SCHEME, (request) => serveStudio({ clips: clipsDir, replays: replaysDir, highlights: highlightsDir, interviews: interviewsDir }, request));
+  // Kullanıcının seçtiği yerel dosyalar (video / görsel / ses kaynakları): kalıcı izin listesi.
+  const mediaLib = createMediaLibrary({ file: path.join(app.getPath("userData"), "studio-media.json"), scheme: STUDIO_SCHEME });
+  protocol.handle(STUDIO_SCHEME, (request) => serveStudio({ clips: clipsDir, replays: replaysDir, highlights: highlightsDir, interviews: interviewsDir, media: mediaLib.resolve }, request));
 
   /* ----------------------------------- IPC ----------------------------------- */
 
@@ -292,10 +297,12 @@ function registerStudio({
     if (process.platform !== "darwin") return mediaStatus(kind) === "granted";
     try { return await systemPreferences.askForMediaAccess(kind); } catch { return false; }
   });
-  ipcMain.handle("studio:listScreens", async () => {
-    const sources = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: false });
+  // opts.thumbnails === false: küçük resimsiz (açılışta pencereyi adıyla yeniden bulmak için, hızlı).
+  ipcMain.handle("studio:listScreens", async (_e, opts) => {
+    const thumbs = opts?.thumbnails !== false;
+    const sources = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: thumbs ? { width: 320, height: 180 } : { width: 0, height: 0 }, fetchWindowIcons: false });
     return sources.map((s) => {
-      const thumbnail = s.thumbnail && !s.thumbnail.isEmpty() ? s.thumbnail.toDataURL() : null;
+      const thumbnail = thumbs && s.thumbnail && !s.thumbnail.isEmpty() ? s.thumbnail.toDataURL() : null;
       return { id: s.id, name: s.name, kind: s.id.startsWith("screen:") ? "screen" : "window", displayId: s.display_id || null, thumbnail, thumbnailDataUrl: thumbnail };
     });
   });
@@ -504,6 +511,25 @@ function registerStudio({
     settings.set({ recordDir: dir });
     return { ok: true, dir };
   });
+  /* --------------------- kalıcı yerel dosyalar (media.js) --------------------- */
+  const ownSender = (event) => {
+    const url = event?.senderFrame?.url || event?.sender?.getURL?.() || "";
+    return !isOwnUrl || isOwnUrl(url);
+  };
+  // Yol yalnız preload'daki webUtils.getPathForFile'dan gelir (kullanıcının seçtiği File).
+  ipcMain.handle("studio:media:allow", (event, filePath) => (ownSender(event) ? mediaLib.allow(filePath) : null));
+  ipcMain.handle("studio:media:pick", async (event, opts = {}) => {
+    if (!dialog || !ownSender(event)) return { ok: false, error: { code: "NO_DIALOG", message: "Dosya seçilemiyor." } };
+    const kind = ["video", "image", "audio"].includes(opts?.kind) ? opts.kind : null;
+    const parent = BrowserWindow?.fromWebContents?.(event.sender) || undefined;
+    const res = await dialog.showOpenDialog(parent, { title: "Dosya seç", buttonLabel: "Seç", filters: dialogFilters(kind), properties: opts?.multiple ? ["openFile", "multiSelections"] : ["openFile"] });
+    if (res.canceled || !res.filePaths?.length) return { ok: false, canceled: true, files: [] };
+    const files = res.filePaths.slice(0, 40).map((p) => mediaLib.allow(p)).filter(Boolean);
+    return { ok: files.length > 0, files, ...(files.length ? {} : { error: { code: "MEDIA_TYPE", message: "Bu dosya türü desteklenmiyor." } }) };
+  });
+  ipcMain.handle("studio:media:check", (_e, ids) => mediaLib.check(ids));
+  ipcMain.handle("studio:media:forget", (_e, id) => mediaLib.forget(String(id || "")));
+
   ipcMain.handle("studio:revealLocal", (_e, file) => {
     const target = file ? path.resolve(String(file)) : null;
     if (target && localFiles.has(target) && fs.existsSync(target)) { shell.showItemInFolder(target); return true; }

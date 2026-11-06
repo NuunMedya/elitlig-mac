@@ -2,7 +2,7 @@
 // işlevleri kullanır. Jeton arayüze hiç verilmez.
 "use strict";
 
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 const on = (channel) => (callback) => {
   const listener = (_event, payload) => callback(payload);
@@ -66,8 +66,22 @@ contextBridge.exposeInMainWorld("elitlig", {
     info: () => ipcRenderer.invoke("studio:info"),
     mediaAccess: () => ipcRenderer.invoke("studio:mediaAccess"),
     requestMediaAccess: (kind) => ipcRenderer.invoke("studio:requestMediaAccess", kind),
-    listScreens: () => ipcRenderer.invoke("studio:listScreens"),
+    listScreens: (opts) => ipcRenderer.invoke("studio:listScreens", opts || {}),
     selectScreen: (id) => ipcRenderer.invoke("studio:selectScreen", id),
+    // Kalıcı yerel dosyalar (video / görsel / ses kaynakları): dosyanın tam yolu ana süreçteki
+    // izin listesine yazılır, elitlig-studio://media/<kimlik>/<ad> ile sunulur (yeniden açılışta da çalışır).
+    // allowFile(File) → { id, url, path, name, type, sizeBytes } | null (yalnız kullanıcının seçtiği File'ın yolu vardır).
+    // pick({ kind: "video" | "image" | "audio", multiple }) → { ok, files: [aynı biçim], canceled? }
+    media: {
+      allowFile: (file) => {
+        let p = "";
+        try { p = webUtils?.getPathForFile?.(file) || ""; } catch { p = ""; }
+        return p ? ipcRenderer.invoke("studio:media:allow", p) : Promise.resolve(null);
+      },
+      pick: (opts) => ipcRenderer.invoke("studio:media:pick", opts || {}),
+      check: (ids) => ipcRenderer.invoke("studio:media:check", Array.isArray(ids) ? ids : []),
+      forget: (id) => ipcRenderer.invoke("studio:media:forget", id),
+    },
     start: (opts) => ipcRenderer.invoke("studio:start", opts),
     // Yanıtsız, sık çağrılır: ArrayBuffer ya da Uint8Array (Blob değil: önce blob.arrayBuffer()).
     pushChunk: (data) => {
