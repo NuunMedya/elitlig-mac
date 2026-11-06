@@ -18,12 +18,38 @@ const path = require("node:path");
 const { maskSecrets } = require("./ffmpeg");
 
 const MAX = 200;
-const STUDIO_UPLOAD_PATH = /^\/api\/admin\/live-streams\/(?:matches\/\d+\/(clips|highlight|interview)(?:\/upload-url)?|clips\/\d+)(?:\?|$)/;
+// …/clips, …/clips/upload-url (ön imzalı gol klibi), …/highlight[/upload-url], …/interview[/upload-url],
+// /clips/:id ve /uploads/self-test (sunucu yükleme sınaması).
+const STUDIO_UPLOAD_PATH = /^\/api\/admin\/live-streams\/(?:matches\/\d+\/(clips|highlight|interview)(?:\/upload-url)?|clips\/\d+|uploads\/(self-test))(?:\?|$)/;
+
+/**
+ * Başarısız denemenin Türkçe iletisi: sunucu iletisi (Türkçe) varsa o; S3
+ * kodu varsa açıklaması; yoksa HTTP durumuna göre. HTML (Heroku hata sayfası)
+ * iletiye girmez.
+ */
+function turkishMessage({ status, code, message, network } = {}) {
+  const { describeS3Error, serverMessage } = require("./highlights");
+  const s3 = code ? describeS3Error(code) : null;
+  const text = message ? serverMessage({ status, message }) : "";
+  if (s3 && (!text || /^[\x20-\x7e]*$/.test(text))) return text && text !== s3 ? `${s3} (${text})` : s3;
+  if (text) return text;
+  if (network) return "Bağlantı koptu / zaman aşımı.";
+  const st = Number(status);
+  if (st === 401) return "Oturum süresi doldu ya da geçersiz; yeniden giriş yapın.";
+  if (st === 403) return "Bu işlem için yetkiniz yok (matches.live) ya da maç yetkili olduğunuz ilde değil.";
+  if (st === 404) return "Uç ya da kayıt bulunamadı (sunucu güncel değil olabilir).";
+  if (st === 413) return "Dosya sunucu sınırını aşıyor.";
+  if (st === 503) return "Sunucu yanıt vermedi (Heroku zaman aşımı / yoğunluk); yeniden deneyin.";
+  if (st >= 500) return `Sunucu hatası (HTTP ${st}).`;
+  if (st >= 400) return `İstek reddedildi (HTTP ${st}).`;
+  return null;
+}
 
 /** Yoldan tür: /clips → clip, /highlight… → highlight, /interview… → interview. */
 function kindOfPath(pathname) {
   const m = STUDIO_UPLOAD_PATH.exec(String(pathname || ""));
   if (!m) return null;
+  if (m[2] === "self-test") return "selftest";
   return m[1] === "highlight" ? "highlight" : m[1] === "interview" ? "interview" : "clip";
 }
 
@@ -116,7 +142,8 @@ function withUploadLog(api, log) {
     log.record({
       kind, method: String(opts.method || "GET").toUpperCase(), endpoint: String(opts.path || "").split("?")[0],
       status: res.ok ? 200 : res.error?.status ?? 0, ok: res.ok, code: res.ok ? null : res.error?.code ?? (res.offline ? "NETWORK" : null),
-      message: res.ok ? null : res.error?.message, durationMs: Date.now() - t0, matchId: matchOf(opts.path), eventId: eventOf(opts.path, opts.body), offline: res.offline,
+      message: res.ok ? null : turkishMessage({ status: res.error?.status, code: res.error?.code, message: res.error?.message, network: res.offline }),
+      durationMs: Date.now() - t0, matchId: matchOf(opts.path), eventId: eventOf(opts.path, opts.body), offline: res.offline,
       bytes: Number(opts.body?.size_bytes) || null,
     });
     return res;
@@ -129,7 +156,8 @@ function withUploadLog(api, log) {
     log.record({
       kind, method: "POST", endpoint: String(pathname || "").split("?")[0],
       status: res.ok ? res.status ?? 201 : res.error?.status ?? 0, ok: res.ok, code: res.ok ? null : res.error?.code ?? (res.offline ? "NETWORK" : null),
-      message: res.ok ? null : res.error?.message, durationMs: Date.now() - t0, bytes: payload?.body?.length ?? null,
+      message: res.ok ? null : turkishMessage({ status: res.error?.status, code: res.error?.code, message: res.error?.message, network: res.offline }),
+      durationMs: Date.now() - t0, bytes: payload?.body?.length ?? null,
       matchId: matchOf(pathname), eventId: eventOf(pathname), offline: res.offline,
     });
     return res;
@@ -145,11 +173,12 @@ withUploadLog.put = (putImpl, log) => {
     const r = await putImpl(url, opts);
     log.record({
       kind: opts.kind || null, method: "PUT", endpoint: safeEndpoint(url), status: r.status ?? 0, ok: r.ok,
-      code: r.ok ? null : r.code || (r.network ? "NETWORK" : null), message: r.ok ? null : r.message || (r.network ? "Bağlantı koptu / zaman aşımı." : null),
+      code: r.ok ? null : r.code || (r.network ? "NETWORK" : r.status ? `HTTP_${r.status}` : null),
+      message: r.ok ? null : turkishMessage({ status: r.status, code: r.code, message: r.message, network: r.network }) || `Depolama alanı yüklemeyi reddetti (HTTP ${r.status}).`,
       durationMs: Date.now() - t0, bytes: opts.size ?? null, matchId: opts.matchId, offline: r.network,
     });
     return r;
   };
 };
 
-module.exports = { createUploadLog, withUploadLog, kindOfPath, safeEndpoint, MAX };
+module.exports = { createUploadLog, withUploadLog, kindOfPath, safeEndpoint, turkishMessage, MAX };
