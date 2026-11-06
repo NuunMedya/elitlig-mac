@@ -9,15 +9,15 @@
 //          yüklenme durumu, "özete ekle", sil.
 //   Sağ    kuyruk: "Tekrarı yayına ver" (tekrar1/açıA → tekrar1/açıB → tekrar2 …,
 //          aralarda ElitLig logo geçişi), oynarken "Sıradaki" / "Canlıya dön".
-//   Üstte  TEKRAR DÜZENLEYİCİ (modes/ReplayEditor): büyük önizleme, yakınlaştır /
-//          kaydır (yayına da uygulanır), zaman çizelgesi, kare kare, ±1 sn, hız,
-//          "Buradan başlat", açı küçük resimleri.
+//   Düzenleme ÖNİZLEME ekranında (modes/ReplayPreviewOverlay): satıra / açıya tıkla →
+//          önizlemede yakınlaştır / kaydır (yayına da uygulanır), zaman çizelgesi, kare kare,
+//          ±1 sn, hız, giriş–çıkış noktası; burada yalnız kısa bir hatırlatma şeridi.
 import React, { memo, useMemo, useState } from "react";
 import { Icon, Kbd } from "../../components/ui";
 import { PROGRAM_ANGLE, angleLabel, anglesOf, defaultAngles, recordableSources, metaFor, replayOfMatch, replayTitle, secondsText, toggleIn } from "../../lib/studio/replays";
 import { TRANSITIONS } from "../../lib/studio/transitions";
 import UploadLog from "./modes/UploadLog";
-import ReplayEditor from "./modes/ReplayEditor";
+import "./modes/replayEditor.css";
 
 const STINGERS = [{ key: "cut", label: "Kesme" }, ...TRANSITIONS.filter((t) => t.stinger)];
 
@@ -85,7 +85,9 @@ function ReplayPanelInner({ api }) {
 
   return (
     <div className="st-replays-wrap">
-    {rm.transport && <ReplayEditor rm={rm} rate={rate} onRate={onRate} sources={sources} />}
+    {rm.transport && (
+      <p className="rpe-note"><Icon name="search" size={13} /> Tekrarı düzenlemek için bir satıra ya da açıya tıkla: <b>önizleme ekranında</b> yakınlaştır, kaydır, kare kare ilerle, giriş / çıkış seç ({R.seconds || 15} sn'lik klibin istediğin bölümü) ve yayına al.</p>
+    )}
     <div className="st-replays">
       <section className="st-replays__rec">
         <h5 className="st-group">Kaydedilecek açılar</h5>
@@ -106,7 +108,7 @@ function ReplayPanelInner({ api }) {
             {!rec.length && <p className="st-hint">Açı kaydı için kamera / ekran kaynağı ekle.</p>}
           </>
         ) : <p className="st-hint">Bu sürümde yalnız program açısı kaydedilir.</p>}
-        <button type="button" className="btn btn--block st-moment" onClick={R.onMoment} disabled={!encoding || !R.onMoment} title={encoding ? "Son 10 saniyeyi olaysız tekrar olarak kaydet (B)" : "Tekrar için yayın ya da prova açık olmalı"}>
+        <button type="button" className="btn btn--block st-moment" onClick={R.onMoment} disabled={!encoding || !R.onMoment} title={encoding ? `Son ${R.seconds || 15} saniyeyi olaysız tekrar olarak kaydet (B)` : "Tekrar için yayın ya da prova açık olmalı"}>
           <Icon name="star" size={15} /> ÖNEMLİ AN <Kbd>B</Kbd>
         </button>
         {!encoding && <p className="st-hint">Tekrar kaydı için yayın ya da <strong>prova</strong> açık olmalı.</p>}

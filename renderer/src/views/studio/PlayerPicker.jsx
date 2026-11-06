@@ -36,7 +36,7 @@ export default function PlayerPicker({ title, subtitle, players, side, busy, cli
   return (
     <Modal title={title} onClose={onClose} width={640} className="st-modal st-picker"
       footer={<>
-        {clipKey ? <span className="muted small st-picker__clip"><Icon name="video" size={13} /> Son 10 saniye klip olarak kaydedildi</span> : <span />}
+        {clipKey ? <span className="muted small st-picker__clip"><Icon name="video" size={13} /> Gol anı klip olarak kaydedildi</span> : <span />}
         <button type="button" className="btn" onClick={onClose} disabled={busy}>Vazgeç</button>
         <button type="button" className="btn btn--primary" onClick={() => onPick(null)} disabled={busy}>Oyuncusuz kaydet</button>
       </>}>

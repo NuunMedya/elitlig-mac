@@ -1,7 +1,7 @@
 // Yayın Stüdyosu — TEKRARLAR (çok açılı) ve gol klibi yüklemesi.
 //
 //   1. GOL'e basıldığı AN capture({ kind: "goal" }): ana süreç seçili açıların
-//      (program + kaynaklar) son 10 saniyesini yazar — golcü seçimi beklenmez.
+//      (program + kaynaklar) son 15 saniyesini (Ayarlar › Tekrar) yazar — golcü seçimi beklenmez.
 //   2. Olay sunucuya yazılınca attach(key, { eventId, scorer }) tekrarı olaya
 //      bağlar (studio.updateReplay) ve PROGRAM açısını oyuncunun profiline
 //      gol videosu olarak yükler (studio.uploadClip). Hata → "yeniden dene".

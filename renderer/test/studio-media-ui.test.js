@@ -8,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import YoutubeStartDialog from "../src/views/studio/youtube/YoutubeStartDialog";
 import ProgramAudioStrip from "../src/views/studio/audio/ProgramAudioStrip";
 import AudioPanel from "../src/views/studio/AudioPanel";
-import ReplayEditor from "../src/views/studio/modes/ReplayEditor";
+import ReplayPreviewOverlay from "../src/views/studio/modes/ReplayPreviewOverlay";
 import BroadcastPanel from "../src/views/studio/BroadcastPanel";
 import { normalizeAudio, programAudioChannels, stripAirState, stripList, stripScenes } from "../src/lib/studio/audio";
 import { DEFAULT_VIEW } from "../src/views/studio/modes/replayView";
@@ -108,26 +108,29 @@ describe("ses sekmesi", () => {
   });
 });
 
-describe("tekrar düzenleyici", () => {
-  it("denetimler oynatıcıya gider, başlangıç noktası ve yakınlaştırma sıfırlanır", () => {
+describe("tekrar düzenleyici (önizleme ekranında)", () => {
+  it("denetimler oynatıcıya gider; giriş / çıkış, yakınlaştırma sıfırlama, hız, açı, yayına al", () => {
     const calls = [];
     const el = document.createElement("video");
     const rm = {
       editKey: "r1|program", viewTick: 0, viewOf: () => ({ zoom: 2, cx: 0.5, cy: 0.5 }), setView: (k, v) => calls.push(["view", k, typeof v === "function" ? v(DEFAULT_VIEW) : v]),
-      inPointOf: () => 0, setInPoint: (k, s) => calls.push(["in", k, s]), cursor: { replayId: "r1", angle: "program", replay: { angles: [{ angle: "program", url: "elitlig-studio://replays/r/program.mp4" }, { angle: "cam1", url: "elitlig-studio://replays/r/angle-1.mp4" }] } },
+      inPointOf: () => 0, setInPoint: (k, s) => calls.push(["in", k, s]), outPointOf: () => 0, setOutPoint: (k, s) => calls.push(["out", k, s]),
+      cursor: { replayId: "r1", angle: "program", replay: { angles: [{ angle: "program", url: "elitlig-studio://replays/r/program.mp4" }, { angle: "cam1", url: "elitlig-studio://replays/r/angle-1.mp4" }] } },
       setCursor: (c) => calls.push(["cursor", c.angle]),
       transport: { el: () => el, onAir: () => false, toggle: () => calls.push(["toggle"]), play: () => {}, pause: () => calls.push(["pause"]), seek: (s) => calls.push(["seek", s]), nudge: (s) => calls.push(["nudge", s]), step: (f) => calls.push(["step", f]) },
     };
-    const { host, unmount } = mount(h(ReplayEditor, { rm, rate: 1, onRate: (v) => calls.push(["rate", v]), sources: [{ id: "cam1", name: "Kale arkası" }] }));
-    const btn = (text) => [...host.querySelectorAll("button")].find((b) => b.textContent.includes(text));
+    const { host, unmount } = mount(h(ReplayPreviewOverlay, { rm, rate: 1, onRate: (v) => calls.push(["rate", v]), sources: [{ id: "cam1", name: "Kale arkası" }], box: { w: 900, h: 506 }, onTake: () => calls.push(["take"]) }));
+    const btn = (text) => [...host.querySelectorAll("button")].find((b) => b.textContent.includes(text) || b.getAttribute("aria-label") === text || b.title.startsWith(text));
     act(() => btn("−1 sn").click());
     act(() => btn("Oynat").click());
-    act(() => btn("Sıfırla").click());
-    act(() => btn("Buradan başlat").click());
+    act(() => btn("Tam kare").click());
+    act(() => btn("Giriş").click());
+    act(() => btn("Çıkış").click());
     act(() => btn("0,5×").click());
-    act(() => host.querySelectorAll(".rpe__angle")[1].click());
-    act(() => { host.querySelector(".rpe").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })); });
-    expect(calls).toEqual([["nudge", -1], ["toggle"], ["view", "r1|program", DEFAULT_VIEW], ["in", "r1|program", 0], ["rate", 0.5], ["cursor", "cam1"], ["step", 1]]);
+    act(() => host.querySelectorAll(".rpo__angles button")[1].click());
+    act(() => { host.querySelector(".rpo__surf").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })); });
+    act(() => btn("Yayına al").click());
+    expect(calls).toEqual([["nudge", -1], ["toggle"], ["view", "r1|program", DEFAULT_VIEW], ["in", "r1|program", 0], ["out", "r1|program", 0], ["rate", 0.5], ["cursor", "cam1"], ["step", 1], ["take"]]);
     unmount();
   });
 });
