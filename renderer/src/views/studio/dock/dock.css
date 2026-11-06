@@ -75,7 +75,7 @@
   .studio .md-side { overflow: visible; }
   .studio .st-replays { grid-template-columns: minmax(0, 1fr); }
   .studio .st-bcast { grid-template-columns: minmax(0, 1fr); }
-  .studio .st-scenetab { grid-template-columns: minmax(0, 1fr); }
+  .studio .st-scenetab, .studio .st-scenetab.is-v2, .studio .st-scenetab.is-v2.has-edit, .studio .st-scenetab.is-v2:not(.has-lib), .studio .st-scenetab.is-v2.has-edit:not(.has-lib) { grid-template-columns: minmax(0, 1fr); }
   .studio .st-scenetab__side { position: static; }
   .studio .rj { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "center center" "home away" "music music"; }
   .studio .st-led { grid-template-columns: minmax(0, 1fr); }

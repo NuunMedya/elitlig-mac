@@ -86,7 +86,7 @@ export const PANEL_PARTS = {
     { id: "music", label: "Reji › Gol müziği", sel: ".rj-music" },
   ],
   sahne: [
-    { id: "templates", label: "Yeni sahne şablonları", sel: ".st-tpl" },
+    { id: "templates", label: "Üst çubuk (Yeni sahne, şablon galerisi)", sel: ".st-scenetab__bar, .st-tpl" },
     { id: "foot", label: "Sahne kutusu alt satırı (katmanlar, kaynak ekle)", sel: ".st-scard__foot" },
     { id: "sources", label: "Kaynaklar listesi", sel: ".st-scenetab__side" },
   ],

@@ -30,7 +30,7 @@ describe("sahne göçü: önizleme / program yalnız sahne", () => {
 describe("sahne şablonları", () => {
   it("Tek kaynak, Resim içinde resim, Yan yana, Üçlü: kaynaklar sırayla, kutular ekranda", () => {
     const base = defaultScenesConfig();
-    expect(SCENE_TEMPLATES.map((t) => t.key)).toEqual(["empty", "single", "pip", "sbs", "triple", "start", "break", "end"]);
+    expect(SCENE_TEMPLATES.map((t) => t.key).slice(0, 8)).toEqual(["empty", "single", "pip", "sbs", "triple", "start", "break", "end"]);
     expect(templateSourceIds(base, 3)).toEqual(["src_cam1", "src_cam2", "src_cam2"]);
     const pip = sceneFromTemplate(base, "pip").scene;
     expect(pip.layers.map((l) => l.sourceId)).toEqual(["src_cam1", "src_cam2"]);

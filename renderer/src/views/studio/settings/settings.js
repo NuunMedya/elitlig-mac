@@ -61,7 +61,7 @@ export const DEFAULT_SETTINGS = {
   v: 1,
   stream: { encoder: "auto", keyframeSec: 2, audioKbps: 128 },
   record: { enabled: false, dir: null, quality: "stream", customKbps: 10000, customHeight: 1080 },
-  replay: { seconds: 10 },
+  replay: { seconds: 15 }, // tekrar klibi 15 sn: önizlemede giriş–çıkışla istenen bölüm seçilir
   view: { hints: true, tooltips: true, scale: 100 },
   hotkeys: DEFAULT_HOTKEYS,
   notify: { micOpen: true, lowBitrate: true, silence: true, silenceSec: 30 },

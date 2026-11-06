@@ -13,7 +13,7 @@
 import { isGoalCode } from "./match";
 
 export const PROGRAM_ANGLE = "program";
-export const REPLAY_SECONDS = 10;
+export const REPLAY_SECONDS = 15;
 /** Açı kaydı yapılabilen kaynak türleri (görsel / renk plakası hareketsiz). */
 export const RECORDABLE_KINDS = new Set(["camera", "screen", "video"]);
 

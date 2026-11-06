@@ -154,6 +154,19 @@ export function useReplayPlayer({ els, replayRef, playStinger, switchVia, firstI
     return true;
   }, [els, onStart, replayRef, showAt]);
 
+  // Düzenleyicide seçilen çıkış noktası: klip orada biter (sıradakine / canlıya geçer).
+  const active = Boolean(state);
+  useEffect(() => {
+    if (!active) return undefined;
+    const t = setInterval(() => {
+      const cur = replayRef.current;
+      const end = Number(cur?.item?.endSec) || 0;
+      if (!cur?.active || !end || cur.endFired === cur.item) return;
+      if ((cur.el?.currentTime || 0) >= end) { cur.endFired = cur.item; advance(); }
+    }, 40);
+    return () => clearInterval(t);
+  }, [active, advance, replayRef]);
+
   useEffect(() => { els.forEach((el) => { el.playbackRate = r; }); }, [r, els]);
   useEffect(() => () => { tokenRef.current += 1; els.forEach((el) => { try { el.pause(); } catch { /* yoksay */ } }); }, [els]);
 
