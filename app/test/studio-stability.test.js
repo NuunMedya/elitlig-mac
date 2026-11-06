@@ -611,7 +611,9 @@ test("röportaj: yayın durunca süren röportaj kendiliğinden yazılır; gör�
   assert.equal(res.error.code, "EMPTY");
   assert.equal(iv.status().length, 0);
   assert.equal(engine.pins.size, 0);
-  assert.equal((await iv.stop(r.interview.id)).error.code, "NOT_FOUND");
+  // Kendiliğinden bitmiş röportajı durdurmak aynı sonucu döner (arayüz "bulunamadı" görmez).
+  assert.equal((await iv.stop(r.interview.id)).error.code, "EMPTY");
+  assert.equal((await iv.stop("i-yok")).error.code, "NOT_FOUND");
 });
 
 function fakeApi(handler) {
@@ -776,7 +778,7 @@ test("LED: studio kipi #led-output + aynı preload; durum aktarımı; Esc iki ke
   const { FakeWindow, windows, screen } = fakeElectron();
   const loads = [];
   let t = 0;
-  const led = createLedManager({ BrowserWindow: FakeWindow, screen, loadRenderer: (win, hash) => { loads.push(hash); return Promise.resolve(); }, preloadPath: "/p.js", platform: "darwin", now: () => t });
+  const led = createLedManager({ BrowserWindow: FakeWindow, screen, loadRenderer: (win, hash) => { loads.push(hash); return Promise.resolve(); }, preloadPath: "/p.js", platform: "darwin", now: () => t, displayGraceMs: 0 });
   const statuses = [];
   const displaysEv = [];
   led.events.on("status", (s) => statuses.push(s));

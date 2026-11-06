@@ -8,6 +8,7 @@ import { scorerLines, teamShortCode, periodLabel, clockText } from "../scorebug"
 import { resolveBranding } from "./branding";
 import { buildTickerBlocks } from "./ticker";
 import { normalizeVariant } from "./variants";
+import { normalizeVisibility } from "./visibility";
 
 export const GOAL_DETAIL = {
   GOAL_RIGHT_FOOT: "SAĞ AYAK", GOAL_LEFT_FOOT: "SOL AYAK", GOAL_LONG_RIGHT: "UZAKTAN", GOAL_LONG_LEFT: "UZAKTAN",
@@ -131,6 +132,8 @@ export function buildGraphicsSnapshot(live, opts = {}) {
   const iv = opts.interview || {};
   return {
     v: 1,
+    // Sahne bazlı görünürlük (maç başına): drawGraphics(ctx, { sceneId }, snap) süzer.
+    visibility: normalizeVisibility(opts.visibility),
     variant: normalizeVariant(opts.variant),
     variantSince: opts.variantSince || 0,
     branding: brand,

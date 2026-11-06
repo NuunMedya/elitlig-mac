@@ -8,33 +8,48 @@
 //                                          seçilen stüdyo sahnesini / programı ve grafikleri kendisi çizer
 //   studio.led.sendState(state)  → durum yayını (studio kipinde yarım saniyede bir)
 //   studio.led.close() / status()
+//
+// YÖNLENDİRME (ledRouting.js): Yayın (Program, varsayılan) · Önizleme · Belirli
+// sahne · Kapalı. Program değişince durum hemen gönderilir (LED programı izler).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveScene } from "../../../lib/studio/scenes";
+import { ledTargetScene, normalizeLedRoute, routeSceneToLed } from "./ledRouting";
+
+const PREFS_KEY = "studio.led.v2";
+function readPrefs(defaults) {
+  const base = { displayId: null, web: false, ...normalizeLedRoute(defaults) };
+  try {
+    const v2 = JSON.parse(localStorage.getItem(PREFS_KEY) || "null");
+    if (v2) return { ...base, displayId: v2.displayId ?? null, web: Boolean(v2.web), ...normalizeLedRoute(v2) };
+    // 2.11 kaydı: yalnız ekran seçimi taşınır; içerik varsayılanı artık Program.
+    const v1 = JSON.parse(localStorage.getItem("studio.led.v1") || "null");
+    if (v1) return { ...base, displayId: v1.displayId ?? null, ...(v1.content === "scene" && v1.sceneId ? { route: "scene", sceneId: v1.sceneId } : {}) };
+  } catch { /* yoksay */ }
+  return base;
+}
 
 const led = () => window.elitlig?.studio?.led;
 export const ledAvailable = () => Boolean(led()?.open);
 export const LED_WEB_BASE = "https://elitlig.com/led/";
 
 /** LED penceresine gidecek, JSON'a çevrilebilir durum. */
-export function ledState({ config, sceneId, graphics, branding, matchId, width = 1920, height = 1080 }) {
-  const scene = resolveScene(config, sceneId);
+export function ledState({ config, sceneId, graphics, branding, matchId, width = 1920, height = 1080, route = "program" }) {
+  const scene = sceneId ? resolveScene(config, sceneId) : null;
   const used = new Set((scene?.layers || []).map((l) => l.sourceId));
   const sources = config.sources.filter((s) => used.has(s.id)).map((s) => ({ ...s, url: typeof s.url === "string" && s.url.startsWith("blob:") ? null : s.url }));
   let g = null;
   try { g = graphics == null ? null : JSON.parse(JSON.stringify(graphics)); } catch { g = null; }
-  return { v: 1, sentAt: Date.now(), matchId: matchId || null, width, height, scene, sources, graphics: g, branding: branding || null };
+  return { v: 2, sentAt: Date.now(), matchId: matchId || null, width, height, route, sceneId: scene?.id || null, scene, sources, graphics: route === "off" ? null : g, branding: branding || null };
 }
 
-export function useLed({ configRef, programIdRef, graphicsRef, brandingRef, matchId, ledMode }) {
+export function useLed({ configRef, programIdRef, previewIdRef, graphicsRef, brandingRef, matchId, ledMode, defaults = null, programId = null, previewId = null }) {
   const [displays, setDisplays] = useState([]);
   const [status, setStatus] = useState({ open: false });
-  const [prefs, setPrefs] = useState(() => {
-    try { return { displayId: null, content: "web", sceneId: null, ...JSON.parse(localStorage.getItem("studio.led.v1") || "{}") }; } catch { return { displayId: null, content: "web", sceneId: null }; }
-  });
+  const [prefs, setPrefs] = useState(() => readPrefs(defaults));
   const [error, setError] = useState(null);
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
-  useEffect(() => { try { localStorage.setItem("studio.led.v1", JSON.stringify(prefs)); } catch { /* yoksay */ } }, [prefs]);
+  useEffect(() => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* yoksay */ } }, [prefs]);
 
   const refreshDisplays = useCallback(async () => {
     try {
@@ -59,29 +74,33 @@ export function useLed({ configRef, programIdRef, graphicsRef, brandingRef, matc
   useEffect(() => window.elitlig?.studio?.onDisplaysChanged?.(() => refreshDisplays()), [refreshDisplays]);
 
   const targetScene = useCallback(() => {
-    const p = prefsRef.current;
-    return p.content === "program" ? programIdRef.current : p.sceneId || programIdRef.current;
-  }, [programIdRef]);
+    const cfg = configRef.current;
+    return ledTargetScene(prefsRef.current, { programId: programIdRef.current, previewId: previewIdRef?.current, sceneIds: cfg ? cfg.scenes.map((s) => s.id) : null });
+  }, [configRef, previewIdRef, programIdRef]);
+  // Çizimde (Studio her sahne değişiminde yeniden çizer): o anki LED sahnesi.
+  const targetId = ledTargetScene(prefs, { programId: programId ?? programIdRef.current, previewId: previewId ?? previewIdRef?.current });
 
-  // Stüdyo kipinde durum yarım saniyede bir gönderilir.
-  const studioMode = status.open && (status.mode === "studio" || (status.mode == null && prefs.content !== "web"));
+  // Stüdyo kipinde durum yarım saniyede bir ve hedef değişince HEMEN gönderilir.
+  const studioMode = status.open && (status.mode === "studio" || (status.mode == null && !prefs.web));
+  const send = useCallback(() => {
+    const cfg = configRef.current;
+    if (!cfg || !led()?.sendState) return;
+    try { led().sendState(ledState({ config: cfg, sceneId: targetScene(), graphics: graphicsRef.current, branding: brandingRef.current, matchId, route: prefsRef.current.route })); } catch { /* yoksay */ }
+  }, [brandingRef, configRef, graphicsRef, matchId, targetScene]);
   useEffect(() => {
-    if (!studioMode || !led()?.sendState) return undefined;
-    const send = () => {
-      const cfg = configRef.current;
-      if (!cfg) return;
-      try { led().sendState(ledState({ config: cfg, sceneId: targetScene(), graphics: graphicsRef.current, branding: brandingRef.current, matchId })); } catch { /* yoksay */ }
-    };
+    if (!studioMode) return undefined;
     send();
-    const t = setInterval(send, 500);
+    // 10 Hz: LED'deki saat / skor / grafikler yayınla aynı anda değişsin (ana süreç birleştirir).
+    const t = setInterval(send, 100);
     return () => clearInterval(t);
-  }, [brandingRef, configRef, graphicsRef, matchId, studioMode, targetScene]);
+  }, [send, studioMode]);
+  useEffect(() => { if (studioMode) send(); }, [targetId, prefs.route, send, studioMode]);
 
-  const open = useCallback(async () => {
+  const open = useCallback(async (override = null) => {
     setError(null);
-    const p = prefsRef.current;
-    if (p.displayId == null) { setError("Ekran seçilmedi."); return false; }
-    const web = p.content === "web";
+    const p = { ...prefsRef.current, ...(override || {}) };
+    if (p.displayId == null) { setError("LED için ekran seçilmedi (LED ekran sekmesi)."); return false; }
+    const web = Boolean(p.web);
     if (web && !matchId) { setError("Web LED sayfası için önce maç seç (Maç yönetimi)."); return false; }
     const opts = web
       ? { displayId: p.displayId, mode: "web", url: `${LED_WEB_BASE}${matchId}`, ledMode: ledMode ?? null }
@@ -102,6 +121,16 @@ export function useLed({ configRef, programIdRef, graphicsRef, brandingRef, matc
   }, [refreshStatus]);
 
   const setPref = useCallback((patch) => setPrefs((p) => ({ ...p, ...patch })), []);
+  /** Yönlendirme: { route, sceneId? }. Stüdyo kipinde açık değilse açılmaz (seçim hatırlanır). */
+  const setRoute = useCallback((r) => setPrefs((p) => ({ ...p, ...normalizeLedRoute({ ...p, ...r }) })), []);
+  /** Kutudaki "LED'e ver": sahneye sabitle (zaten oradaysa Program'a döner); kapalıysa aç. */
+  const toScene = useCallback(async (sceneId) => {
+    const next = routeSceneToLed(prefsRef.current, sceneId, { programId: programIdRef.current });
+    prefsRef.current = { ...prefsRef.current, ...next, web: false };
+    setPrefs((p) => ({ ...p, ...next, web: false }));
+    if (!status.open && ledAvailable() && prefsRef.current.displayId != null) return open();
+    return true;
+  }, [open, programIdRef, status.open]);
 
-  return { available: ledAvailable(), displays, status, prefs, setPref, refreshDisplays, open, close, error };
+  return { available: ledAvailable(), displays, status, prefs, setPref, setRoute, toScene, targetId: studioMode || !status.open ? targetId : null, studioMode, refreshDisplays, open, close, error };
 }

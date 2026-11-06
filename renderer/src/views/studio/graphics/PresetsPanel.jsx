@@ -1,7 +1,9 @@
 // Yayın grafikleri · ÖN AYARLAR — markanın tamamını (logo, tema, yazı tipi,
 // ölçüler, masaüstü ekleri) adıyla saklar: "CCL CUP" uygulanınca her şey değişir.
-// Sunucuda saklanır (GET/POST/PUT/DELETE /api/overlay-branding/presets);
-// uç yoksa bu bilgisayarda. Uygulama maçın markasını yazar → web kaplamaları da değişir.
+// Sunucuda şablon olarak saklanır (GET/POST/PUT/DELETE /api/overlay-branding/presets);
+// uç yoksa bu bilgisayarda. "Uygula" YALNIZ şu anki maçın markasını yazar
+// (PUT /api/maclar/:id/overlay-branding); diğer maçlar ve genel ayar değişmez.
+// Varsayılan ön ayar yoktur: hiçbir şablon kendiliğinden uygulanmaz.
 import React, { useState } from "react";
 import { Icon, useConfirm } from "../../../components/ui";
 import { DEFAULT_BRANDING, SAMPLE_CCL_CUP, mergePreset, themeSwatches } from "../../../lib/studio/graphics/branding";
@@ -33,14 +35,14 @@ export default function PresetsPanel({ g }) {
     if (await confirm({ title: "Ön ayar silinsin mi?", message: `“${p.name}” kalıcı olarak silinir. Bu ön ayarı kullanan maçların görünümü değişmez.`, danger: true, confirmLabel: "Sil" })) await b.deletePreset(p.id);
   });
   const apply = wrap(async (p) => {
-    if (b.dirty && !(await confirm({ title: "Ön ayar uygulansın mı?", message: "Kaydedilmemiş marka değişiklikleri kaybolur.", confirmLabel: "Uygula" }))) return;
+    if (!(await confirm({ title: `“${p.name}” bu maça uygulansın mı?`, message: `Yalnız bu maçın (#${g.matchId}) görünümü değişir; diğer maçlar etkilenmez.${b.dirty ? "\n\nKaydedilmemiş marka değişiklikleri kaybolur." : ""}`, confirmLabel: "Bu maça uygula" }))) return;
     await b.applyPreset(p.id);
   });
 
   return (
     <div className="mg-grid2">
       <fieldset className="mg-box">
-        <legend>Kayıtlı ön ayarlar {!b.presetsRemote && <span className="pill pill--xs pill--amber" title="Sunucuda ön ayar ucu bulunamadı">Bu bilgisayarda</span>}</legend>
+        <legend>Kayıtlı şablonlar {!b.presetsRemote && <span className="pill pill--xs pill--amber" title="Sunucuda ön ayar ucu bulunamadı">Bu bilgisayarda</span>}</legend>
         {b.presetsLoading ? <p className="mg-muted">Yükleniyor…</p> : b.presets.length ? (
           <ul className="mg-rows">
             {b.presets.map((p) => (
@@ -55,14 +57,13 @@ export default function PresetsPanel({ g }) {
                     </form>
                   ) : (
                     <>
-                      <strong>{p.name} {p.isDefault && <span className="pill pill--xs pill--green">Varsayılan</span>}</strong>
+                      <strong>{p.name}</strong>
                       <small>{p.branding.brandName || "ELİT LİG"} · {p.branding.scoreboard.theme} · {p.branding.scoreboard.font}{p.updatedAt ? ` · ${new Date(p.updatedAt).toLocaleDateString("tr-TR")}` : ""}</small>
                     </>
                   )}
                 </span>
-                <button type="button" className="btn btn--xs btn--primary" disabled={busy} onClick={() => apply(p)}>Uygula</button>
-                <button type="button" className="icon-btn icon-btn--xs" title={p.isDefault ? "Varsayılanı kaldır" : "Varsayılan yap (özelleştirilmemiş maçlar bununla açılır)"} disabled={busy} onClick={wrap(() => b.setDefaultPreset(p.id, !p.isDefault))}><Icon name="star" size={12} /></button>
-                <button type="button" className="icon-btn icon-btn--xs" title="Şimdiki görünümle güncelle" disabled={busy} onClick={wrap(() => b.overwritePreset(p.id))}><Icon name="refresh" size={12} /></button>
+                <button type="button" className="btn btn--xs btn--primary" disabled={busy} onClick={() => apply(p)} title="Yalnız bu maça uygular">Bu maça uygula</button>
+                <button type="button" className="icon-btn icon-btn--xs" title="Şablonu şimdiki görünümle güncelle (maçlara uygulanmaz)" disabled={busy} onClick={wrap(() => b.overwritePreset(p.id))}><Icon name="refresh" size={12} /></button>
                 <button type="button" className="icon-btn icon-btn--xs" title="Yeniden adlandır" onClick={() => setRenaming({ id: p.id, name: p.name })}><Icon name="pencil" size={12} /></button>
                 <button type="button" className="icon-btn icon-btn--xs" title="Sil" disabled={busy} onClick={() => remove(p)}><Icon name="trash" size={12} /></button>
               </li>
@@ -75,9 +76,9 @@ export default function PresetsPanel({ g }) {
         <legend>Yeni ön ayar</legend>
         <form className="mg-inline" onSubmit={saveNew}>
           <input className="mg-grow" value={name} maxLength={60} placeholder="Ör. CCL CUP" onChange={(e) => setName(e.target.value)} />
-          <button type="submit" className="btn btn--sm btn--primary" disabled={!name.trim() || busy}><Icon name="plus" size={13} /> Şimdiki görünümü kaydet</button>
+          <button type="submit" className="btn btn--sm btn--primary" disabled={!name.trim() || busy}><Icon name="plus" size={13} /> Şimdiki görünümü şablon yap</button>
         </form>
-        <p className="mg-muted mg-small">Logo, marka yazısı, tema renkleri, yazı tipi, logo / yazı boyutu ve şerit renkleri birlikte saklanır.</p>
+        <p className="mg-muted mg-small">Logo, marka yazısı, tema renkleri, yazı tipi, logo / yazı boyutu ve şerit renkleri birlikte saklanır. Şablon kaydetmek hiçbir maçı değiştirmez; bir maça uygulamak için listeden “Bu maça uygula”.</p>
         <h6 className="mg-sidehead">Hazır şablonlar</h6>
         <ul className="mg-rows">
           {TEMPLATES.map((t) => (

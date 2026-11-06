@@ -72,9 +72,20 @@ export function useAngleRecorders({ active, sourceIds, sources, runtimeRef, vers
     const gen = { value: 0 };
     const mine = 0;
     const entry = { rec, gen, trackId: track.id, chain: Promise.resolve() };
+    // İlk parça ≥ 4 KB olana dek biriktirilir: soğuk kodlayıcıda Chromium 1 baytlık
+    // ilk parça verebiliyor; ana süreç tam kapsayıcı başlığı bekler.
+    let head = [];
+    let headBytes = 0;
     rec.ondataavailable = (e) => {
       if (gen.value !== mine || !e.data?.size) return;
-      const blob = e.data;
+      let blob = e.data;
+      if (head) {
+        head.push(blob);
+        headBytes += blob.size;
+        if (headBytes < 4096) return;
+        blob = new Blob(head);
+        head = null;
+      }
       entry.chain = entry.chain.then(async () => {
         if (gen.value !== mine) return;
         const buf = await blob.arrayBuffer();

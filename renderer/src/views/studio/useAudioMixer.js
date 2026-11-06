@@ -1,15 +1,24 @@
-// Yayın Stüdyosu — ses karıştırıcı (WebAudio).
+// Yayın Stüdyosu — SES KARIŞTIRICI (WebAudio): kanal şeritleri, baralar, yönlendirme.
 //
-//   mikrofon ─▶ kazanç (sessiz = 0, anında) ─▶ seviye ölçer ─┐
-//   ek ses girişleri (yakalama kartı / kamera sesi) ─▶ kazanç ─┤──▶ MediaStreamDestination ─▶ yayın
-//   tekrar videosu (isteğe bağlı) ─▶ kazanç ────────────────────┘
-//
-// Hoparlöre hiçbir şey verilmez (geri besleme olmaz). Karıştırıcının ses izi
-// tek ve kalıcıdır; MediaRecorder her yeniden başlatmada aynı izi kullanır.
-import { useCallback, useEffect, useRef, useState } from "react";
-import { gainValue } from "../../lib/studio/compose";
+//   kaynak ─▶ [giriş] ─▶ kazanç(trim) ─▶ fader ─▶ sessiz ─┬─▶ grup barası ─▶ master ─▶ sınırlayıcı ─▶ YAYIN
+//                                                         ├─▶ L/R ölçer
+//                                                         └─▶ solo ─▶ dinleme (kulaklık: ctx.destination)
+//   şeritler: mic · input:<id> · media (tekrar / VAR / video kaynakları) · highlight (özet) · music (dosya çalar)
+//   baralar:  live (mic + girişler) · media (media + highlight) · music
+// Bara kazancı = o anki bağlamın yönlendirmesi (lib/studio/audio.js busGains):
+// tekrar / VAR yayında → yalnız canlı mikrofon; video / özet → yalnız kendi sesi;
+// operatör "Yayına giden ses" ile her an değiştirir (anında, 15 ms rampa).
+// Video öğeleri (tekrar oynatıcısı, VAR klipleri, özet, sahnedeki video
+// kaynakları) attachMedia ile bir kez bağlanır; her öğenin kendi "kapısı" var:
+// yalnız YAYINDAKİ öğe açılır (önizlemedeki klibin sesi yayına sızmaz).
+// Hoparlöre yalnız dinleme (solo / program dinle) verilir; varsayılan kapalı.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  LIMITER, busGains, dbToGain, normalizeAudio, patchStrip, playbackContext, resetRoute, routingFor, stripGain, stripList, toggleRoute,
+} from "../../lib/studio/audio";
 
 const stopStream = (stream) => stream?.getTracks?.().forEach((t) => { try { t.stop(); } catch { /* yoksay */ } });
+const RAMP = 0.015;
 
 function micConstraints(deviceId, noiseSuppression) {
   return {
@@ -24,58 +33,134 @@ function micConstraints(deviceId, noiseSuppression) {
   };
 }
 
-export function useAudioMixer({ mic, inputs = [], replayEls = [], replayAudio = false }) {
-  const ctxRef = useRef(null);
-  const destRef = useRef(null);
-  const micRef = useRef(null); // { stream, source, gain, analyser }
-  const inputsRef = useRef(new Map()); // id → { stream, source, gain, analyser, deviceId }
-  const replayRef = useRef(null); // { gain, sources: [] } — tekrar videoları (A/B)
+const setGain = (ctx, node, v) => {
+  if (!ctx || !node) return;
+  try { node.gain.setTargetAtTime(v, ctx.currentTime, RAMP); } catch { node.gain.value = v; }
+};
+
+function makeAnalyser(ctx) {
+  const a = ctx.createAnalyser();
+  a.fftSize = 1024;
+  a.smoothingTimeConstant = 0;
+  return a;
+}
+
+/** Stereo ölçer dalı: node → ayırıcı → L/R analizörleri. */
+function stereoTap(ctx, node) {
+  const split = ctx.createChannelSplitter(2);
+  const L = makeAnalyser(ctx);
+  const R = makeAnalyser(ctx);
+  node.connect(split);
+  split.connect(L, 0);
+  split.connect(R, 1);
+  return { L, R, split };
+}
+
+/**
+ * Yeni karıştırıcı.
+ * sources:  { list, runtimeRef, programIds? }  programIds: programdaki kaynakların kimlikleri
+ *           (video kaynaklarının sesi yalnız programdayken yayına gider).
+ * settings: { value: prefs.audio, onChange(fn | value), programHasVideo? }
+ */
+export function useStudioAudio({ sources, settings } = {}) {
+  const value = useMemo(() => normalizeAudio(settings?.value), [settings?.value]);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const onChangeRef = useRef(settings?.onChange);
+  onChangeRef.current = settings?.onChange;
+  const g = useRef(null); // grafik
+  const micRef = useRef(null);
+  const inputsRef = useRef(new Map());
+  const mediaRef = useRef(new WeakMap()); // el → { source, gate, strip }
   const [micStatus, setMicStatus] = useState({ status: "waiting", label: "" });
   const [inputStatus, setInputStatus] = useState({});
+  const [airMode, setAirMode] = useState(null);
+  const [music, setMusic] = useState({ playing: false, name: "", url: null, time: 0, duration: 0 });
   const [, setTick] = useState(0);
 
-  // Ses bağlamı bir kez kurulur.
-  if (!ctxRef.current && typeof window !== "undefined" && window.AudioContext) {
+  // Grafik bir kez kurulur.
+  if (!g.current && typeof window !== "undefined" && window.AudioContext) {
     try {
-      ctxRef.current = new AudioContext({ latencyHint: "interactive", sampleRate: 48000 });
-      destRef.current = ctxRef.current.createMediaStreamDestination();
+      const ctx = new AudioContext({ latencyHint: "interactive", sampleRate: 48000 });
+      const dest = ctx.createMediaStreamDestination();
+      const master = ctx.createGain();
+      const limiter = ctx.createDynamicsCompressor();
+      for (const [k, v] of Object.entries(LIMITER)) { try { limiter[k].value = v; } catch { /* yoksay */ } }
+      const wet = ctx.createGain();
+      const dry = ctx.createGain();
+      const post = ctx.createGain();
+      master.connect(limiter); limiter.connect(wet); wet.connect(post);
+      master.connect(dry); dry.connect(post);
+      post.connect(dest);
+      const masterTap = stereoTap(ctx, post);
+      const monitor = ctx.createGain();
+      monitor.gain.value = 0.8;
+      monitor.connect(ctx.destination);
+      const programMon = ctx.createGain();
+      programMon.gain.value = 0;
+      post.connect(programMon); programMon.connect(monitor);
+      const buses = {};
+      for (const k of ["live", "media", "music"]) { buses[k] = ctx.createGain(); buses[k].connect(master); }
+      const strips = new Map();
+      const music = new Audio();
+      music.preload = "auto";
+      music.loop = true;
+      g.current = { ctx, dest, master, limiter, wet, dry, post, masterTap, monitor, programMon, buses, strips, music, musicSrc: null };
     } catch {
-      ctxRef.current = null;
+      g.current = null;
     }
   }
+
+  /** Şeridi (yoksa) kurar. group: live | media | music */
+  const stripNode = useCallback((id, group) => {
+    const G = g.current;
+    if (!G) return null;
+    let s = G.strips.get(id);
+    if (s) return s;
+    const { ctx } = G;
+    const input = ctx.createGain();
+    const trim = ctx.createGain();
+    const fader = ctx.createGain();
+    const mute = ctx.createGain();
+    const solo = ctx.createGain();
+    solo.gain.value = 0;
+    input.connect(trim); trim.connect(fader); fader.connect(mute);
+    mute.connect(G.buses[group] || G.buses.live);
+    mute.connect(solo); solo.connect(G.monitor);
+    const pre = makeAnalyser(ctx);
+    input.connect(pre);
+    const tap = stereoTap(ctx, mute);
+    s = { id, group, input, trim, fader, mute, solo, pre, tap };
+    G.strips.set(id, s);
+    return s;
+  }, []);
+
   useEffect(() => () => {
     stopStream(micRef.current?.stream);
     for (const n of inputsRef.current.values()) stopStream(n.stream);
-    ctxRef.current?.close?.().catch(() => {});
+    try { g.current?.music.pause(); } catch { /* yoksay */ }
+    g.current?.ctx.close?.().catch(() => {});
   }, []);
 
   const resume = useCallback(() => {
-    const ctx = ctxRef.current;
+    const ctx = g.current?.ctx;
     if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
   }, []);
 
   /* ───────── mikrofon ───────── */
+  const mic = value.mic;
   useEffect(() => {
-    const ctx = ctxRef.current;
-    if (!ctx || mic.enabled === false) { setMicStatus({ status: "off", label: "" }); return undefined; }
+    const G = g.current;
+    if (!G || mic.enabled === false) { setMicStatus({ status: "off", label: "" }); return undefined; }
     let cancelled = false;
     let node = null;
     setMicStatus({ status: "waiting", label: "" });
+    const strip = stripNode("mic", "live");
     navigator.mediaDevices?.getUserMedia(micConstraints(mic.deviceId, mic.noiseSuppression)).then((stream) => {
       if (cancelled) { stopStream(stream); return; }
-      const source = ctx.createMediaStreamSource(stream);
-      const gain = ctx.createGain();
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 1024;
-      gain.gain.value = gainValue(mic.volume, mic.muted);
-      source.connect(gain);
-      gain.connect(analyser);
-      gain.connect(destRef.current);
-      // Ölçer kapalı mikrofonda da sinyali göstersin diye ayrı bir dal.
-      const pre = ctx.createAnalyser();
-      pre.fftSize = 1024;
-      source.connect(pre);
-      node = { stream, source, gain, analyser, pre };
+      const source = G.ctx.createMediaStreamSource(stream);
+      source.connect(strip.input);
+      node = { stream, source };
       micRef.current = node;
       const track = stream.getAudioTracks()[0];
       track?.addEventListener("ended", () => { if (!cancelled) setMicStatus({ status: "ended", label: track.label }); });
@@ -89,50 +174,38 @@ export function useAudioMixer({ mic, inputs = [], replayEls = [], replayAudio = 
     return () => {
       cancelled = true;
       if (node) {
-        try { node.source.disconnect(); node.gain.disconnect(); } catch { /* yoksay */ }
+        try { node.source.disconnect(); } catch { /* yoksay */ }
         stopStream(node.stream);
         if (micRef.current === node) micRef.current = null;
       }
     };
-  }, [mic.deviceId, mic.noiseSuppression, mic.enabled, mic.nonce, resume]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Sessiz / ses düzeyi: anında (yeniden bağlanmadan).
-  useEffect(() => {
-    const node = micRef.current;
-    const ctx = ctxRef.current;
-    if (node && ctx) node.gain.gain.setValueAtTime(gainValue(mic.volume, mic.muted), ctx.currentTime);
-  }, [mic.muted, mic.volume, micStatus.status]);
+  }, [mic.deviceId, mic.noiseSuppression, mic.enabled, mic.nonce, resume, stripNode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ───────── ek ses girişleri ───────── */
-  const inputKey = inputs.map((i) => `${i.id}:${i.deviceId}`).join("|");
+  const inputKey = value.inputs.map((i) => `${i.id}:${i.deviceId}`).join("|");
   useEffect(() => {
-    const ctx = ctxRef.current;
-    if (!ctx) return;
+    const G = g.current;
+    if (!G) return;
     const map = inputsRef.current;
-    const wanted = new Map(inputs.map((i) => [i.id, i]));
+    const wanted = new Map(value.inputs.map((i) => [i.id, i]));
     for (const [id, n] of [...map]) {
       if (!wanted.has(id) || wanted.get(id).deviceId !== n.deviceId) {
-        try { n.source.disconnect(); n.gain.disconnect(); } catch { /* yoksay */ }
+        try { n.source?.disconnect(); } catch { /* yoksay */ }
         stopStream(n.stream);
         map.delete(id);
       }
     }
-    for (const input of inputs) {
+    for (const input of value.inputs) {
       if (map.has(input.id)) continue;
       const placeholder = { deviceId: input.deviceId, pending: true };
       map.set(input.id, placeholder);
       setInputStatus((s) => ({ ...s, [input.id]: "waiting" }));
+      const strip = stripNode(input.id, "live");
       navigator.mediaDevices?.getUserMedia(micConstraints(input.deviceId, false)).then((stream) => {
         if (map.get(input.id) !== placeholder) { stopStream(stream); return; }
-        const source = ctx.createMediaStreamSource(stream);
-        const gain = ctx.createGain();
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 1024;
-        gain.gain.value = gainValue(input.volume, input.muted);
-        source.connect(gain);
-        gain.connect(analyser);
-        gain.connect(destRef.current);
-        map.set(input.id, { stream, source, gain, analyser, deviceId: input.deviceId });
+        const source = G.ctx.createMediaStreamSource(stream);
+        source.connect(strip.input);
+        map.set(input.id, { stream, source, deviceId: input.deviceId });
         setInputStatus((s) => ({ ...s, [input.id]: "live" }));
         setTick((t) => t + 1);
       }).catch(() => {
@@ -141,51 +214,190 @@ export function useAudioMixer({ mic, inputs = [], replayEls = [], replayAudio = 
     }
   }, [inputKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* ───────── sabit şeritler + müzik ───────── */
   useEffect(() => {
-    const ctx = ctxRef.current;
-    if (!ctx) return;
-    for (const input of inputs) {
-      const n = inputsRef.current.get(input.id);
-      if (n?.gain) n.gain.gain.setValueAtTime(gainValue(input.volume, input.muted), ctx.currentTime);
+    const G = g.current;
+    if (!G) return;
+    stripNode("media", "media");
+    stripNode("highlight", "media");
+    const m = stripNode("music", "music");
+    if (!G.musicSrc) {
+      try { G.musicSrc = G.ctx.createMediaElementSource(G.music); G.musicSrc.connect(m.input); } catch { /* yoksay */ }
     }
-  }, [inputs, inputStatus]);
+    const el = G.music;
+    const sync = () => setMusic((s) => ({ ...s, playing: !el.paused, time: el.currentTime || 0, duration: Number.isFinite(el.duration) ? el.duration : 0 }));
+    el.addEventListener("play", sync); el.addEventListener("pause", sync); el.addEventListener("ended", sync); el.addEventListener("loadedmetadata", sync);
+    const t = setInterval(() => { if (!el.paused) sync(); }, 500);
+    return () => { el.removeEventListener("play", sync); el.removeEventListener("pause", sync); el.removeEventListener("ended", sync); el.removeEventListener("loadedmetadata", sync); clearInterval(t); };
+  }, [stripNode]);
 
-  /* ───────── tekrar videolarının sesi (A/B: kuyrukta biri oynarken öteki yüklenir) ───────── */
+  /* ───────── şerit kazançları, solo, master, sınırlayıcı (anında) ───────── */
   useEffect(() => {
-    const ctx = ctxRef.current;
-    if (!ctx || !replayEls.length || replayRef.current) return;
-    const gain = ctx.createGain();
-    gain.gain.value = replayAudio ? 1 : 0;
-    gain.connect(destRef.current);
-    const sources = [];
-    for (const el of replayEls) {
+    const G = g.current;
+    if (!G) return;
+    const anySolo = Object.values(value.strips).some((s) => s.solo);
+    for (const [id, s] of G.strips) {
+      const st = value.strips[id];
+      if (!st) continue;
+      setGain(G.ctx, s.trim, dbToGain(st.trim));
+      setGain(G.ctx, s.fader, dbToGain(st.fader));
+      setGain(G.ctx, s.mute, st.mute ? 0 : 1);
+      setGain(G.ctx, s.solo, st.solo ? 1 : 0);
+    }
+    setGain(G.ctx, G.master, dbToGain(value.master.fader));
+    setGain(G.ctx, G.wet, value.master.limiter ? 1 : 0);
+    setGain(G.ctx, G.dry, value.master.limiter ? 0 : 1);
+    setGain(G.ctx, G.monitor, value.monitor.volume / 100);
+    setGain(G.ctx, G.programMon, !anySolo && value.monitor.program ? 1 : 0);
+    G.music.loop = value.music.loop;
+  }, [value, micStatus.status, inputStatus]);
+
+  /* ───────── yönlendirme (bağlam → bara kazançları) ───────── */
+  const list = sources?.list || [];
+  const programIds = sources?.programIds || null;
+  const programHasVideo = settings?.programHasVideo ?? Boolean(programIds && list.some((s) => s.kind === "video" && programIds.includes(s.id)));
+  const context = playbackContext({ airMode, programHasVideo });
+  const routing = value.routing;
+  useEffect(() => {
+    const G = g.current;
+    if (!G) return;
+    const b = busGains(context, routing);
+    for (const k of Object.keys(G.buses)) setGain(G.ctx, G.buses[k], b[k]);
+  }, [context, routing]);
+
+  /* ───────── video öğeleri ───────── */
+  /** Öğeyi şeride bağlar (bir kez); { setOn(bool) } döner. Kapı varsayılan kapalı. */
+  const attachMedia = useCallback((el, { strip = "media", on = false } = {}) => {
+    const G = g.current;
+    if (!G || !el) return { setOn: () => {}, ok: false };
+    let n = mediaRef.current.get(el);
+    if (!n) {
+      const gate = G.ctx.createGain();
+      gate.gain.value = on ? 1 : 0;
+      let source = null;
       try {
-        const source = ctx.createMediaElementSource(el);
-        source.connect(gain);
-        sources.push(source);
+        source = G.ctx.createMediaElementSource(el);
+        source.connect(gate);
         el.muted = false;
       } catch {
-        // Bağlanamazsa video sessiz oynar; hoparlöre ses verilmez.
-        el.muted = true;
+        el.muted = true; // bağlanamazsa sessiz oynar; hoparlöre ses verilmez
       }
+      n = { source, gate, strip: null };
+      mediaRef.current.set(el, n);
     }
-    replayRef.current = { gain, sources };
-  }, [replayEls]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    const ctx = ctxRef.current;
-    if (ctx && replayRef.current) replayRef.current.gain.gain.setValueAtTime(replayAudio ? 1 : 0, ctx.currentTime);
-  }, [replayAudio]);
+    if (n.strip !== strip) {
+      try { n.gate.disconnect(); } catch { /* yoksay */ }
+      const s = stripNode(strip, strip === "music" ? "music" : "media");
+      if (s) n.gate.connect(s.input);
+      n.strip = strip;
+    }
+    setGain(G.ctx, n.gate, on ? 1 : 0);
+    const node = n;
+    return { ok: Boolean(node.source), setOn: (v) => setGain(G.ctx, node.gate, v ? 1 : 0) };
+  }, [stripNode]);
 
-  const audioTrack = useCallback(() => destRef.current?.stream.getAudioTracks()[0] || null, []);
+  // Sahnedeki video kaynakları: yalnız programdayken kapı açık.
+  const runtimeRef = sources?.runtimeRef;
+  const progKey = (programIds || []).join(",");
+  useEffect(() => {
+    if (!runtimeRef || !g.current) return undefined;
+    const scan = () => {
+      const ids = new Set(progKey ? progKey.split(",") : []);
+      for (const s of list) {
+        if (s.kind !== "video") continue;
+        const el = runtimeRef.current?.get(s.id)?.el;
+        if (el instanceof HTMLVideoElement) attachMedia(el, { strip: "media", on: ids.has(s.id) });
+      }
+    };
+    scan();
+    const t = setInterval(scan, 1500);
+    return () => clearInterval(t);
+  }, [attachMedia, list, progKey, runtimeRef]);
+
+  /* ───────── ayar güncelleme ───────── */
+  const update = useCallback((fn) => {
+    const cb = onChangeRef.current;
+    if (!cb) return;
+    cb((prev) => {
+      const cur = normalizeAudio(prev);
+      return typeof fn === "function" ? fn(cur) : { ...cur, ...fn };
+    });
+  }, []);
+  const setStrip = useCallback((id, patch) => update((a) => patchStrip(a, id, patch)), [update]);
+  const toggleMic = useCallback(() => update((a) => patchStrip(a, "mic", { mute: !a.mic.muted })), [update]);
+  const setRoute = useCallback((ctxKey, group, on) => update((a) => ({ ...a, routing: toggleRoute(a.routing, ctxKey, group, on) })), [update]);
+  const resetRouteFor = useCallback((ctxKey) => update((a) => ({ ...a, routing: resetRoute(a.routing, ctxKey) })), [update]);
+  const setMaster = useCallback((patch) => update((a) => ({ ...a, master: { ...a.master, ...patch } })), [update]);
+  const setMonitor = useCallback((patch) => update((a) => ({ ...a, monitor: { ...a.monitor, ...patch } })), [update]);
+
+  /* ───────── müzik çalar ───────── */
+  const musicApi = useMemo(() => ({
+    load: (file) => {
+      const G = g.current;
+      if (!G || !file) return;
+      const url = URL.createObjectURL(file);
+      setMusic((s) => { if (s.url) URL.revokeObjectURL(s.url); return { ...s, url, name: file.name, playing: false, time: 0 }; });
+      G.music.src = url;
+      G.music.load();
+      update((a) => ({ ...a, music: { ...a.music, name: file.name } }));
+    },
+    play: () => { resume(); g.current?.music.play().catch(() => {}); },
+    pause: () => { try { g.current?.music.pause(); } catch { /* yoksay */ } },
+    stop: () => { const el = g.current?.music; if (el) { try { el.pause(); el.currentTime = 0; } catch { /* yoksay */ } } },
+    seek: (sec) => { const el = g.current?.music; if (el) { try { el.currentTime = sec; } catch { /* yoksay */ } } },
+    setLoop: (loop) => update((a) => ({ ...a, music: { ...a.music, loop } })),
+  }), [resume, update]);
+
+  const audioTrack = useCallback(() => g.current?.dest.stream.getAudioTracks()[0] || null, []);
+  const analyser = useCallback((id) => {
+    const s = g.current?.strips.get(id);
+    return s ? s.tap : null;
+  }, []);
+  const masterAnalyser = useCallback(() => g.current?.masterTap || null, []);
 
   return {
-    available: Boolean(ctxRef.current),
+    available: Boolean(g.current),
+    context: g.current?.ctx || null,
     audioTrack,
     resume,
+    settings: value,
+    update,
+    setStrip,
+    toggleMic,
+    micMuted: Boolean(value.mic.muted),
     micStatus,
     inputStatus,
-    /** Ölçer için analiz düğümü: post = kazançtan sonra (yayına giden), pre = ham mikrofon. */
-    micAnalyser: (post = true) => (post ? micRef.current?.analyser : micRef.current?.pre) || null,
-    inputAnalyser: (id) => inputsRef.current.get(id)?.analyser || null,
+    strips: stripList(value),
+    // yönlendirme
+    playback: context,
+    airMode,
+    setAirMode,
+    routing,
+    routeNow: routingFor(context, routing),
+    setRoute,
+    resetRoute: resetRouteFor,
+    setMaster,
+    setMonitor,
+    attachMedia,
+    music: { ...music, loop: value.music.loop, savedName: value.music.name, ...musicApi },
+    // ölçerler
+    analyser,
+    masterAnalyser,
+    /** Eski ölçer: post = fader sonrası (yayına giden), pre = ham giriş. */
+    micAnalyser: (post = true) => (post ? g.current?.strips.get("mic")?.tap.L : g.current?.strips.get("mic")?.pre) || null,
+    inputAnalyser: (id) => g.current?.strips.get(id)?.tap.L || null,
+    stripGainOf: (id) => stripGain(value.strips[id]),
   };
+}
+
+/**
+ * Eski arayüz (Studio.jsx entegrasyonu bitene dek): { mic, inputs, replayEls, replayAudio }.
+ * Tekrar öğeleri "media" şeridine bağlanır; kapı replayAudio ile açılır.
+ */
+export function useAudioMixer({ mic, inputs = [], replayEls = [], replayAudio = false }) {
+  const value = useMemo(() => ({ mic, inputs }), [mic, inputs]);
+  const mixer = useStudioAudio({ sources: null, settings: { value } });
+  const attach = mixer.attachMedia;
+  useEffect(() => { for (const el of replayEls) attach(el, { strip: "media", on: replayAudio }); }, [attach, replayEls, replayAudio]);
+  return mixer;
 }

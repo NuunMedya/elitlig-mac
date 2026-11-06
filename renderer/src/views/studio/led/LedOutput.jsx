@@ -6,6 +6,10 @@
 // sahneyi kendi tuvaline çizer (kamera / ekran kaynaklarını bu pencerede
 // ayrıca açar) ve yayın grafiklerini grafik modülüyle (drawGraphics) üstüne
 // basar. Oturum açma / kabuk yok; imleç gizli, Esc ana sürece kapatma isteği.
+//
+// Yönlendirme "Yayın (Program)" iken stüdyo her program değişiminde yeni sahneyi
+// gönderir; burada sahne değişince 350 ms yumuşak geçiş yapılır (son kare
+// üstte solar). "Kapalı" (route: "off" / sahne yok) → siyah ekran.
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { drawScene } from "../draw";
 import { useStudioSources } from "../useStudioSources";
@@ -37,6 +41,8 @@ export default function LedOutput() {
 
   useEffect(() => {
     let raf = 0;
+    const fade = { id: undefined, at: 0, snap: document.createElement("canvas") };
+    const FADE_MS = 350;
     const loop = () => {
       const c = canvasRef.current;
       const s = stateRef.current;
@@ -46,8 +52,19 @@ export default function LedOutput() {
         if (c.width !== W) c.width = W;
         if (c.height !== H) c.height = H;
         const ctx = c.getContext("2d", { alpha: false });
-        drawScene(ctx, s.scene, s.sources || [], src.runtimeRef.current, W, H, { now: performance.now() });
-        if (s.graphics && drawGraphicsSafe) { try { drawGraphicsSafe(ctx, { width: W, height: H, now: Date.now() }, s.graphics); } catch { /* yoksay */ } }
+        const id = s.scene?.id ?? null;
+        if (fade.id !== undefined && id !== fade.id) {
+          // Sahne değişti: son kareyi sakla, üstte solarak kaybolsun.
+          if (fade.snap.width !== W) fade.snap.width = W;
+          if (fade.snap.height !== H) fade.snap.height = H;
+          fade.snap.getContext("2d").drawImage(c, 0, 0);
+          fade.at = performance.now();
+        }
+        fade.id = id;
+        drawScene(ctx, s.route === "off" ? null : s.scene, s.sources || [], src.runtimeRef.current, W, H, { now: performance.now() });
+        if (s.graphics && s.scene && drawGraphicsSafe) { try { drawGraphicsSafe(ctx, { width: W, height: H, now: Date.now(), sceneId: id, target: "led" }, s.graphics); } catch { /* yoksay */ } }
+        const p = fade.at ? (performance.now() - fade.at) / FADE_MS : 1;
+        if (p < 1) { ctx.save(); ctx.globalAlpha = 1 - p; ctx.drawImage(fade.snap, 0, 0, W, H); ctx.restore(); } else fade.at = 0;
       }
       raf = requestAnimationFrame(loop);
     };

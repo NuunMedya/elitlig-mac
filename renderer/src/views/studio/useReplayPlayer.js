@@ -34,15 +34,24 @@ function loadInto(el, url, cors) {
   });
 }
 
-async function prepare(el, url) {
-  try { await loadInto(el, url, true); } catch { await loadInto(el, url, false); }
+const bust = (url) => (/^(blob|data):/i.test(url) ? url : `${url}${url.includes("?") ? "&" : "?"}cors=${Date.now()}`);
+
+export async function prepare(el, url) {
+  try { await loadInto(el, url, true); } catch { await loadInto(el, bust(url), true).catch(() => loadInto(el, url, false)); }
+  // Kirli yüklendiyse (önbellekteki CORS'suz kopya) önbelleği atlatıp CORS'lu yeniden dene.
+  if (!canvasSafe(el)) { try { await loadInto(el, bust(url), true); } catch { /* aşağıda */ } }
   if (!canvasSafe(el)) throw new Error("Klip yayına çizilemiyor (güvenlik / CORS). Uygulamayı güncelleyin.");
   el.currentTime = 0;
   return el;
 }
 
-/** rate: oynatma hızı 0,25…1 (ağır çekim); yayın sırasında değişince ANINDA uygulanır. */
-export function useReplayPlayer({ els, replayRef, playStinger, bannerOf, rate = 1, onError, onStart }) {
+/**
+ * rate: oynatma hızı 0,25…1 (ağır çekim); yayın sırasında değişince ANINDA uygulanır.
+ * Modlarda (modes/): switchVia(onMid) öğeler arası geçişi çizer (varsayılan
+ * playStinger), firstImmediate ilk öğeyi geçişsiz gösterir (yayına alma geçişi
+ * zaten örter), onFinished kuyruk bitince çağrılır (mod kendi geçişiyle canlıya döner).
+ */
+export function useReplayPlayer({ els, replayRef, playStinger, switchVia, firstImmediate = false, onFinished, bannerOf, rate = 1, onError, onStart }) {
   const [state, setState] = useState(null); // { queue, index }
   const tokenRef = useRef(0);
   const curRef = useRef({ queue: [], index: -1, slot: 0, nextReady: null });
@@ -53,17 +62,21 @@ export function useReplayPlayer({ els, replayRef, playStinger, bannerOf, rate = 
   errRef.current = onError;
   const bannerRef = useRef(bannerOf);
   bannerRef.current = bannerOf;
+  const viaRef = useRef(null);
+  viaRef.current = switchVia || ((onMid) => playStinger?.({ onMid }));
+  const finRef = useRef(onFinished);
+  finRef.current = onFinished;
 
   const pauseAll = useCallback(() => { els.forEach((el) => { try { el.pause(); } catch { /* yoksay */ } }); }, [els]);
 
   const goLive = useCallback((withStinger = true) => {
     tokenRef.current += 1;
     const finish = () => { replayRef.current = { active: false }; pauseAll(); };
-    if (withStinger && replayRef.current?.active) playStinger({ onMid: finish });
+    if (withStinger && replayRef.current?.active) viaRef.current(finish);
     else finish();
     curRef.current = { queue: [], index: -1, slot: 0, nextReady: null };
     setState(null);
-  }, [pauseAll, playStinger, replayRef]);
+  }, [pauseAll, replayRef]);
 
   const preloadNext = useCallback((token) => {
     const c = curRef.current;
@@ -77,26 +90,30 @@ export function useReplayPlayer({ els, replayRef, playStinger, bannerOf, rate = 
   const showAt = useCallback((index, el, slot, token) => {
     const c = curRef.current;
     const item = c.queue[index];
-    playStinger({
-      onMid: () => {
-        if (tokenRef.current !== token) return;
-        els.forEach((x) => { if (x !== el) { try { x.pause(); } catch { /* yoksay */ } } });
-        el.currentTime = 0;
-        el.playbackRate = rateRef.current;
-        replayRef.current = { active: true, el, event: bannerRef.current?.(item) || null };
-        el.play().catch(() => {});
-      },
-    });
+    const onMid = () => {
+      if (tokenRef.current !== token) return;
+      els.forEach((x) => { if (x !== el) { try { x.pause(); } catch { /* yoksay */ } } });
+      el.currentTime = 0;
+      el.playbackRate = rateRef.current;
+      replayRef.current = { active: true, el, event: bannerRef.current?.(item) || null, item };
+      el.play().catch(() => {});
+    };
+    if (index === 0 && firstImmediate) onMid();
+    else viaRef.current(onMid);
     curRef.current = { ...c, index, slot };
     setState({ queue: c.queue, index });
     preloadNext(token);
-  }, [els, playStinger, preloadNext, replayRef]);
+  }, [els, firstImmediate, preloadNext, replayRef]);
 
   const advance = useCallback(async () => {
     const token = tokenRef.current;
     const c = curRef.current;
     if (c.index < 0) return;
-    if (c.index + 1 >= c.queue.length) { goLive(true); return; }
+    if (c.index + 1 >= c.queue.length) {
+      if (finRef.current) { try { finRef.current(); } catch { /* yoksay */ } return; }
+      goLive(true);
+      return;
+    }
     const el = await (c.nextReady || Promise.resolve(null));
     if (tokenRef.current !== token) return;
     if (!el) {

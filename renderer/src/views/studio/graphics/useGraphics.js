@@ -3,8 +3,9 @@
 //   const g = useGraphics({ matchId, live });
 //   drawGraphics(ctx, { width, height, now }, g.snapshotRef.current);   // her karede
 //
-// Programdaki grafik (skorboard çeşidi, altyazı, röportaj bandı) stüdyoya
-// özgü durumdur (maç başına localStorage). "Web ile eşitle" açıkken seçilen
+// Programdaki grafik (skorboard çeşidi, altyazı, röportaj bandı, sahne bazlı
+// görünürlük g.visibility) stüdyoya özgü durumdur (maç başına localStorage;
+// bir maçtaki değişiklik başka maça yazılmaz). "Web ile eşitle" açıkken seçilen
 // çeşit / röportaj modu PUT overlay-status ile OBS'teki web kaplamasına da
 // yazılır. Altyazı satırları ve röportaj konukları yayın masasından
 // (broadcast-state) gelir; web /altyazi ve /skoroverlay ile ortaktır.
@@ -15,15 +16,14 @@ import { friendlyError } from "../../../lib/studio/manage";
 import {
   INTERVIEW_VARIANTS, addHeadlinePatch, currentLedMode, currentOverlayMode, editAt, interviewPatch, moveItem, removeAt,
 } from "../../../lib/studio/manageBroadcast";
-import { buildGraphicsSnapshot, preloadImages, snapshotImageUrls } from "../../../lib/studio/graphics";
+import {
+  VISIBILITY_KEYS, buildGraphicsSnapshot, normalizeVisibility, normalizeVisibilityValue, patchMatchGraphics, preloadImages, readMatchGraphics, snapshotImageUrls,
+} from "../../../lib/studio/graphics";
 import { LED_MODES, SCOREBOARD_VARIANTS, isWebVariant, normalizeLedMode, normalizeVariant } from "../../../lib/studio/graphics/variants";
 import { useDesk } from "../manage/useDesk";
 import * as api from "./graphicsApi";
 import { useBranding } from "./useBranding";
 
-const LOCAL = (id) => `elitlig.studio.graphics.${id || "none"}`;
-const readLocal = (id) => { try { return JSON.parse(localStorage.getItem(LOCAL(id)) || "null") || {}; } catch { return {}; } };
-const writeLocal = (id, v) => { try { localStorage.setItem(LOCAL(id), JSON.stringify(v)); } catch { /* yoksay */ } };
 
 export function useGraphics({ matchId, live } = {}) {
   const toast = useToast();
@@ -33,13 +33,16 @@ export function useGraphics({ matchId, live } = {}) {
   const match = live?.match && Number(live.match.id) === id ? live.match : null;
 
   /* ------------------------------ yerel durum ------------------------------ */
-  const [local, setLocal] = useState(() => readLocal(id));
+  // Bellekteki durum hangi maçın olduğunu taşır: maç değişince eski maçın
+  // durumu yeni maçın kaydına asla yazılmaz (ilk karede bile).
+  const [store, setStore] = useState(() => ({ id, v: readMatchGraphics(id) }));
+  const local = store.id === id ? store.v : readMatchGraphics(id);
   const [variantSince, setVariantSince] = useState(() => Date.now());
   const [subtitleEpoch, setSubtitleEpoch] = useState(() => Date.now());
   const [interviewSince, setInterviewSince] = useState(0);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { setLocal(readLocal(id)); setVariantSince(Date.now()); }, [id]);
-  const patchLocal = useCallback((patch) => setLocal((cur) => { const next = { ...cur, ...patch }; writeLocal(id, next); return next; }), [id]);
+  useEffect(() => { setStore({ id, v: readMatchGraphics(id) }); setVariantSince(Date.now()); }, [id]);
+  const patchLocal = useCallback((patch) => setStore((cur) => ({ id, v: patchMatchGraphics(id, patch, { base: cur.id === id ? cur.v : undefined }) })), [id]);
 
   const syncWeb = local.syncWeb !== false;
   const serverOverlay = match ? currentOverlayMode(match) : null;
@@ -84,6 +87,18 @@ export function useGraphics({ matchId, live } = {}) {
   }, [id, live, patchLocal, toast]);
 
   const setSyncWeb = useCallback((on) => patchLocal({ syncWeb: Boolean(on) }), [patchLocal]);
+
+  /* ------------------------- sahne bazlı görünürlük ------------------------- */
+  const visibility = useMemo(() => normalizeVisibility(local.visibility), [local.visibility]);
+  /** setVisibility("subtitle", "all" | [sceneId…]) — yalnız bu maç. */
+  const setVisibility = useCallback((key, value) => {
+    if (!VISIBILITY_KEYS.includes(key)) return;
+    setStore((cur) => {
+      const base = cur.id === id ? cur.v : readMatchGraphics(id);
+      const vis = { ...normalizeVisibility(base.visibility), [key]: normalizeVisibilityValue(value) };
+      return { id, v: patchMatchGraphics(id, { visibility: vis }, { base }) };
+    });
+  }, [id]);
 
   /* --------------------------------- altyazı --------------------------------- */
   const subtitleSettings = desk.state.subtitle;
@@ -130,10 +145,11 @@ export function useGraphics({ matchId, live } = {}) {
     defaultLogo: logoInline,
     variant,
     variantSince,
+    visibility,
     sponsors: desk.sponsors,
     subtitle: { onAir: Boolean(local.subtitleOnAir), settings: subtitleSettings, epoch: subtitleEpoch },
     interview: { onAir: Boolean(local.interviewOnAir), style: interviewStyle, title: iv.title, people: iv.people, sponsorId: iv.sponsorId, since: interviewSince },
-  }), [live, brand.branding, variant, variantSince, desk.sponsors, local.subtitleOnAir, local.interviewOnAir, subtitleSettings, subtitleEpoch, interviewStyle, iv, interviewSince]);
+  }), [live, brand.branding, variant, variantSince, visibility, desk.sponsors, local.subtitleOnAir, local.interviewOnAir, subtitleSettings, subtitleEpoch, interviewStyle, iv, interviewSince]);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   useEffect(() => { preloadImages(snapshotImageUrls(snapshot)); }, [snapshot]);
@@ -150,6 +166,8 @@ export function useGraphics({ matchId, live } = {}) {
     variants: SCOREBOARD_VARIANTS, scorebugVariant: variant, setScorebugVariant,
     ledModes: LED_MODES, ledMode, setLedMode,
     syncWeb, setSyncWeb,
+    // sahne bazlı görünürlük (maç başına)
+    visibility, setVisibility,
     // altyazı
     subtitle: { onAir: Boolean(local.subtitleOnAir), lines, settings: subtitleSettings, blocks: snapshot.subtitle.blocks },
     setSubtitleOnAir, addLine, removeLine, moveLine, editLine, setSubtitleSettings,
@@ -161,7 +179,7 @@ export function useGraphics({ matchId, live } = {}) {
     // ön ayarlar
     presets: brand.presets, presetsRemote: brand.presetsRemote,
     applyPreset: brand.applyPreset, savePreset: brand.savePreset, renamePreset: brand.renamePreset,
-    deletePreset: brand.deletePreset, setDefaultPreset: brand.setDefaultPreset, overwritePreset: brand.overwritePreset,
+    deletePreset: brand.deletePreset, overwritePreset: brand.overwritePreset,
     // çizim
     snapshot, snapshotRef,
   };

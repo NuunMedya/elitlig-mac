@@ -106,15 +106,19 @@ function YoutubeConnect({ yt, busy, toast, ask }) {
 
 /** Elle RTMP'de izleme linki → maç sayfası (match_video). */
 function WatchLink({ matchId, match, toast }) {
-  const [url, setUrl] = useState(match?.match_video || "");
+  // Sunucu boş bağlantıyı "none" olarak tutar: yalnız http(s) adres gerçek bir linktir.
+  const serverLink = watchLinkOf(match);
+  const [url, setUrl] = useState(serverLink);
+  const [saved, setSaved] = useState(serverLink);
   const [saving, setSaving] = useState(false);
-  useEffect(() => { if (match?.match_video) setUrl(match.match_video); }, [match?.match_video]);
+  useEffect(() => { setSaved(serverLink); if (serverLink) setUrl(serverLink); }, [serverLink]);
   const valid = /^https?:\/\/(www\.)?(youtube\.com|youtu\.be|m\.youtube\.com)\//i.test(url.trim());
   const save = async () => {
     setSaving(true);
     try {
       const r = await api.setMatchVideo(matchId, url.trim());
       if (!r?.ok) throw new Error(r?.error?.message || "Kaydedilemedi.");
+      setSaved(url.trim());
       toast("Maç sayfasına canlı yayın linki eklendi.", { tone: "success" });
     } catch (e) { toast(e?.message || "Link kaydedilemedi.", { tone: "error" }); } finally { setSaving(false); }
   };
@@ -123,16 +127,16 @@ function WatchLink({ matchId, match, toast }) {
       <Field label="İzleme linki (YouTube)" hint="Maç sayfasında canlı yayın olarak görünür.">
         <div className="st-row">
           <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=…" spellCheck={false} />
-          <button type="button" className="btn btn--xs btn--primary" disabled={!matchId || !valid || saving || url.trim() === match?.match_video} onClick={save}>Kaydet</button>
+          <button type="button" className="btn btn--xs btn--primary" disabled={!matchId || !valid || saving || url.trim() === saved} onClick={save}>Kaydet</button>
         </div>
       </Field>
-      {match?.match_video && <span className="st-okchip"><Icon name="check" size={12} /> Maç sayfasına canlı yayın linki eklendi</span>}
+      {saved && <span className="st-okchip"><Icon name="check" size={12} /> Maç sayfasına canlı yayın linki eklendi</span>}
     </div>
   );
 }
 
 /** Tam maç yerel kaydı (yayınla birlikte). */
-function LocalRecordCard({ value, onChange, engine }) {
+function LocalRecordCard({ value, onChange, engine, recordInfo, onOpenSettings }) {
   const studio = window.elitlig?.studio;
   const supported = Boolean(studio?.chooseRecordDir);
   const rec = engine.localRecord;
@@ -149,6 +153,11 @@ function LocalRecordCard({ value, onChange, engine }) {
         <input readOnly value={value.dir || "Varsayılan klasör (Filmler / ElitLig)"} title={value.dir || ""} />
         <button type="button" className="btn btn--xs" disabled={engine.active || !supported} onClick={choose}><Icon name="folder" size={12} /> Klasör</button>
       </div>
+      {recordInfo && (
+        <button type="button" className="st-recq" onClick={onOpenSettings} title="Kayıt kalitesini Ayarlar › Kayıt'tan değiştir">
+          <span>Kayıt kalitesi: <b>{recordInfo.label}</b></span><em>{recordInfo.estimate}</em><Icon name="sliders" size={12} />
+        </button>
+      )}
       {!supported && <p className="st-hint">Yerel kayıt bu uygulama sürümünde yok.</p>}
       {engine.active && rec?.path && (
         <p className="st-hint st-mono" title={rec.path}>{rec.path}{rec.sizeBytes ? ` · ${fmtBytes(rec.sizeBytes)}` : ""}</p>
@@ -159,7 +168,33 @@ function LocalRecordCard({ value, onChange, engine }) {
   );
 }
 
-function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVia, encoding, onEncoding, onStartYoutube, onStartManual, onRehearsal, onStop, onEndYoutube, toast, ask, localRec, onLocalRec }) {
+/** YouTube bölümleri: yayın sırasında "Bölüm" işaretleri (C) ve goller → kopyalanabilir liste. */
+function ChaptersCard({ chapters, onAdd, onRemove, onClear, text, onAir, toast }) {
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(text); toast("Bölüm listesi kopyalandı: YouTube video açıklamasına yapıştır.", { tone: "success" }); } catch { toast("Kopyalanamadı.", { tone: "error" }); }
+  };
+  return (
+    <section className="st-card">
+      <header className="st-card__head"><Icon name="flag" size={15} /><strong>YouTube bölümleri</strong><span className="st-col__count">{chapters.length}</span></header>
+      <p className="st-hint">Yayında <b>Bölüm</b> (C) işaret koyar; goller kendiliğinden eklenir. Liste YouTube açıklamasına yapıştırılır.</p>
+      <div className="st-row">
+        <button type="button" className="btn btn--sm" disabled={!onAir} onClick={() => onAdd()}><Icon name="flag" size={12} /> Bölüm işareti</button>
+        <button type="button" className="btn btn--sm btn--primary" disabled={!chapters.length} onClick={copy}><Icon name="copy" size={12} /> Kopyala</button>
+        {chapters.length > 0 && <button type="button" className="btn btn--sm btn--ghost" onClick={onClear}>Temizle</button>}
+      </div>
+      {chapters.length > 0 && (
+        <>
+          <pre className="st-chapters">{text}</pre>
+          <ul className="st-chapters__list">
+            {chapters.map((c) => <li key={c.id}><span className="st-mono">{c.stamp}</span> {c.label}<button type="button" className="icon-btn icon-btn--xs" onClick={() => onRemove(c.id)} title="Sil"><Icon name="x" size={11} /></button></li>)}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
+function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVia, encoding, onEncoding, onStartYoutube, onStartManual, onRehearsal, onStop, onEndYoutube, toast, ask, localRec, onLocalRec, recordInfo, onOpenSettings, chapters }) {
   const [rtmpUrl, setRtmpUrl] = useState("rtmp://a.rtmp.youtube.com/live2");
   const [rtmpKey, setRtmpKey] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
@@ -207,7 +242,7 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
                   <button type="button" className="icon-btn" title="Tarayıcıda aç" onClick={() => window.elitlig?.app?.openExternal?.(watch)}><Icon name="external" size={14} /></button>
                 </div>
               )}
-              {openStream && match?.match_video && <span className="st-okchip"><Icon name="check" size={12} /> Maç sayfasına canlı yayın linki eklendi</span>}
+              {openStream && watchLinkOf(match) && <span className="st-okchip"><Icon name="check" size={12} /> Maç sayfasına canlı yayın linki eklendi</span>}
               {s?.sync_error?.message && <p className="st-hint text-red">{s.sync_error.message}</p>}
               {!matchId && <p className="st-hint">Önce Maç yönetimi sekmesinden maç aç.</p>}
             </>
@@ -227,7 +262,7 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
               <button type="button" className="btn btn--block" disabled={busy || encodingNow || !isRtmpUrl(manualUrl) || !engine.available} onClick={() => onStartManual(manualUrl)}><Icon name="play" size={13} /> Bu anahtarla yayına başla</button>
             </>
           )}
-          {(startedVia === "manual" || (manualOpen && match?.match_video)) && matchId && <WatchLink matchId={matchId} match={match} toast={toast} />}
+          {(startedVia === "manual" || (manualOpen && watchLinkOf(match))) && matchId && <WatchLink matchId={matchId} match={match} toast={toast} />}
         </section>
         <section className="st-card">
           <header className="st-card__head"><Icon name="target" size={15} /><strong>Prova (yayınsız kayıt)</strong></header>
@@ -239,7 +274,8 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
       </div>
 
       <div className="st-stack">
-        <LocalRecordCard value={localRec} onChange={onLocalRec} engine={engine} />
+        <LocalRecordCard value={localRec} onChange={onLocalRec} engine={engine} recordInfo={recordInfo} onOpenSettings={onOpenSettings} />
+        {chapters && <ChaptersCard {...chapters} onAir={engine.active} toast={toast} />}
         <EncodingCard encoding={encoding} onEncoding={onEncoding} locked={encodingNow} />
         <p className="st-hint">
           Kodlayıcı: {ff ? (ff.available ? `ffmpeg ${ff.version || ""} · ${encoderText(ff)}` : "ffmpeg yok") : "bilgi yok"}
@@ -262,4 +298,10 @@ function encoderText(ff) {
   if (e.amf) return names.h264_amf;
   if (e.mf) return names.h264_mf;
   return e.libx264 ? names.libx264 : "kodlayıcı yok";
+}
+
+/** Maçın gerçek izleme linki ("none" / boş → ""). */
+function watchLinkOf(match) {
+  const v = String(match?.match_video || "").trim();
+  return /^https?:\/\//i.test(v) ? v : "";
 }

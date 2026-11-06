@@ -127,8 +127,9 @@ export default function BrandingEditor({ g, live }) {
         <div className="mg-inline mg-end">
           {b.dirty && <span className="pill pill--xs pill--amber">Kaydedilmedi</span>}
           <button type="button" className="btn btn--sm btn--ghost" disabled={!b.dirty || b.saving} onClick={b.revert}>Geri al</button>
-          <button type="button" className="btn btn--sm btn--primary" disabled={!b.dirty || b.saving} onClick={() => b.save()}><Icon name="check" size={13} /> Kaydet (web dahil)</button>
+          <button type="button" className="btn btn--sm btn--primary" disabled={!b.dirty || b.saving} onClick={() => b.save()}><Icon name="check" size={13} /> Bu maça kaydet (web dahil)</button>
         </div>
+        <p className="mg-muted mg-small">Değişiklikler yalnız bu maça (#{g.matchId}) yazılır; diğer maçların görünümü değişmez.</p>
         {b.error && <p className="mg-error">{b.error}</p>}
       </div>
     </div>

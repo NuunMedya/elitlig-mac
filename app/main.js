@@ -801,7 +801,7 @@ if (!app.requestSingleInstanceLock()) {
       ipcMain, api, broadcast, app, electronSession, systemPreferences, desktopCapturer, powerSaveBlocker, protocol, shell,
       isOwnUrl,
       isSignedIn: () => authState().signedIn,
-      dialog, screen, BrowserWindow, loadRenderer,
+      dialog, screen, BrowserWindow, loadRenderer, powerMonitor,
       preloadPath: path.join(__dirname, "preload.js"),
       siteOrigin: config.SITE_ORIGIN,
       apiOrigin: config.API_ORIGIN,

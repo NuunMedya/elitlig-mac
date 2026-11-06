@@ -11,15 +11,22 @@ import { Icon, MenuButton } from "../../components/ui";
 import { buildHighlightPlan, defaultHighlightItems, eventsUntil, mmss, moveItem, scoreForReplay } from "../../lib/studio/highlights";
 import { PROGRAM_ANGLE, angleLabel, anglesOf, defaultAngles, metaFor, replayBanner, replayOfMatch, replayTitle } from "../../lib/studio/replays";
 import { scorerLines } from "../../lib/studio/scorebug";
+import { cardInfo } from "./modes/useHighlightMode";
+import UploadLog from "./modes/UploadLog";
 
 const PHASE = { preparing: "Klipler hazırlanıyor…", rendering: "Özet oluşturuluyor (gerçek zamanlı)…", finishing: "Dosya yazılıyor…", uploading: "Maç sayfasına yükleniyor…" };
-const dateText = (v) => {
-  if (!v) return "";
-  const d = new Date(String(v).length <= 10 ? `${v}T12:00:00` : v);
-  return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
-};
 
-function HighlightsPanel({ replays, meta, sources, matchId, live, recordAngles, hl, imagesRef, ask, toast }) {
+function HighlightsPanel(props) {
+  const a = props.api;
+  const p = a ? {
+    replays: a.replays?.replays || [], meta: a.replays?.meta || {}, sources: a.sources?.list || [], matchId: a.matchId, live: a.live,
+    recordAngles: a.replays?.recordAngles || [PROGRAM_ANGLE], hl: a.hm.hl, imagesRef: a.imagesRef, ask: a.ask, toast: a.toast,
+    stingerKind: a.cfg.between.kind === "cut" ? "stinger" : a.cfg.between.kind, onAir: a.airMode === "ozet", inModes: true,
+  } : props;
+  return <HighlightsInner {...p} />;
+}
+
+function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, hl, imagesRef, ask, toast, stingerKind = "stinger", onAir = false, inModes = false }) {
   const mine = useMemo(() => replays.filter((r) => replayOfMatch(r, meta[r.id], matchId) && anglesOf(r).length), [replays, meta, matchId]);
   const defaults = useMemo(() => defaultHighlightItems(mine, { preferredAngles: [PROGRAM_ANGLE] }), [mine]);
   const [items, setItems] = useState(defaults);
@@ -42,14 +49,7 @@ function HighlightsPanel({ replays, meta, sources, matchId, live, recordAngles, 
   const build = async () => {
     if (!plan.clipCount) { toast("Özete klip ekle.", { tone: "warn" }); return; }
     if (job.file && job.phase !== "uploaded" && !(await ask({ title: "Yeniden oluştur", message: "Önizlemedeki özet atılıp yenisi oluşturulsun mu?", confirmLabel: "Yeniden oluştur" }))) return;
-    const m = live.match || {};
-    const info = {
-      title: [m.lig_adi || m.league_name, m.saha_adi || m.match_field].filter(Boolean).join(" · ") || `${live.homeName} – ${live.awayName}`,
-      homeName: live.homeName,
-      awayName: live.awayName,
-      score: finalScore,
-      date: dateText(m.match_date || m.tarih),
-    };
+    const info = { ...cardInfo(live), score: finalScore };
     const boardOf = (seg) => {
       const r = seg.replay;
       const mm = metaFor(r, meta);
@@ -66,7 +66,7 @@ function HighlightsPanel({ replays, meta, sources, matchId, live, recordAngles, 
         event: replayBanner(r, mm),
       };
     };
-    await hl.build({ plan, info, images: imagesRef.current || {}, boardOf });
+    await hl.build({ plan, info, images: imagesRef?.current || {}, boardOf, stingerKind });
   };
 
   const upload = async () => {
@@ -124,7 +124,7 @@ function HighlightsPanel({ replays, meta, sources, matchId, live, recordAngles, 
 
       <section className="st-hl__build">
         <h5 className="st-group">Plan</h5>
-        <p className="st-hint">Giriş kartı (maç, takımlar, son skor {finalScore.home}–{finalScore.away}, tarih) · {plan.clipCount} klip · kapanış kartı · aralarda ElitLig logo geçişi. Klipte orta-alt büyük skorbord o anın skorunu gösterir.</p>
+        <p className="st-hint">Sinematik giriş kartı (logo, armalar, son skor {finalScore.home}–{finalScore.away}, lig · saha · tarih) · {plan.clipCount} klip (kendi sesiyle) · kapanış kartı · aralarda logo geçişi. Klipte orta-alt büyük skorbord o anın skorunu gösterir.{inModes ? " Giriş kartı şu an önizlemede." : ""}</p>
         <p className="st-hl__total">Toplam ≈ <strong>{mmss(plan.durationMs)}</strong> · 1920×1080 · 30 fps</p>
         {busy ? (
           <>
@@ -148,6 +148,7 @@ function HighlightsPanel({ replays, meta, sources, matchId, live, recordAngles, 
           <>
             <video className="st-hl__video" src={job.file.url} controls preload="metadata" />
             <small className="muted">{mmss(job.file.durationMs)} · {job.file.sizeBytes ? `${(job.file.sizeBytes / 1048576).toFixed(1)} MB` : ""}</small>
+            {inModes && <p className="st-hint">{onAir ? <><span className="md-chip is-live"><i /> YAYINDA</span> Özet programda kendi sesiyle oynuyor.</> : "Özet önizlemede. Yayına almak için soldaki “Yayına al”."}</p>}
             {job.phase === "uploaded"
               ? <p className="st-hint"><Icon name="check" size={12} /> Maç sayfasına yüklendi.</p>
               : <button type="button" className="btn btn--red btn--block" disabled={busy} onClick={upload}><Icon name="upload" size={13} /> Maç sayfasına yükle</button>}
@@ -163,6 +164,7 @@ function HighlightsPanel({ replays, meta, sources, matchId, live, recordAngles, 
             </span>
           </div>
         )}
+        <UploadLog />
       </section>
     </div>
   );

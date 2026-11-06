@@ -6,8 +6,11 @@
 // ve ön ayarın içinde saklanır.
 //
 // Ön ayarlar sunucuda (SUNUCU ajanının /api/overlay-branding/presets uçları);
-// uç yoksa (404) bu bilgisayarda localStorage'da tutulur.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// uç yoksa (404) bu bilgisayarda localStorage'da tutulur. Ön ayarlar yalnız
+// ŞABLONDUR: "Uygula" yalnız şu anki maça yazar (PUT overlay-branding);
+// hiçbir ön ayar kendiliğinden uygulanmaz ya da varsayılan yapılmaz, genel
+// (tüm maçları etkileyen) ayar yazılmaz.
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "../../../components/ui";
 import { friendlyError } from "../../../lib/studio/manage";
 import {
@@ -18,15 +21,13 @@ import * as api from "./graphicsApi";
 
 const EXTRAS_KEY = (id) => `elitlig.studio.brandingExtras.${id}`;
 const LOCAL_PRESETS = "elitlig.studio.brandingPresets";
-const LOCAL_DEFAULT = "elitlig.studio.brandingPresetDefault";
 
 const readJson = (key, fallback) => { try { const v = JSON.parse(localStorage.getItem(key) || "null"); return v ?? fallback; } catch { return fallback; } };
 const writeJson = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* yoksay */ } };
 
 function readLocalPresets() {
-  const defaultId = readJson(LOCAL_DEFAULT, null);
   const rows = readJson(LOCAL_PRESETS, []);
-  return normalizePresetList((Array.isArray(rows) ? rows : []).map((r) => ({ ...r, local: true, is_default: String(r.id) === String(defaultId) })));
+  return normalizePresetList((Array.isArray(rows) ? rows : []).map((r) => ({ ...r, local: true, is_default: false })));
 }
 const writeLocalPresets = (list) => writeJson(LOCAL_PRESETS, list.map((p) => ({ id: p.id, name: p.name, branding: p.branding, updated_at: p.updatedAt || new Date().toISOString() })));
 
@@ -44,7 +45,8 @@ export function useBranding(matchId) {
   const [presetsLoading, setPresetsLoading] = useState(true);
   const idRef = useRef(id);
   idRef.current = id;
-  const autoApplied = useRef(new Set());
+  // Taslak hangi maçın: maç değişip yeni marka gelmeden "Kaydet" eski taslağı yeni maça yazmasın.
+  const [draftFor, setDraftFor] = useState(null);
 
   /* ------------------------------ maçın markası ------------------------------ */
   const load = useCallback(async () => {
@@ -56,13 +58,13 @@ export function useBranding(matchId) {
     if (!res.ok) { setError(friendlyError(res, "Yayın görünümü okunamadı.")); return null; }
     const extras = normalizeExtras(readJson(EXTRAS_KEY(id), null));
     const next = normalizeBranding({ ...(res.data?.branding || {}), extras });
-    setSaved(next); setDraft(next); setSource(res.data?.source || "default"); setError("");
+    setSaved(next); setDraft(next); setDraftFor(id); setSource(res.data?.source || "default"); setError("");
     return res.data;
   }, [id]);
 
   useEffect(() => {
     const fresh = normalizeBranding(DEFAULT_BRANDING);
-    setSaved(fresh); setDraft(fresh); setSource("default");
+    setSaved(fresh); setDraft(fresh); setDraftFor(null); setSource("default");
     load();
   }, [load]);
 
@@ -73,9 +75,10 @@ export function useBranding(matchId) {
     });
   }, []);
 
-  /** Taslağı kaydeder (web kaplamaları dahil). */
+  /** Taslağı YALNIZ bu maça kaydeder (PUT /api/maclar/:id/overlay-branding; web kaplamaları dahil). */
   const save = useCallback(async (value) => {
     if (!id) return false;
+    if (value == null && draftFor !== id) { toast("Maçın görünümü henüz yüklenmedi; birazdan yeniden dene.", { tone: "warn" }); return false; }
     const target = normalizeBranding(value ?? draft);
     setSaving(true);
     writeJson(EXTRAS_KEY(id), target.extras);
@@ -83,10 +86,10 @@ export function useBranding(matchId) {
     setSaving(false);
     if (!res.ok) { toast(friendlyError(res, "Yayın görünümü kaydedilemedi."), { tone: "error", timeout: 6000 }); return false; }
     const next = normalizeBranding({ ...(res.data?.branding || serverBrandingBody(target)), extras: target.extras });
-    if (idRef.current === id) { setSaved(next); setDraft(next); setSource(res.data?.source || `match:${id}`); }
-    toast("Yayın görünümü kaydedildi; web kaplamaları birkaç saniyede güncellenir.", { tone: "success" });
+    if (idRef.current === id) { setSaved(next); setDraft(next); setDraftFor(id); setSource(res.data?.source || `match:${id}`); }
+    toast("Bu maçın görünümü kaydedildi; web kaplamaları birkaç saniyede güncellenir.", { tone: "success" });
     return true;
-  }, [draft, id, toast]);
+  }, [draft, draftFor, id, toast]);
 
   const revert = useCallback(() => setDraft(saved), [saved]);
   const dirty = !sameBranding(draft, saved);
@@ -103,35 +106,20 @@ export function useBranding(matchId) {
   }, []);
   useEffect(() => { loadPresets(); }, [loadPresets]);
 
-  const defaultPreset = useMemo(() => presets.find((p) => p.isDefault) || null, [presets]);
-
+  /**
+   * Ön ayarı YALNIZ şu anki maça uygular: şablon taslakla birleşir ve maçın
+   * kendi kaydına yazılır (PUT /api/maclar/:id/overlay-branding). Ön ayarın
+   * kendisi, diğer maçlar ve genel ayarlar değişmez.
+   */
   const applyPreset = useCallback(async (presetId, { quiet = false } = {}) => {
     const preset = presets.find((p) => p.id === String(presetId));
     if (!preset || !id) return false;
+    if (draftFor !== id) { toast("Maçın görünümü henüz yüklenmedi; birazdan yeniden dene.", { tone: "warn" }); return false; }
     const merged = mergePreset(draft, preset);
-    if (presetsRemote && !preset.local) {
-      const res = await api.applyPreset(id, preset.id);
-      if (res.ok) {
-        const next = normalizeBranding({ ...(res.data?.branding || serverBrandingBody(merged)), extras: merged.extras });
-        writeJson(EXTRAS_KEY(id), next.extras);
-        setSaved(next); setDraft(next); setSource(`match:${id}`);
-        if (!quiet) toast(`“${preset.name}” uygulandı; web kaplamaları da güncellenir.`, { tone: "success" });
-        return true;
-      }
-      if (!api.isMissing(res)) { toast(friendlyError(res, "Ön ayar uygulanamadı."), { tone: "error", timeout: 6000 }); return false; }
-    }
-    // Uygulama ucu yok: markayı doğrudan maça yaz.
     const ok = await save(merged);
-    if (ok && !quiet) toast(`“${preset.name}” uygulandı.`, { tone: "success" });
+    if (ok && !quiet) toast(`“${preset.name}” yalnız bu maça uygulandı.`, { tone: "success" });
     return ok;
-  }, [draft, id, presets, presetsRemote, save, toast]);
-
-  // Varsayılan ön ayar: hiç özelleştirilmemiş (source "default") maça bir kez uygulanır.
-  useEffect(() => {
-    if (!id || loading || source !== "default" || !defaultPreset || autoApplied.current.has(id)) return;
-    autoApplied.current.add(id);
-    applyPreset(defaultPreset.id, { quiet: true }).then((ok) => { if (ok) toast(`Varsayılan ön ayar “${defaultPreset.name}” bu maça uygulandı.`, { tone: "success" }); });
-  }, [applyPreset, defaultPreset, id, loading, source, toast]);
+  }, [draft, draftFor, id, presets, save, toast]);
 
   const savePreset = useCallback(async (name, value) => {
     const problem = validatePresetName(name, presets);
@@ -160,13 +148,12 @@ export function useBranding(matchId) {
     const preset = presets.find((p) => p.id === String(presetId));
     if (!preset) return false;
     if (presetsRemote && !preset.local) {
-      const body = { ...(patch.name != null ? { name: patch.name } : {}), ...(patch.branding ? { branding: normalizeBranding(patch.branding) } : {}), ...(patch.isDefault != null ? { is_default: patch.isDefault } : {}) };
+      const body = { ...(patch.name != null ? { name: patch.name } : {}), ...(patch.branding ? { branding: normalizeBranding(patch.branding) } : {}) };
       const res = await api.updatePreset(preset.id, body);
       if (!res.ok) { toast(friendlyError(res, "Ön ayar güncellenemedi."), { tone: "error", timeout: 6000 }); return false; }
       await loadPresets();
     } else {
       let list = readLocalPresets().map((p) => (p.id === preset.id ? { ...p, ...(patch.name != null ? { name: patch.name } : {}), ...(patch.branding ? { branding: normalizeBranding(patch.branding) } : {}) } : p));
-      if (patch.isDefault != null) writeJson(LOCAL_DEFAULT, patch.isDefault ? preset.id : null);
       writeLocalPresets(list);
       list = readLocalPresets();
       setPresets(list);
@@ -181,7 +168,6 @@ export function useBranding(matchId) {
     return patchPreset(presetId, { name: String(name).trim() }, "Ön ayarın adı değişti.");
   }, [patchPreset, presets, toast]);
   const overwritePreset = useCallback((presetId) => patchPreset(presetId, { branding: draft }, "Ön ayar şimdiki görünümle güncellendi."), [draft, patchPreset]);
-  const setDefaultPreset = useCallback((presetId, on = true) => patchPreset(presetId, { isDefault: on }, on ? "Varsayılan ön ayar seçildi: yeni maçlar bu görünümle açılır." : "Varsayılan kaldırıldı."), [patchPreset]);
 
   const deletePreset = useCallback(async (presetId) => {
     const preset = presets.find((p) => p.id === String(presetId));
@@ -193,7 +179,6 @@ export function useBranding(matchId) {
     } else {
       const list = readLocalPresets().filter((p) => p.id !== preset.id);
       writeLocalPresets(list);
-      if (readJson(LOCAL_DEFAULT, null) === preset.id) writeJson(LOCAL_DEFAULT, null);
       setPresets(list);
     }
     toast(`“${preset.name}” silindi.`, { tone: "success" });
@@ -203,7 +188,7 @@ export function useBranding(matchId) {
   return {
     branding: draft, saved, source, dirty, loading, saving, error,
     update, setBranding: setDraft, save, revert, reload: load,
-    presets, presetsRemote, presetsLoading, defaultPreset, reloadPresets: loadPresets,
-    applyPreset, savePreset, renamePreset, overwritePreset, setDefaultPreset, deletePreset,
+    presets, presetsRemote, presetsLoading, reloadPresets: loadPresets,
+    applyPreset, savePreset, renamePreset, overwritePreset, deletePreset,
   };
 }

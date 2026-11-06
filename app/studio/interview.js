@@ -66,6 +66,8 @@ function selectPinned({ complete = [], growing = null } = {}, minGrowingSec = 0.
 function createInterviews({ engine, interviewsDir, getFfmpegPath, runImpl = ff.run, now = () => Date.now(), timers = { setTimeout, clearTimeout }, maxMs = MAX_MS, log = () => {} } = {}) {
   const events = new EventEmitter();
   const active = new Map(); // id → { id, matchId, label, pinId, startedAt, sessionId, timer }
+  const stopping = new Map(); // id → bitiş sözü (aynı anda ikinci stop aynı sonucu alır)
+  const finished = new Map(); // id → son sonuç (oturum bitince kendiliğinden bitenler dahil; en çok 20)
 
   const ensureDir = () => fs.mkdirSync(interviewsDir, { recursive: true });
   const metaPath = (mp4) => mp4.replace(/\.mp4$/, ".json");
@@ -83,10 +85,12 @@ function createInterviews({ engine, interviewsDir, getFfmpegPath, runImpl = ff.r
     const id = `i${stamp(t)}-${crypto.randomBytes(3).toString("hex")}`;
     const rec = { id, matchId: mid, label: label ? String(label).trim().slice(0, 160) : null, pinId, startedAt: t, sessionId: engine.sessionId() };
     rec.timer = timers.setTimeout(() => { stop(id, { reason: "MAX_DURATION" }).catch(() => {}); }, maxMs);
+    rec.timer?.unref?.();
     active.set(id, rec);
     log("studio: röportaj başladı", { id, matchId: mid });
     emitStatus();
-    return { ok: true, interview: describeActive(rec) };
+    // Arayüz `id` bekler (useInterview: res.id); `interview` ayrıntılı nesne.
+    return { ok: true, id, interview: describeActive(rec) };
   }
 
   async function probe(file) {
@@ -94,8 +98,35 @@ function createInterviews({ engine, interviewsDir, getFfmpegPath, runImpl = ff.r
     return ffargs.parseVideoInfo(res.stderr);
   }
 
-  /** Röportajı bitirir ve MP4'e yazar. → { ok, interview } | { ok:false, error } */
-  async function stop(id, { reason = null } = {}) {
+  /**
+   * Röportajı bitirir ve MP4'e yazar. → { ok, id, interview, file } | { ok:false, error }
+   * (file = interview: arayüz res.file bekler.)
+   * id verilmezse / bilinmiyorsa ve tek röportaj sürüyorsa o bitirilir ({ matchId } ile maça göre).
+   * Zaten bitmiş (ör. yayın durunca kendiliğinden) röportajın sonucu yeniden döner.
+   */
+  function stop(id, opts = {}) {
+    const o = opts && typeof opts === "object" ? opts : {};
+    let key = id === undefined || id === null || id === "" ? null : String(typeof id === "object" ? id.id ?? "" : id) || null;
+    const mid = validMatch(o.matchId ?? (typeof id === "object" && id ? id.matchId : undefined)) ? Number(o.matchId ?? id.matchId) : null;
+    if (key && stopping.has(key)) return stopping.get(key);
+    if (key && !active.has(key) && finished.has(key)) return Promise.resolve(finished.get(key));
+    if (!key || !active.has(key)) {
+      const candidates = [...active.values()].filter((r) => !mid || r.matchId === mid);
+      if (candidates.length === 1) key = candidates[0].id;
+      else if (!key && stopping.size === 1) return [...stopping.values()][0];
+    }
+    if (!key || !active.has(key)) return Promise.resolve(fail("NOT_FOUND"));
+    const p = doStop(key, o).then((res) => {
+      const out = res.ok ? { ...res, id: key, file: res.interview } : { ...res, id: key };
+      finished.set(key, out);
+      while (finished.size > 20) finished.delete(finished.keys().next().value);
+      return out;
+    }).finally(() => stopping.delete(key));
+    stopping.set(key, p);
+    return p;
+  }
+
+  async function doStop(id, { reason = null } = {}) {
     const rec = active.get(String(id));
     if (!rec) return fail("NOT_FOUND");
     active.delete(rec.id);
@@ -171,6 +202,8 @@ function createInterviews({ engine, interviewsDir, getFfmpegPath, runImpl = ff.r
     const ids = [...active.keys()];
     const results = [];
     for (const id of ids) results.push(await stop(id, { reason }));
+    // Başka bir çağrının sürdürdüğü bitişler de beklenir (klasör silinmeden önce).
+    await Promise.all([...stopping.values()]);
     return results;
   }
 
@@ -244,16 +277,19 @@ function createInterviews({ engine, interviewsDir, getFfmpegPath, runImpl = ff.r
     const res = await uploadPresigned(api, { kind: "interview", matchId: mid, base, file: item, meta, errors: ERR }, { putImpl, emitProgress, ...(sleep ? { sleep } : {}) });
     if (!res.ok) return res;
     const server = res.result?.interview ?? res.result;
+    const url = server?.url ?? server?.post_roportaj ?? null;
     try {
       const m = readMeta(name) || {};
-      fs.writeFileSync(metaPath(item.path), JSON.stringify({ ...m, uploaded: { matchId: Number(mid), key: res.key, posterKey: res.posterKey, url: server?.url ?? server?.post_roportaj ?? null, at: new Date(now()).toISOString() } }));
+      fs.writeFileSync(metaPath(item.path), JSON.stringify({ ...m, uploaded: { matchId: Number(mid), key: res.key, posterKey: res.posterKey, url, at: new Date(now()).toISOString() } }));
     } catch { /* yoksay */ }
-    return { ok: true, interview: describe(name), result: server ?? null };
+    // data: arayüz res.data.url okur.
+    return { ok: true, interview: describe(name), result: server ?? null, data: { ...(server && typeof server === "object" ? server : {}), url } };
   }
 
   function dispose() {
     for (const r of active.values()) timers.clearTimeout(r.timer);
     active.clear();
+    finished.clear();
   }
 
   return { start, stop, finalizeAll, status, list, describe, remove, prune, upload, dispose, events, dir: interviewsDir };

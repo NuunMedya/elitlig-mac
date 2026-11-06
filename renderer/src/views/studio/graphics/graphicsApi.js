@@ -25,7 +25,8 @@ export const listPresets = () => live("GET", "/api/overlay-branding/presets");
 export const createPreset = (body) => live("POST", "/api/overlay-branding/presets", body);
 export const updatePreset = (id, body) => live("PUT", `/api/overlay-branding/presets/${encodeURIComponent(id)}`, body);
 export const deletePreset = (id) => live("DELETE", `/api/overlay-branding/presets/${encodeURIComponent(id)}`);
-export const applyPreset = (matchId, presetId) => live("POST", `/api/maclar/${matchId}/overlay-branding/apply-preset`, { preset_id: presetId });
+// Not: sunucunun apply-preset ucu kullanılmaz; ön ayar istemcide birleştirilip
+// yalnız bu maça PUT overlay-branding ile yazılır (genel ayar yazılmaz).
 
 /** Uç yok mu (sunucu henüz güncellenmedi): 404 / 405 / 501. */
 export const isMissing = (res) => [404, 405, 501].includes(Number(res?.error?.status));

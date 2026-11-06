@@ -10,6 +10,7 @@
 // olur. friendlyError bunu duruma göre okunur Türkçe iletiye çevirir.
 
 import { clientEventId, sortEvents } from "./match";
+import { awardsJson } from "./manageBroadcast";
 
 /* ------------------------------- hatalar ------------------------------- */
 
@@ -351,6 +352,39 @@ export function quickEventCatalog() {
 }
 
 /**
+ * Reji orta sütunu: olay düğmeleri dört başlıkta (Goller, Kartlar,
+ * Değişiklik, Diğer). Kodlar quickEventCatalog ile aynı (sunucunun tanıdığı);
+ * her öğe { code, label, tone, input, short }. Boş grup dönmez.
+ */
+export const REJI_GROUP_DEFS = [
+  { key: "goals", title: "Goller", icon: "ball", codes: ["GOAL_RIGHT_FOOT", "GOAL_LEFT_FOOT", "GOAL_HEADER", "GOAL_PENALTY", "GOAL_FREEKICK", "GOAL_LONG_RIGHT", "GOAL_LONG_LEFT", "GOAL_OWN", "ASSIST"] },
+  { key: "cards", title: "Kartlar", icon: "tag", codes: ["YELLOW_CARD", "RED_CARD"] },
+  { key: "subs", title: "Değişiklik", icon: "swap", codes: ["SUBSTITUTION"] },
+  { key: "other", title: "Diğer", icon: "activity", codes: ["SAVE", "CHANCE_CREATED", "DUEL_WON", "AERIAL_WON", "CRITICAL_BLOCK", "FOUL", "INJURY"] },
+];
+const SHORT_LABEL = {
+  GOAL_RIGHT_FOOT: "Sağ ayak", GOAL_LEFT_FOOT: "Sol ayak", GOAL_HEADER: "Kafa", GOAL_PENALTY: "Penaltı", GOAL_FREEKICK: "Frikik",
+  GOAL_LONG_RIGHT: "Uzaktan sağ", GOAL_LONG_LEFT: "Uzaktan sol", GOAL_OWN: "Kendi kalesine", ASSIST: "Asist",
+  YELLOW_CARD: "Sarı kart", RED_CARD: "Kırmızı kart", SUBSTITUTION: "Oyuncu değişikliği",
+  SAVE: "Kurtarış", CHANCE_CREATED: "Tehlike", DUEL_WON: "İkili mücadele", AERIAL_WON: "Hava topu", CRITICAL_BLOCK: "Kritik müdahale", FOUL: "Faul", INJURY: "Sakatlık",
+};
+
+export function rejiEventGroups() {
+  const items = new Map(quickEventCatalog().flatMap((g) => g.items).map((it) => [it.code, it]));
+  const used = new Set();
+  const groups = REJI_GROUP_DEFS.map((def) => ({
+    key: def.key,
+    title: def.title,
+    icon: def.icon,
+    items: def.codes.filter((c) => items.has(c)).map((c) => { used.add(c); return { ...items.get(c), short: SHORT_LABEL[c] || items.get(c).label }; }),
+  }));
+  // Yeni eklenen (gruplanmamış) kodlar "Diğer"e düşer: hiçbir kod kaybolmaz.
+  const rest = [...items.values()].filter((it) => !used.has(it.code)).map((it) => ({ ...it, short: it.label }));
+  if (rest.length) groups[groups.length - 1].items.push(...rest);
+  return groups.filter((g) => g.items.length);
+}
+
+/**
  * Reji sağ sütunu: en yeni üstte; filtre "all" | "home" | "away" |
  * "timeline" (gol / kart / değişiklik) | "stats".
  */
@@ -505,17 +539,13 @@ export function readPostContent(match) {
   };
 }
 
-/** PATCH /maclar/:id — maç sonu içerik + enler (mobil buildPostPayload). */
-export function buildPostPayload(content, highlights, nameOf) {
-  const award = {};
-  for (const { key } of POST_HIGHLIGHT_FIELDS) {
-    const id = highlights?.[key] || "";
-    const name = id ? nameOf?.(id) || "" : "";
-    award[`${key}_id`] = id;
-    award[`${key}_name`] = name;
-    award[key] = name;
-  }
-  const json = JSON.stringify(award);
+/**
+ * PATCH /maclar/:id — maç sonu içerik + enler (mobil buildPostPayload).
+ * moments (isteğe bağlı): { best_goal: { event_id, minute, team_id, clip_url,
+ * poster_url, … }, best_save } → awardsJson (anın ayrıntısı nesne olarak).
+ */
+export function buildPostPayload(content, highlights, nameOf, moments = null) {
+  const json = JSON.stringify(awardsJson(highlights, nameOf, moments));
   const mvp = Number(highlights?.best_player);
   const c = content || {};
   return {

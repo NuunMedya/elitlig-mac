@@ -14,8 +14,8 @@ import { isGoalCode, sortEvents } from "./match";
 import { PROGRAM_ANGLE, defaultAngles } from "./replays";
 
 export const HIGHLIGHT_SIZE = Object.freeze({ width: 1920, height: 1080, fps: 30, videoBitrateKbps: 8000 });
-export const INTRO_MS = 3500;
-export const OUTRO_MS = 3500;
+export const INTRO_MS = 5000;
+export const OUTRO_MS = 4200;
 export const MIN_CLIP_MS = 1500;
 
 /** Olaylardan, verilen olay DAHİL o ana kadarki skor; olay yoksa null. */
@@ -154,3 +154,34 @@ export const mmss = (ms) => {
 
 /** Özet dosya adı: "ozet-<maç>-<zaman>.mp4" (yükleme ana süreçte bu adla). */
 export const highlightName = (matchId, now = Date.now()) => `ozet-${Number(matchId) || 0}-${now.toString(36)}`;
+
+/* ───────────── giriş / kapanış kartı zaman çizelgesi ───────────── */
+
+const c01 = (v) => (v <= 0 ? 0 : v >= 1 ? 1 : v);
+const span = (t, a, b) => c01((t - a) / (b - a));
+const outCubic = (t) => 1 - (1 - t) ** 3;
+const outBack = (t) => 1 + 2.4 * (t - 1) ** 3 + 1.4 * (t - 1) ** 2;
+
+/**
+ * Sinematik giriş / kapanış kartının t (ms) anı: her öğe 0…1 (giriş eğrisi uygulanmış).
+ *   bg      zemin ve ışık süzmesi        logo   marka logosu (büyüyerek)
+ *   title   "MAÇ ÖZETİ" / "MAÇ SONU"    rule   ince marka çizgisi
+ *   home / away  armalar yanlardan kayar  score  skor (alttan, hafif taşmalı)
+ *   meta    lig · saha · tarih           sweep  ışık süpürmesi 0…1 (bir kez)
+ */
+export function cardTimeline(t, kind = "intro") {
+  const k = kind === "outro" ? 0.85 : 1;
+  const at = (ms) => ms * k;
+  return {
+    bg: outCubic(span(t, 0, at(500))),
+    logo: outBack(span(t, at(150), at(850))),
+    title: outCubic(span(t, at(450), at(1100))),
+    rule: outCubic(span(t, at(650), at(1400))),
+    home: outCubic(span(t, at(800), at(1500))),
+    away: outCubic(span(t, at(900), at(1600))),
+    score: outBack(span(t, at(1250), at(1900))),
+    meta: outCubic(span(t, at(1600), at(2300))),
+    sweep: span(t, at(1900), at(2900)),
+    drift: t / 1000,
+  };
+}

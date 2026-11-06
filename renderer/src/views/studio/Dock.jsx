@@ -1,5 +1,5 @@
-// Yayın Stüdyosu · ALT PANEL: sekmeler (Reji, Olaylar, Tekrar & Özet,
-// Kaynaklar & Düzenler, Yayın, Ses, Maç yönetimi) ve sürüklenerek
+// Yayın Stüdyosu · ALT PANEL: sekmeler (Maç yönetimi, grafik sekmeleri, Sahneler,
+// Kaynaklar, özel kipler, Yayın, Ses, LED; sağda Ayarlar) ve sürüklenerek
 // büyütülüp küçültülen yükseklik (tercihlerde saklanır).
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "../../components/ui";
@@ -8,7 +8,7 @@ export const DOCK_MIN = 150;
 export const dockMax = () => Math.max(DOCK_MIN + 40, Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * 0.62));
 export const clampDock = (h) => Math.max(DOCK_MIN, Math.min(dockMax(), Math.round(Number(h) || 300)));
 
-export default function Dock({ tabs, tab, onTab, height, onHeight, children }) {
+export default function Dock({ tabs, tab, onTab, height, onHeight, children, extra = null }) {
   const [drag, setDrag] = useState(null); // canlı yükseklik (sürüklerken)
   const start = useRef(null);
   const dragRef = useRef(null);
@@ -52,6 +52,7 @@ export default function Dock({ tabs, tab, onTab, height, onHeight, children }) {
             {t.count ? <b className="st-dock__count">{t.count}</b> : null}
           </button>
         ))}
+        {extra && <span className="st-dock__extra">{extra}</span>}
       </nav>
       <div className="st-dock__body">{children}</div>
     </section>

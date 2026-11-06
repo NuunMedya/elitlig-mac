@@ -119,9 +119,14 @@ contextBridge.exposeInMainWorld("elitlig", {
     // { kind: "highlight" | "interview", matchId, loaded, total }
     onUploadProgress: on("studio:uploadProgress"),
     // Yayın sağlığı: oturum günlüğü (userData/logs/studio-<zaman>.log) ve son hatalar.
+    // → { logPath, lastErrors, ffmpegErrors, truncated, uploads: [Yükleme günlüğü, en yeni önce], uploadLogPath }
     diagnostics: () => ipcRenderer.invoke("studio:diagnostics"),
+    clearUploadLog: () => ipcRenderer.invoke("studio:clearUploadLog"),
     revealDiagnostics: () => ipcRenderer.invoke("studio:revealDiagnostics"),
-    // Yerel tam kayıt: start({ …, localRecord: { enabled, dir? } }); klasör seçimi hatırlanır.
+    // Yerel tam kayıt: start({ …, localRecord: { enabled, dir?, videoBitrateKbps?, height?, fps?, allowSoftware? } });
+    // kalite yayından farklıysa ikinci kodlayıcı (yalnız donanım kodlayıcıda; info().localQuality.supported).
+    // start → { …, localQuality: { separate, width, height, fps, videoBitrateKbps } | { separate: false, reason, message } }
+    // klasör seçimi hatırlanır.
     recordDir: () => ipcRenderer.invoke("studio:recordDir"),
     chooseRecordDir: () => ipcRenderer.invoke("studio:chooseRecordDir"),
     revealLocal: (path) => ipcRenderer.invoke("studio:revealLocal", path || null),

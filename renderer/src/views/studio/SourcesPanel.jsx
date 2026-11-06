@@ -1,8 +1,9 @@
 // Yayın Stüdyosu · KAYNAK KİTAPLIĞI ve kaynak penceresi.
 //
-//   SourceLibrary  genel kaynak listesi: canlı küçük resim, durum, kaç sahnede
-//                  kullanıldığı, ayarlar, yeniden bağlan, sahneye ekle, sil.
+//   SourceLibrary  KAYNAKLAR sekmesi (kartlar): canlı küçük resim, durum, kaç sahnede
+//                  kullanıldığı, ayarlar, yeniden bağlan, sahneye ekle, "sahne oluştur", sil.
 //                  Bir kaynak birçok sahnede katman olabilir (akış bir kez açılır).
+//                  Kaynak eklemek sahne oluşturmaz.
 //   SourceDialog   yeni kaynak / kaynak ayarları: Kamera (çözünürlük, fps, ayna),
 //                  Ekran, Pencere, Görsel, Video / medya (döngü, görününce baştan),
 //                  Görüntü dizisi (slayt), Renk / gradyan, Metin, Saat / geri sayım,
@@ -45,46 +46,51 @@ export function SourceThumb({ source, runtimeRef, width = 96 }) {
   return <canvas ref={ref} className="st-thumb" width={width} height={Math.round((width * 9) / 16)} />;
 }
 
-function SourceLibraryInner({ config, runtimeRef, version, editableSceneId, actions }) {
+/**
+ * KAYNAKLAR sekmesi: kart ızgarası. Kaynak eklemek sahne OLUŞTURMAZ; kartta
+ * "Sahne oluştur" (bu kaynaktan tam ekran sahne) ve "Sahneye ekle ▸" açık eylemlerdir.
+ */
+function SourceLibraryInner({ config, runtimeRef, version, actions }) {
   void version;
-  const { onNewSource, onEditSource, onRemoveSource, onReacquire, onRequestAccess, onAddToScene, onPreviewSource } = actions;
+  const { onNewSource, onEditSource, onRemoveSource, onReacquire, onRequestAccess, onAddToScene, onSceneFromSource } = actions;
   const sources = config.sources;
   return (
-    <section className="st-col st-col--lib">
-      <header className="st-col__head">
-        <h4>Kaynak kitaplığı</h4>
-        <span className="st-col__count">{sources.length}</span>
-        <span className="st-top__spacer" />
-        <button type="button" className="btn btn--xs btn--soft" onClick={onNewSource} title="Yeni kaynak ekle (kamera, ekran, metin, saat …)"><Icon name="plus" size={12} /> Kaynak</button>
+    <section className="st-srcs">
+      <header className="st-srcs__head">
+        <div>
+          <h4>Kaynaklar</h4>
+          <p className="st-hint">Kaynak = giriş (kamera, ekran, görsel, video, metin, saat…). Yayına <b>sahne</b> gider: kaynağı bir sahneye katman olarak ekle ya da kaynaktan sahne oluştur.</p>
+        </div>
+        <button type="button" className="btn btn--primary btn--sm" onClick={onNewSource}><Icon name="plus" size={13} /> Kaynak ekle</button>
       </header>
-      <ul className="st-lib">
+      <ul className="st-srcs__grid">
         {sources.map((src) => {
           const rt = runtimeRef.current.get(src.id);
           const st = SYNTHETIC.has(src.kind) ? "live" : rt?.status || "waiting";
           const bad = BAD.includes(st);
           const used = sourceUsage(config, src.id);
           return (
-            <li key={src.id} className={`st-lib__row ${bad ? "is-bad" : ""}`}>
-              <button type="button" className="st-lib__thumb" onClick={() => onPreviewSource(src)} title="Kaynağı tek başına önizlemede göster">
-                <SourceThumb source={src} runtimeRef={runtimeRef} width={80} />
+            <li key={src.id} className={`st-srcard ${bad ? "is-bad" : ""}`}>
+              <button type="button" className="st-srcard__thumb" onClick={() => onEditSource(src)} title="Kaynak ayarları">
+                <SourceThumb source={src} runtimeRef={runtimeRef} width={224} />
+                <span className={`st-srcard__status is-${st}`}><span className={`st-dot is-${st}`} /> {st === "live" ? (rt?.label || "Hazır") : STATUS_TEXT[st] || st}</span>
               </button>
-              <div className="st-lib__text">
+              <div className="st-srcard__body">
                 <strong title={src.name}><Icon name={sourceKindIcon(src.kind)} size={12} /> {src.name}</strong>
-                <small>
-                  <span className={`st-dot is-${st}`} /> {st === "live" ? (rt?.label || sourceKindLabel(src.kind)) : STATUS_TEXT[st] || st}
-                  <span className="st-lib__used" title={used.join(", ") || "Hiçbir sahnede değil"}>· {used.length ? `${used.length} sahnede` : "kullanılmıyor"}</span>
-                </small>
+                <small className="muted">{sourceKindLabel(src.kind)} · <span title={used.join(", ") || "Hiçbir sahnede değil"}>{used.length ? `${used.length} sahnede` : "sahnede değil"}</span></small>
                 {bad && rt?.message && <small className="st-src__msg">{rt.message}</small>}
               </div>
-              <div className="st-lib__tools">
+              <div className="st-srcard__tools">
                 {st === "denied" && (src.kind === "camera" || src.kind === "screen" || src.kind === "window") && <button type="button" className="btn btn--xs" onClick={() => onRequestAccess(src.kind === "camera" ? "camera" : "screen")}>İzin iste</button>}
                 {st === "file" ? <button type="button" className="btn btn--xs" onClick={() => onEditSource(src)}>Dosya seç</button>
                   : bad && <button type="button" className="btn btn--xs" onClick={() => onReacquire(src)}>Yeniden dene</button>}
-                <button type="button" className="icon-btn icon-btn--xs" disabled={!editableSceneId} onClick={() => onAddToScene(src)} title={editableSceneId ? "Önizlemedeki sahneye katman olarak ekle" : "Önce bir sahne seç"}><Icon name="plus" size={13} /></button>
+                <button type="button" className="btn btn--xs btn--soft" onClick={() => onSceneFromSource(src.id)} title="Bu kaynağı tam ekran gösteren yeni sahne"><Icon name="layers" size={11} /> Sahne oluştur</button>
+                <MenuButton label="Sahneye ekle" icon="plus" size={13} items={[
+                  ...config.scenes.map((sc) => ({ label: `“${sc.name}” sahnesine ekle`, icon: "layers", onClick: () => onAddToScene(src, sc.id) })),
+                ]} />
                 <MenuButton label="Kaynak" size={14} items={[
                   { label: "Ayarlar…", icon: "sliders", onClick: () => onEditSource(src) },
-                  { label: "Önizlemede tek başına göster", icon: "eye", onClick: () => onPreviewSource(src) },
-                  { label: "Sahneye ekle", icon: "plus", disabled: !editableSceneId, onClick: () => onAddToScene(src) },
+                  { label: "Bu kaynaktan sahne oluştur", icon: "layers", onClick: () => onSceneFromSource(src.id) },
                   { label: "Yeniden bağlan", icon: "refresh", onClick: () => onReacquire(src) },
                   "-",
                   { label: "Kaynağı sil", icon: "trash", danger: true, onClick: () => onRemoveSource(src) },
@@ -93,7 +99,9 @@ function SourceLibraryInner({ config, runtimeRef, version, editableSceneId, acti
             </li>
           );
         })}
-        {!sources.length && <li className="st-hint">Kaynak yok. “Kaynak” ile kamera, ekran, görsel, metin ya da saat ekle.</li>}
+        <li className="st-srcard is-add">
+          <button type="button" onClick={onNewSource}><Icon name="plus" size={20} /><strong>Kaynak ekle</strong><small>Kamera, ekran, pencere, görsel, video, metin, saat…</small></button>
+        </li>
       </ul>
     </section>
   );

@@ -32,7 +32,7 @@ export default function GraphicsToolbar({ g, compact = false }) {
         {g.subtitle.onAir && <span className="gx-dot" />}<Icon name="list" size={13} /> Altyazı
       </button>
       <button type="button" className={`gx-tb__toggle${g.interview.onAir ? " is-on" : ""}`} disabled={disabled} aria-pressed={g.interview.onAir}
-        title={g.interview.onAir ? "Röportaj bandını kaldır" : g.interview.people?.length ? "Röportaj bandını yayına al" : "Önce Grafikler › Röportaj'dan konuk seç"}
+        title={g.interview.onAir ? "Röportaj bandını kaldır" : g.interview.people?.length ? "Röportaj bandını yayına al" : "Önce Röportaj sekmesinden konuk seç"}
         onClick={() => g.setInterviewOnAir(!g.interview.onAir)}>
         {g.interview.onAir && <span className="gx-dot" />}<Icon name="mic" size={13} /> Röportaj
       </button>

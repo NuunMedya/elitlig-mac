@@ -36,8 +36,19 @@ const ERR = {
 };
 const fail = (code, message = ERR[code], extra = {}) => ({ ok: false, error: { code, message, ...extra } });
 
+/** S3 / Spaces XML hata gövdesi → { code, message } (ör. SignatureDoesNotMatch, RequestTimeTooSkewed). */
+function s3Error(body) {
+  const text = String(body || "");
+  const code = /<Code>([^<]{1,80})<\/Code>/.exec(text)?.[1] || null;
+  const message = /<Message>([^<]{1,300})<\/Message>/.exec(text)?.[1] || null;
+  return { code, message };
+}
+
 /**
- * Dosyayı ön imzalı adrese PUT eder (akış). → { ok, status, body } | { ok:false, network?, status?, body? }
+ * Dosyayı ön imzalı adrese PUT eder (akış). → { ok, status, body } | { ok:false, network?, status?, body?, code?, message? }
+ * Gövde Content-Length ile gider (chunked DEĞİL: Spaces 411 verir); sunucunun
+ * imzaladığı başlıklar (Content-Type, Cache-Control, x-amz-acl, Content-Length)
+ * aynen gönderilir. Dosya boyutu imzadaki boyuttan farklıysa gönderilmez.
  */
 function putFile(url, { file, size, headers = {}, contentType = "application/octet-stream", onProgress = () => {}, idleTimeoutMs = PUT_IDLE_TIMEOUT_MS } = {}) {
   return new Promise((resolve) => {
@@ -55,7 +66,10 @@ function putFile(url, { file, size, headers = {}, contentType = "application/oct
       let body = "";
       res.setEncoding("utf8");
       res.on("data", (d) => { if (body.length < 4000) body += d; });
-      res.on("end", () => done({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, body }));
+      res.on("end", () => {
+        const ok = res.statusCode >= 200 && res.statusCode < 300;
+        done(ok ? { ok, status: res.statusCode, body } : { ok, status: res.statusCode, body, ...s3Error(body) });
+      });
       res.on("error", () => done({ ok: false, network: true, status: 0 }));
     });
     req.setTimeout(idleTimeoutMs, () => req.destroy(new Error("zaman aşımı")));
@@ -110,12 +124,12 @@ async function uploadPresigned(api, { kind, matchId, base, file, meta, errors = 
     }
     return r;
   };
-  const video = await put(target.upload_url, { file: file.path, size: file.sizeBytes, headers: target.headers || {}, contentType: "video/mp4", onProgress: (l) => progress(l) });
-  if (!video.ok) return fail(video.network ? "NETWORK" : "PUT_FAILED", video.network ? E.NETWORK : `${E.PUT_FAILED} (HTTP ${video.status})`, { status: video.status });
+  const video = await put(target.upload_url, { file: file.path, size: file.sizeBytes, headers: target.headers || {}, contentType: "video/mp4", onProgress: (l) => progress(l), kind, matchId: mid });
+  if (!video.ok) return fail(video.network ? "NETWORK" : "PUT_FAILED", video.network ? E.NETWORK : `${E.PUT_FAILED} (HTTP ${video.status}${video.code ? ` ${video.code}` : ""})`, { status: video.status, s3Code: video.code || null });
 
   let posterKey = null;
   if (posterSize > 0) {
-    const poster = await put(target.poster_upload_url, { file: file.posterPath, size: posterSize, headers: target.poster_headers || {}, contentType: "image/jpeg", onProgress: (l) => progress(file.sizeBytes + l) });
+    const poster = await put(target.poster_upload_url, { file: file.posterPath, size: posterSize, headers: target.poster_headers || {}, contentType: "image/jpeg", onProgress: (l) => progress(file.sizeBytes + l), kind, matchId: mid });
     // Kapak yüklenemezse video yine bağlanır (kapak isteğe bağlı).
     if (poster.ok) posterKey = target.poster_key || null;
   }
@@ -160,4 +174,4 @@ async function deleteHighlight(api, { matchId } = {}) {
   return { ok: true, data: res.data ?? null };
 }
 
-module.exports = { putFile, uploadPresigned, uploadHighlight, deleteHighlight, unwrap, validMatch, ERR };
+module.exports = { putFile, s3Error, uploadPresigned, uploadHighlight, deleteHighlight, unwrap, validMatch, ERR };

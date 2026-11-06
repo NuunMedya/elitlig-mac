@@ -52,7 +52,7 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
       rec = new MediaRecorder(new MediaStream(tracks), {
         mimeType: opts.mimeType || undefined,
         videoBitsPerSecond: recorderBitsPerSecond(opts.videoBitrateKbps),
-        audioBitsPerSecond: AUDIO_BITRATE_KBPS * 1000,
+        audioBitsPerSecond: (Number(opts.audioBitrateKbps) || AUDIO_BITRATE_KBPS) * 1000,
       });
     } catch (err) {
       errRef.current?.(`Kaydedici açılamadı: ${err?.message || err}`);
@@ -96,15 +96,27 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
   }, [startRecorder, stopRecorder]);
 
   /**
-   * url null → prova (yayınsız kayıt). localRecord: { enabled, dir? } → maçın
-   * tamamı bu bilgisayara da kaydedilir (YouTube / RTMP ile birlikte).
+   * url null → prova (yayınsız kayıt). localRecord: { enabled, dir?, videoBitrateKbps?, height? }
+   * → maçın tamamı bu bilgisayara da kaydedilir (YouTube / RTMP ile birlikte); kalite
+   * alanlarını desteklemeyen ana süreç yayın kalitesinde kaydeder.
+   * stream (Ayarlar › Yayın): { audioKbps, keyframeSec, encoder: "auto" | "hardware" | "software" }.
    */
-  const start = useCallback(async ({ url, preset, localRecord = null, matchId = null, matchName = null }) => {
+  const start = useCallback(async ({ url, preset, localRecord = null, matchId = null, matchName = null, stream = null }) => {
     const s = studio();
     if (!s?.start) throw new Error("Yayın motoru bu sürümde yok. Uygulamayı güncelleyin.");
     if (typeof MediaRecorder === "undefined") throw new Error("Bu sistemde MediaRecorder yok.");
     const mimeType = pickMimeType((t) => MediaRecorder.isTypeSupported(t));
-    const opts = { url: url || null, width: preset.width, height: preset.height, fps: preset.fps, videoBitrateKbps: preset.videoBitrateKbps, audioBitrateKbps: AUDIO_BITRATE_KBPS, mimeType, ...(matchId ? { matchId, matchName: matchName || null } : {}), ...(localRecord?.enabled ? { localRecord: { enabled: true, ...(localRecord.dir ? { dir: localRecord.dir } : {}) } } : {}) };
+    const lr = localRecord?.enabled ? {
+      enabled: true,
+      ...(localRecord.dir ? { dir: localRecord.dir } : {}),
+      ...(Number(localRecord.videoBitrateKbps) > 0 ? { videoBitrateKbps: Number(localRecord.videoBitrateKbps) } : {}),
+      ...(Number(localRecord.height) > 0 ? { height: Number(localRecord.height) } : {}),
+    } : null;
+    const extra = {
+      ...(stream?.keyframeSec ? { keyframeSec: Number(stream.keyframeSec) } : {}),
+      ...(stream?.encoder && stream.encoder !== "auto" ? { encoderPreference: stream.encoder } : {}),
+    };
+    const opts = { url: url || null, width: preset.width, height: preset.height, fps: preset.fps, videoBitrateKbps: preset.videoBitrateKbps, audioBitrateKbps: Number(stream?.audioKbps) || AUDIO_BITRATE_KBPS, mimeType, ...extra, ...(matchId ? { matchId, matchName: matchName || null } : {}), ...(lr ? { localRecord: lr } : {}) };
     setStatus({ state: "starting" });
     const res = await s.start(opts);
     if (!res?.ok) {

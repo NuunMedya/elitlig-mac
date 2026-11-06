@@ -79,28 +79,14 @@ function Shell({ auth }) {
   // Daraltılmış kenar çubuğu: yalnız simgeler (ipucu balonuyla). Tercih hatırlanır.
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [tip, setTip] = useState(null);
-  // Yayın Stüdyosu tüm genişliği kullanır: girince kenar çubuğu kendiliğinden
-  // daralır, çıkınca önceki hâline döner (stüdyodayken ⌘⌥S yine açar/kapatır).
-  const collapsedRef = useRef(collapsed);
-  collapsedRef.current = collapsed;
-  const beforeStudioRef = useRef(null);
-  useEffect(() => {
-    if (route === "studio") {
-      if (beforeStudioRef.current === null) {
-        beforeStudioRef.current = collapsedRef.current;
-        setCollapsed(true);
-      }
-    } else if (beforeStudioRef.current !== null) {
-      const prev = beforeStudioRef.current;
-      beforeStudioRef.current = null;
-      setCollapsed(prev);
-    }
-  }, [route]);
-  // Kullanıcının kendi tercihi kaydedilir (stüdyonun kendiliğinden daraltması değil).
+  // Yayın Stüdyosu tüm pencereyi kullanır: kenar çubuğu HİÇ çizilmez (yanlışlıkla
+  // tıklanıp yayının kopmasını önler). Stüdyodan çıkış üst çubuktaki
+  // "Programdan çık" düğmesiyle (yayın / kayıt sürüyorsa onay sorulur).
+  const bare = route === "studio";
   const toggleSidebar = useCallback(() => {
     setCollapsed((v) => {
       const next = !v;
-      if (beforeStudioRef.current === null) { try { localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0"); } catch { /* yoksay */ } }
+      try { localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0"); } catch { /* yoksay */ }
       return next;
     });
     setTip(null);
@@ -186,8 +172,8 @@ function Shell({ auth }) {
   const syncLabel = !sync.online ? "Çevrimdışı" : sync.pending ? `${sync.pending} değişiklik bekliyor` : "Eşitlendi";
 
   return (
-    <div className={`shell ${collapsed ? "shell--collapsed" : ""}`}>
-      <aside className="sidebar" aria-label="Kenar çubuğu">
+    <div className={`shell ${bare ? "shell--bare" : collapsed ? "shell--collapsed" : ""}`} style={bare ? { gridTemplateColumns: "minmax(0, 1fr)" } : undefined}>
+      {!bare && <aside className="sidebar" aria-label="Kenar çubuğu">
         <div className="sidebar__drag" />
         <div className="sidebar__brand">
           <img src={logo} alt="Elitlig" /><span>Araçlar</span>
@@ -240,13 +226,13 @@ function Shell({ auth }) {
             </button>
           </div>
         </div>
-      </aside>
-      {collapsed && tip && (
+      </aside>}
+      {!bare && collapsed && tip && (
         <div className="rail-tip" style={{ top: tip.top }} role="tooltip">
           {tip.label}{tip.extra ? <span className="rail-tip__badge">{tip.extra}</span> : null}{tip.shortcut ? <Kbd>{tip.shortcut}</Kbd> : null}
         </div>
       )}
-      <main className="content" data-tool={route}>
+      <main className="content" data-tool={route} style={bare ? { borderRadius: 0 } : undefined}>
         <div className="content__drag" />
         <Suspense fallback={<Spinner />}>
           <View key={route} go={go} arg={routeArg} auth={auth} summary={s} />

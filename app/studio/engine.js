@@ -83,6 +83,7 @@ const MESSAGES = {
   rtmpQueueFull: "Bağlantı yayına yetişemiyor; bazı kareler atlandı. Bit hızını düşürmeyi deneyin.",
   speedSlow: "Kodlayıcı gerçek zamana yetişemiyor (hız < 0,95). Bir sonraki yeniden başlatmada daha hızlı ayar kullanılacak; çözünürlük / bit hızını düşürmeyi ya da açıları kapatmayı deneyin.",
   localFailed: "Yerel kayıt yazılamıyor (disk dolu ya da klasöre erişilemiyor); yayın sürüyor.",
+  localQualitySoftware: "Donanım kodlayıcı yok: yerel kayıt yayınla aynı kalitede yazılıyor (ikinci kodlama işlemciyi yayını düşürecek kadar yükler).",
 };
 
 const FIFO_DOWN = /\[fifo @[^\]]*\].*(Error opening|Error writing|Recovery failed|Maximal number of)/i;
@@ -184,7 +185,7 @@ function createStudioEngine({
       warning: session?.warning || null,
       rtmp: session?.opts.url ? (session.rtmpDown ? "down" : "up") : undefined,
       speedLevel: session?.speedLevel || 0,
-      ...(session?.local ? { localPath: session.local.current || null, localBytes: localBytes(session), localFailed: session.local.failed || false } : {}),
+      ...(session?.local ? { localPath: session.local.current || null, localBytes: localBytes(session), localFailed: session.local.failed || false, ...(session.local.qualityState ? { localQuality: session.local.qualityState } : {}) } : {}),
       ...extra,
     });
   };
@@ -344,7 +345,8 @@ function createStudioEngine({
       s.local.current = localFile;
     }
     runInfo.slaves = ff.streamSlaves({ url: s.opts.url, localFile });
-    const args = buildArgs({ ...s.opts, encoder: s.encoder, segmentSeconds, segmentStart: s.nextSegment, listFile: runInfo.listFile, fifo: s.fifo, localFile, speedLevel: s.speedLevel, fpsMode: s.fpsMode, platform });
+    const localEncode = localFile ? localEncodeFor(s) : null;
+    const args = buildArgs({ ...s.opts, encoder: s.encoder, segmentSeconds, segmentStart: s.nextSegment, listFile: runInfo.listFile, fifo: s.fifo, localFile, ...(localEncode ? { localEncode } : {}), speedLevel: s.speedLevel, fpsMode: s.fpsMode, platform });
     log("studio: ffmpeg başlıyor", { run: s.run, encoder: s.encoder, url: ff.maskUrl(s.opts.url) });
     note(`ffmpeg başlıyor (çalıştırma ${s.run})`, { encoder: s.encoder, speedLevel: s.speedLevel, fifo: s.fifo, args: ff.maskSecrets(args.join(" ")) });
     let child;
@@ -633,7 +635,27 @@ function createStudioEngine({
     } catch {
       return { error: { code: "LOCAL_DIR", message: "Yerel kayıt klasörüne yazılamıyor. Başka bir klasör seçin." } };
     }
-    return { dir, base: localBaseName(lr.name ?? raw.matchLabel ?? raw.matchId, now()) };
+    // Ayrı kalite (bit hızı / yükseklik / kare hızı): yayından farklıysa ikinci kodlayıcı.
+    const quality = ff.normalizeLocalQuality(lr, normalizeOptions(raw));
+    return { dir, base: localBaseName(lr.name ?? raw.matchLabel ?? raw.matchId, now()), quality, allowSoftware: lr.allowSoftware === true };
+  }
+
+  /**
+   * Bu çalıştırmada yerel kayıt ayrı kodlanacak mı. İkinci kodlama yalnız donanım
+   * kodlayıcıda (VideoToolbox / NVENC / QSV / AMF / MF) ya da açık izinle (allowSoftware)
+   * yapılır; libx264'te iki kodlama işlemciyi yayını düşürecek kadar yükler →
+   * yerel kayıt yayın kalitesinde yazılır ve uyarı verilir (localQuality.reason).
+   */
+  function localEncodeFor(s) {
+    const q = s.local?.quality;
+    if (!q) return null;
+    if (ff.isHardwareEncoder(s.encoder) || s.local.allowSoftware) {
+      s.local.qualityState = { separate: true, ...q, encoder: s.encoder };
+      return q;
+    }
+    if (!s.local.qualityState || s.local.qualityState.separate !== false) note("yerel kayıt ayrı kalitede kodlanmıyor: donanım kodlayıcı yok", { encoder: s.encoder, wanted: q });
+    s.local.qualityState = { separate: false, reason: "NO_HW_ENCODER", message: MSG.localQualitySoftware, wanted: q };
+    return null;
   }
 
   async function start(rawOpts = {}) {
@@ -645,7 +667,8 @@ function createStudioEngine({
     if (local?.error) return { ok: false, error: local.error };
     const info = await getFfmpeg();
     if (!info?.available || !info.path) return { ok: false, error: { code: "NO_FFMPEG", message: info?.error || MSG.noFfmpeg } };
-    const encoder = ff.pickEncoder(info.encoders);
+    // Arayüz tercihi (encoderPreference: "software" → libx264); normalizeOptions bunu taşımazsa ham seçenekten.
+    const encoder = ff.pickEncoderFor(info.encoders, opts.encoderPreference ?? rawOpts.encoderPreference);
     if (!encoder) return { ok: false, error: { code: "NO_ENCODER", message: MSG.noEncoder } };
     if (local && info.muxers && info.muxers.matroska === false) return { ok: false, error: { code: "NO_MATROSKA", message: "Bu ffmpeg yerel kayıt (Matroska) yazamıyor." } };
     if (session) return { ok: false, error: { code: "BUSY", message: MSG.busy } };
@@ -664,7 +687,7 @@ function createStudioEngine({
     sessionStatus("starting");
     spawnRun();
     if (!session) return { ok: false, error: { code: "NO_FFMPEG", message: MSG.noFfmpeg } };
-    return { ok: true, sessionId: id, encoder: session.encoder };
+    return { ok: true, sessionId: id, encoder: session.encoder, ...(session.local?.qualityState ? { localQuality: session.local.qualityState } : {}) };
   }
 
   /** MediaRecorder parçası. Hiç fırlatmaz; uygun değilse atar. */

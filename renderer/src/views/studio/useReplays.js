@@ -71,7 +71,8 @@ export function useReplays(matchId) {
    * Tekrar kaydet. angles: ["program", kaynakId…]; meta: { side, code, minute, period }.
    * Dönüş: anahtar (attach için).
    */
-  const capture = useCallback(({ kind = "moment", angles = [PROGRAM_ANGLE], label = null, eventId = null, meta: info = {} }) => {
+  const capture = useCallback(({ kind = "moment", angles = [PROGRAM_ANGLE], label = null, eventId = null, seconds: secs = null, meta: info = {} }) => {
+    const seconds = Math.round(Math.min(60, Math.max(3, Number(secs) || REPLAY_SECONDS)));
     const key = `rp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const m = { ...info, matchId: Number(matchRef.current) || null, at: Date.now() };
     setPending((list) => [{ key, kind, meta: m, status: "saving", createdAt: Date.now() }, ...list]);
@@ -79,11 +80,11 @@ export function useReplays(matchId) {
     const run = (async () => {
       let replay = null;
       if (s?.saveReplay) {
-        const res = await s.saveReplay({ seconds: REPLAY_SECONDS, angles, label, kind, eventId, matchId: m.matchId, minute: m.minute ?? null });
+        const res = await s.saveReplay({ seconds, angles, label, kind, eventId, matchId: m.matchId, minute: m.minute ?? null });
         if (!res?.ok || !res.replay) throw new Error(res?.error?.message || "Tekrar kaydedilemedi.");
         replay = normalizeReplay(res.replay);
       } else {
-        const res = await s?.saveClip?.({ seconds: REPLAY_SECONDS });
+        const res = await s?.saveClip?.({ seconds });
         if (!res?.ok || !res.clip) throw new Error(res?.error?.message || "Klip kaydedilemedi.");
         replay = replayFromClip(res.clip, { kind, label, eventId });
       }
@@ -114,7 +115,9 @@ export function useReplays(matchId) {
     const eventId = replay.eventId || m.eventId;
     const prog = replay.angles.find((a) => a.angle === PROGRAM_ANGLE);
     const mid = Number(m.matchId || matchRef.current);
-    if (!prog || !eventId || !mid) return;
+    // Yüklenemiyorsa sessizce geçme: kullanıcı nedenini görsün.
+    const why = !prog ? "Tekrar dosyası yok (program açısı kaydedilmemiş)." : !eventId ? "Olay bağlı değil: golcü seçilmeden yüklenemez." : !mid ? "Maç seçilmedi: Maç yönetimi'nden maç aç." : null;
+    if (why) { setUploads((u) => ({ ...u, [replay.id]: { status: "failed", error: why } })); return; }
     setUploads((u) => ({ ...u, [replay.id]: { status: "uploading" } }));
     try {
       const legacy = String(replay.id).startsWith("clip:");
@@ -127,7 +130,7 @@ export function useReplays(matchId) {
         height: prog.height,
       });
       if (!res?.ok) throw new Error(res?.error?.message || "Yüklenemedi.");
-      setUploads((u) => ({ ...u, [replay.id]: { status: "uploaded", serverUrl: res.data?.url ?? null } }));
+      setUploads((u) => ({ ...u, [replay.id]: { status: "uploaded", serverUrl: res.data?.url ?? res.url ?? null } }));
       patchMeta(replay.id, { uploaded: true });
     } catch (e) {
       setUploads((u) => ({ ...u, [replay.id]: { status: "failed", error: errText(e, "Yüklenemedi.") } }));

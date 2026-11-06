@@ -10,10 +10,16 @@
 //            fit: kutu içinde "stretch" (uzat) | "contain" (sığdır) | "cover" (doldur)
 //            — liste sonu EN ÜSTTE çizilir (OBS'teki gibi listede üstte görünür).
 //   overlay: { variant }               grafik modülü yoksa yedek skorbord türü
-//   previewSceneId / programSceneId     sahne kimliği; "src:<kaynak>" = kaynağın
-//                                        tam ekran sanal sahnesi (çoklu görünümde kaynak kutusu)
-//   multiview: { show: [kimlik] | null } "Önizlemede göster": şeritte / ızgarada
-//                                        görünen sahneler ve kaynaklar (null = tüm sahneler)
+//   previewSceneId / programSceneId     GERÇEK sahne kimliği (önizleme ve yayında
+//                                        yalnız sahneler olur). "src:<kaynak>" sanal
+//                                        sahnesi yalnız kaynak küçük resmi / LED içindir;
+//                                        eski kayıtta önizleme / program sanal ise o
+//                                        kaynağın sahnesi bulunur ya da oluşturulur.
+//
+// BASİT MANTIK: KAYNAK = giriş (kamera, ekran, görsel, video, metin …);
+// SAHNE = yayına giden görüntü (sıralı katmanlar). Kaynak eklemek sahne
+// oluşturmaz; "Bu kaynaktan sahne oluştur" ve şablonlar (Tek kaynak, Resim
+// içinde resim, Yan yana, Üçlü, Başlangıç / Devre arası / Bitiş) açık eylemdir.
 //
 // Sürüm 2 kaydından ("studio.v1") göç: her görsel kaynak kendi tek katmanlı
 // sahnesi olur ("Kamera 1"), hazır düzenler (Resim içinde resim / Yan yana)
@@ -180,18 +186,39 @@ export function normalizeScenesConfig(input) {
   const kinds = new Map(sources.map((s) => [s.id, s.kind]));
   const scenes = input.scenes
     .filter((sc) => sc && typeof sc.id === "string")
-    .map((sc) => ({ id: sc.id, name: str(sc.name || "Sahne"), layers: (Array.isArray(sc.layers) ? sc.layers : []).filter((l) => l && kinds.has(l.sourceId)).map((l) => normalizeLayer(l, kinds.get(l.sourceId))) }));
+    .map((sc) => ({ id: sc.id, name: str(sc.name || "Sahne"), ...(typeof sc.template === "string" ? { template: sc.template } : {}), layers: (Array.isArray(sc.layers) ? sc.layers : []).filter((l) => l && kinds.has(l.sourceId)).map((l) => normalizeLayer(l, kinds.get(l.sourceId))) }));
   if (!scenes.length) scenes.push({ id: uid("sc"), name: "Sahne 1", layers: [] });
   const out = { version: SCENES_VERSION, sources, scenes };
   const fb = firstSceneId(out);
-  const show = Array.isArray(input.multiview?.show) ? input.multiview.show.filter((id) => sceneExists(out, id)) : null;
-  return {
+  return realizeVirtual({
     ...out,
     overlay: { variant: ["small", "bottom", "off"].includes(input.overlay?.variant) ? input.overlay.variant : "small" },
     previewSceneId: sceneExists(out, input.previewSceneId) ? input.previewSceneId : fb,
     programSceneId: sceneExists(out, input.programSceneId) ? input.programSceneId : fb,
-    multiview: { show },
+    multiview: { show: null },
+  });
+}
+
+/** Tek katmanlı, tam ekran ve yalnız bu kaynağı gösteren sahne (varsa). */
+export const singleSourceScene = (config, sourceId) => config.scenes.find((sc) => sc.layers.length === 1 && sc.layers[0].sourceId === sourceId && sc.layers[0].w >= 0.99 && sc.layers[0].h >= 0.99 && !sc.layers[0].x && !sc.layers[0].y) || null;
+
+/**
+ * Önizleme / program sanal kaynak sahnesindeyse ("src:…") gerçek sahneye çevirir:
+ * o kaynağın tek katmanlı sahnesi, yoksa yeni sahne oluşturulur (mevcut sahneler silinmez).
+ */
+export function realizeVirtual(config) {
+  let c = config;
+  const fix = (key) => {
+    const sid = sourceIdOfScene(c[key]);
+    if (!sid) return;
+    const existing = singleSourceScene(c, sid);
+    if (existing) { c = { ...c, [key]: existing.id }; return; }
+    const { config: next, scene } = sceneFromSource(c, sid);
+    c = scene ? { ...next, [key]: scene.id } : { ...c, [key]: c.scenes[0]?.id || null };
   };
+  fix("programSceneId");
+  fix("previewSceneId");
+  return c;
 }
 
 /** Sürüm 2 → 3: kaynaklar sahne olur, düzen katmanları serbest kutuya çevrilir. */
@@ -220,13 +247,13 @@ export function migrateV2(raw) {
   const out = { version: SCENES_VERSION, sources, scenes };
   const m = (id) => map.get(id) || id;
   const fb = firstSceneId(out);
-  return {
+  return realizeVirtual({
     ...out,
     overlay: { variant: v2.overlay?.variant || "small" },
     previewSceneId: sceneExists(out, m(v2.previewSceneId)) ? m(v2.previewSceneId) : fb,
     programSceneId: sceneExists(out, m(v2.programSceneId)) ? m(v2.programSceneId) : fb,
     multiview: { show: null },
-  };
+  });
 }
 
 export function loadScenesConfig(storage) {
@@ -279,13 +306,11 @@ export function removeScene(config, sceneId) {
   if (idx < 0) return config;
   const scenes = config.scenes.filter((s) => s.id !== sceneId);
   const fb = scenes[Math.max(0, idx - 1)].id;
-  const show = config.multiview?.show ? config.multiview.show.filter((id) => id !== sceneId) : null;
   return {
     ...config,
     scenes,
     previewSceneId: config.previewSceneId === sceneId ? fb : config.previewSceneId,
     programSceneId: config.programSceneId === sceneId ? fb : config.programSceneId,
-    multiview: { ...(config.multiview || {}), show },
   };
 }
 
@@ -336,54 +361,132 @@ export function removeSource(config, sourceId) {
     scenes: config.scenes.map((sc) => ({ ...sc, layers: sc.layers.filter((l) => l.sourceId !== sourceId) })),
   };
   const fb = firstSceneId(next);
-  const show = config.multiview?.show ? config.multiview.show.filter((id) => id !== sourceSceneId(sourceId)) : null;
   return {
     ...next,
     previewSceneId: sceneExists(next, config.previewSceneId) ? config.previewSceneId : fb,
     programSceneId: sceneExists(next, config.programSceneId) ? config.programSceneId : fb,
-    multiview: { ...(config.multiview || {}), show },
   };
 }
 
 /** Kaynağın kullanıldığı sahne adları. */
 export const sourceUsage = (config, sourceId) => config.scenes.filter((sc) => sc.layers.some((l) => l.sourceId === sourceId)).map((sc) => sc.name);
 
-/** Yeni kaynak + tek katmanlı kendi sahnesi (OBS'te "yeni sahneye ekle"). */
-export function addSourceWithScene(config, source) {
-  const { config: c1, source: s } = addSource(config, source);
-  const { config: c2, scene } = addScene(c1, s.name, [normalizeLayer(makeLayer(s.id, { fit: defaultFit(s.kind) }), s.kind)]);
-  return { config: c2, source: s, scene };
-}
-
-/* --------------------------- "Önizlemede göster" --------------------------- */
-
 /**
- * Çoklu görünüm kutuları: seçim yoksa tüm sahneler; seçim varsa seçilen
- * sahneler (sahne sırasıyla) ve kaynaklar (kitaplık sırasıyla).
+ * "Bu kaynaktan sahne oluştur": kaynağın tam ekran tek katmanlı sahnesi.
+ * (Kaynak eklemek artık sahne OLUŞTURMAZ; bu açık bir eylemdir.)
  */
-export function multiviewTiles(config) {
-  const show = config.multiview?.show;
-  const sceneTiles = config.scenes
-    .filter((sc) => !show || show.includes(sc.id))
-    .map((sc) => ({ id: sc.id, kind: "scene", name: sc.name, hotkey: sceneHotkey(config, sc.id) }));
-  const sourceTiles = show
-    ? config.sources.filter((s) => show.includes(sourceSceneId(s.id))).map((s) => ({ id: sourceSceneId(s.id), kind: "source", sourceId: s.id, sourceKind: s.kind, name: s.name, hotkey: null }))
-    : [];
-  return [...sceneTiles, ...sourceTiles];
+export function sceneFromSource(config, sourceId, name) {
+  const s = config.sources.find((x) => x.id === sourceId);
+  if (!s) return { config, scene: null };
+  return addScene(config, name || s.name, [normalizeLayer(makeLayer(s.id, { fit: defaultFit(s.kind) }), s.kind)]);
 }
 
-export const isShownInMultiview = (config, id) => {
-  const show = config.multiview?.show;
-  return show ? show.includes(id) : !isSourceSceneId(id);
+/* ------------------------------ çoklu görünüm ------------------------------ */
+
+/** Şerit / ızgara kutuları: YALNIZ sahneler (sahne sırasıyla, 1–9 kısayolu). */
+export function multiviewTiles(config) {
+  return config.scenes.map((sc) => ({ id: sc.id, kind: "scene", name: sc.name, hotkey: sceneHotkey(config, sc.id), layers: sc.layers.length }));
+}
+
+/* ------------------------------ sahne şablonları ------------------------------ */
+
+const box = (x, y, w, h) => ({ x, y, w, h });
+/** Şablon yerleşimleri (çıkışa göre 0…1; 16:9 çıkışta w = h kare değil 16:9 kutudur). */
+export const TEMPLATE_LAYOUTS = {
+  single: [box(0, 0, 1, 1)],
+  pip: [box(0, 0, 1, 1), null], // ikincisi pipBox("br", 0.3)
+  sbs: [box(0.01, 0.2575, 0.485, 0.485), box(0.505, 0.2575, 0.485, 0.485)],
+  triple: [box(0.012, 0.1725, 0.655, 0.655), box(0.677, 0.1725, 0.311, 0.311), box(0.677, 0.5165, 0.311, 0.311)],
 };
 
-/** Kutuyu göster / gizle; ilk değişiklikte "tüm sahneler" açık listeye çevrilir. */
-export function toggleMultiview(config, id) {
-  const show = config.multiview?.show || config.scenes.map((s) => s.id);
-  const next = show.includes(id) ? show.filter((x) => x !== id) : [...show, id];
-  return { ...config, multiview: { ...(config.multiview || {}), show: next } };
+/**
+ * Sahne şablonları. slots: kaç kaynak seçilir; ready: hazır ekran (kendi
+ * renk / metin / geri sayım kaynaklarını oluşturur).
+ */
+export const SCENE_TEMPLATES = [
+  { key: "empty", label: "Boş sahne", icon: "plus", slots: 0, hint: "Katmanları kendin ekle" },
+  { key: "single", label: "Tek kaynak", icon: "video", slots: 1, hint: "Bir kamera / görsel tam ekran" },
+  { key: "pip", label: "Resim içinde resim", icon: "layers", slots: 2, hint: "Büyük görüntü + köşede küçük kutu" },
+  { key: "sbs", label: "Yan yana", icon: "grid", slots: 2, hint: "İki görüntü eşit boyda" },
+  { key: "triple", label: "Üçlü", icon: "overview", slots: 3, hint: "Bir büyük + iki küçük görüntü" },
+  { key: "start", label: "Başlangıç ekranı", icon: "play", slots: 0, ready: true, hint: "“Maç birazdan başlıyor” + geri sayım", title: "MAÇ BİRAZDAN BAŞLIYOR", minutes: 10 },
+  { key: "break", label: "Devre arası", icon: "clock", slots: 0, ready: true, hint: "“Devre arası” + ikinci yarıya geri sayım", title: "DEVRE ARASI", minutes: 15 },
+  { key: "end", label: "Bitiş ekranı", icon: "flag", slots: 0, ready: true, hint: "“Maç sona erdi · İzlediğiniz için teşekkürler”", title: "MAÇ SONA ERDİ", subtitle: "İzlediğiniz için teşekkürler", minutes: 0 },
+];
+export const templateOf = (key) => SCENE_TEMPLATES.find((t) => t.key === key) || null;
+
+/** Şablon için varsayılan kaynaklar: önce kameralar, sonra diğer görseller (farklı olanlar). */
+export function templateSourceIds(config, slots) {
+  const order = [...config.sources].sort((a, b) => (a.kind === "camera" ? 0 : 1) - (b.kind === "camera" ? 0 : 1));
+  const ids = order.map((s) => s.id);
+  return Array.from({ length: slots }, (_, i) => ids[i] ?? ids[ids.length - 1] ?? null).filter(Boolean);
 }
-export const resetMultiview = (config) => ({ ...config, multiview: { ...(config.multiview || {}), show: null } });
+
+/**
+ * Şablondan sahne. opts: { sourceIds, name, title, subtitle, minutes }.
+ * Hazır ekranlar zemin (gradyan + başlık) ve geri sayım kaynağı ekler;
+ * geri sayım sahne YAYINA ALINDIĞINDA başlar (startOnAir).
+ */
+export function sceneFromTemplate(config, key, opts = {}) {
+  const r = buildFromTemplate(config, key, opts);
+  if (!r.scene || !templateOf(key)?.ready) return r;
+  const scene = { ...r.scene, template: key };
+  return { config: { ...r.config, scenes: r.config.scenes.map((s) => (s.id === scene.id ? scene : s)) }, scene };
+}
+
+/** Hazır ekran sahnesi (şablondan oluşturulmuş: start / break / end), yoksa null. */
+export const readySceneOf = (config, key) => config.scenes.find((s) => s.template === key) || null;
+
+function buildFromTemplate(config, key, opts) {
+  const t = templateOf(key);
+  if (!t) return { config, scene: null };
+  const name = String(opts.name || "").trim() || t.label;
+  if (t.key === "empty") return addScene(config, name);
+  if (t.ready) {
+    let c = config;
+    const title = String(opts.title ?? t.title).slice(0, 60);
+    const subtitle = String(opts.subtitle ?? t.subtitle ?? "").slice(0, 60);
+    const minutes = Math.max(0, Math.min(180, Number(opts.minutes ?? t.minutes) || 0));
+    const { config: c1, source: bg } = addSource(c, { ...sourceDefaults("color"), name: `${name} · zemin`, color: "#1a0633", color2: "#54009c", gradient: true, gradientAngle: 135, text: "", textColor: "#ffffff" });
+    const { config: c2, source: head } = addSource(c1, { ...sourceDefaults("text"), name: `${name} · başlık`, text: subtitle ? `${title}\n${subtitle}` : title, size: 84, outline: false, background: false });
+    c = c2;
+    const layers = [
+      normalizeLayer(makeLayer(bg.id, { fit: "stretch" }), "color"),
+      normalizeLayer(makeLayer(head.id, { fit: "stretch", x: 0.08, y: minutes ? 0.2 : 0.3, w: 0.84, h: 0.32 }), "text"),
+    ];
+    if (minutes) {
+      const { config: c3, source: clock } = addSource(c, { ...sourceDefaults("clock"), name: `${name} · geri sayım`, mode: "countdown", durationMs: minutes * 60_000, targetAt: null, startOnAir: true, size: 120, background: false });
+      c = c3;
+      layers.push(normalizeLayer(makeLayer(clock.id, { fit: "stretch", x: 0.3, y: 0.56, w: 0.4, h: 0.22 }), "clock"));
+    }
+    return addScene(c, name, layers);
+  }
+  const ids = (opts.sourceIds?.length ? opts.sourceIds : templateSourceIds(config, t.slots)).filter((id) => config.sources.some((s) => s.id === id)).slice(0, t.slots);
+  const kindOf = (id) => config.sources.find((s) => s.id === id)?.kind;
+  const boxes = TEMPLATE_LAYOUTS[t.key];
+  const layers = ids.map((id, i) => {
+    const b = t.key === "pip" && i === 1 ? pipBox("br", 0.3) : boxes[i] || boxes[0];
+    return normalizeLayer(makeLayer(id, { ...b, fit: t.key === "single" ? defaultFit(kindOf(id)) : "cover" }), kindOf(id));
+  });
+  return addScene(config, name, layers);
+}
+
+/**
+ * Sahne yayına alınırken: "yayına alınca başlar" geri sayımları şimdi başlatır
+ * (targetAt = now + süre). Değişen yoksa aynı nesne döner.
+ */
+export function startSceneCountdowns(config, sceneId, now = Date.now()) {
+  const scene = config.scenes.find((s) => s.id === sceneId);
+  if (!scene) return config;
+  const ids = new Set(scene.layers.map((l) => l.sourceId));
+  let changed = false;
+  const sources = config.sources.map((s) => {
+    if (!ids.has(s.id) || s.kind !== "clock" || s.mode !== "countdown" || !s.startOnAir) return s;
+    changed = true;
+    return { ...s, targetAt: now + (Number(s.durationMs) || 0) };
+  });
+  return changed ? { ...config, sources } : config;
+}
 
 /* ------------------------------ yardımcılar ------------------------------ */
 

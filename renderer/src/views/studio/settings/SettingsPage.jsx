@@ -1,0 +1,300 @@
+// Yayın Stüdyosu · AYARLAR sayfası (dişli simgesi): stüdyonun üstünde tam sayfa.
+//
+//   Yayın · Kayıt (kayıt kalitesi + 10 dk boyut tahmini) · Tekrar · Geçiş · LED ·
+//   Görünüm · Kısayollar · Bildirimler · Gelişmiş
+//
+// Ayarlar ilgili kod yollarını besler: kodlama (prefs.encoding), geçiş
+// (prefs.transition / transitionMs), çalışma alanı, LED tercihleri ve
+// studio.settings.v1 (kodlayıcı, ses bit hızı, kayıt kalitesi, kısayollar, uyarılar).
+import React, { memo, useEffect, useState } from "react";
+import { Field, Icon, Kbd } from "../../../components/ui";
+import { BITRATE_PRESETS, FPS_CHOICES, RESOLUTION_CHOICES, encodingPreset, recommendedBitrate } from "../../../lib/studio/broadcast";
+import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../../lib/studio/transitions";
+import { WORKSPACES, FIXED_SHORTCUTS } from "../../../lib/studio/scenesWorkspace";
+import { AUDIO_KBPS_CHOICES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, RECORD_QUALITIES, RESERVED_KEYS, bindHotkey, keyText, recordEstimate } from "./settings";
+
+export const SETTINGS_SECTIONS = [
+  { key: "yayin", label: "Yayın", icon: "broadcast" },
+  { key: "kayit", label: "Kayıt", icon: "download" },
+  { key: "tekrar", label: "Tekrar", icon: "repeat" },
+  { key: "gecis", label: "Geçiş", icon: "swap" },
+  { key: "led", label: "LED ekran", icon: "overview" },
+  { key: "gorunum", label: "Görünüm", icon: "grid" },
+  { key: "kisayol", label: "Kısayollar", icon: "command" },
+  { key: "bildirim", label: "Bildirimler", icon: "bell" },
+  { key: "gelismis", label: "Gelişmiş", icon: "sliders" },
+];
+
+function Choice({ on, title, text, onClick, disabled }) {
+  return (
+    <button type="button" className={`st-choice ${on ? "is-on" : ""}`} onClick={onClick} disabled={disabled} aria-pressed={on}>
+      <i className="st-choice__radio" />
+      <span><strong>{title}</strong>{text && <small>{text}</small>}</span>
+    </button>
+  );
+}
+
+function Toggle({ checked, onChange, title, text }) {
+  return (
+    <label className="st-switchrow">
+      <span><strong>{title}</strong>{text && <small>{text}</small>}</span>
+      <input type="checkbox" className="st-switch" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    </label>
+  );
+}
+
+function Section({ title, sub, children }) {
+  return (
+    <section className="st-set__card">
+      <header><h3>{title}</h3>{sub && <p>{sub}</p>}</header>
+      <div className="st-set__card-body">{children}</div>
+    </section>
+  );
+}
+
+/** Kısayol satırı: "Değiştir" → sonraki tuş. */
+function HotkeyRow({ action, keys, onBind, onReset }) {
+  const [listen, setListen] = useState(false);
+  useEffect(() => {
+    if (!listen) return undefined;
+    const onKey = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") { setListen(false); return; }
+      if (["Shift", "Meta", "Control", "Alt"].includes(e.key)) return;
+      onBind(e.key);
+      setListen(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [listen, onBind]);
+  return (
+    <div className={`st-hk ${listen ? "is-listen" : ""}`}>
+      <span className="st-hk__label">{action.label}</span>
+      <span className="st-hk__keys">{listen ? <em>Bir tuşa bas… (Esc: vazgeç)</em> : keys.length ? keys.map((k) => <Kbd key={k}>{keyText(k)}</Kbd>) : <em>atanmadı</em>}</span>
+      <button type="button" className="btn btn--xs" onClick={() => setListen((v) => !v)}>{listen ? "Vazgeç" : "Değiştir"}</button>
+      <button type="button" className="icon-btn icon-btn--xs" onClick={onReset} title="Varsayılana dön"><Icon name="undo" size={12} /></button>
+    </div>
+  );
+}
+
+function SettingsPage({ section, onSection, settings, set, onReset, prefs, setPref, led, scenes, engine, onClose, toast }) {
+  const enc = prefs.encoding;
+  const preset = encodingPreset(enc);
+  const est = recordEstimate(settings.record, { streamVideoKbps: preset.videoBitrateKbps, audioKbps: settings.stream.audioKbps });
+  const tKind = transitionKind(prefs.transition);
+  const tMs = transitionMs(tKind.key, prefs.transitionMs);
+  const recQualitySupported = Boolean(engine?.info?.features?.localRecordQuality || engine?.info?.localRecordQuality);
+  const setEnc = (patch) => setPref("encoding", { ...enc, ...patch });
+  const chooseDir = async () => {
+    try {
+      const res = await window.elitlig?.studio?.chooseRecordDir?.();
+      if (res?.path) set("record", { dir: res.path });
+    } catch { /* yoksay */ }
+  };
+
+  let body;
+  if (section === "yayin") {
+    body = (
+      <>
+        <Section title="Görüntü" sub="Yayın sekmesindeki kalite ayarıyla aynıdır.">
+          <Field label="Çözünürlük">
+            <div className="st-seg">{RESOLUTION_CHOICES.map((r) => <button key={r.key} type="button" className={enc.resolution === r.key ? "is-on" : ""} onClick={() => setEnc({ resolution: r.key, bitrateKbps: recommendedBitrate(r.key, enc.fps) })}>{r.label}</button>)}</div>
+          </Field>
+          <Field label="Kare hızı">
+            <div className="st-seg">{FPS_CHOICES.map((f) => <button key={f} type="button" className={Number(enc.fps) === f ? "is-on" : ""} onClick={() => setEnc({ fps: f, bitrateKbps: recommendedBitrate(enc.resolution, f) })}>{f} fps</button>)}</div>
+          </Field>
+          <Field label={`Görüntü bit hızı · ${enc.bitrateKbps} kbps`}>
+            <div className="st-chips">{BITRATE_PRESETS.map((b) => <button key={b.kbps} type="button" className={`st-chip ${Number(enc.bitrateKbps) === b.kbps ? "is-on" : ""}`} onClick={() => setEnc({ bitrateKbps: b.kbps })} title={b.hint}>{b.label}</button>)}</div>
+          </Field>
+        </Section>
+        <Section title="Kodlayıcı" sub="Uygulama sürümü desteklemiyorsa otomatik seçim kullanılır.">
+          <div className="st-choices">{ENCODER_PREFS.map((e) => <Choice key={e.key} on={settings.stream.encoder === e.key} title={e.label} text={e.hint} onClick={() => set("stream", { encoder: e.key })} />)}</div>
+          <div className="st-row st-row--wrap">
+            <Field label="Anahtar kare aralığı">
+              <div className="st-seg">{KEYFRAME_CHOICES.map((k) => <button key={k} type="button" className={settings.stream.keyframeSec === k ? "is-on" : ""} onClick={() => set("stream", { keyframeSec: k })}>{k} sn</button>)}</div>
+            </Field>
+            <Field label="Ses bit hızı">
+              <div className="st-seg">{AUDIO_KBPS_CHOICES.map((k) => <button key={k} type="button" className={settings.stream.audioKbps === k ? "is-on" : ""} onClick={() => set("stream", { audioKbps: k })}>{k}</button>)}</div>
+            </Field>
+          </div>
+          <p className="st-hint">YouTube 2 sn anahtar kare önerir. Ses 128 kbps çoğu yayın için yeterli.</p>
+        </Section>
+      </>
+    );
+  } else if (section === "kayit") {
+    body = (
+      <>
+        <Section title="Maçı bilgisayara kaydet" sub="Yayınla birlikte tam maç kaydı (MP4).">
+          <Toggle checked={settings.record.enabled} onChange={(v) => set("record", { enabled: v })} title="Yayında / provada yerel kayıt varsayılan olarak açık" text="Yayın sekmesindeki “Maçı bilgisayara kaydet” ile aynı" />
+          <div className="st-row">
+            <span className="st-mono st-set__path">{settings.record.dir || "Varsayılan klasör (Filmler / ElitLig)"}</span>
+            <button type="button" className="btn btn--sm" onClick={chooseDir}><Icon name="folder" size={13} /> Klasör</button>
+            {settings.record.dir && <button type="button" className="btn btn--sm btn--ghost" onClick={() => set("record", { dir: null })}>Varsayılan</button>}
+          </div>
+        </Section>
+        <Section title="Kayıt kalitesi" sub="Kayıt kalitesini yayından ayrı seç; tahmini dosya boyutu aşağıda.">
+          <div className="st-choices is-grid">
+            {RECORD_QUALITIES.map((q) => {
+              const e = recordEstimate({ ...settings.record, quality: q.key }, { streamVideoKbps: preset.videoBitrateKbps, audioKbps: settings.stream.audioKbps });
+              return <Choice key={q.key} on={settings.record.quality === q.key} title={q.label} text={`${q.hint} · ${e.text}`} onClick={() => set("record", { quality: q.key })} />;
+            })}
+          </div>
+          {settings.record.quality === "custom" && (
+            <div className="st-row st-row--wrap">
+              <Field label={`Görüntü bit hızı · ${settings.record.customKbps} kbps`}>
+                <input type="range" min={2000} max={30000} step={500} value={settings.record.customKbps} onChange={(e) => set("record", { customKbps: Number(e.target.value) })} />
+              </Field>
+              <Field label="Çözünürlük">
+                <div className="st-seg">{[720, 1080].map((h) => <button key={h} type="button" className={settings.record.customHeight === h ? "is-on" : ""} onClick={() => set("record", { customHeight: h })}>{h}p</button>)}</div>
+              </Field>
+            </div>
+          )}
+          <div className="st-estimate">
+            <Icon name="download" size={18} />
+            <span><strong>{est.text}</strong><small>{est.videoKbps} kbps görüntü + {est.audioKbps} kbps ses · saatte {est.perHourText.replace(" / 60 dk", "")}</small></span>
+          </div>
+          {!recQualitySupported && settings.record.quality !== "stream" && (
+            <p className="st-note is-warn"><Icon name="info" size={13} /> Bu uygulama sürümü ayrı kayıt kalitesini desteklemiyorsa kayıt yayın kalitesinde yapılır ({preset.videoBitrateKbps} kbps).</p>
+          )}
+        </Section>
+      </>
+    );
+  } else if (section === "tekrar") {
+    body = (
+      <Section title="Tekrar varsayılanları" sub="GOL ve ÖNEMLİ AN tekrarlarına uygulanır.">
+        <Field label={`Golden önce kaydedilen süre · ${settings.replay.seconds} sn`} hint="Gol / önemli ana basıldığı andan geriye doğru yazılan süre.">
+          <input type="range" min={5} max={30} step={1} value={settings.replay.seconds} onChange={(e) => set("replay", { seconds: Number(e.target.value) })} />
+        </Field>
+        <Field label={`Oynatma hızı · ${String(prefs.replayRate).replace(".", ",")}×`}>
+          <div className="st-seg">{[0.25, 0.5, 0.75, 1].map((r) => <button key={r} type="button" className={Number(prefs.replayRate) === r ? "is-on" : ""} onClick={() => setPref("replayRate", r)}>{String(r).replace(".", ",")}×</button>)}</div>
+        </Field>
+        <Toggle checked={prefs.angles?.program !== false} onChange={(v) => setPref("angles", (a) => ({ ...a, program: v }))} title="Program açısını kaydet" text="Yayına giden görüntü" />
+        <Toggle checked={prefs.angles?.all !== false} onChange={(v) => setPref("angles", (a) => ({ ...a, all: v }))} title="Tüm kameraları ayrı açı olarak kaydet" text="Her kamera / ekran kaynağı kendi tekrar açısı olur" />
+        <Toggle checked={Boolean(prefs.replayAudio)} onChange={(v) => setPref("replayAudio", v)} title="Tekrarın sesi yayına gitsin" />
+      </Section>
+    );
+  } else if (section === "gecis") {
+    body = (
+      <Section title="Geçiş" sub="Önizlemeden yayına alırken (Geçiş düğmesi, Boşluk) kullanılan varsayılan.">
+        <div className="st-choices is-grid">{TRANSITION_KINDS.map((t) => <Choice key={t.key} on={tKind.key === t.key} title={t.label} text={t.ms ? `${t.ms} ms varsayılan` : "anında"} onClick={() => setPref("transition", t.key)} />)}</div>
+        {tKind.key !== "cut" && (
+          <Field label={`Süre · ${tMs} ms`}>
+            <input type="range" min={tKind.min} max={tKind.max} step={50} value={tMs} onChange={(e) => setPref("transitionMs", (m) => ({ ...(m || {}), [tKind.key]: Number(e.target.value) }))} />
+          </Field>
+        )}
+        <Toggle checked={prefs.studioMode} onChange={(v) => setPref("studioMode", v)} title="Önizleme (stüdyo modu)" text="Kapalıyken sahneye tek tık doğrudan yayına alır" />
+      </Section>
+    );
+  } else if (section === "led") {
+    body = (
+      <Section title="LED ekran varsayılanları" sub="LED ekran sekmesiyle aynı ayarlar.">
+        <Field label="Ekran">
+          <select value={led.prefs.displayId ?? ""} onChange={(e) => led.setPref({ displayId: e.target.value === "" ? null : (Number.isNaN(Number(e.target.value)) ? e.target.value : Number(e.target.value)) })}>
+            {!led.displays.length && <option value="">Ekran bulunamadı</option>}
+            {led.displays.map((d) => <option key={d.id} value={d.id}>{d.label || `Ekran ${d.id}`}{d.primary ? " (ana ekran)" : ""}</option>)}
+          </select>
+        </Field>
+        <div className="st-choices">
+          <Choice on={!led.prefs.web && led.prefs.route === "program"} title="Yayın (Program)" text="Varsayılan: LED yayındaki sahneyi izler" onClick={() => { led.setPref({ web: false }); led.setRoute({ route: "program" }); }} />
+          <Choice on={!led.prefs.web && led.prefs.route === "preview"} title="Önizleme" onClick={() => { led.setPref({ web: false }); led.setRoute({ route: "preview" }); }} />
+          <Choice on={!led.prefs.web && led.prefs.route === "scene"} title="Belirli sahne" text={led.prefs.route === "scene" ? scenes.find((s) => s.id === led.prefs.sceneId)?.name : "Sahne kutusundaki “LED'e ver” ile seçilir"} onClick={() => { led.setPref({ web: false }); led.setRoute({ route: "scene", sceneId: led.prefs.sceneId || scenes[0]?.id }); }} />
+          <Choice on={!led.prefs.web && led.prefs.route === "off"} title="Kapalı" onClick={() => { led.setPref({ web: false }); led.setRoute({ route: "off" }); }} />
+          <Choice on={led.prefs.web} title="Sitenin LED sayfası" text="elitlig.com/led/<maç>" onClick={() => led.setPref({ web: true })} />
+        </div>
+      </Section>
+    );
+  } else if (section === "gorunum") {
+    body = (
+      <>
+        <Section title="Çalışma alanı" sub="Ekranların yerleşimi (üst çubuktan da değişir).">
+          <div className="st-wsgrid">
+            {WORKSPACES.map((w) => (
+              <button key={w.key} type="button" className={`st-wscard ${prefs.workspace === w.key ? "is-on" : ""}`} onClick={() => setPref("workspace", w.key)}>
+                <WorkspacePic ws={w} /><strong>{w.label}</strong><small>{w.hint}</small>
+              </button>
+            ))}
+          </div>
+        </Section>
+        <Section title="Arayüz">
+          <Field label="Arayüz ölçeği">
+            <div className="st-seg">{[90, 100, 110, 125].map((v) => <button key={v} type="button" className={settings.view.scale === v ? "is-on" : ""} onClick={() => set("view", { scale: v })}>%{v}</button>)}</div>
+          </Field>
+          <Toggle checked={settings.view.hints} onChange={(v) => set("view", { hints: v })} title="Kısayol rozetlerini göster" text="Düğmelerdeki tuş ipuçları (B, R, V …)" />
+          <Toggle checked={settings.view.tooltips} onChange={(v) => set("view", { tooltips: v })} title="Açıklama balonlarını göster" />
+          <Toggle checked={Boolean(prefs.previewGraphics)} onChange={(v) => setPref("previewGraphics", v)} title="Önizlemede grafikleri göster" text="Skorbord ve bantlar önizlemede soluk görünür" />
+        </Section>
+      </>
+    );
+  } else if (section === "kisayol") {
+    body = (
+      <Section title="Klavye kısayolları" sub="Bir eylemin tuşunu değiştirmek için “Değiştir”e bas, sonra tuşa bas. 1–9 sahne tuşları sabittir.">
+        <div className="st-hks">
+          {HOTKEY_ACTIONS.map((a) => (
+            <HotkeyRow key={a.key} action={a} keys={settings.hotkeys[a.key] || []}
+              onBind={(k) => { if (RESERVED_KEYS.has(k.length === 1 ? k.toLowerCase() : k)) { toast?.(`“${keyText(k)}” tuşu ayrılmış (sahne / gol tuşları).`, { tone: "warn" }); return; } set("hotkeys", bindHotkey(settings.hotkeys, a.key, k)); }}
+              onReset={() => set("hotkeys", a.default.reduce((h, k, i) => bindHotkey(h, a.key, k, { replace: i === 0 }), settings.hotkeys))} />
+          ))}
+        </div>
+        <dl className="st-keys st-keys--fixed">{FIXED_SHORTCUTS.map(([k, v]) => <React.Fragment key={k}><dt><Kbd>{k}</Kbd></dt><dd>{v}</dd></React.Fragment>)}</dl>
+      </Section>
+    );
+  } else if (section === "bildirim") {
+    body = (
+      <Section title="Uyarılar" sub="Yalnız operatör ekranında görünür; yayına gitmez.">
+        <Toggle checked={settings.notify.micOpen} onChange={(v) => set("notify", { micOpen: v })} title="VAR sırasında mikrofon açık uyarısı" text="Kırmızı yanıp sönen çerçeve ve “MİKROFON AÇIK”" />
+        <Toggle checked={settings.notify.lowBitrate} onChange={(v) => set("notify", { lowBitrate: v })} title="Düşük bit hızı uyarısı" text="Bağlantı hedefin %60'ının altına düşünce" />
+        <Toggle checked={settings.notify.silence} onChange={(v) => set("notify", { silence: v })} title="Sessiz yayın uyarısı" text={`Yayındayken mikrofon ${settings.notify.silenceSec} sn sessiz kalırsa`} />
+        {settings.notify.silence && (
+          <Field label={`Sessizlik süresi · ${settings.notify.silenceSec} sn`}>
+            <input type="range" min={10} max={120} step={5} value={settings.notify.silenceSec} onChange={(e) => set("notify", { silenceSec: Number(e.target.value) })} />
+          </Field>
+        )}
+      </Section>
+    );
+  } else {
+    body = (
+      <>
+        <Section title="Tanılama" sub="Yayın kopmaları ve kodlayıcı sorunları için günlük dosyaları.">
+          <button type="button" className="btn btn--sm" onClick={() => window.elitlig?.studio?.revealDiagnostics?.()} disabled={!window.elitlig?.studio?.revealDiagnostics}><Icon name="folder" size={13} /> Tanılama günlüğünü göster</button>
+          {engine?.info?.ffmpeg && <p className="st-hint">ffmpeg {engine.info.ffmpeg.version || "?"} · {Object.entries(engine.info.ffmpeg.encoders || {}).filter(([, v]) => v).map(([k]) => k).join(", ") || "kodlayıcı yok"}</p>}
+        </Section>
+        <Section title="Sıfırla" sub="Kodlayıcı, kayıt kalitesi, kısayollar, uyarılar ve görünüm ayarları varsayılana döner. Sahneler ve kaynaklar silinmez.">
+          <button type="button" className="btn btn--sm btn--danger" onClick={onReset}><Icon name="refresh" size={13} /> Stüdyo ayarlarını sıfırla</button>
+        </Section>
+      </>
+    );
+  }
+
+  return (
+    <div className="st-set" role="dialog" aria-label="Stüdyo ayarları">
+      <nav className="st-set__nav">
+        <header><Icon name="sliders" size={16} /><strong>Ayarlar</strong></header>
+        {SETTINGS_SECTIONS.map((s) => (
+          <button key={s.key} type="button" className={section === s.key ? "is-on" : ""} onClick={() => onSection(s.key)}><Icon name={s.icon} size={14} /> {s.label}</button>
+        ))}
+      </nav>
+      <div className="st-set__main">
+        <header className="st-set__head">
+          <h2>{SETTINGS_SECTIONS.find((s) => s.key === section)?.label}</h2>
+          <span className="st-top__spacer" />
+          <button type="button" className="btn btn--primary btn--sm" onClick={onClose}><Icon name="check" size={13} /> Kapat</button>
+        </header>
+        <div className="st-set__body">{body}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Çalışma alanı küçük çizimi. */
+export function WorkspacePic({ ws }) {
+  return (
+    <span className={`st-wspic is-${ws.key}`} aria-hidden="true">
+      {ws.key === "program" ? <><b className="is-pgm" /><span><b className="is-pvw" /><i /><i /><i /></span></>
+        : ws.grid ? <><span className={`is-g${ws.grid}`}>{Array.from({ length: ws.grid * ws.grid }, (_, i) => <i key={i} />)}</span><b className="is-pgm" /></>
+          : <><span className="is-row"><b className="is-pvw" /><b className="is-pgm" /></span><span className="is-strip"><i /><i /><i /><i /></span></>}
+    </span>
+  );
+}
+
+export default memo(SettingsPage);

@@ -31,6 +31,7 @@ const ERR = {
   NO_ENCODER: "Bu bilgisayarda H.264 video kodlayıcı açılamadı.",
   NOT_FOUND: "Öne çıkanlar oturumu bulunamadı (iptal edilmiş ya da bitmiş olabilir).",
   EMPTY: "Öne çıkanlar videosu için görüntü gelmedi.",
+  NO_HEADER: "Öne çıkanlar kaydedicisinin başlığı gelmedi (parçalar kayıt başlamadan önceki bir kaydediciden). Yeniden deneyin.",
   BUSY: "Aynı anda en çok iki öne çıkanlar videosu oluşturulabilir.",
   FAILED: "Öne çıkanlar videosu oluşturulamadı.",
 };
@@ -52,6 +53,10 @@ function normalizeRenderOptions(o = {}) {
     mimeType: String(o.mimeType || ""),
   };
 }
+
+const EBML = Buffer.from([0x1a, 0x45, 0xdf, 0xa3]);
+/** Parçadaki EBML (Matroska / WebM) başlığının konumu; yoksa -1. */
+const headerOffset = (buf) => buf.indexOf(EBML);
 
 const toBuffer = (data) => (Buffer.isBuffer(data) ? data : ArrayBuffer.isView(data) ? Buffer.from(data.buffer, data.byteOffset, data.byteLength) : data instanceof ArrayBuffer ? Buffer.from(data) : null);
 
@@ -89,7 +94,10 @@ function createRenderer({
 
   async function start(raw = {}) {
     if (sessions.size >= MAX_SESSIONS) return error("BUSY");
-    const info = await getFfmpeg();
+    let info = await getFfmpeg();
+    // İlk yoklama başarısızsa (ilk açılışta ffmpeg'in ilk çalışması / kodlayıcı denemesi
+    // zaman aşımına uğrayabilir; index.js başarısız yoklamayı önbelleğe almaz) bir kez daha yokla.
+    if (!info?.available || !info.path) info = await getFfmpeg();
     if (!info?.available || !info.path) return error("NO_FFMPEG", info?.error || ERR.NO_FFMPEG);
     const encoder = ff.pickEncoder(info.encoders);
     if (!encoder) return error("NO_ENCODER");
@@ -104,7 +112,7 @@ function createRenderer({
     const s = {
       id, opts, name, out: path.join(highlightsDir, name), rawFile: path.join(tempRoot, `render-${id}.${inputFormat === "mp4" ? "mp4" : "webm"}`),
       inputFormat, encoder, encoders: { ...info.encoders }, ffmpegPath: info.path,
-      waitingHeader: inputFormat === "matroska", bytes: 0, live: null, liveBroken: false, finishing: null, cancelled: false,
+      waitingHeader: inputFormat === "matroska", bytes: 0, dropped: 0, live: null, liveBroken: false, finishing: null, cancelled: false,
     };
     s.rawStream = fs.createWriteStream(s.rawFile);
     s.rawStream.on("error", (e) => { s.rawError = e; });
@@ -122,10 +130,15 @@ function createRenderer({
   function pushChunk(renderId, data) {
     const s = sessions.get(String(renderId));
     if (!s || s.finishing || s.cancelled) return false;
-    const buf = toBuffer(data);
+    let buf = toBuffer(data);
     if (!buf || !buf.length) return false;
     if (s.waitingHeader) {
-      if (!isContainerHeader(buf)) return false;
+      if (!isContainerHeader(buf)) {
+        // Başlık parçanın içinde olabilir (önünde önceki kaydedicinin artığı): oradan kes.
+        const at = headerOffset(buf);
+        if (at < 0) { s.dropped += 1; return false; }
+        buf = buf.subarray(at);
+      }
       s.waitingHeader = false;
     }
     s.bytes += buf.length;
@@ -159,7 +172,18 @@ function createRenderer({
 
   async function finalize(s) {
     await closeRaw(s);
-    if (!s.bytes) return error("EMPTY");
+    if (!s.bytes) {
+      if (s.dropped) log("studio: öne çıkan başlıksız parçalar", { id: s.id, dropped: s.dropped });
+      // Hiç veri gelmedi: stdin'i bekleyen gerçek zamanlı kodlayıcı kapatılır (yoksa süreç asılı kalır).
+      if (s.live?.child) {
+        try { s.live.child.stdin?.end(); } catch { /* yoksay */ }
+        kill(s.live.child);
+        await s.live.exited;
+      }
+      // Kod "EMPTY" kalır (arayüz bu kodda sıradaki MIME türüyle yeniden dener); neden ayrıca.
+      if (s.dropped) return { ok: false, error: { code: "EMPTY", reason: "NO_HEADER", message: ERR.NO_HEADER, droppedChunks: s.dropped } };
+      return error("EMPTY");
+    }
     let ok = false;
     if (s.live && !s.liveBroken) {
       try { s.live.child.stdin.end(); } catch { /* yoksay */ }
@@ -294,4 +318,4 @@ function pruneHighlights(highlightsDir, { now = Date.now(), maxAgeMs = 7 * 24 * 
   return removed;
 }
 
-module.exports = { createRenderer, normalizeRenderOptions, describeHighlight, readHighlightMeta, pruneHighlights, ERR };
+module.exports = { createRenderer, headerOffset, normalizeRenderOptions, describeHighlight, readHighlightMeta, pruneHighlights, ERR };

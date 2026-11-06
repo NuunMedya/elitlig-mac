@@ -19,7 +19,8 @@
 //           studio:updateReplay, studio:deleteReplay, studio:revealReplay,
 //           studio:render:start, studio:render:finish, studio:render:cancel,
 //           studio:uploadHighlight, studio:deleteHighlight,
-//           studio:diagnostics, studio:revealDiagnostics,
+//           studio:diagnostics (→ { …, uploads: Yükleme günlüğü }), studio:clearUploadLog,
+//           studio:revealDiagnostics,
 //           studio:recordDir, studio:chooseRecordDir, studio:revealLocal,
 //           studio:interview:start, studio:interview:stop, studio:interview:status,
 //           studio:interview:list, studio:interview:delete, studio:interview:upload,
@@ -48,7 +49,8 @@ const { createClipStore, STUDIO_SCHEME } = require("./clips");
 const { createAngles } = require("./angles");
 const { createReplayStore } = require("./replays");
 const { createRenderer, pruneHighlights } = require("./render");
-const { uploadHighlight, deleteHighlight } = require("./highlights");
+const { uploadHighlight, deleteHighlight, putFile } = require("./highlights");
+const { createUploadLog, withUploadLog } = require("./uploadlog");
 const { serveStudio, REPLAY_ID } = require("./scheme");
 const { createDiagnostics } = require("./diag");
 const { remuxParts, defaultRecordDir, createSettings } = require("./localrecord");
@@ -93,7 +95,7 @@ const MEDIA_STATES = new Set(["granted", "denied", "not-determined", "restricted
 function registerStudio({
   ipcMain, api, broadcast, app, electronSession, systemPreferences, desktopCapturer,
   powerSaveBlocker, protocol, shell, isOwnUrl, isSignedIn = () => true, log = () => {},
-  dialog = null, screen = null, BrowserWindow = null, loadRenderer = null, preloadPath = null,
+  dialog = null, screen = null, BrowserWindow = null, loadRenderer = null, preloadPath = null, powerMonitor = null,
   siteOrigin = "https://elitlig.com", apiOrigin = null,
 }) {
   const appRoot = path.join(__dirname, "..", "..");
@@ -105,6 +107,27 @@ function registerStudio({
   const logsDir = path.join(app.getPath("userData"), "logs");
   const settings = createSettings(path.join(app.getPath("userData"), "studio-settings.json"));
   const diagnostics = createDiagnostics({ dir: logsDir, header: { app: app.getVersion?.(), platform: process.platform, arch: process.arch } });
+  // Yükleme günlüğü: her yükleme denemesi (uç, durum, sunucu hata kodu); userData/logs/uploads.json.
+  // Açık bir tanılama günlüğü varsa oraya da satır düşer.
+  const uploadLog = createUploadLog({
+    file: path.join(logsDir, "uploads.json"),
+    onRecord: (e) => {
+      if (diagnostics.logPath()) diagnostics.write("yükleme", `${e.kind || "?"} ${e.method || ""} ${e.endpoint || ""} → ${e.ok ? "tamam" : "failed"}${e.status ? ` (HTTP ${e.status})` : ""}${e.code ? ` ${e.code}` : ""}`, e.ok ? undefined : { message: e.message });
+    },
+  });
+  const uploadApi = withUploadLog(api, uploadLog);
+  const loggedPut = withUploadLog.put(putFile, uploadLog);
+  /** Sunucuya hiç gitmeden düşen deneme (maç / olay yok, dosya yok, oturum kapalı …) da günlüğe. */
+  const trackUpload = async (kind, endpoint, payload, fn) => {
+    const before = uploadLog.size();
+    let res;
+    try { res = await fn(); } catch (e) { res = { ok: false, error: { code: "INTERNAL", message: e.message } }; }
+    if (uploadLog.size() === before && !res?.ok) {
+      uploadLog.record({ kind, method: "IPC", endpoint, ok: false, local: true, code: res?.error?.code || null, message: res?.error?.message || null, matchId: payload?.matchId, eventId: payload?.eventId });
+    }
+    return res;
+  };
+  const signedOut = () => ({ ok: false, error: { code: "SIGNED_OUT", message: "Oturum açık değil." } });
 
   // Önceki çalıştırmadan kalan parça klasörleri (çökme / zorla kapatma).
   try { fs.rmSync(tempRoot, { recursive: true, force: true }); } catch { /* yoksay */ }
@@ -256,6 +279,11 @@ function registerStudio({
       ffmpeg: { available: info.available, version: info.version, path: info.path, source: info.source, encoders: { ...info.encoders }, encoder: info.encoder || null, error: info.error || null },
       platform: process.platform,
       arch: process.arch,
+      // Yerel kaydı yayından farklı kalitede (ikinci kodlayıcı) yazabilir mi: yalnız donanım kodlayıcıda.
+      localQuality: { supported: Boolean(info.available && ff.isHardwareEncoder(info.encoder)), encoder: info.encoder || null },
+      // Arayüzün özellik denetimi: yerel kaydın ayrı kalitesi (localRecord.videoBitrateKbps / height / fps),
+      // kodlayıcı tercihi (encoderPreference), anahtar kare aralığı (keyframeSec), yükleme günlüğü.
+      features: { localRecordQuality: true, localRecordQualityHardware: Boolean(info.available && ff.isHardwareEncoder(info.encoder)), encoderPreference: true, keyframeSec: true, audioBitrate: true, uploadLog: true },
     };
   });
   ipcMain.handle("studio:mediaAccess", () => ({ camera: mediaStatus("camera"), microphone: mediaStatus("microphone"), screen: mediaStatus("screen") }));
@@ -282,7 +310,15 @@ function registerStudio({
     const o = { ...(opts || {}) };
     if (o.localRecord?.enabled) {
       const dir = o.localRecord.dir ? String(o.localRecord.dir) : recordDir();
-      o.localRecord = { enabled: true, dir, name: o.localRecord.name ?? o.matchLabel ?? o.matchName ?? o.matchId ?? null };
+      const lr = o.localRecord;
+      // Ayrı kalite (isteğe bağlı): { videoBitrateKbps?, height?, fps?, allowSoftware? } — engine.normalizeLocal.
+      o.localRecord = {
+        enabled: true, dir, name: lr.name ?? o.matchLabel ?? o.matchName ?? o.matchId ?? null,
+        ...(lr.videoBitrateKbps != null ? { videoBitrateKbps: lr.videoBitrateKbps } : {}),
+        ...(lr.height != null ? { height: lr.height } : {}),
+        ...(lr.fps != null ? { fps: lr.fps } : {}),
+        ...(lr.allowSoftware === true ? { allowSoftware: true } : {}),
+      };
     } else {
       delete o.localRecord;
     }
@@ -384,12 +420,14 @@ function registerStudio({
   });
   ipcMain.handle("studio:deleteClip", (_e, name) => (REPLAY_ID.test(String(name || "")) ? replays.remove(name) : clips.remove(name)));
   ipcMain.handle("studio:uploadClip", async (_e, payload = {}) => {
-    if (!isSignedIn()) return { ok: false, error: { message: "Oturum açık değil." } };
     const p = payload || {};
-    await ensureFfmpegPath();
-    // { matchId, eventId, replayId, angle = "program" } ya da eski { matchId, eventId, name }.
-    if (p.replayId || REPLAY_ID.test(String(p.name || ""))) return replays.upload(api, { ...p, replayId: p.replayId || p.name });
-    return clips.upload(api, p);
+    return trackUpload("clip", "studio:uploadClip", p, async () => {
+      if (!isSignedIn()) return signedOut();
+      await ensureFfmpegPath();
+      // { matchId, eventId, replayId, angle = "program" } ya da eski { matchId, eventId, name }.
+      if (p.replayId || REPLAY_ID.test(String(p.name || ""))) return replays.upload(uploadApi, { ...p, replayId: p.replayId || p.name });
+      return clips.upload(uploadApi, p);
+    });
   });
   ipcMain.handle("studio:revealClip", (_e, name) => {
     const file = REPLAY_ID.test(String(name || "")) ? replayAsClip(replays.get(name))?.path : clips.resolve(name);
@@ -400,9 +438,16 @@ function registerStudio({
 
   /* ------------------------------- öne çıkanlar ------------------------------- */
 
+  // Özet oluşturma hataları da günlüğe (kind "render"): "ilk denemede hata" nedeni görülsün.
+  const logRender = (step, res, extra = {}) => {
+    if (res?.ok) return;
+    uploadLog.record({ kind: "render", method: "IPC", endpoint: `studio:render:${step}`, ok: false, local: true, code: res?.error?.code || null, message: res?.error?.message || null, ...extra });
+  };
   ipcMain.handle("studio:render:start", async (event, opts = {}) => {
-    const res = await renderer.start(opts || {});
+    let res;
+    try { res = await renderer.start(opts || {}); } catch (e) { res = { ok: false, error: { code: "FAILED", message: e.message } }; }
     if (res.ok) { renderOwners.set(res.renderId, event.sender); applyOwners(); }
+    logRender("start", res);
     return res;
   });
   ipcMain.on("studio:renderChunk", (event, payload) => {
@@ -413,28 +458,34 @@ function registerStudio({
   });
   const endRender = (id) => { renderOwners.delete(String(id)); applyOwners(); };
   ipcMain.handle("studio:render:finish", async (_e, id) => {
-    try { return await renderer.finish(id); } finally { endRender(id); }
+    try {
+      const res = await renderer.finish(id);
+      logRender("finish", res);
+      return res;
+    } finally { endRender(id); }
   });
   ipcMain.handle("studio:render:cancel", (_e, id) => {
     renderer.cancel(id);
     endRender(id);
     return true;
   });
-  ipcMain.handle("studio:uploadHighlight", async (_e, payload = {}) => {
-    if (!isSignedIn()) return { ok: false, error: { message: "Oturum açık değil." } };
-    return uploadHighlight(api, { ...(payload || {}), highlightsDir }, { emitProgress: (p) => broadcast("studio:uploadProgress", p) });
-  });
+  ipcMain.handle("studio:uploadHighlight", async (_e, payload = {}) => trackUpload("highlight", "studio:uploadHighlight", payload, async () => {
+    if (!isSignedIn()) return signedOut();
+    return uploadHighlight(uploadApi, { ...(payload || {}), highlightsDir }, { putImpl: loggedPut, emitProgress: (p) => broadcast("studio:uploadProgress", p) });
+  }));
   ipcMain.handle("studio:deleteHighlight", async (_e, payload = {}) => {
-    if (!isSignedIn()) return { ok: false, error: { message: "Oturum açık değil." } };
-    return deleteHighlight(api, payload || {});
+    if (!isSignedIn()) return signedOut();
+    return deleteHighlight(uploadApi, payload || {});
   });
 
   /* --------------------------- tanılama ve yerel kayıt --------------------------- */
 
   ipcMain.handle("studio:diagnostics", () => {
     const snap = diagnostics.snapshot();
-    return { logPath: snap.logPath, lastErrors: snap.lastErrors, ffmpegErrors: engine.lastErrors(), truncated: snap.truncated };
+    // uploads: Yükleme günlüğü (en yeni önce) — { at, kind, method, endpoint, status, ok, code, message, durationMs, bytes, matchId, eventId, offline, local }
+    return { logPath: snap.logPath, lastErrors: snap.lastErrors, ffmpegErrors: engine.lastErrors(), truncated: snap.truncated, uploads: uploadLog.list(), uploadLogPath: uploadLog.file };
   });
+  ipcMain.handle("studio:clearUploadLog", () => { uploadLog.clear(); return true; });
   ipcMain.handle("studio:revealDiagnostics", () => {
     const file = diagnostics.logPath();
     if (file && fs.existsSync(file)) { shell.showItemInFolder(file); return true; }
@@ -464,6 +515,7 @@ function registerStudio({
   /* -------------------------------- röportaj -------------------------------- */
 
   ipcMain.handle("studio:interview:start", (_e, opts = {}) => interviews.start(opts || {}));
+  // id (start'ın döndürdüğü) ya da { id, matchId }; id yoksa tek süren röportaj bitirilir.
   ipcMain.handle("studio:interview:stop", async (_e, id) => {
     await ensureFfmpegPath();
     return interviews.stop(id);
@@ -477,14 +529,14 @@ function registerStudio({
     shell.showItemInFolder(item.path);
     return true;
   });
-  ipcMain.handle("studio:interview:upload", async (_e, payload = {}) => {
-    if (!isSignedIn()) return { ok: false, error: { message: "Oturum açık değil." } };
-    return interviews.upload(api, payload || {}, { emitProgress: (p) => broadcast("studio:uploadProgress", p) });
-  });
+  ipcMain.handle("studio:interview:upload", async (_e, payload = {}) => trackUpload("interview", "studio:interview:upload", payload, async () => {
+    if (!isSignedIn()) return signedOut();
+    return interviews.upload(uploadApi, payload || {}, { putImpl: loggedPut, emitProgress: (p) => broadcast("studio:uploadProgress", p) });
+  }));
 
   /* -------------------------------- LED çıkışı -------------------------------- */
 
-  const led = screen && BrowserWindow ? createLedManager({ BrowserWindow, screen, loadRenderer, preloadPath, siteOrigin, apiOrigin, log }) : null;
+  const led = screen && BrowserWindow ? createLedManager({ BrowserWindow, screen, loadRenderer, preloadPath, siteOrigin, apiOrigin, log, powerMonitor }) : null;
   if (led) {
     led.events.on("status", (st) => broadcast("studio:led:status", st));
     led.events.on("displays", (list) => broadcast("studio:displays:changed", list));
@@ -509,6 +561,7 @@ function registerStudio({
     interviews,
     led,
     diagnostics,
+    uploadLog,
     /** Uygulama kapanırken: ffmpeg süreçlerini öldür, parça klasörlerini sil. */
     dispose() {
       engine.dispose();
@@ -516,6 +569,7 @@ function registerStudio({
       renderer.dispose();
       interviews.dispose();
       led?.dispose();
+      uploadLog.flush();
       keepAwake(false);
       try { fs.rmSync(tempRoot, { recursive: true, force: true }); } catch { /* yoksay */ }
     },

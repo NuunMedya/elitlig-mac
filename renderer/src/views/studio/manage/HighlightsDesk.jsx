@@ -1,9 +1,10 @@
 // Maç yönetimi · Maçın enleri — LED "Maçın enleri", "Maçın oyuncusu" ve
 // "Kare as" ekranları bu kayıttan okur. Yalnız ödül alanları yazılır:
 //   PATCH /maclar/:id { post_macin_enleri, post_enler, match_mvp }
+// Maç sonunda seçilen anlar (maçın golü / kurtarışı: olay, klip) korunur.
 import React, { useEffect, useMemo, useState } from "react";
 import { Icon } from "../../../components/ui";
-import { HIGHLIGHT_FIELDS, highlightsPayload, readHighlights } from "../../../lib/studio/manageBroadcast";
+import { HIGHLIGHT_FIELDS, highlightsPayload, readHighlights, readMoments } from "../../../lib/studio/manageBroadcast";
 import * as api from "./manageApi";
 import { PlayerSelect } from "./pickers";
 import { useRun } from "./useManage";
@@ -21,7 +22,7 @@ export default function HighlightsDesk({ matchId, match, live }) {
     { label: live?.awayName || "Deplasman", players: live?.squads?.away || [] },
   ];
   const save = async () => {
-    const ok = await run(() => api.updateMatch(matchId, highlightsPayload(form, (id) => live?.nameOf?.(id) || "")), { ok: "Maçın enleri kaydedildi; LED ekranı en geç birkaç saniyede güncellenir.", fail: "Maçın enleri kaydedilemedi." });
+    const ok = await run(() => api.updateMatch(matchId, highlightsPayload(form, (id) => live?.nameOf?.(id) || "", readMoments(match))), { ok: "Maçın enleri kaydedildi; LED ekranı en geç birkaç saniyede güncellenir.", fail: "Maçın enleri kaydedilemedi." });
     if (ok) { setDirty(false); live?.refresh?.(); }
   };
   return (

@@ -1,20 +1,20 @@
-// Yayın Stüdyosu · SAHNELER sekmesi (OBS düzeni):
+// Yayın Stüdyosu · SAHNELER (basit mantık):
 //
-//   Sahneler     sıralı liste (1–9 kısayolu), ekle / yeniden adlandır (çift tık) /
-//                çoğalt / sil / sürükleyerek sırala; tık → önizleme, çift tık → yayın
-//   Katmanlar    önizlemedeki sahnenin katmanları (üstte = en üstte çizilir):
-//                göz (görünürlük), kilit, sürükleyerek sırala, çıkar, + kaynak
-//   Dönüşüm      seçili katman: X / Y / G / Y (çıkış pikseli), döndürme, kırpma,
-//                sığdırma, "Ekrana sığdır / Uzat / Ortala"
-//   Kitaplık     genel kaynak listesi (SourcesPanel.SourceLibrary)
-//
-// Düzenleme önizleme ekranında da yapılır (SceneEditOverlay): seçim iki yerde ortak.
-import React, { memo, useEffect, useState } from "react";
-import { Field, Icon, MenuButton } from "../../../components/ui";
-import { FITS, isSourceSceneId, layersTopFirst, sceneHotkey, sourceKindIcon, uiIndexToArray } from "../../../lib/studio/scenes";
+//   Sahneler sekmesi   şablondan sahne ekle (Boş, Tek kaynak, Resim içinde resim, Yan yana,
+//                      Üçlü, Başlangıç / Devre arası / Bitiş ekranı) + sahne kartları:
+//                      tık → önizleme, çift tık → yayın, "Düzenle", "Yayına al", "LED'e ver"
+//   Sahne düzenleyici  YALNIZ "Düzenle" ile açılır: katmanlar (üstte = en üstte çizilir:
+//                      göz, kilit, sürükleyerek sırala, çıkar, + kaynak), büyük tuvalde
+//                      taşı / boyutla / kırp / döndür, dönüşüm alanları
+//   SceneRail          "Büyük program" düzeninde dikey sahne listesi
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Field, Icon, MenuButton, Modal } from "../../../components/ui";
+import { FITS, SCENE_TEMPLATES, TEMPLATE_LAYOUTS, layersTopFirst, pipBox, sourceKindIcon, templateOf, templateSourceIds, uiIndexToArray } from "../../../lib/studio/scenes";
 import { centerLayer, fitToScreen, fromPixels, normAspect, stretchToScreen, toPixels } from "../../../lib/studio/scenesTransform";
-import { naturalSize } from "../draw";
-import { SourceLibrary } from "../SourcesPanel";
+import { drawScene, naturalSize } from "../draw";
+import { Tile, tileWarning } from "../Multiview";
+import SceneEditOverlay from "./SceneEditOverlay";
+import Monitor from "./Monitor";
 
 /** Sürükle-bırak sıralama yardımcısı (HTML5). */
 function useDragSort(onDrop) {
@@ -35,72 +35,18 @@ function useDragSort(onDrop) {
   return { over, props };
 }
 
-function SceneName({ scene, onRename }) {
-  const [edit, setEdit] = useState(false);
-  const [name, setName] = useState(scene.name);
-  useEffect(() => setName(scene.name), [scene.name]);
-  if (!edit) return <span className="st-scn__name" onDoubleClick={(e) => { e.stopPropagation(); setEdit(true); }} title={`${scene.name} — çift tık: yeniden adlandır`}>{scene.name}</span>;
-  const done = () => { setEdit(false); if (name.trim() && name !== scene.name) onRename(scene.id, name); else setName(scene.name); };
-  return <input className="st-scn__input" autoFocus value={name} onChange={(e) => setName(e.target.value)} onBlur={done} onClick={(e) => e.stopPropagation()}
-    onKeyDown={(e) => { if (e.key === "Enter") done(); if (e.key === "Escape") { setName(scene.name); setEdit(false); } e.stopPropagation(); }} maxLength={60} />;
-}
-
-export const ScenesList = memo(function ScenesList({ config, actions, compact = false }) {
-  const { onPreview, onProgram, onAddScene, onRenameScene, onDuplicateScene, onRemoveScene, onMoveScene } = actions;
-  const { over, props } = useDragSort((from, to) => onMoveScene(config.scenes[from].id, to));
-  return (
-    <section className={`st-col ${compact ? "is-compact" : ""}`}>
-      <header className="st-col__head">
-        <h4>Sahneler</h4>
-        <span className="st-col__count">{config.scenes.length}</span>
-        <span className="st-top__spacer" />
-        <button type="button" className="btn btn--xs btn--soft" onClick={() => onAddScene()} title="Boş sahne ekle"><Icon name="plus" size={12} /> Sahne</button>
-      </header>
-      <ul className="st-scn">
-        {config.scenes.map((sc, i) => {
-          const hk = sceneHotkey(config, sc.id);
-          const pgm = sc.id === config.programSceneId;
-          const pvw = sc.id === config.previewSceneId;
-          return (
-            <li key={sc.id} {...props(i)} className={`st-scn__row ${pgm ? "is-program" : ""} ${pvw ? "is-preview" : ""} ${over === i ? "is-over" : ""}`}
-              onClick={() => onPreview(sc.id)} onDoubleClick={() => onProgram(sc.id)} title="Tık: önizleme · çift tık: yayına · sürükle: sırala">
-              <span className="st-grip"><Icon name="grip" size={12} /></span>
-              <b className="st-tile__no">{hk || "·"}</b>
-              <SceneName scene={sc} onRename={onRenameScene} />
-              {pgm && <span className="st-mini is-live">PGM</span>}
-              {pvw && !pgm && <span className="st-mini is-pvw">PVW</span>}
-              <small className="muted">{sc.layers.length}</small>
-              <MenuButton label="Sahne" size={13} items={[
-                { label: "Önizlemeye al", icon: "eye", onClick: () => onPreview(sc.id) },
-                { label: "Yayına ver", icon: "play", onClick: () => onProgram(sc.id) },
-                "-",
-                { label: "Çoğalt", icon: "copy", onClick: () => onDuplicateScene(sc.id) },
-                { label: "Yukarı taşı", icon: "chevronUp", disabled: i === 0, onClick: () => onMoveScene(sc.id, i - 1) },
-                { label: "Aşağı taşı", icon: "chevronDown", disabled: i === config.scenes.length - 1, onClick: () => onMoveScene(sc.id, i + 1) },
-                "-",
-                { label: "Sahneyi sil", icon: "trash", danger: true, disabled: config.scenes.length <= 1, onClick: () => onRemoveScene(sc) },
-              ]} />
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-});
-
 export const LayersList = memo(function LayersList({ config, scene, selectedId, actions, compact = false }) {
-  const { onSelectLayer, onUpdateLayer, onRemoveLayer, onMoveLayer, onAddLayer, onNewSource, onSceneFromSource } = actions;
+  const { onSelectLayer, onUpdateLayer, onRemoveLayer, onMoveLayer, onAddLayer, onNewSource } = actions;
   const list = layersTopFirst(scene);
   const byId = new Map(config.sources.map((s) => [s.id, s]));
   const { over, props } = useDragSort((from, to) => onMoveLayer(scene.id, list[from].id, uiIndexToArray(list.length, to)));
-  const virtual = scene && isSourceSceneId(scene.id);
   return (
     <section className={`st-col ${compact ? "is-compact" : ""}`}>
       <header className="st-col__head">
         <h4>Katmanlar</h4>
         {scene && <span className="st-col__sub" title={scene.name}>{scene.name}</span>}
         <span className="st-top__spacer" />
-        {scene && !virtual && (
+        {scene && (
           <MenuButton label="Katman ekle" icon="plus" text="Kaynak" size={12} className="st-menu-sm" items={[
             ...config.sources.map((s) => ({ label: s.name, icon: sourceKindIcon(s.kind), onClick: () => onAddLayer(scene.id, s.id) })),
             ...(config.sources.length ? ["-"] : []),
@@ -108,12 +54,7 @@ export const LayersList = memo(function LayersList({ config, scene, selectedId, 
           ]} />
         )}
       </header>
-      {!scene ? <p className="st-hint">Önizlemede sahne yok.</p> : virtual ? (
-        <div className="st-hint st-pad-sm">
-          Önizlemede tek bir kaynak var (“{scene.name}”). Katman düzenlemek için soldan bir sahne seç
-          <button type="button" className="btn btn--xs" style={{ marginLeft: 6 }} onClick={() => onSceneFromSource(scene.sourceId)}>Bu kaynaktan sahne oluştur</button>
-        </div>
-      ) : (
+      {!scene ? <p className="st-hint">Sahne yok.</p> : (
         <ul className="st-lyr">
           {list.map((l, i) => {
             const src = byId.get(l.sourceId);
@@ -204,18 +145,205 @@ export const LayerProps = memo(function LayerProps({ config, scene, layer, runti
   );
 });
 
-/** Sekmenin tamamı: dört sütun. */
-function ScenesPanel({ config, editScene, selectedLayerId, runtimeRef, version, outW, outH, actions, libActions }) {
-  const layer = editScene?.layers.find((l) => l.id === selectedLayerId) || null;
-  const editable = editScene && !isSourceSceneId(editScene.id) ? editScene.id : null;
+
+/* ------------------------------ şablonlar ------------------------------ */
+
+/** Şablonun küçük çizimi (kutular). */
+export function TemplatePic({ tpl }) {
+  if (tpl.ready) return <span className={`st-tpl__pic is-ready is-${tpl.key}`}><b /><i />{tpl.minutes ? <em>{String(tpl.minutes).padStart(2, "0")}:00</em> : null}</span>;
+  const boxes = (TEMPLATE_LAYOUTS[tpl.key] || []).map((b, i) => b || (tpl.key === "pip" && i === 1 ? pipBox("br", 0.3) : null)).filter(Boolean);
   return (
-    <div className="st-scenes">
-      <ScenesList config={config} actions={actions} />
-      <LayersList config={config} scene={editScene} selectedId={selectedLayerId} actions={actions} />
-      <LayerProps config={config} scene={editScene} layer={layer} runtimeRef={runtimeRef} outW={outW} outH={outH} actions={actions} />
-      <SourceLibrary config={config} runtimeRef={runtimeRef} version={version} editableSceneId={editable} actions={libActions} />
-    </div>
+    <span className={`st-tpl__pic is-${tpl.key}`}>
+      {boxes.map((b, i) => <b key={i} style={{ left: `${b.x * 100}%`, top: `${b.y * 100}%`, width: `${b.w * 100}%`, height: `${b.h * 100}%` }} />)}
+      {tpl.key === "empty" && <Icon name="plus" size={14} />}
+    </span>
   );
 }
 
-export default memo(ScenesPanel);
+/** Menü öğeleri: "Sahne ekle ▸ şablon". */
+export const templateMenu = (onTemplate) => SCENE_TEMPLATES.map((t) => ({ label: t.label, icon: t.icon, hint: t.hint, onClick: () => onTemplate(t.key) }));
+
+/** Şablon penceresi: ad + kaynak seçimi (ya da başlık / geri sayım). */
+export function TemplateDialog({ tplKey, config, onCreate, onClose }) {
+  const tpl = templateOf(tplKey);
+  const [name, setName] = useState(tpl?.label || "");
+  const [ids, setIds] = useState(() => templateSourceIds(config, tpl?.slots || 0));
+  const [title, setTitle] = useState(tpl?.title || "");
+  const [subtitle, setSubtitle] = useState(tpl?.subtitle || "");
+  const [minutes, setMinutes] = useState(tpl?.minutes ?? 0);
+  if (!tpl) return null;
+  const slotNames = tpl.key === "pip" ? ["Büyük görüntü", "Köşedeki kutu"] : tpl.key === "triple" ? ["Büyük görüntü", "Sağ üst", "Sağ alt"] : tpl.key === "sbs" ? ["Sol", "Sağ"] : ["Kaynak"];
+  const noSources = tpl.slots > 0 && !config.sources.length;
+  const create = () => onCreate(tpl.key, { name, sourceIds: ids, title, subtitle, minutes: Number(minutes) || 0 });
+  return (
+    <Modal title={`Yeni sahne · ${tpl.label}`} onClose={onClose} width={520} className="st-modal"
+      footer={<><button type="button" className="btn" onClick={onClose}>Vazgeç</button><button type="button" className="btn btn--primary" disabled={noSources} onClick={create}><Icon name="plus" size={13} /> Sahneyi oluştur</button></>}>
+      <div className="st-tpl__dlg">
+        <TemplatePic tpl={tpl} />
+        <div className="st-stack">
+          <Field label="Sahne adı"><input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") create(); }} /></Field>
+          {tpl.slots > 0 && (noSources
+            ? <p className="st-hint is-armed">Önce Kaynaklar sekmesinden bir kaynak (kamera, görsel…) ekle.</p>
+            : Array.from({ length: tpl.slots }, (_, i) => (
+              <Field key={i} label={slotNames[i] || `Kaynak ${i + 1}`}>
+                <select value={ids[i] || ""} onChange={(e) => setIds((cur) => { const n = [...cur]; n[i] = e.target.value; return n; })}>
+                  {config.sources.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </Field>
+            )))}
+          {tpl.ready && (
+            <>
+              <Field label="Başlık"><input value={title} maxLength={60} onChange={(e) => setTitle(e.target.value)} /></Field>
+              <Field label="Alt satır (isteğe bağlı)"><input value={subtitle} maxLength={60} onChange={(e) => setSubtitle(e.target.value)} /></Field>
+              <Field label="Geri sayım (dakika · 0 = yok)" hint="Geri sayım sahne yayına alındığında başlar.">
+                <input type="number" min={0} max={180} value={minutes} onChange={(e) => setMinutes(e.target.value)} />
+              </Field>
+            </>
+          )}
+          <p className="st-hint">{tpl.hint}. Sonra “Düzenle” ile katmanları taşıyıp boyutlayabilirsin.</p>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ------------------------------ Sahneler sekmesi ------------------------------ */
+
+function ScenesTabInner({ config, runtimeRef, register, version, studioMode, ledId, actions }) {
+  void version;
+  const { onPreview, onProgram, onToLed, onEdit, onTemplate, tileMenu } = actions;
+  return (
+    <div className="st-scenetab">
+      <section className="st-tpl">
+        <header className="st-col__head"><h4>Yeni sahne</h4><span className="st-hint">şablondan başla</span></header>
+        <div className="st-tpl__row">
+          {SCENE_TEMPLATES.map((t) => (
+            <button key={t.key} type="button" className="st-tpl__btn" onClick={() => onTemplate(t.key)} title={t.hint}>
+              <TemplatePic tpl={t} /><span>{t.label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="st-scenegrid" aria-label="Sahneler">
+        {config.scenes.map((sc, i) => {
+          const t = { id: sc.id, kind: "scene", name: sc.name, hotkey: i < 9 ? i + 1 : null };
+          return (
+            <Tile key={sc.id} tile={t} size="grid" register={register} studioMode={studioMode}
+              onAir={sc.id === config.programSceneId} inPreview={studioMode && sc.id === config.previewSceneId && sc.id !== config.programSceneId} onLed={sc.id === ledId}
+              bad={tileWarning(config, runtimeRef.current, t)} onPreview={onPreview} onProgram={onProgram} onToLed={onToLed} onEdit={onEdit} menu={tileMenu(t)} />
+          );
+        })}
+      </section>
+    </div>
+  );
+}
+export const ScenesTab = memo(ScenesTabInner);
+
+/** "Büyük program" düzeni: dikey sahne listesi. */
+function SceneRailInner({ config, runtimeRef, register, version, studioMode, previewId, programId, ledId, actions, addMenu }) {
+  void version;
+  const { onPreview, onProgram, onToLed, onEdit, tileMenu } = actions;
+  return (
+    <section className="st-rail__list" aria-label="Sahneler">
+      <header className="st-col__head"><h4>Sahneler</h4><span className="st-col__count">{config.scenes.length}</span><span className="st-top__spacer" />
+        <MenuButton label="Sahne ekle" icon="plus" size={13} items={addMenu} />
+      </header>
+      <div className="st-rail__scroll">
+        {config.scenes.map((sc, i) => {
+          const t = { id: sc.id, kind: "scene", name: sc.name, hotkey: i < 9 ? i + 1 : null };
+          return (
+            <Tile key={sc.id} tile={t} size="row" register={register} studioMode={studioMode}
+              onAir={sc.id === programId} inPreview={studioMode && sc.id === previewId && sc.id !== programId} onLed={sc.id === ledId}
+              bad={tileWarning(config, runtimeRef.current, t)} onPreview={onPreview} onProgram={onProgram} onToLed={onToLed} onEdit={onEdit} menu={tileMenu(t)} />
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+export const SceneRail = memo(SceneRailInner);
+
+/* ------------------------------ sahne düzenleyici ------------------------------ */
+
+/** Düzenleyicinin kendi tuvali (önizleme çözünürlüğünde, ~30 fps). */
+function useEditorCanvas(configRef, runtimeRef, sceneId, overrideRef, matchClockRef, W, H) {
+  const canvas = useMemo(() => document.createElement("canvas"), []);
+  useEffect(() => {
+    const w = Math.min(1280, W);
+    canvas.width = w;
+    canvas.height = Math.round((w * H) / W);
+  }, [canvas, W, H]);
+  useEffect(() => {
+    let raf = 0;
+    let last = 0;
+    const loop = (now) => {
+      raf = requestAnimationFrame(loop);
+      if (now - last < 32) return;
+      last = now;
+      const cfg = configRef.current;
+      const sc = cfg?.scenes.find((x) => x.id === sceneId) || null;
+      const ctx = canvas.getContext("2d", { alpha: false });
+      drawScene(ctx, sc, cfg?.sources || [], runtimeRef.current, canvas.width, canvas.height, { now, placeholders: true, override: overrideRef.current, matchClockMs: matchClockRef?.current?.() ?? null });
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [canvas, configRef, matchClockRef, overrideRef, runtimeRef, sceneId]);
+  return canvas;
+}
+
+function SceneNameEdit({ scene, onRename }) {
+  const [name, setName] = useState(scene.name);
+  useEffect(() => setName(scene.name), [scene.name]);
+  const done = () => { if (name.trim() && name !== scene.name) onRename(scene.id, name); else setName(scene.name); };
+  return <input className="st-editor__name" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} onBlur={done} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); e.stopPropagation(); }} aria-label="Sahne adı" />;
+}
+
+/**
+ * Sahne düzenleyici (tam sayfa katman): yalnız "Düzenle" ile açılır.
+ * Yayındaki sahne düzenlenirse değişiklik canlı görünür (uyarı gösterilir).
+ */
+export function SceneEditor({ config, configRef, runtimeRef, sceneId, selectedLayerId, onSelectLayer, outW, outH, overrideRef, matchClockRef, isProgram, isPreview, actions, onClose }) {
+  const scene = config.scenes.find((s) => s.id === sceneId) || null;
+  const canvas = useEditorCanvas(configRef, runtimeRef, sceneId, overrideRef, matchClockRef, outW, outH);
+  const layer = scene?.layers.find((l) => l.id === selectedLayerId) || null;
+  const sourceName = useCallback((id) => configRef.current.sources.find((s) => s.id === id)?.name || "?", [configRef]);
+  const commit = useCallback((layerId, patch) => actions.onUpdateLayer(sceneId, layerId, patch), [actions, sceneId]);
+  const remove = useCallback((layerId) => actions.onRemoveLayer(sceneId, layerId), [actions, sceneId]);
+  const ref = useRef(null);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && !document.querySelector(".modal-backdrop, .menu__list") && !e.target?.closest?.(".st-edit")) { e.stopPropagation(); onClose(); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  if (!scene) return null;
+  return (
+    <div className="st-editor" ref={ref} role="dialog" aria-label={`Sahne düzenle: ${scene.name}`}>
+      <header className="st-editor__head">
+        <Icon name="pencil" size={15} />
+        <span className="st-editor__kicker">Sahne düzenle</span>
+        <SceneNameEdit scene={scene} onRename={actions.onRenameScene} />
+        {isProgram && <span className="st-tag is-live">YAYINDA · değişiklikler canlı görünür</span>}
+        {isPreview && !isProgram && <span className="st-tag is-pvw">ÖNİZLEMEDE</span>}
+        <span className="st-top__spacer" />
+        {!isPreview && !isProgram && <button type="button" className="btn btn--sm" onClick={() => actions.onPreview(scene.id)}><Icon name="eye" size={13} /> Önizlemeye al</button>}
+        {!isProgram && <button type="button" className="btn btn--sm btn--red" onClick={() => actions.onProgram(scene.id)}><Icon name="play" size={13} /> Yayına al</button>}
+        <button type="button" className="btn btn--sm btn--primary" onClick={onClose}><Icon name="check" size={13} /> Düzenlemeyi bitir</button>
+      </header>
+      <div className="st-editor__body">
+        <aside className="st-editor__side">
+          <LayersList config={config} scene={scene} selectedId={selectedLayerId} actions={{ ...actions, onSelectLayer }} />
+          <p className="st-hint st-pad-sm">Tuvalde tıkla: seç · sürükle: taşı · köşe: boyutla (Shift oranı korur) · Alt + köşe: kırp · üstteki nokta: döndür · ok tuşları: kaydır · Delete: çıkar</p>
+        </aside>
+        <div className="st-editor__stage">
+          <Monitor canvas={canvas} className={`st-editor__screen ${isProgram ? "is-program" : ""}`}>
+            <SceneEditOverlay scene={scene} selectedId={selectedLayerId} onSelect={onSelectLayer} onCommit={commit} onRemove={remove}
+              overrideRef={overrideRef} sourceName={sourceName} outW={outW} outH={outH} />
+          </Monitor>
+        </div>
+        <aside className="st-editor__side is-right">
+          <LayerProps config={config} scene={scene} layer={layer} runtimeRef={runtimeRef} outW={outW} outH={outH} actions={actions} />
+        </aside>
+      </div>
+    </div>
+  );
+}

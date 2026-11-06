@@ -70,3 +70,7 @@ export const getMatchStats = (id) => live("GET", `/oyuncu-istatistikleri/mac/${i
 export const createPlayerStat = (body) => live("POST", "/oyuncu-istatistikleri/", body);
 export const updatePlayerStat = (statId, body) => live("PATCH", `/oyuncu-istatistikleri/playerStat/${statId}`, body);
 export const deletePlayerStat = (statId) => live("DELETE", `/oyuncu-istatistikleri/${statId}`);
+
+/* ------------------------------ gol klipleri ------------------------------ */
+/** GET /api/goal-clips?match_id= → { items: [{ id, event_id, player_id, team_id, minute, url, poster_url, … }] } (herkese açık). */
+export const getGoalClips = (matchId) => live("GET", "/api/goal-clips", undefined, { match_id: matchId });

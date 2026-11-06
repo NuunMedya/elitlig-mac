@@ -26,3 +26,19 @@ const useNoGraphics = () => null;
 export const useGraphicsSafe = hasGraphics ? useGraphics : useNoGraphics;
 export const drawGraphicsSafe = hasGraphics ? drawGraphics : null;
 export const GraphicsToolbar = index?.GraphicsToolbar || toolbarMod?.GraphicsToolbar || toolbarMod?.default || null;
+
+// Üst sekmeler (grafik ekibi; yoksa sekme gösterilmez):
+//   <BrandTab g matchId live scenes /> · <PresetsTab …/> · <ScoreboardTab …/>
+//   <LedGraphicsPanel g matchId scenes /> (LED sekmesinin içinde)
+//   <InterviewGraphicsPanel g … /> (röportaj kipi kullanır)
+// drawGraphics(ctx, { width, height, now, sceneId }, snapshot): sceneId'ye göre
+// grafiğin "hangi sahnelerde görünsün" (g.visibility) süzgeci grafik modülündedir.
+const pickComp = (name) => index?.[name] || null;
+export const BrandTab = pickComp("BrandTab");
+export const PresetsTab = pickComp("PresetsTab");
+export const ScoreboardTab = pickComp("ScoreboardTab");
+export const LedGraphicsPanel = pickComp("LedGraphicsPanel");
+export const InterviewGraphicsPanel = pickComp("InterviewGraphicsPanel");
+export const SubtitlePanel = pickComp("SubtitlePanel");
+export const SponsorPanel = pickComp("SponsorPanel");
+export const LinksPanel = pickComp("LinksPanel");

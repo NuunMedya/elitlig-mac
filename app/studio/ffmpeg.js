@@ -233,8 +233,19 @@ function normalizeStreamOptions(opts = {}) {
     videoBitrateKbps: clampInt(opts.videoBitrateKbps, 300, 20000, 4500),
     audioBitrateKbps: clampInt(opts.audioBitrateKbps, 64, 320, 160),
     mimeType: String(opts.mimeType || ""),
+    // Anahtar kare aralığı (sn, 1–4; YouTube ≤ 4 ister). Parça halkası 2 sn'lik olduğundan
+    // 2 sn'den uzun aralıkta yine 2 sn'de bir anahtar kare zorlanır (klip / tekrar sınırları).
+    keyframeSec: opts.keyframeSec === undefined || opts.keyframeSec === null || opts.keyframeSec === "" ? null : clampInt(opts.keyframeSec, 1, 4, 2),
+    // "hardware" (varsayılan: VideoToolbox / NVENC …) | "software" (libx264).
+    encoderPreference: opts.encoderPreference === "software" ? "software" : "hardware",
   };
 }
+
+/** Kodlayıcı tercihi: "software" → libx264 (varsa); aksi halde pickEncoder sırası. */
+const pickEncoderFor = (encoders, preference, platform) => (preference === "software" && encoders?.libx264 ? ENCODERS.libx264 : pickEncoder(encoders, platform));
+
+/** Zorlanan anahtar kare aralığı: istenen aralık parça süresini aşamaz (parça sınırı = anahtar kare). */
+const forcedKeyframeSec = (keyframeSec, segmentSeconds) => (keyframeSec > 0 ? Math.min(keyframeSec, segmentSeconds) : segmentSeconds);
 
 /**
  * Hız düzeyi (speedLevel 0..2): kodlayıcı gerçek zamana yetişemezse (ffmpeg
@@ -344,7 +355,10 @@ const supportsFpsMode = (version) => {
  * İlerleme stdout'a (-progress pipe:1); günlük stderr'e, düzey önekli
  * ("[warning] …"; fifo'nun "Recovery successful" satırı info düzeyindedir).
  */
-function buildStreamArgs({ url = null, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, segmentSeconds = 2, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska", fifo = false, localFile = null, speedLevel = 0, fpsMode = true, platform = process.platform }) {
+function buildStreamArgs({ url = null, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec = null, segmentSeconds = 2, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska", fifo = false, localFile = null, localEncode = null, speedLevel = 0, fpsMode = true, platform = process.platform }) {
+  if (localFile && localEncode) {
+    return buildDualEncodeArgs({ url, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec, segmentSeconds, segmentStart, listFile, inputFormat, fifo, localFile, localEncode, speedLevel, fpsMode, platform });
+  }
   const outputs = [];
   if (url) outputs.push(`[f=flv:onfail=ignore:flvflags=no_duration_filesize${fifo ? `:use_fifo=1:fifo_options=${fifoOptionString()}` : ""}]${url}`);
   if (localFile) outputs.push(`[f=matroska:onfail=ignore]${teeEscape(localFile, platform)}`);
@@ -359,13 +373,93 @@ function buildStreamArgs({ url = null, width, height, fps, videoBitrateKbps, aud
     "-map", "0:v:0", "-map", "0:a:0?",
     "-vf", `scale=${width}:${height}:flags=bicubic,fps=${fps},format=${encoderPixelFormat(encoder)}`,
     ...(fpsMode ? ["-fps_mode", "cfr"] : ["-vsync", "cfr"]), "-r", String(fps),
-    ...videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height, keyframeSeconds: segmentSeconds, speedLevel }),
-    "-force_key_frames", `expr:gte(t,n_forced*${segmentSeconds})`,
+    ...videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height, keyframeSeconds: forcedKeyframeSec(keyframeSec, segmentSeconds), speedLevel }),
+    "-force_key_frames", `expr:gte(t,n_forced*${forcedKeyframeSec(keyframeSec, segmentSeconds)})`,
     "-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "48000", "-ac", "2", "-af", "aresample=async=1000",
     "-flags", "+global_header",
     "-max_muxing_queue_size", "1024",
     "-f", "tee", outputs.join("|"),
   ];
+}
+
+/**
+ * Kodlayıcı seçeneklerini tek bir çıkış akışına bağlar: "-b:v" → "-b:v:1",
+ * "-maxrate" → "-maxrate:v:1", "-profile:v" → "-profile:v:1" (spec "v:1").
+ * videoEncoderArgs her zaman "-ad" "değer" çiftleri döndürür.
+ */
+function specifyStream(args, spec) {
+  const out = [];
+  for (let i = 0; i < args.length; i += 2) {
+    const name = String(args[i]).replace(/:v$/, "");
+    out.push(`${name}:${spec}`, args[i + 1]);
+  }
+  return out;
+}
+
+/**
+ * Yerel kayıt farklı kalitede (bit hızı / yükseklik / kare hızı): görüntü
+ * split ile ikiye ayrılır ve İKİ kodlayıcıyla kodlanır (tee çıkış başına
+ * kodlama değiştiremez). Tek tee korunur (slave sırası [rtmp?, local, segment]
+ * aynı kalır; motor düşen çıkışı buradan tanır); her slave "select" ile kendi
+ * görüntü akışını alır: yayın + parça halkası v:0, yerel kayıt v:1; ses (a)
+ * ortaktır (tek AAC kodlaması).
+ * localEncode: { width, height, fps, videoBitrateKbps } (normalizeLocalQuality).
+ * İşlemci: ikinci kodlama donanım kodlayıcıda ucuzdur; motor libx264'te bu
+ * yolu yalnız açıkça izin verilirse kullanır (allowSoftware).
+ */
+function buildDualEncodeArgs({ url, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec = null, segmentSeconds, segmentStart, listFile, inputFormat, fifo, localFile, localEncode, speedLevel, fpsMode, platform }) {
+  const L = localEncode;
+  const pf = encoderPixelFormat(encoder);
+  const outputs = [];
+  const sel = (spec) => `select=\\'${spec}\\'`;
+  if (url) outputs.push(`[f=flv:onfail=ignore:flvflags=no_duration_filesize:${sel("v:0,a")}${fifo ? `:use_fifo=1:fifo_options=${fifoOptionString()}` : ""}]${url}`);
+  outputs.push(`[f=matroska:onfail=ignore:${sel("v:1,a")}]${teeEscape(localFile, platform)}`);
+  outputs.push(`[f=segment:segment_time=${segmentSeconds}:segment_time_delta=0.05:segment_format=mpegts:reset_timestamps=1:segment_start_number=${segmentStart}:segment_list=${listFile}:segment_list_type=csv:onfail=abort:${sel("v:0,a")}]${SEGMENT_PATTERN}`);
+  const graph = [
+    "[0:v:0]split=2[elv0][elv1]",
+    `[elv0]scale=${width}:${height}:flags=bicubic,fps=${fps},format=${pf}[elvs]`,
+    `[elv1]scale=${L.width}:${L.height}:flags=bicubic,fps=${L.fps},format=${pf}[elvl]`,
+  ].join(";");
+  const cfr = (spec, rate) => (fpsMode ? [`-fps_mode:${spec}`, "cfr", `-r:${spec}`, String(rate)] : [`-r:${spec}`, String(rate)]);
+  return [
+    "-hide_banner", "-nostdin", "-loglevel", url && fifo ? "level+info" : "level+warning", "-nostats",
+    "-progress", "pipe:1", "-stats_period", "1",
+    "-fflags", "+genpts+discardcorrupt", "-thread_queue_size", "1024",
+    "-probesize", "1000000", "-analyzeduration", "1000000",
+    "-f", inputFormat, "-i", "pipe:0",
+    "-filter_complex", graph,
+    "-map", "[elvs]", "-map", "[elvl]", "-map", "0:a:0?",
+    ...(fpsMode ? [] : ["-vsync", "cfr"]),
+    ...cfr("v:0", fps),
+    ...specifyStream(videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height, keyframeSeconds: forcedKeyframeSec(keyframeSec, segmentSeconds), speedLevel }), "v:0"),
+    "-force_key_frames:v:0", `expr:gte(t,n_forced*${forcedKeyframeSec(keyframeSec, segmentSeconds)})`,
+    ...cfr("v:1", L.fps),
+    ...specifyStream(videoEncoderArgs(encoder, { videoBitrateKbps: L.videoBitrateKbps, fps: L.fps, width: L.width, height: L.height, keyframeSeconds: 2, speedLevel }), "v:1"),
+    "-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "48000", "-ac", "2", "-af", "aresample=async=1000",
+    "-flags", "+global_header",
+    "-max_muxing_queue_size", "1024",
+    "-f", "tee", outputs.join("|"),
+  ];
+}
+
+/**
+ * Yerel kayıt kalitesi: { videoBitrateKbps?, height?, fps? } → yayından farklıysa
+ * { width, height, fps, videoBitrateKbps }, aynıysa / verilmediyse null.
+ * Genişlik yayının en-boy oranından (çift sayı); yükseklik yayından büyük olabilir
+ * (ör. yayın 720p, kayıt 1080p) ama 2160'ı geçmez.
+ */
+function normalizeLocalQuality(lr = {}, stream = {}) {
+  if (!lr) return null;
+  const has = (v) => v !== undefined && v !== null && v !== "" && Number.isFinite(Number(v));
+  if (!has(lr.videoBitrateKbps) && !has(lr.height) && !has(lr.fps)) return null;
+  const sw = Number(stream.width) || 1920;
+  const sh = Number(stream.height) || 1080;
+  const height = has(lr.height) ? even(clampInt(lr.height, 180, 2160, sh)) : sh;
+  const width = height === sh ? sw : even(Math.min(3840, Math.round((height * sw) / sh)));
+  const fps = has(lr.fps) ? clampInt(lr.fps, 15, 60, stream.fps || 30) : (stream.fps || 30);
+  const videoBitrateKbps = has(lr.videoBitrateKbps) ? clampInt(lr.videoBitrateKbps, 300, 50000, stream.videoBitrateKbps || 4500) : (stream.videoBitrateKbps || 4500);
+  if (width === sw && height === sh && fps === stream.fps && videoBitrateKbps === stream.videoBitrateKbps) return null;
+  return { width, height, fps, videoBitrateKbps };
 }
 
 /** Klip birleştirme: concat demuxer, yeniden kodlama yok. */
@@ -500,6 +594,11 @@ module.exports = {
   createProgressParser,
   mapFfmpegError,
   parseSlaveFailure,
+  specifyStream,
+  pickEncoderFor,
+  forcedKeyframeSec,
+  buildDualEncodeArgs,
+  normalizeLocalQuality,
   segmentName,
   segmentIndex,
   SEGMENT_PATTERN,

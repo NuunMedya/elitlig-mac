@@ -27,6 +27,7 @@ const CLIP_NAME = /^clip-[\w-]{1,80}\.mp4$/;
 const MAX_AGE_MS = 24 * 3600 * 1000;
 const UPLOAD_LIMIT = 40 * 1024 * 1024; // sunucu sınırı (413 VIDEO_TOO_LARGE)
 const UPLOAD_TIMEOUT_MS = 180000;
+const RETRY_STATUS = new Set([502, 503, 504]);
 
 const ERR = {
   NOT_STREAMING: "Klip için yayın ya da kayıt sürüyor olmalı.",
@@ -296,8 +297,10 @@ function createClipStore({ clipsDir, getFfmpegPath, runImpl = ff.run, now = () =
     const pathname = `/api/admin/live-streams/matches/${mid}/clips?event_id=${eid}`;
     const send = () => api.upload(pathname, buildClipMultipart({ fields, file: { name: `gol-${mid}-${eid}.mp4`, mime: "video/mp4", data } }), { timeout: UPLOAD_TIMEOUT_MS });
     let res = await send();
-    if (!res.ok && res.offline) {
-      await sleep(2000);
+    // Ağ hatası ya da geçici sunucu hatası (Heroku 503 H12 zaman aşımı / 502 / 504): bir kez daha dene.
+    // Sunucu aynı gol için yeniden yüklemeyi öncekinin yerine yazar (çift kayıt olmaz).
+    if (!res.ok && !res.timeout && (res.offline || RETRY_STATUS.has(Number(res.error?.status)))) {
+      await sleep(res.offline ? 2000 : 3000);
       res = await send();
     }
     if (res.ok) {

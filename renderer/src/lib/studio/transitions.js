@@ -7,7 +7,7 @@
 //   switched: görüntü değişti mi (logo geçişinde tam ortada)
 // Karıştırıcı bu değerleri tuvale uygular (useCompositor). Her geçişin süresi
 // ayrı ayarlanır (prefs.transitionMs).
-import { STINGER_MS, easeInOut } from "./stinger";
+import { STINGER_MS, STINGER_STYLES, drawStingerKind, easeInOut } from "./stinger";
 
 export const TRANSITION_KINDS = [
   { key: "cut", label: "Kesme", ms: 0, min: 0, max: 0 },
@@ -18,8 +18,22 @@ export const TRANSITION_KINDS = [
   { key: "zoom", label: "Yakınlaştırma", ms: 550, min: 200, max: 3000 },
   { key: "wipe", label: "Silme (wipe)", ms: 650, min: 200, max: 3000 },
   { key: "blur", label: "Luma / bulanıklık", ms: 800, min: 300, max: 3000 },
-  { key: "stinger", label: "Marka logosu (stinger)", ms: STINGER_MS, min: 600, max: 2500 },
+  { key: "stinger", label: "Marka logosu (stinger)", ms: STINGER_MS, min: 600, max: 2500, stinger: true },
+  // Yeni logo geçişleri (stinger.js): marka renkleri + logo, tam ortada örtülü.
+  ...STINGER_STYLES.filter((x) => x.key !== "stinger").map((x) => ({ key: x.key, label: x.label, ms: x.ms, min: 700, max: 3000, stinger: true })),
 ];
+
+/** A1 (Studio / karıştırıcı) ve modlar aynı listeyi kullanır. */
+export const TRANSITIONS = TRANSITION_KINDS;
+
+/** Logo geçişi mi (ekranı örter, görüntü tam ortada değişir; drawTransitionStinger ile çizilir). */
+export const isStingerKind = (key) => Boolean(TRANSITION_KINDS.find((t) => t.key === key)?.stinger);
+
+/**
+ * Logo geçişinin üst katmanı (sahnenin ÜSTÜNE, grafiklerin de üstüne çizilir).
+ * Karıştırıcı: if (isStingerKind(tr.kind)) drawTransitionStinger(ctx, W, H, tr.kind, p, logo, branding).
+ */
+export const drawTransitionStinger = (ctx, W, H, kind, p, logo, branding) => drawStingerKind(ctx, W, H, kind, p, logo, branding);
 
 export const transitionKind = (key) => TRANSITION_KINDS.find((t) => t.key === key) || TRANSITION_KINDS[1];
 
@@ -59,6 +73,10 @@ export function transitionFrame(kind, p) {
       return { from: view({ blur: easeInOut(blurOut) }), to: view({ blur: easeInOut(blurIn), alpha: easeInOut(mix) }), wipe: null, order: "to-over", switched: t >= 0.5 };
     }
     case "stinger":
+    case "sweep":
+    case "panels":
+    case "iris":
+    case "shards":
       // Logo şeridi üstte örter; alttaki görüntü tam ortada değişir.
       return { from: view({ alpha: t < 0.5 ? 1 : 0 }), to: view({ alpha: t < 0.5 ? 0 : 1 }), wipe: null, order: "to-over", switched: t >= 0.5, stinger: true };
     case "fade":

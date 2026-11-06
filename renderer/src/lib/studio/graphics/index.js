@@ -9,3 +9,5 @@ export { lineupV2Slides, slideAt, lineupV3Side, summaryScroll } from "./drawPane
 export { miniLayout } from "./drawBugs";
 export { TICKER_LIFT } from "./drawTicker";
 export { getImage, preloadImages, setImageLoadListener } from "./images";
+export { graphicsLayers } from "./draw";
+export * from "./visibility";

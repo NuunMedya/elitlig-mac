@@ -284,14 +284,38 @@ const parseJson = (raw) => {
   }
 };
 
+/**
+ * "Anın ödülleri" (maçın golü / kurtarışı) olaydan ve tekrar klibinden seçilir.
+ * Kayıt biçimi (geriye uyumlu): düz alanlar her zaman yazılır
+ *   best_goal_id, best_goal_name                (web / mobil / sunucu okur)
+ * ve olay seçildiyse best_goal NESNE olur:
+ *   best_goal: { id, name, player_id, player_name, event_id, minute, period,
+ *                team_id, code, clip_url, poster_url }
+ * Olay seçilmediyse best_goal eskisi gibi oyuncu adıdır (dizgi).
+ */
+export const MOMENT_KEYS = ["best_goal", "best_save"];
+
+const isHttp = (u) => typeof u === "string" && /^https?:\/\//i.test(u.trim());
+const toPosInt = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.floor(n) : null; };
+const toMin = (v) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null; };
+
+/** Ödül nesnesi / dizgisinden oyuncu kimliği ve adı. */
+const rawAward = (raw, key) => {
+  const v = raw[key];
+  const obj = v && typeof v === "object" ? v : null;
+  const id = raw[`${key}_id`] != null && raw[`${key}_id`] !== "" ? String(raw[`${key}_id`]) : obj?.id != null && obj.id !== "" ? String(obj.id) : obj?.player_id != null ? String(obj.player_id) : "";
+  const name = String(raw[`${key}_name`] ?? (obj ? obj.name ?? obj.player_name ?? "" : v ?? "")).trim();
+  return { id, name, obj };
+};
+
 /** Kayıtlı ödüller → { best_player: "12" }; eski kayıtlarda ad kadrodan çözülür. */
 export function readHighlights(match, players = []) {
   const raw = parseJson(match?.post_macin_enleri ?? match?.post_enler);
   const out = {};
   for (const { key } of HIGHLIGHT_FIELDS) {
-    let id = raw[`${key}_id`] == null ? "" : String(raw[`${key}_id`]);
+    const { id: savedId, name } = rawAward(raw, key);
+    let id = savedId;
     if (!id) {
-      const name = String(raw[`${key}_name`] ?? raw[key] ?? "").trim();
       const found = name ? players.find((p) => String(p.name).trim() === name) : null;
       if (found) id = String(found.id);
     }
@@ -300,19 +324,126 @@ export function readHighlights(match, players = []) {
   return out;
 }
 
-/** PATCH /maclar/:id — yalnız ödül alanları (maç sonu içeriğine dokunmaz). */
-export function highlightsPayload(highlights, nameOf) {
+/** Normalize bir an: { event_id, minute, period, team_id, code, clip_url, poster_url, player_id } | null. */
+export function normalizeMoment(m) {
+  if (!m || typeof m !== "object") return null;
+  const eventId = toPosInt(m.event_id ?? m.eventId);
+  if (!eventId) return null;
+  return {
+    event_id: eventId,
+    minute: toMin(m.minute),
+    period: toPosInt(m.period),
+    team_id: toPosInt(m.team_id ?? m.teamId),
+    code: m.code ? String(m.code).toUpperCase() : null,
+    clip_url: isHttp(m.clip_url ?? m.clipUrl) ? String(m.clip_url ?? m.clipUrl).trim() : null,
+    poster_url: isHttp(m.poster_url ?? m.posterUrl) ? String(m.poster_url ?? m.posterUrl).trim() : null,
+    player_id: toPosInt(m.player_id ?? m.playerId),
+  };
+}
+
+/** Kayıtlı anlar: { best_goal: moment | null, best_save: moment | null }. */
+export function readMoments(match) {
+  const raw = parseJson(match?.post_macin_enleri ?? match?.post_enler);
+  const out = {};
+  for (const key of MOMENT_KEYS) out[key] = normalizeMoment(raw[key] && typeof raw[key] === "object" ? raw[key] : null);
+  return out;
+}
+
+/**
+ * post_macin_enleri nesnesi. Her ödül için `${key}_id`, `${key}_name`, key
+ * (eskisi gibi ad) yazılır; an seçilmiş ödülde key nesneye dönüşür. An
+ * başka oyuncuya aitse (ödül sonradan değiştirildiyse) atılır.
+ */
+export function awardsJson(highlights, nameOf, moments = null) {
   const award = {};
   for (const { key } of HIGHLIGHT_FIELDS) {
-    const id = highlights?.[key] || "";
-    const name = id ? nameOf?.(id) || "" : "";
+    const id = highlights?.[key] ? String(highlights[key]) : "";
+    let name = id ? nameOf?.(id) || "" : "";
     award[`${key}_id`] = id;
-    award[`${key}_name`] = name;
-    award[key] = name;
+    const m = MOMENT_KEYS.includes(key) ? normalizeMoment(moments?.[key]) : null;
+    const usable = m && (!m.player_id || String(m.player_id) === id);
+    if (usable) {
+      // Oyuncusuz an (ör. oyuncusu girilmemiş gol): ad boş kalmasın (web adı düz alandan okur).
+      if (!name) name = m.minute != null ? `${m.minute}' ${key === "best_save" ? "kurtarış" : "gol"}` : key === "best_save" ? "Maçın kurtarışı" : "Maçın golü";
+      award[`${key}_name`] = name;
+      award[key] = { ...m, id, name, player_id: id ? Number(id) || id : null, player_name: name };
+    } else {
+      award[`${key}_name`] = name;
+      award[key] = name;
+    }
   }
-  const json = JSON.stringify(award);
+  return award;
+}
+
+/** PATCH /maclar/:id — yalnız ödül alanları (maç sonu içeriğine dokunmaz). moments: kayıtlı anlar korunur. */
+export function highlightsPayload(highlights, nameOf, moments = null) {
+  const json = JSON.stringify(awardsJson(highlights, nameOf, moments));
   const mvp = Number(highlights?.best_player);
   return { post_macin_enleri: json, post_enler: json, match_mvp: Number.isFinite(mvp) && mvp > 0 ? mvp : null };
+}
+
+/** Anın türüne göre olay kodu uyuyor mu: goal → GOAL_* (kendi kalesine hariç), save → SAVE. */
+export const momentCodeMatches = (kind, code) => {
+  const c = String(code || "").toUpperCase();
+  return kind === "save" ? c === "SAVE" : c.startsWith("GOAL_") && c !== "GOAL_OWN";
+};
+
+/** Tekrar / sunucu klibinden oynatılabilir adres + kapak. */
+function clipFor(ev, replays, clips) {
+  const id = Number(ev.id);
+  const rp = (replays || []).find((r) => Number(r?.eventId) === id);
+  const angle = rp ? (rp.angles || []).find((a) => a?.url) || (rp.angles || [])[0] : null;
+  const sc = (clips || []).find((c) => Number(c?.event_id) === id)
+    || (clips || []).find((c) => c?.event_id == null && ev.oyuncu_id && Number(c?.player_id) === Number(ev.oyuncu_id) && Number(c?.minute) === Number(ev.dakika));
+  return {
+    replayId: rp?.id ?? null,
+    replay: rp || null,
+    localUrl: angle?.url || null,
+    localPoster: angle?.posterUrl || null,
+    serverUrl: sc?.url || null,
+    serverPoster: sc?.poster_url || null,
+  };
+}
+
+/**
+ * Maçın golü / kurtarışı için aday anlar (olaylardan; kronolojik).
+ * replays: useReplays [{ id, eventId, angles:[{ url, posterUrl }] }],
+ * clips: GET /api/goal-clips?match_id= items. Her aday:
+ *   { eventId, code, minute, period, side, teamId, playerId, playerName,
+ *     playUrl, posterUrl, clipUrl (sunucu, kalıcı), posterSaveUrl, replay }
+ */
+export function momentCandidates(events, { kind = "goal", homeTeamId, awayTeamId, nameOf = () => null, replays = [], clips = [] } = {}) {
+  return [...(events || [])]
+    .filter((ev) => ev && ev.id != null && momentCodeMatches(kind, ev.olay_kodu))
+    .sort((a, b) => (Number(a.devre) || 1) - (Number(b.devre) || 1) || (Number(a.dakika) || 0) - (Number(b.dakika) || 0) || Number(a.id) - Number(b.id))
+    .map((ev) => {
+      const tid = Number(ev.takim_id) || null;
+      const side = tid && tid === Number(homeTeamId) ? "home" : tid && tid === Number(awayTeamId) ? "away" : null;
+      const c = clipFor(ev, replays, clips);
+      const playerId = ev.oyuncu_id != null && Number(ev.oyuncu_id) > 0 ? String(ev.oyuncu_id) : "";
+      return {
+        eventId: Number(ev.id),
+        code: String(ev.olay_kodu).toUpperCase(),
+        minute: Number(ev.dakika) || 0,
+        period: Number(ev.devre) || 1,
+        side,
+        teamId: tid,
+        playerId,
+        playerName: (playerId && nameOf(playerId)) || "",
+        playUrl: c.serverUrl || c.localUrl,
+        posterUrl: c.serverPoster || c.localPoster,
+        clipUrl: isHttp(c.serverUrl) ? c.serverUrl : isHttp(c.localUrl) ? c.localUrl : null,
+        posterSaveUrl: isHttp(c.serverPoster) ? c.serverPoster : isHttp(c.localPoster) ? c.localPoster : null,
+        replay: c.replay,
+        hasClip: Boolean(c.serverUrl || c.localUrl),
+      };
+    });
+}
+
+/** Aday → kaydedilecek an. */
+export function momentFromCandidate(c) {
+  if (!c) return null;
+  return normalizeMoment({ event_id: c.eventId, minute: c.minute, period: c.period, team_id: c.teamId, code: c.code, clip_url: c.clipUrl, poster_url: c.posterSaveUrl, player_id: c.playerId || null });
 }
 
 /** Kalan süre metni: 75000 → "1:15", 9000 → "9 sn". */

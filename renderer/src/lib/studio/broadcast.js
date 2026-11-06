@@ -217,35 +217,68 @@ export function isTypingTarget(target) {
   return Boolean(target.isContentEditable) || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
+/** Varsayılan tuşlar (settings/settings.js DEFAULT_HOTKEYS ile aynı). */
+export const KEY_DEFAULTS = { transition: [" ", "Enter"], lastScene: ["l"], mic: ["m"], replay: ["r"], moment: ["b"], goalArm: ["g"], var: ["v"], chapter: ["c"], help: ["?"] };
+
 /**
- * Tuş → stüdyo eylemi. Dönüş: { type: "mic" | "replay" | "scene" | "transition" | "goal", ... } | null
- *   M mikrofon · R son tekrar · B "önemli an" tekrarı kaydet · 1–9 kutuyu önizlemeye al ·
- *   Boşluk / Enter geçiş · G sonra H (ev) / A (deplasman) gol.
+ * Tuş → stüdyo eylemi. Dönüş: { type: "mic" | "replay" | "scene" | "transition" | "goal" | … } | null
+ *   Varsayılan: M mikrofon · R son tekrar · B "önemli an" · 1–9 sahneyi önizlemeye al ·
+ *   Boşluk / Enter geçiş · L son sahne · C bölüm işareti · G sonra H (ev) / A (deplasman) gol.
+ * opts.hotkeys: { eylem: [tuş] } (Ayarlar › Kısayollar ile değiştirilir).
  */
-export function keyAction(e, { pendingGoal = false } = {}) {
+export function keyAction(e, { pendingGoal = false, hotkeys = KEY_DEFAULTS } = {}) {
   if (!e || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return null;
   if (isTypingTarget(e.target)) return null;
   const key = String(e.key || "");
-  const lower = key.toLocaleLowerCase("en-US");
+  const lower = key.length === 1 ? key.toLocaleLowerCase("en-US") : key;
   if (pendingGoal) {
     if (lower === "h" || lower === "e") return { type: "goal", side: "home" };
     if (lower === "a" || lower === "d") return { type: "goal", side: "away" };
     return { type: "goalCancel" };
   }
-  if (lower === "m") return { type: "mic" };
-  if (lower === "r") return { type: "replay" };
-  if (lower === "b") return { type: "moment" };
-  if (lower === "g") return { type: "goalArm" };
-  if (lower === "v") return { type: "var" };
-  if (key === "?") return { type: "help" };
-  if (key === " " || key === "Enter") {
-    // Düğmede Boşluk/Enter düğmeye basar; geçiş yapmaz.
-    const tag = String(e.target?.tagName || "").toUpperCase();
-    if (tag === "BUTTON" || tag === "A") return null;
-    return { type: "transition" };
-  }
   if (/^[1-9]$/.test(key)) return { type: "scene", index: Number(key) - 1 };
+  for (const [type, list] of Object.entries(hotkeys || KEY_DEFAULTS)) {
+    if (!Array.isArray(list) || !list.includes(lower)) continue;
+    if (type === "transition" && (key === " " || key === "Enter")) {
+      // Düğmede Boşluk/Enter düğmeye basar; geçiş yapmaz.
+      const tag = String(e.target?.tagName || "").toUpperCase();
+      if (tag === "BUTTON" || tag === "A") return null;
+    }
+    return { type };
+  }
   return null;
+}
+
+/* ------------------------------ YouTube bölümleri ------------------------------ */
+
+/** "0:00" / "12:31" / "1:02:09" (YouTube bölüm damgası). */
+export function chapterStamp(ms) {
+  const t = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const sec = String(t % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${String(m).padStart(2, "0")}:${sec}`;
+}
+
+/**
+ * Bölüm işaretleri → YouTube açıklamasına yapıştırılan liste.
+ * markers: [{ atMs (yayın başından), label }]. YouTube kuralları: ilk bölüm 00:00,
+ * bölümler en az 10 sn arayla (yakın olanlar birleştirilir), sıralı.
+ */
+export function youtubeChapters(markers, { first = "Başlangıç", minGapMs = 10_000 } = {}) {
+  const list = [...(markers || [])].filter((m) => Number.isFinite(Number(m?.atMs))).sort((a, b) => a.atMs - b.atMs);
+  const out = [{ atMs: 0, label: first }];
+  for (const m of list) {
+    const label = String(m.label || "Bölüm").trim().slice(0, 80) || "Bölüm";
+    const last = out[out.length - 1];
+    if (m.atMs - last.atMs < minGapMs) {
+      if (m.atMs < minGapMs && out.length === 1) { out[0] = { atMs: 0, label }; continue; }
+      if (!last.label.includes(label)) last.label = `${last.label} · ${label}`;
+      continue;
+    }
+    out.push({ atMs: m.atMs, label });
+  }
+  return out.map((m) => `${chapterStamp(m.atMs)} ${m.label}`).join("\n");
 }
 
 /* ------------------------------ yayın sağlığı ------------------------------ */

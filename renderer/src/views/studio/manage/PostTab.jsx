@@ -1,23 +1,26 @@
 // Maç yönetimi · MAÇ SONU (web MatchPostStep + mobil PostStep):
 //   Özet         skor, golcüler, kartlar, değişiklik sayısı + "Maçı yayınla / sonuçlandır"
 //   Puanlar      iki takımın oyuncuları 1–10 (PATCH /api/maclar/:id/kadro/puan)
-//   Enler        MVP ve mevki ödülleri, maçın golü / kurtarışı (puan + gollerden öneri)
+//   Enler        MVP ve mevki ödülleri (puan + gollerden öneri); maçın golü /
+//                kurtarışı OLAYLARDAN ve tekrar / gol klibi kapaklarından seçilir
+//                (props replays: useReplays listesi; GET /api/goal-clips?match_id=)
 //   İçerik       manşet, rapor, kapak görseli, canlı yayın, röportaj, foto
 //                (PATCH /maclar/:id buildPostPayload)
 //   İstatistik   oyuncu maç istatistikleri (StatsPanel)
 import React, { useEffect, useMemo, useState } from "react";
-import { Icon, useConfirm, useToast } from "../../../components/ui";
+import { Icon, Modal, useConfirm, useToast } from "../../../components/ui";
 import {
   POST_HIGHLIGHT_FIELDS, buildPostPayload, highlightSuggestions, postSummary, ratingsPayload, ratingsSummary, readPostContent, readSavedRatings,
 } from "../../../lib/studio/manage";
-import { readHighlights } from "../../../lib/studio/manageBroadcast";
+import { MOMENT_KEYS, momentCandidates, momentFromCandidate, normalizeMoment, readHighlights, readMoments } from "../../../lib/studio/manageBroadcast";
 import { normalizeMatchStatus } from "../../../lib/studio/match";
 import { pickAndUploadImage } from "../graphics/graphicsApi";
 import * as api from "./manageApi";
+import MomentPicker from "./MomentPicker";
 import { PlayerSelect } from "./pickers";
 import RatingsPanel from "./RatingsPanel";
 import StatsPanel from "./StatsPanel";
-import { useRun } from "./useManage";
+import { useLoad, useRun } from "./useManage";
 
 const TABS = [
   { key: "ratings", label: "Puanlar", icon: "star" },
@@ -42,11 +45,19 @@ function SideSummary({ name, goals, cards, right }) {
   );
 }
 
-export default function PostTab({ matchId, match, live }) {
+const POST_TAB = "elitlig.studio.postTab";
+const PLAYER_AWARDS = POST_HIGHLIGHT_FIELDS.filter((f) => !MOMENT_KEYS.includes(f.key));
+const MOMENT_AWARDS = [
+  { key: "best_goal", kind: "goal", title: "Maçın golü", icon: "ball" },
+  { key: "best_save", kind: "save", title: "Maçın kurtarışı", icon: "shield" },
+];
+
+export default function PostTab({ matchId, match, live, replays = [], onPlayReplay }) {
   const toast = useToast();
   const confirm = useConfirm();
   const { run, busy } = useRun();
-  const [tab, setTab] = useState("ratings");
+  const [tab, setTab] = useState(() => { try { const v = localStorage.getItem(POST_TAB); return TABS.some((t) => t.key === v) ? v : "ratings"; } catch { return "ratings"; } });
+  useEffect(() => { try { localStorage.setItem(POST_TAB, tab); } catch { /* yoksay */ } }, [tab]);
   const players = useMemo(() => [...(live?.squads?.home || []), ...(live?.squads?.away || [])], [live?.squads]);
   const nameOf = (id) => players.find((p) => p.id === String(id))?.name || "";
   const finished = normalizeMatchStatus(match?.mac_durumu) === "yayinlanmis";
@@ -67,16 +78,38 @@ export default function PostTab({ matchId, match, live }) {
   /* ---------------- içerik + enler ---------------- */
   const savedContent = useMemo(() => readPostContent(match), [match]);
   const savedHighlights = useMemo(() => readHighlights(match, players), [match, players]);
+  const savedMoments = useMemo(() => readMoments(match), [match]);
   const [content, setContent] = useState(savedContent);
   const [highlights, setHighlights] = useState(savedHighlights);
+  const [moments, setMoments] = useState(savedMoments);
   useEffect(() => setContent(savedContent), [savedContent]);
   useEffect(() => setHighlights(savedHighlights), [savedHighlights]);
-  const contentDirty = JSON.stringify(content) !== JSON.stringify(savedContent) || POST_HIGHLIGHT_FIELDS.some(({ key }) => (highlights[key] || "") !== (savedHighlights[key] || ""));
+  useEffect(() => setMoments(savedMoments), [savedMoments]);
+  const contentDirty = JSON.stringify(content) !== JSON.stringify(savedContent)
+    || POST_HIGHLIGHT_FIELDS.some(({ key }) => (highlights[key] || "") !== (savedHighlights[key] || ""))
+    || MOMENT_KEYS.some((k) => JSON.stringify(normalizeMoment(moments[k])) !== JSON.stringify(savedMoments[k]));
   const suggestions = useMemo(() => highlightSuggestions(players, ratings, live?.events), [players, ratings, live?.events]);
   const saveContent = async () => {
-    const ok = await run(() => api.updateMatch(matchId, buildPostPayload(content, highlights, nameOf)), { ok: "Maç sonu içerikleri kaydedildi.", fail: "Maç sonu içerikleri kaydedilemedi." });
+    const ok = await run(() => api.updateMatch(matchId, buildPostPayload(content, highlights, nameOf, moments)), { ok: "Maç sonu içerikleri kaydedildi.", fail: "Maç sonu içerikleri kaydedilemedi." });
     if (ok) live?.refresh?.();
   };
+  const revertContent = () => { setContent(savedContent); setHighlights(savedHighlights); setMoments(savedMoments); };
+
+  /* ---------------- anlar (maçın golü / kurtarışı) ---------------- */
+  const clipsRes = useLoad(() => api.getGoalClips(matchId), [matchId], { enabled: Boolean(matchId) && tab === "awards", fallback: "" });
+  const clips = Array.isArray(clipsRes.data?.items) ? clipsRes.data.items : Array.isArray(clipsRes.data) ? clipsRes.data : [];
+  const candidates = useMemo(() => Object.fromEntries(MOMENT_AWARDS.map((m) => [m.key, momentCandidates(live?.events, { kind: m.kind, homeTeamId: live?.homeTeamId, awayTeamId: live?.awayTeamId, nameOf: live?.nameOf, replays, clips })])), [live?.events, live?.homeTeamId, live?.awayTeamId, live?.nameOf, replays, clips]);
+  const [playing, setPlaying] = useState(null); // aday
+  const selectMoment = (key, c) => {
+    setMoments((m) => ({ ...m, [key]: c ? momentFromCandidate(c) : null }));
+    if (c) setHighlights((h) => ({ ...h, [key]: c.playerId || "" }));
+  };
+  const setMomentPlayer = (key, id) => {
+    setHighlights((h) => ({ ...h, [key]: id }));
+    // Başka oyuncu seçildiyse an artık o oyuncunun değil: kaldır.
+    setMoments((m) => (m[key]?.player_id && String(m[key].player_id) !== String(id) ? { ...m, [key]: null } : m));
+  };
+  const teamName = (side) => (side === "home" ? live?.homeName : side === "away" ? live?.awayName : "");
   const [uploading, setUploading] = useState(false);
   const uploadCover = async () => {
     setUploading(true);
@@ -125,27 +158,53 @@ export default function PostTab({ matchId, match, live }) {
 
       {tab === "awards" && (
         <div className="mg-stack">
-          <div className="pt-awards">
-            {POST_HIGHLIGHT_FIELDS.map((f) => {
-              const sug = suggestions[f.key];
-              return (
-                <div key={f.key} className="mg-box">
-                  <PlayerSelect label={f.label} value={highlights[f.key] || ""} emptyLabel="Seçilmedi" onChange={(v) => setHighlights((h) => ({ ...h, [f.key]: v }))}
+          <section className="mg-card">
+            <header className="mg-card__head"><h5><Icon name="award" size={13} /> Oyuncu ödülleri</h5><small className="mg-muted">Puanlardan öneri gelir</small></header>
+            <div className="pt-awards">
+              {PLAYER_AWARDS.map((f) => {
+                const sug = suggestions[f.key];
+                return (
+                  <div key={f.key} className="pt-award">
+                    <PlayerSelect label={f.label} value={highlights[f.key] || ""} emptyLabel="Seçilmedi" onChange={(v) => setHighlights((h) => ({ ...h, [f.key]: v }))}
+                      groups={[{ label: live?.homeName || "Ev sahibi", players: live?.squads?.home || [] }, { label: live?.awayName || "Deplasman", players: live?.squads?.away || [] }]} />
+                    {sug && sug.id !== highlights[f.key] && (
+                      <button type="button" className="btn btn--xs btn--ghost" onClick={() => setHighlights((h) => ({ ...h, [f.key]: sug.id }))}>
+                        <Icon name="sparkles" size={12} /> Öneri: {nameOf(sug.id)} ({sug.reason})
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+          {MOMENT_AWARDS.map((m) => (
+            <MomentPicker key={m.key} title={m.title} icon={m.icon} kind={m.kind} candidates={candidates[m.key]} selectedEventId={moments[m.key]?.event_id ?? null}
+              onSelect={(c) => selectMoment(m.key, c)} onPlay={setPlaying} teamName={teamName}
+              playerSlot={(
+                <div className="pt-moment__player">
+                  <PlayerSelect label={`${m.title} · oyuncu`} value={highlights[m.key] || ""} emptyLabel="Seçilmedi" onChange={(v) => setMomentPlayer(m.key, v)}
                     groups={[{ label: live?.homeName || "Ev sahibi", players: live?.squads?.home || [] }, { label: live?.awayName || "Deplasman", players: live?.squads?.away || [] }]} />
-                  {sug && sug.id !== highlights[f.key] && (
-                    <button type="button" className="btn btn--xs btn--ghost" onClick={() => setHighlights((h) => ({ ...h, [f.key]: sug.id }))}>
-                      <Icon name="sparkles" size={12} /> Öneri: {nameOf(sug.id)} ({sug.reason})
-                    </button>
-                  )}
+                  <small className="mg-muted">{moments[m.key] ? `Olay #${moments[m.key].event_id} · ${moments[m.key].minute ?? "?"}'${moments[m.key].clip_url ? " · klip bağlı" : ""}` : "Olay seçilmedi: yalnız oyuncu adı kaydedilir."}</small>
                 </div>
-              );
-            })}
-          </div>
-          <div className="mg-inline mg-end">
-            <button type="button" className="btn btn--sm btn--ghost" disabled={!contentDirty || busy} onClick={() => { setContent(savedContent); setHighlights(savedHighlights); }}>Geri al</button>
-            <button type="button" className="btn btn--sm btn--primary" disabled={!contentDirty || busy} onClick={saveContent}><Icon name="check" size={13} /> Kaydet</button>
+              )} />
+          ))}
+          <div className="mg-card__foot">
+            {contentDirty && <span className="pill pill--xs pill--amber">Kaydedilmedi</span>}
+            <button type="button" className="btn btn--sm btn--ghost" disabled={!contentDirty || busy} onClick={revertContent}>Geri al</button>
+            <button type="button" className="btn btn--sm btn--primary" disabled={!contentDirty || busy} onClick={saveContent}><Icon name="check" size={13} /> Enleri kaydet</button>
           </div>
         </div>
+      )}
+      {playing && (
+        <Modal title={`${playing.playerName || "Oyuncusuz"} · ${playing.minute}'`} onClose={() => setPlaying(null)} width={760} className="st-modal mg-modal"
+          footer={<>
+            {onPlayReplay && playing.replay && <button type="button" className="btn" onClick={() => { onPlayReplay(playing.replay); setPlaying(null); }}><Icon name="broadcast" size={13} /> Tekrar panelinde aç</button>}
+            <button type="button" className="btn" onClick={() => setPlaying(null)}>Kapat</button>
+            <button type="button" className="btn btn--primary" onClick={() => { const key = playing.code === "SAVE" ? "best_save" : "best_goal"; selectMoment(key, playing); setPlaying(null); }}><Icon name="check" size={13} /> Bunu seç</button>
+          </>}>
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+          <video className="pt-video" src={playing.playUrl} poster={playing.posterUrl || undefined} controls autoPlay />
+        </Modal>
       )}
 
       {tab === "content" && (
@@ -177,7 +236,7 @@ export default function PostTab({ matchId, match, live }) {
             </fieldset>
           </div>
           <div className="mg-inline mg-end">
-            <button type="button" className="btn btn--sm btn--ghost" disabled={!contentDirty || busy} onClick={() => { setContent(savedContent); setHighlights(savedHighlights); }}>Geri al</button>
+            <button type="button" className="btn btn--sm btn--ghost" disabled={!contentDirty || busy} onClick={revertContent}>Geri al</button>
             <button type="button" className="btn btn--sm btn--primary" disabled={!contentDirty || busy} onClick={saveContent}><Icon name="check" size={13} /> Kaydet</button>
           </div>
         </div>

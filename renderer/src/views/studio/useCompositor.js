@@ -2,13 +2,15 @@
 //
 // PROGRAM tuvali (çıkış boyutunda, ör. 1920×1080) yayına giden görüntüdür;
 // captureStream(fps) ile kaydediciye verilir. Her karede sırayla:
-//   1. taban: VAR çerçevesi | tekrar videosu | geçiş (iki sahnenin karışımı) | program sahnesi
-//   2. yayın grafikleri (grafik modülü: skorbord türleri, altyazı, röportaj bandı)
+//   1. taban: VAR çerçevesi | özel kip (modesRef.programOverride: tekrar / VAR /
+//      röportaj / özet kipleri) | tekrar videosu | geçiş | program sahnesi
+//   2. yayın grafikleri (grafik modülü; sceneId ile sahneye göre süzülür —
+//      özel kipte yalnız override.graphics === true ise)
 //   3. tekrar rozeti
 //   4. marka logo geçişi (stinger) en üstte
-// ÖNİZLEME tuvali düzenlenen sahneyi daha düşük çözünürlükte gösterir
-// (grafikler isteğe bağlı, soluk); düzenleyicide sürüklenen kutu
-// yapılandırmaya yazılmadan (overrideRef) anında çizilir.
+// ÖNİZLEME tuvali önizlemedeki sahneyi (ya da modesRef.previewOverride'ı) daha
+// düşük çözünürlükte gösterir (grafikler isteğe bağlı, soluk); düzenleyicide
+// sürüklenen kutu yapılandırmaya yazılmadan (overrideRef) anında çizilir.
 //
 // Sabit kare hızı: rAF + yedek setInterval; React durumu kare başına
 // GÜNCELLENMEZ (istatistik ref'te), önizleme 2–3 karede bir çizilir, geçiş
@@ -19,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bugPlacement, drawBottomBoard, drawReplayBadge, drawScoreBug } from "../../lib/studio/scorebug";
 import { fallbackDue, previewSize } from "../../lib/studio/compose";
 import { drawStinger, STINGER_MS } from "../../lib/studio/stinger";
-import { progressAt, transitionFrame } from "../../lib/studio/transitions";
+import { drawTransitionStinger, isStingerKind, progressAt, transitionFrame } from "../../lib/studio/transitions";
 import { resolveScene } from "../../lib/studio/scenes";
 import { drawScene, drawVideoFull } from "./draw";
 import { drawVar } from "./var/drawVar";
@@ -57,7 +59,10 @@ function blit(ctx, src, v, W, H, blurCanvas) {
   ctx.restore();
 }
 
-export function useCompositor({ width, height, fps, configRef, runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef }) {
+/** Geçişte "özel kip" hedefi (sahne kimliği yerine). */
+export const MODE_TARGET = "mode:program";
+
+export function useCompositor({ width, height, fps, configRef, runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef, modesRef }) {
   const program = useMemo(() => document.createElement("canvas"), []);
   const preview = useMemo(() => document.createElement("canvas"), []);
   const scratchA = useMemo(() => document.createElement("canvas"), []);
@@ -95,37 +100,60 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
     const H = program.height;
     const ctx = program.getContext("2d", { alpha: false });
     const sceneOf = (id) => resolveScene(cfg, id);
+    const modes = modesRef?.current || null;
+    const pgmOv = modes?.programOverride || null;
+    const pvwOv = modes?.previewOverride || null;
     const replay = replayRef.current;
     const vr = varRef?.current;
     const brand = brandRef?.current || {};
     const clock = matchClockRef?.current?.() ?? null;
     // Düzenleyicide sürüklenen kutu (stüdyo modu kapalıyken program da düzenlenir).
     const opts = { now, matchClockMs: clock, override: overrideRef?.current || null };
+    // Sahne ya da özel kip (geçişte MODE_TARGET): hedef tuvale çizer.
+    const drawTarget = (c, id, w, h) => {
+      if (id === MODE_TARGET) {
+        const ov = pgmOv || pvwOv;
+        c.fillStyle = "#000"; c.fillRect(0, 0, w, h);
+        if (ov) { try { ov.draw(c, { width: w, height: h, now }); } catch { /* kip hatası yayını durdurmasın */ } }
+        return;
+      }
+      drawScene(c, sceneOf(id), cfg.sources, runtime, w, h, opts);
+    };
 
     // 1. taban
     const tr = transitionRef.current;
     let stingerP = null;
+    let stingerKind = "stinger";
+    let graphics = true;
+    let gSceneId = cfg.programSceneId;
     if (vr?.active) {
       const vsrc = vr.sourceId ? cfg.sources.find((x) => x.id === vr.sourceId) : null;
       drawVar(ctx, W, H, now, { ...vr, source: vsrc, sourceRt: vsrc ? runtime.get(vsrc.id) : null }, brand);
+    } else if (pgmOv && !(tr && (tr.toId === MODE_TARGET || tr.fromId === MODE_TARGET))) {
+      ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
+      // drawBase: program SAHNESİ grafiksiz (kipin giriş / çıkış geçişinin öbür ucu).
+      try { pgmOv.draw(ctx, { width: W, height: H, now, drawBase: (c) => drawScene(c, sceneOf(cfg.programSceneId), cfg.sources, runtime, W, H, opts) }); } catch { /* yoksay */ }
+      graphics = pgmOv.graphics === true;
+      gSceneId = pgmOv.id || null;
     } else if (replay?.active && replay.el) {
       drawVideoFull(ctx, replay.el, W, H);
     } else if (tr) {
       const p = progressAt(tr, now);
       const f = transitionFrame(tr.kind, p);
-      if (tr.kind === "stinger") {
-        drawScene(ctx, sceneOf(f.switched ? tr.toId : tr.fromId), cfg.sources, runtime, W, H, opts);
+      if (isStingerKind(tr.kind)) {
+        drawTarget(ctx, f.switched ? tr.toId : tr.fromId, W, H);
         stingerP = p;
+        stingerKind = tr.kind;
       } else if (tr.kind === "fade") {
-        drawScene(ctx, sceneOf(tr.fromId), cfg.sources, runtime, W, H, opts);
+        drawTarget(ctx, tr.fromId, W, H);
         const b = scratchB.getContext("2d", { alpha: false });
-        drawScene(b, sceneOf(tr.toId), cfg.sources, runtime, W, H, opts);
+        drawTarget(b, tr.toId, W, H);
         blit(ctx, scratchB, f.to, W, H, null);
       } else {
         const a = scratchA.getContext("2d", { alpha: false });
         const b = scratchB.getContext("2d", { alpha: false });
-        drawScene(a, sceneOf(tr.fromId), cfg.sources, runtime, W, H, opts);
-        drawScene(b, sceneOf(tr.toId), cfg.sources, runtime, W, H, opts);
+        drawTarget(a, tr.fromId, W, H);
+        drawTarget(b, tr.toId, W, H);
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, W, H);
         blit(ctx, scratchA, f.from, W, H, blurC);
@@ -142,17 +170,23 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
           ctx.fillRect(edge - Math.max(2, W / 480), 0, Math.max(2, W / 240), H);
         } else blit(ctx, scratchB, f.to, W, H, blurC);
       }
+      const toMode = tr.toId === MODE_TARGET;
+      if (toMode) { graphics = (pgmOv || pvwOv)?.graphics === true || p < 0.5; gSceneId = p < 0.5 ? tr.fromId : (pgmOv || pvwOv)?.id || null; }
+      else if (tr.fromId === MODE_TARGET) { gSceneId = tr.toId; graphics = p >= 0.5 || (pgmOv || pvwOv)?.graphics === true; }
+      else gSceneId = p < 0.5 ? tr.fromId : tr.toId;
       if (p >= 1) transitionRef.current = null;
     } else {
       drawScene(ctx, sceneOf(cfg.programSceneId), cfg.sources, runtime, W, H, opts);
     }
 
-    // 2. yayın grafikleri
-    try { overlayRef.current?.(ctx, { width: W, height: H, now, target: "program", replay: Boolean(replay?.active), event: replay?.active ? replay.event : null }); } catch { /* grafik hatası yayını durdurmasın */ }
+    // 2. yayın grafikleri (sahneye göre süzülür)
+    if (graphics) {
+      try { overlayRef.current?.(ctx, { width: W, height: H, now, target: "program", sceneId: gSceneId, replay: Boolean(replay?.active), event: replay?.active ? replay.event : null }); } catch { /* grafik hatası yayını durdurmasın */ }
+    }
     // 3. tekrar rozeti
     if (replay?.active && !vr?.active) drawReplayBadge(ctx, W);
     // 4. logo geçişi
-    if (stingerP != null && stingerP < 1) drawStinger(ctx, W, H, stingerP, brand.logo, brand.branding);
+    if (stingerP != null && stingerP < 1) drawTransitionStinger(ctx, W, H, stingerKind, stingerP, brand.logo, brand.branding);
     const sg = stingerRef.current;
     if (sg) {
       const p = Math.min(1, (now - sg.startedAt) / sg.ms);
@@ -174,11 +208,14 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       const pw = preview.width;
       const ph = preview.height;
       const pctx = preview.getContext("2d", { alpha: false });
-      drawScene(pctx, sceneOf(cfg.previewSceneId), cfg.sources, runtime, pw, ph, { ...opts, placeholders: true });
-      if (previewGraphicsRef?.current) {
+      if (pvwOv) {
+        pctx.fillStyle = "#000"; pctx.fillRect(0, 0, pw, ph);
+        try { pvwOv.draw(pctx, { width: pw, height: ph, now }); } catch { /* yoksay */ }
+      } else drawScene(pctx, sceneOf(cfg.previewSceneId), cfg.sources, runtime, pw, ph, { ...opts, placeholders: true });
+      if (previewGraphicsRef?.current && (!pvwOv || pvwOv.graphics === true)) {
         pctx.save();
         pctx.globalAlpha = 0.55;
-        try { overlayRef.current?.(pctx, { width: pw, height: ph, now, target: "preview" }); } catch { /* yoksay */ }
+        try { overlayRef.current?.(pctx, { width: pw, height: ph, now, target: "preview", sceneId: pvwOv ? pvwOv.id || null : cfg.previewSceneId }); } catch { /* yoksay */ }
         pctx.restore();
       }
     }
@@ -193,7 +230,7 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       f.drawMax = 0;
       f.stalls = 0;
     }
-  }, [blurC, brandRef, configRef, fps, matchClockRef, overlayRef, overrideRef, preview, previewGraphicsRef, program, replayRef, runtimeRef, scratchA, scratchB, varRef]);
+  }, [blurC, brandRef, configRef, fps, matchClockRef, modesRef, overlayRef, overrideRef, preview, previewGraphicsRef, program, replayRef, runtimeRef, scratchA, scratchB, varRef]);
 
   useEffect(() => {
     let raf = 0;

@@ -1,10 +1,11 @@
 // Maç yönetimi · REJİ (Reji + Olaylar tek sayfada):
 //
-//   SOL     skor kartları (+GOL → golcü seçici), son golü geri al, saat / devre / aşama
-//   ORTA    iki takım için tüm olay türleri (sunucunun tanıdığı her kod): tek tık →
-//           oyuncu seçici; değişiklikte çıkan + giren; "Ayrıntılı olay" tam form
-//   SAĞ     birikmiş olay listesi (en yeni üstte), takıma / türe göre süzgeç,
-//           satırda düzenle / sil
+//   SOL     skor tablosu (+GOL → golcü seçici), saat / devre / aşama, son golü geri al
+//   ORTA    takım seçimi + olay ızgarası dört başlıkta (Goller, Kartlar,
+//           Değişiklik, Diğer): tek tık → oyuncu seçici; değişiklikte çıkan +
+//           giren; "Ayrıntılı olay" tam form
+//   SAĞ     olay listesi (en yeni üstte, takım rengi şeridi, dakika çipi),
+//           takıma / türe göre süzgeç, satırda düzenle / sil
 //
 // Kancalar (CORE tekrar kaydı için):
 //   onGoalTap({ side, code })             GOL koduna basıldığı an (golcü seçilmeden)
@@ -14,7 +15,7 @@
 import React, { useMemo, useState } from "react";
 import { Icon, Modal, useConfirm, useToast } from "../../../components/ui";
 import { TIMELINE_CODES } from "../../../lib/studio/match";
-import { eventSideFor, eventTally, eventToForm, isSubstitution, manageEventLabel, quickEventCatalog, rejiEventRows, validateEvent } from "../../../lib/studio/manage";
+import { eventSideFor, eventTally, eventToForm, isSubstitution, manageEventLabel, quickEventCatalog, rejiEventGroups, rejiEventRows, validateEvent } from "../../../lib/studio/manage";
 import { errorText } from "../studioApi";
 import PlayerPicker from "../PlayerPicker";
 import EventForm from "./EventForm";
@@ -25,10 +26,12 @@ const FILTERS = [
   { key: "all", label: "Tümü" },
   { key: "home", label: "Ev" },
   { key: "away", label: "Dep." },
-  { key: "timeline", label: "Gol/kart/değ." },
+  { key: "timeline", label: "Önemli" },
   { key: "stats", label: "İstatistik" },
 ];
 const CATALOG = quickEventCatalog();
+const GROUPS = rejiEventGroups();
+const MARK = { goal: "ball", own: "ball", yellow: "tag", red: "tag", card: "alert", other: "activity" };
 const GOAL_CODES = CATALOG.flatMap((g) => g.items).filter((it) => it.input === "goal").map(({ code, label }) => ({ code, label }));
 const blankDetail = (side = "home") => ({ side, code: "", playerId: "", outId: "", inId: "", minute: "", period: null, note: "" });
 
@@ -41,6 +44,7 @@ export default function RejiTab({ matchId, live, onGoalTap, onEventCreated }) {
   const [detail, setDetail] = useState(null); // form
   const [editing, setEditing] = useState(null); // { ev, form }
   const [filter, setFilter] = useState("all");
+  const [side, setSide] = useState("home"); // olay ızgarasının takımı
   const events = live?.events || [];
   const nameOf = live?.nameOf || (() => null);
   const rows = useMemo(() => rejiEventRows(events, { filter, homeTeamId: live?.homeTeamId, awayTeamId: live?.awayTeamId, nameOf, timelineCodes: TIMELINE_CODES }), [events, filter, live?.homeTeamId, live?.awayTeamId, nameOf]);
@@ -106,61 +110,70 @@ export default function RejiTab({ matchId, live, onGoalTap, onEventCreated }) {
   };
   const nudge = (d) => runSafe(() => live.nudgeClock(d), "Saat düzeltilemedi.");
 
+  const sideName = teamName(side);
   return (
     <div className="rj">
-      <section className="mg-card rj-col rj-col--left">
+      <section className="rj-panel rj-left" aria-label="Skor ve saat">
         <RejiControls live={live} busy={busy} onGoal={goal} onControl={control} onFinish={finish} onUndo={remove} onNudge={nudge} />
       </section>
 
-      <section className="mg-card rj-col rj-col--mid">
-        <header className="mg-card__head">
-          <h5><Icon name="zap" size={13} /> Olay gir <small>dakika: {live?.minute ?? 0}'</small></h5>
-          <button type="button" className="btn btn--xs" onClick={() => setDetail(blankDetail())}><Icon name="sliders" size={12} /> Ayrıntılı olay</button>
+      <section className="rj-panel rj-mid" aria-label="Olay gir">
+        <header className="rj-head">
+          <h5><Icon name="zap" size={14} /> Olay gir</h5>
+          <span className="rj-minute" title="Olaylar bu dakikayla yazılır">{live?.minute ?? 0}'</span>
+          <span className="mg-grow" />
+          <button type="button" className="btn btn--xs" onClick={() => setDetail(blankDetail(side))}><Icon name="sliders" size={12} /> Ayrıntılı olay</button>
         </header>
-        <div className="rj-grid">
-          {["home", "away"].map((side) => (
-            <div key={side} className={`rj-team is-${side}`}>
-              <h6 className={`mg-sidehead is-${side}`}>{teamName(side)}</h6>
-              {CATALOG.map((grp) => (
-                <div key={grp.key} className="rj-group">
-                  <div className="rj-codes">
-                    {grp.items.map((it) => (
-                      <button key={it.code} type="button" className={`mg-code is-${it.tone}${it.code === "YELLOW_CARD" ? " is-yellow" : ""}${it.code === "RED_CARD" ? " is-red" : ""}`} disabled={busy} onClick={() => tap(side, it)}>
-                        {it.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+        <div className="rj-sides" role="radiogroup" aria-label="Olayın takımı">
+          {["home", "away"].map((s) => (
+            <button key={s} type="button" role="radio" aria-checked={side === s} className={`rj-side is-${s}${side === s ? " is-on" : ""}`} onClick={() => setSide(s)}>
+              <span className="rj-side__name">{teamName(s)}</span>
+              <small>{tally[s].goals} gol · {tally[s].cards} kart · {tally[s].subs} değ.</small>
+            </button>
+          ))}
+        </div>
+        <div className={`rj-groups is-${side}`}>
+          {GROUPS.map((grp) => (
+            <fieldset key={grp.key} className={`rj-group is-${grp.key}`}>
+              <legend><Icon name={grp.icon} size={12} /> {grp.title}</legend>
+              <div className="rj-btns">
+                {grp.items.map((it) => (
+                  <button key={it.code} type="button" className={`rj-btn is-${it.tone}`} disabled={busy} onClick={() => tap(side, it)} title={`${it.label} · ${sideName}`}>
+                    {it.code === "YELLOW_CARD" || it.code === "RED_CARD" ? <i className={`rj-card is-${it.tone}`} aria-hidden="true" /> : null}
+                    <span>{it.short}</span>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
           ))}
         </div>
       </section>
 
-      <section className="mg-card rj-col rj-col--right">
-        <header className="mg-card__head">
-          <h5><Icon name="list" size={13} /> Olaylar <small>{events.length}</small></h5>
-          <span className="mg-muted mg-small">{teamName("home")}: {tally.home.goals} gol · {tally.home.cards} kart — {teamName("away")}: {tally.away.goals} gol · {tally.away.cards} kart</span>
+      <section className="rj-panel rj-right" aria-label="Olaylar">
+        <header className="rj-head">
+          <h5><Icon name="list" size={14} /> Olaylar <small>{events.length}</small></h5>
         </header>
-        <div className="seg seg--sm rj-filter">
-          {FILTERS.map((f) => <button key={f.key} type="button" className={filter === f.key ? "is-active" : ""} onClick={() => setFilter(f.key)}>{f.label}</button>)}
+        <div className="rj-filter" role="tablist" aria-label="Olay süzgeci">
+          {FILTERS.map((f) => <button key={f.key} type="button" role="tab" aria-selected={filter === f.key} className={filter === f.key ? "is-on" : ""} onClick={() => setFilter(f.key)}>{f.label}</button>)}
         </div>
         {rows.length ? (
-          <ul className="mg-rows mg-rows--scroll rj-events">
-            {rows.map(({ ev, side, label, tone, who, minute, period }) => (
-              <li key={ev.id} className={`mg-row mg-ev is-${side}`}>
-                <span className="mg-ev__min">{minute}'<small>{period >= 3 ? "UZ" : `${period}.Y`}</small></span>
-                <span className={`mg-ev__mark is-${tone}`} />
-                <span className="mg-row__main">
+          <ul className="rj-events">
+            {rows.map(({ ev, side: s, label, tone, who, minute, period }) => (
+              <li key={ev.id} className={`rj-ev is-${s}`}>
+                <span className="rj-ev__min">{minute}'<small>{period >= 3 ? "UZ" : `${period}.Y`}</small></span>
+                <span className={`rj-ev__mark is-${tone}`}><Icon name={MARK[tone] || "activity"} size={12} /></span>
+                <span className="rj-ev__main">
                   <strong>{label}</strong>
-                  <small>{teamName(side)}{who ? ` · ${who}` : ""}{ev.aciklama && ev.aciklama !== "none" ? ` · ${ev.aciklama}` : ""}</small>
+                  <small>{who || "Oyuncusuz"} · {teamName(s)}{ev.aciklama && ev.aciklama !== "none" ? ` · ${ev.aciklama}` : ""}</small>
                 </span>
-                <button type="button" className="icon-btn icon-btn--xs" title="Düzenle" onClick={() => setEditing({ ev, form: eventToForm(ev, live?.homeTeamId, live?.awayTeamId) })}><Icon name="pencil" size={12} /></button>
-                <button type="button" className="icon-btn icon-btn--xs" title="Sil" onClick={() => remove(ev)}><Icon name="trash" size={12} /></button>
+                <span className="rj-ev__acts">
+                  <button type="button" className="icon-btn icon-btn--xs" title="Düzenle" onClick={() => setEditing({ ev, form: eventToForm(ev, live?.homeTeamId, live?.awayTeamId) })}><Icon name="pencil" size={12} /></button>
+                  <button type="button" className="icon-btn icon-btn--xs" title="Sil" onClick={() => remove(ev)}><Icon name="trash" size={12} /></button>
+                </span>
               </li>
             ))}
           </ul>
-        ) : <p className="mg-muted">{events.length ? "Bu süzgeçte olay yok." : "Henüz olay yok."}</p>}
+        ) : <div className="mg-empty"><Icon name="list" size={20} /><p>{events.length ? "Bu süzgeçte olay yok." : "Henüz olay yok."}</p></div>}
       </section>
 
       {picker && (

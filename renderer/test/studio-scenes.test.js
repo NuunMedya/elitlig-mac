@@ -1,7 +1,7 @@
 import {
-  SCENES_KEY, addLayer, addScene, addSource, addSourceWithScene, clockText, defaultScenesConfig, duplicateScene, isShownInMultiview, layersTopFirst,
+  SCENES_KEY, addLayer, addScene, addSource, sceneFromSource, clockText, defaultScenesConfig, duplicateScene, layersTopFirst,
   loadScenesConfig, migrateV2, moveLayerTo, moveSceneTo, multiviewTiles, normalizeScenesConfig, pipBox, removeScene, removeSource, renameScene,
-  resetMultiview, resolveScene, sceneAtHotkey, sceneHotkey, slideIndex, sourceDefaults, sourceSceneId, toggleMultiview, uiIndexToArray, updateLayer,
+  resolveScene, sceneAtHotkey, sceneHotkey, slideIndex, sourceDefaults, sourceSceneId, uiIndexToArray, updateLayer,
 } from "../src/lib/studio/scenes";
 import {
   centerLayer, cropLayer, fitToScreen, fromPixels, handleAt, hitTest, moveLayer, normAspect, nudge, resizeLayer, rotationFromPoint, stretchToScreen, toPixels, unrotatePoint, MIN_SIZE,
@@ -74,7 +74,7 @@ describe("sahne modeli: sürüm 2 → 3 göçü", () => {
     expect(l[0].fit).toBe("cover");
     expect(typeof l[0].id).toBe("string");
     expect(c.previewSceneId).toBe("s1");
-    expect(c.multiview.show).toEqual(["s1"]);
+    expect(c.multiview.show).toBeNull(); // "Önizlemede göster" kaldırıldı: şeritte tüm sahneler
   });
 });
 
@@ -114,23 +114,21 @@ describe("sahne / katman / kaynak işlemleri", () => {
     c = removeSource(c, source.id);
     expect(c.scenes.find((s) => s.id === "sc_cam1").layers.some((l) => l.sourceId === source.id)).toBe(false);
   });
-  it("yeni kaynak kendi sahnesiyle gelir; kaynak sanal sahnesi çözülür", () => {
-    const { config, source, scene } = addSourceWithScene(defaultScenesConfig(), sourceDefaults("image"));
-    expect(scene.layers[0]).toMatchObject({ sourceId: source.id, fit: "contain" });
+  it("kaynak eklemek sahne oluşturmaz; 'Bu kaynaktan sahne oluştur' açık eylem; sanal sahne çözülür", () => {
+    const base = defaultScenesConfig();
+    const { config, source } = addSource(base, sourceDefaults("image"));
+    expect(config.scenes).toHaveLength(base.scenes.length);
+    const { config: c2, scene } = sceneFromSource(config, source.id);
+    expect(c2.scenes).toHaveLength(base.scenes.length + 1);
+    expect(scene.layers[0]).toMatchObject({ sourceId: source.id, fit: "contain", w: 1, h: 1 });
     const v = resolveScene(config, sourceSceneId(source.id));
     expect(v.virtual).toBe(true);
-    expect(v.layers[0].w).toBe(1);
   });
-  it("Önizlemede göster: varsayılan tüm sahneler; seçimle sahne gizlenir, kaynak eklenir", () => {
-    let c = defaultScenesConfig();
-    expect(multiviewTiles(c).map((t) => t.id)).toEqual(c.scenes.map((s) => s.id));
-    c = toggleMultiview(c, "sc_cam2");
-    c = toggleMultiview(c, sourceSceneId("src_cam1"));
+  it("çoklu görünüm yalnız sahneleri gösterir (kaynak kutusu yok)", () => {
+    const c = defaultScenesConfig();
     const tiles = multiviewTiles(c);
-    expect(tiles.map((t) => t.id)).toEqual(["sc_cam1", "sc_pip", "src:src_cam1"]);
-    expect(tiles[2]).toMatchObject({ kind: "source", sourceKind: "camera", hotkey: null });
-    expect(isShownInMultiview(c, "sc_cam2")).toBe(false);
-    expect(resetMultiview(c).multiview.show).toBeNull();
+    expect(tiles.map((t) => t.id)).toEqual(c.scenes.map((s) => s.id));
+    expect(tiles.every((t) => t.kind === "scene")).toBe(true);
   });
   it("saat metni ve slayt sırası", () => {
     const at = new Date(2026, 10, 5, 21, 7, 9).getTime();
@@ -299,22 +297,23 @@ describe("VAR", () => {
 });
 
 describe("çalışma alanları", () => {
-  it("5 düzen; bilinmeyen → stüdyo; önizleme görünürlüğü", () => {
-    expect(WORKSPACES).toHaveLength(5);
-    expect(workspaceOf("yok").key).toBe("studio");
-    expect(previewVisible(workspaceOf("program"), true)).toBe(false);
-    expect(previewVisible(workspaceOf("mv4"), true)).toBe(true);
-    expect(previewVisible(workspaceOf("studio"), false)).toBe(false);
+  it("5 düzen; eski anahtarlar göç eder; bilinmeyen → klasik", () => {
+    expect(WORKSPACES.map((w) => w.key)).toEqual(["classic", "program", "grid4", "grid9", "compact"]);
+    expect(workspaceOf("yok").key).toBe("classic");
+    expect(workspaceOf("studio").key).toBe("classic");
+    expect(workspaceOf("mv9").key).toBe("grid9");
+    expect(workspaceOf("vertical").key).toBe("program");
+    expect(previewVisible(workspaceOf("program"), true)).toBe(true);
+    expect(previewVisible(workspaceOf("classic"), false)).toBe(false);
   });
-  it("ızgara: ilk hücre önizleme, eksikler boş, fazlası kesilir", () => {
+  it("ızgara: yalnız sahne kutuları, eksikler boş, fazlası kesilir", () => {
     const tiles = [1, 2, 3, 4, 5].map((i) => ({ id: `t${i}` }));
-    const c4 = gridCells(workspaceOf("mv4"), tiles);
-    expect(c4.map((c) => c.type)).toEqual(["preview", "tile", "tile", "tile"]);
-    const c9 = gridCells("mv9", tiles, { studioMode: false });
+    const c4 = gridCells(workspaceOf("grid4"), tiles);
+    expect(c4.map((c) => c.type)).toEqual(["tile", "tile", "tile", "tile"]);
+    const c9 = gridCells("grid9", tiles);
     expect(c9).toHaveLength(9);
-    expect(c9[0].type).toBe("tile");
     expect(c9.filter((c) => c.type === "empty")).toHaveLength(4);
-    expect(gridCells("studio", tiles)).toEqual([]);
+    expect(gridCells("classic", tiles)).toEqual([]);
   });
 });
 

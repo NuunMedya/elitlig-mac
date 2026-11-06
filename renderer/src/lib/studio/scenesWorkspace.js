@@ -1,53 +1,58 @@
 // Yayın Stüdyosu — ÇALIŞMA ALANI düzenleri (saf). Üst çubuktan seçilir, hatırlanır.
+// Ekranlarda YALNIZ SAHNELER görünür (kaynaklar kendi sekmesinde).
 //
-//   studio    Önizleme + program yan yana, altta sahne şeridi
-//   program   Yalnız program büyük (kutuya tık doğrudan yayına), altta şerit
-//   mv4       Solda 2×2 çoklu görünüm (ilk kutu önizleme) + sağda program
-//   mv9       Solda 3×3 çoklu görünüm (ilk kutu önizleme) + sağda program
-//   vertical  Solda dikey sahne / katman listesi + önizleme ve program
+//   classic   KLASİK: Önizleme | geçiş | Program, altta sahne şeridi (OBS stüdyo modu)
+//   program   BÜYÜK PROGRAM: program büyük; sağda küçük önizleme, geçiş ve dikey sahne listesi (vMix)
+//   grid4     ÇOKLU GÖRÜNÜM 2×2: solda sahne ızgarası, sağda program + önizleme + geçiş
+//   grid9     ÇOKLU GÖRÜNÜM 3×3: aynı, dokuz sahne
+//   compact   KOMPAKT: dizüstü (1280×800) için sıkı önizleme | program + küçük şerit
 export const WORKSPACES = [
-  { key: "studio", label: "Stüdyo (önizleme + program)", short: "Stüdyo", monitors: "dual", grid: 0, strip: true, sidebar: false },
-  { key: "program", label: "Yalnız program büyük", short: "Program", monitors: "single", grid: 0, strip: true, sidebar: false },
-  { key: "mv4", label: "Multiview 2×2 + program", short: "2×2", monitors: "grid", grid: 2, strip: false, sidebar: false },
-  { key: "mv9", label: "Multiview 3×3 + program", short: "3×3", monitors: "grid", grid: 3, strip: false, sidebar: false },
-  { key: "vertical", label: "Dikey sahne listesi + program", short: "Dikey", monitors: "dual", grid: 0, strip: false, sidebar: true },
+  { key: "classic", label: "Klasik", hint: "Önizleme | Program + sahne şeridi", icon: "overview", monitors: "dual", grid: 0, strip: true, rail: false, density: "normal" },
+  { key: "program", label: "Büyük program", hint: "Program büyük, sağda önizleme ve sahne listesi", icon: "video", monitors: "rail", grid: 0, strip: false, rail: true, density: "normal" },
+  { key: "grid4", label: "Çoklu görünüm 2×2", hint: "Sahne ızgarası + program", icon: "grid", monitors: "grid", grid: 2, strip: false, rail: false, density: "normal" },
+  { key: "grid9", label: "Çoklu görünüm 3×3", hint: "Dokuz sahne + program", icon: "grid", monitors: "grid", grid: 3, strip: false, rail: false, density: "normal" },
+  { key: "compact", label: "Kompakt", hint: "Dizüstü (1280×800): sıkı düzen", icon: "layers", monitors: "dual", grid: 0, strip: true, rail: false, density: "compact" },
 ];
 
-export const workspaceOf = (key) => WORKSPACES.find((w) => w.key === key) || WORKSPACES[0];
+/** Eski anahtarlar (sürüm 2.11). */
+export const LEGACY_WORKSPACES = { studio: "classic", mv4: "grid4", mv9: "grid9", vertical: "program" };
 
-/** Önizleme görünür mü (stüdyo modu ve düzen önizlemeyi gösteriyorsa). */
-export const previewVisible = (ws, studioMode) => Boolean(studioMode) && workspaceOf(ws?.key || ws).monitors !== "single";
+export const workspaceOf = (key) => {
+  const k = LEGACY_WORKSPACES[key] || key;
+  return WORKSPACES.find((w) => w.key === k) || WORKSPACES[0];
+};
+
+/** Önizleme görünür mü (stüdyo modu açıksa; her düzende önizleme yeri var). */
+export const previewVisible = (ws, studioMode) => Boolean(studioMode) && Boolean(workspaceOf(ws?.key || ws));
 
 /**
- * Izgara hücreleri: ilk hücre önizleme (stüdyo modunda), kalanlar kutular
- * (program ve önizlemedeki dahil, sırasıyla). Eksik hücreler { type: "empty" }.
+ * Izgara hücreleri: YALNIZ sahne kutuları (sırasıyla). Eksik hücreler
+ * { type: "empty" }, fazlası { overflow } sayısıyla bildirilir.
  */
-export function gridCells(ws, tiles, { studioMode = true } = {}) {
+export function gridCells(ws, tiles) {
   const w = workspaceOf(ws?.key || ws);
   const n = w.grid * w.grid;
   if (!n) return [];
-  const cells = [];
-  if (studioMode) cells.push({ type: "preview", key: "preview" });
-  for (const t of tiles) {
-    if (cells.length >= n) break;
-    cells.push({ type: "tile", key: t.id, tile: t });
-  }
+  const cells = tiles.slice(0, n).map((t) => ({ type: "tile", key: t.id, tile: t }));
   while (cells.length < n) cells.push({ type: "empty", key: `empty_${cells.length}` });
   return cells;
 }
+export const gridOverflow = (ws, tiles) => {
+  const w = workspaceOf(ws?.key || ws);
+  return w.grid ? Math.max(0, tiles.length - w.grid * w.grid) : 0;
+};
 
-/** Kısayol yardımı (operatör ekranı). */
+/** Kısayol yardımındaki sabit satırlar (değiştirilemeyen düzenleyici tuşları). */
+export const FIXED_SHORTCUTS = [
+  ["1 – 9", "Sahneyi önizlemeye al (sahne sırası)"],
+  ["Sahne düzenleyici: ok tuşları", "Seçili katmanı 1 px kaydır (Shift: 10 px)"],
+  ["Sahne düzenleyici: Shift + köşe", "Boyutlarken oranı koru"],
+  ["Sahne düzenleyici: Alt + tutamak", "Kırp"],
+  ["Sahne düzenleyici: Delete", "Seçili katmanı sahneden çıkar"],
+];
+
+/** Eski içe aktarımlar için (değiştirilebilir tuşlar settings/settings.js HOTKEY_ACTIONS'ta). */
 export const SHORTCUTS = [
   ["Boşluk / Enter", "Önizlemeyi yayına geçir (program önizlemeye düşer)"],
-  ["1 – 9", "Sahneyi önizlemeye al (sahne sırası)"],
-  ["M", "Mikrofonu aç / kapat"],
-  ["R", "Son tekrarı yayına ver / canlıya dön"],
-  ["B", "Önemli an: son 10 saniyeyi tekrar olarak kaydet"],
-  ["G sonra H / A", "Ev sahibi / deplasman golü"],
-  ["V", "VAR kontrolünü aç / kapat"],
-  ["Ok tuşları", "Seçili katmanı 1 px kaydır (Shift: 10 px)"],
-  ["Shift + köşe", "Boyutlarken oranı koru"],
-  ["Alt + tutamak", "Kırp"],
-  ["Delete", "Seçili katmanı sahneden çıkar"],
-  ["?", "Bu yardımı aç / kapat"],
+  ...FIXED_SHORTCUTS,
 ];

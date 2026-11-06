@@ -1,6 +1,10 @@
 // Yayın grafikleri · PROGRAM ÇIKIŞINA ÇİZİM.
 //
-//   drawGraphics(ctx, { width, height, now }, snapshot)
+//   drawGraphics(ctx, { width, height, now, sceneId }, snapshot)
+//
+// sceneId verilirse snapshot.visibility'ye göre süzülür (skorbord, altyazı,
+// röportaj bandı yalnız seçilen sahnelerde). snapshot.hideScorebug /
+// hideSubtitle / hideInterview (modların geçici gizlemesi) her zaman uyulur.
 //
 // Sahne 1920 genişliğe göre ölçeklenir (k = width / 1920; yükseklik
 // height / k). Sıra: seçili skorboard çeşidi → röportaj bandı → altyazı.
@@ -16,6 +20,7 @@ import {
 import { TICKER_LIFT, drawTicker } from "./drawTicker";
 import { getImage } from "./images";
 import { isFullPanel, normalizeVariant } from "./variants";
+import { isVisibleIn } from "./visibility";
 
 const STAGE_W = 1920;
 const MARGIN = 110; // panel gölgesi için katman payı
@@ -137,22 +142,37 @@ export function drawVariant(ctx, E, snap, { lift = 0 } = {}) {
 }
 
 /**
+ * Bu karede hangi katmanlar çizilir: { variant, subtitle, interviewBand }.
+ * Saf (sınanır): sahne görünürlüğü + mod gizlemeleri + çakışma kuralları.
+ */
+export function graphicsLayers(snap, sceneId) {
+  const v = normalizeVariant(snap?.variant);
+  const vis = snap?.visibility;
+  const subtitle = Boolean(snap?.subtitle?.onAir) && !snap?.hideSubtitle && isVisibleIn(vis, "subtitle", sceneId);
+  const interviewShown = !snap?.hideInterview && isVisibleIn(vis, "interview", sceneId);
+  // Tam ekran röportaj çeşidi röportaj görünürlüğüne bağlıdır; diğer çeşitler skorborda.
+  const variantShown = v === "interview" ? interviewShown : !snap?.hideScorebug && isVisibleIn(vis, "scorebug", sceneId);
+  const interviewBand = Boolean(snap?.interview?.onAir) && interviewShown && v !== "interview" && !isFullPanel(v);
+  // Röportaj bandı alt ortayı kullanır: orta-alt skorbord o sırada çizilmez.
+  const variant = v !== "off" && variantShown && !(interviewBand && v === "bottomboard");
+  return { variant, subtitle, interviewBand };
+}
+
+/**
  * Tüm yayın grafiklerini program tuvaline çizer.
- * frame: { width, height, now }   snapshot: buildGraphicsSnapshot() çıktısı.
+ * frame: { width, height, now, sceneId? }   snapshot: buildGraphicsSnapshot() çıktısı.
  */
 export function drawGraphics(ctx, frame, snap) {
   if (!ctx || !snap || !snap.branding) return;
+  const layers = graphicsLayers(snap, frame?.sceneId);
+  if (!layers.variant && !layers.subtitle && !layers.interviewBand) return;
   const E = makeEnv(ctx, frame, snap);
-  const v = normalizeVariant(snap.variant);
-  const subtitleOn = Boolean(snap.subtitle?.onAir);
-  const lift = subtitleOn ? TICKER_LIFT : 0;
+  const lift = layers.subtitle ? TICKER_LIFT : 0;
   ctx.save();
   ctx.scale(E.k, E.k);
   ctx.textBaseline = "middle";
-  const interviewBand = Boolean(snap.interview?.onAir) && v !== "interview" && !isFullPanel(v);
-  // Röportaj bandı alt ortayı kullanır: orta-alt skorbord o sırada çizilmez.
-  if (!(interviewBand && v === "bottomboard")) drawVariant(ctx, E, snap, { lift });
-  if (interviewBand) drawInterview(ctx, E, snap, { lift });
-  if (subtitleOn) drawTicker(ctx, E, snap);
+  if (layers.variant) drawVariant(ctx, E, snap, { lift });
+  if (layers.interviewBand) drawInterview(ctx, E, snap, { lift });
+  if (layers.subtitle) drawTicker(ctx, E, snap);
   ctx.restore();
 }
