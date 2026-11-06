@@ -12,7 +12,14 @@
 // H.264 düzeyini düzeltir (h264level.js) ve +faststart yazar.
 //
 // Arayüz klibi elitlig-studio://clips/<ad> adresinden oynatır (Range destekli).
-// Sunucuya yükleme: POST /api/admin/live-streams/matches/:id/clips?event_id=…
+// Sunucuya yükleme (2.12.1+): ÖN İMZALI akış — uploadClipPresigned:
+//   POST /api/admin/live-streams/matches/:id/clips/upload-url { event_id, size_bytes, content_type, … }
+//   PUT dosya (+ kapak) doğrudan Spaces'e (dönen başlıklar aynen; jeton yok)
+//   POST /api/admin/live-streams/matches/:id/clips (JSON) { key, event_id, poster_key, … }
+// Dosya Heroku'dan geçmez: canlı yayın sırasında yükleme hattı yayınla dolu
+// olduğunda çok parçalı yükleme Heroku'nun 30 sn sınırına takılıp 503 (H12)
+// alıyordu. Sunucuda uç yoksa (eski sunucu: kodsuz 404) eski çok parçalı yola düşülür:
+// POST /api/admin/live-streams/matches/:id/clips?event_id=…
 // (alanlar dosyadan ÖNCE: event_id, duration_ms, width, height, file).
 "use strict";
 
@@ -21,6 +28,8 @@ const path = require("node:path");
 const { Readable } = require("node:stream");
 const ff = require("./ffmpeg");
 const ffargs = require("./ffargs");
+// highlights.js → render.js → scheme.js bu dosyayı içe aktarır: döngü olmasın diye geç yüklenir.
+const presignedFlow = () => require("./highlights");
 
 const STUDIO_SCHEME = "elitlig-studio";
 const CLIP_NAME = /^clip-[\w-]{1,80}\.mp4$/;
@@ -160,6 +169,104 @@ function buildClipMultipart({ fields, file, extraFiles = [], boundary = `----eli
   }
   parts.push(Buffer.from(`\r\n--${boundary}--\r\n`, "utf8"));
   return { body: Buffer.concat(parts), contentType: `multipart/form-data; boundary=${boundary}` };
+}
+
+/* ------------------------------ ön imzalı yükleme ------------------------------ */
+
+const CLIP_ERR = {
+  BAD_REQUEST: ERR.BAD_REQUEST,
+  NOT_FOUND: ERR.NOT_FOUND,
+  TOO_LARGE: ERR.TOO_LARGE,
+  NETWORK: "Bağlantı yok: gol klibi yüklenemedi. İnternet bağlantınızı kontrol edin.",
+  UPLOAD_URL: "Gol klibi yükleme adresi alınamadı.",
+  PUT_FAILED: "Gol klibi depolama alanına yüklenemedi.",
+  FINALIZE: "Gol klibi yüklendi ama gole bağlanamadı.",
+  SERVER_PENDING: "Sunucu güncellemesi bekleniyor: gol klibi doğrudan yükleme ucu henüz yayında değil.",
+};
+
+/**
+ * Gol klibini ön imzalı akışla yükler.
+ *   file: { path, sizeBytes, posterPath? } (poster isteğe bağlı JPEG)
+ *   legacy: sunucuda uç yoksa çağrılan eski çok parçalı yükleme (() => Promise<api sonucu>)
+ * → { ok, data: klip, via: "presigned" | "multipart", posterError? } | { ok:false, error, via }
+ */
+async function uploadClipPresigned(api, { matchId, eventId, file, durationMs, width, height } = {}, { putImpl = null, emitProgress = () => {}, sleep, legacy = null } = {}) {
+  const { uploadPresigned, putFile } = presignedFlow();
+  const mid = Number(matchId);
+  const eid = Number(eventId);
+  if (!Number.isInteger(mid) || mid <= 0 || !Number.isInteger(eid) || eid <= 0) return { ...error("BAD_REQUEST"), via: "presigned" };
+  if (!file?.path || !fs.existsSync(file.path)) return { ...error("NOT_FOUND"), via: "presigned" };
+  const sizeBytes = Number(file.sizeBytes) || fs.statSync(file.path).size;
+  if (!(sizeBytes > 0)) return { ...error("NOT_FOUND", "Klip dosyası boş."), via: "presigned" };
+  if (sizeBytes > UPLOAD_LIMIT) return { ...error("TOO_LARGE"), via: "presigned" };
+  const posterPath = file.posterPath && fs.existsSync(file.posterPath) ? file.posterPath : null;
+  const meta = {
+    event_id: eid,
+    duration_ms: Math.round(Number(durationMs) || 0),
+    width: Math.round(Number(width) || 0),
+    height: Math.round(Number(height) || 0),
+  };
+  const base = `/api/admin/live-streams/matches/${mid}/clips`;
+  const res = await uploadPresigned(api, { kind: "clip", matchId: mid, base, file: { path: file.path, sizeBytes, posterPath }, meta, errors: CLIP_ERR }, { putImpl: putImpl || putFile, emitProgress, ...(sleep ? { sleep } : {}) });
+  if (res.ok) return { ok: true, data: res.result, via: "presigned", key: res.key, posterKey: res.posterKey, ...(res.posterError ? { posterError: res.posterError } : {}) };
+  if (res.error?.code === "SERVER_PENDING" && typeof legacy === "function") {
+    const old = await legacy();
+    return { ...old, via: "multipart" };
+  }
+  return { ...res, via: "presigned" };
+}
+
+/**
+ * studio:uploadClip — tekrar deposundaki açı ({ replayId, angle }) ya da eski
+ * klip ({ name }) için ön imzalı yükleme; eski sunucuda çok parçalı yola düşer.
+ * Başarıda yerel bilgi dosyasına "yüklendi" işlenir.
+ *   stores: { replays, clips } (createReplayStore / createClipStore)
+ */
+async function uploadGoalClip(api, payload = {}, { replays, clips, putImpl, emitProgress, sleep, now = () => Date.now(), isReplayId = (v) => /^r\d{14}-[0-9a-f]{6}$/.test(String(v || "")) } = {}) {
+  const p = payload || {};
+  const mid = Number(p.matchId);
+  const fromReplay = Boolean(p.replayId) || isReplayId(p.name);
+  if (fromReplay) {
+    const replayId = p.replayId || p.name;
+    const replay = replays?.get?.(replayId);
+    const angle = p.angle || "program";
+    const a = replay?.angles?.find((x) => x.angle === String(angle));
+    const eid = Number(p.eventId ?? replay?.eventId);
+    const legacy = () => replays.upload(api, { ...p, replayId });
+    // Dosya / açı yoksa eski yol aynı Türkçe hatayı (NOT_FOUND / BAD_ANGLE) verir.
+    if (!replay || !a?.path) return legacy();
+    const res = await uploadClipPresigned(api, {
+      matchId: mid, eventId: eid,
+      file: { path: a.path, sizeBytes: a.sizeBytes, posterPath: a.posterPath || null },
+      durationMs: p.durationMs ?? a.durationMs, width: p.width ?? a.width, height: p.height ?? a.height,
+    }, { putImpl, emitProgress, sleep, legacy });
+    if (res.ok && res.via === "presigned") {
+      try {
+        replays.update(replay.id, {
+          ...(replay.eventId ? {} : { eventId: eid }),
+          uploaded: { matchId: mid, eventId: eid, angle: a.angle, clipId: res.data?.id ?? null, url: res.data?.url ?? null, at: new Date(now()).toISOString(), via: "presigned" },
+        });
+      } catch { /* bilgi dosyası isteğe bağlı */ }
+    }
+    return res;
+  }
+  const clip = clips?.describe?.(p.name);
+  const legacy = () => clips.upload(api, p);
+  if (!clip) return legacy();
+  const res = await uploadClipPresigned(api, {
+    matchId: mid, eventId: Number(p.eventId),
+    file: { path: clip.path, sizeBytes: clip.sizeBytes },
+    durationMs: p.durationMs ?? clip.durationMs, width: p.width ?? clip.width, height: p.height ?? clip.height,
+  }, { putImpl, emitProgress, sleep, legacy });
+  if (res.ok && res.via === "presigned") {
+    try {
+      const file = clip.path.replace(/\.mp4$/, ".json");
+      let meta = {};
+      try { meta = JSON.parse(fs.readFileSync(file, "utf8")); } catch { /* bilgi dosyası yok */ }
+      fs.writeFileSync(file, JSON.stringify({ ...meta, uploaded: { matchId: mid, eventId: Number(p.eventId), clipId: res.data?.id ?? null, url: res.data?.url ?? null, at: new Date(now()).toISOString(), via: "presigned" } }));
+    } catch { /* yoksay */ }
+  }
+  return res;
 }
 
 /* --------------------------------- depo --------------------------------- */
@@ -327,4 +434,8 @@ module.exports = {
   serveClip,
   buildClipMultipart,
   createClipStore,
+  uploadClipPresigned,
+  uploadGoalClip,
+  CLIP_ERR,
+  UPLOAD_LIMIT,
 };

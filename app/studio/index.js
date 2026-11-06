@@ -48,7 +48,7 @@
 const path = require("node:path");
 const fs = require("node:fs");
 const { createStudioEngine } = require("./engine");
-const { createClipStore, STUDIO_SCHEME } = require("./clips");
+const { createClipStore, STUDIO_SCHEME, uploadGoalClip } = require("./clips");
 const { createAngles } = require("./angles");
 const { createReplayStore } = require("./replays");
 const { createRenderer, pruneHighlights } = require("./render");
@@ -455,8 +455,12 @@ function registerStudio({
       if (!isSignedIn()) return signedOut();
       await ensureFfmpegPath();
       // { matchId, eventId, replayId, angle = "program" } ya da eski { matchId, eventId, name }.
-      if (p.replayId || REPLAY_ID.test(String(p.name || ""))) return replays.upload(uploadApi, { ...p, replayId: p.replayId || p.name });
-      return clips.upload(uploadApi, p);
+      // Ön imzalı yükleme (dosya doğrudan Spaces'e; Heroku'nun 30 sn sınırına takılmaz);
+      // eski sunucuda çok parçalı yola düşer. Her adım yükleme günlüğüne yazılır.
+      return uploadGoalClip(uploadApi, p, {
+        replays, clips, putImpl: loggedPut, isReplayId: (v) => REPLAY_ID.test(String(v || "")),
+        emitProgress: (pr) => broadcast("studio:uploadProgress", pr),
+      });
     });
   });
   ipcMain.handle("studio:revealClip", (_e, name) => {
