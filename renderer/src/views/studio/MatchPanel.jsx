@@ -1,19 +1,20 @@
-// Yayın Stüdyosu · Maç sekmesi: skor kartları (GOL), son golü geri al,
-// büyük saat + devre, aşama düğmesi ve saat düzeltme.
-import React from "react";
+// Yayın Stüdyosu · REJİ sekmesi (alt panel, yan yana üç sütun): skor kartları
+// (GOL), son golü geri al | büyük saat + devre + saat düzeltme | aşama düğmesi.
+import React, { memo } from "react";
 import { Icon, Kbd } from "../../components/ui";
 import { HALF_MS, PHASE_LABEL, eventLabel, isGoalCode, primaryControl } from "../../lib/studio/match";
 import { clockText } from "../../lib/studio/scorebug";
 
 const NUDGES = [-60_000, -10_000, 10_000, 60_000];
 
-export default function MatchPanel({ live, saving, goalArmed, onGoal, onControl, onFinish, onUndo, onNudge }) {
+function MatchPanel({ live, saving, goalArmed, onGoal, onControl, onFinish, onUndo, onNudge, extra = null }) {
   const primary = primaryControl(live.phase);
   const lastGoal = [...live.timeline].reverse().find((e) => isGoalCode(e.olay_kodu));
   const notLive = live.status !== "canli";
 
   return (
-    <div className="st-stack">
+    <div className="st-reji">
+     <div className="st-stack">
       <div className="st-scores">
         {["home", "away"].map((side) => (
           <div key={side} className={`st-score is-${side}`}>
@@ -34,7 +35,9 @@ export default function MatchPanel({ live, saving, goalArmed, onGoal, onControl,
           <span>Son gol: {live.nameOf(lastGoal.oyuncu_id) || "oyuncusuz"} · {eventLabel(lastGoal.olay_kodu)} {lastGoal.dakika ?? 0}' — geri al</span>
         </button>
       )}
+     </div>
 
+     <div className="st-stack">
       <div className="st-clock">
         <strong>{clockText(live.clockMs)}</strong>
         <span>{PHASE_LABEL[live.phase]} · {live.period >= 3 ? "Uzatma" : `${live.period}. devre`}</span>
@@ -46,7 +49,9 @@ export default function MatchPanel({ live, saving, goalArmed, onGoal, onControl,
           ))}
         </div>
       </div>
+     </div>
 
+     <div className="st-stack">
       <button type="button" className={`btn btn--lg btn--block ${primary.finish ? "btn--red" : "btn--green"}`} disabled={saving || !live.match}
         onClick={() => (primary.finish ? onFinish() : onControl(primary.action))}>
         <Icon name={primary.icon} size={15} /> {primary.label}
@@ -56,6 +61,10 @@ export default function MatchPanel({ live, saving, goalArmed, onGoal, onControl,
         {live.phase === "second" && live.clockMs >= HALF_MS * 2 && <button type="button" className="btn btn--block" disabled={saving} onClick={() => onControl("extra")}><Icon name="clock" size={13} /> Uzatmaya geç</button>}
         {live.phase === "paused" && live.period >= 2 && <button type="button" className="btn btn--block btn--danger-ghost" disabled={saving} onClick={onFinish}><Icon name="flag" size={13} /> Maçı bitir</button>}
       </div>
+      {extra}
+     </div>
     </div>
   );
 }
+
+export default memo(MatchPanel);

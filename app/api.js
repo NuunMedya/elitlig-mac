@@ -182,20 +182,25 @@ function createApi({ origin, dataDir, fetchImpl, sessionStore, userAgent, timeou
     try {
       response = await fetchImpl(buildUrl(origin, pathname), { method: "POST", headers, body, signal: controller.signal, credentials: "omit" });
     } catch {
+      // Süre doldu (yavaş yükleme hattı) ile bağlantı yok ayrı bildirilir.
+      if (controller.signal.aborted) {
+        return { ok: false, offline: true, timeout: true, error: { status: 0, code: "TIMEOUT", message: `Yükleme ${Math.round(timeout / 1000)} sn içinde bitmedi (yükleme hızı yetersiz).` } };
+      }
       setOnline(false);
-      return { ok: false, offline: true, error: { status: 0, message: "Bağlantı yok: dosya gönderilemedi." } };
+      return { ok: false, offline: true, error: { status: 0, code: "NETWORK", message: "Bağlantı yok: dosya gönderilemedi." } };
     } finally {
       clearTimeout(timer);
     }
     setOnline(true);
-    const text = await response.text();
+    const text = await response.text().catch(() => "");
     let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch { data = { message: text.slice(0, 300) }; }
+    // JSON olmayan yanıt (ör. Heroku "Application error" sayfası, H12 zaman aşımı): HTML iletiye konmaz.
+    try { data = text ? JSON.parse(text) : null; } catch { data = { message: `Sunucu yanıtı okunamadı (HTTP ${response.status}).`, code: `HTTP_${response.status}` }; }
     if (!response.ok) {
       if (response.status === 401 && session?.token) onUnauthorized(data);
-      return { ok: false, error: { status: response.status, message: data?.message || `Yükleme başarısız (${response.status}).`, code: data?.code } };
+      return { ok: false, error: { status: response.status, message: data?.message || data?.error || `Yükleme başarısız (${response.status}).`, code: data?.code } };
     }
-    return { ok: true, data };
+    return { ok: true, status: response.status, data };
   }
 
   /** Kuyruktaki yazmaları sırayla gönderir. Ağ hatasında durur, kalanlar kalır. */

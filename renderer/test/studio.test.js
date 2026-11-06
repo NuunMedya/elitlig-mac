@@ -1,6 +1,6 @@
 import { BUG, bugLayout, bugPlacement, clockText, drawReplayBadge, drawScoreBug, lowerColor, periodLabel, replayBadgeLayout, teamShortCode } from "../src/lib/studio/scorebug";
 import { addLayer, addScene, addSource, defaultConfig, duplicateScene, fitRect, layerRect, loadConfig, moveLayer, moveScene, normalizeConfig, removeScene, removeSource, renameScene, resolveCameraDevice, saveConfig, sourceUsage, STORAGE_KEY, updateLayer } from "../src/lib/studio/layouts";
-import { HALF_MS, bugEventOf, controlSteps, eventBody, eventSide, isGoalCode, livePhase, matchOptionLabel, normalizeMatchStatus, primaryControl, scoreFromEvents, shiftDay, sortEvents, timerNowMs, toSquad } from "../src/lib/studio/match";
+import { HALF_MS, buildMatchOptions, normalizeListMatch, bugEventOf, controlSteps, eventBody, eventSide, isGoalCode, livePhase, matchOptionLabel, normalizeMatchStatus, primaryControl, scoreFromEvents, shiftDay, sortEvents, timerNowMs, toSquad } from "../src/lib/studio/match";
 import { clipPlayable, clipStatusLabel, elapsedText, ingestUrl, isEncoding, isRtmpUrl, joinRtmp, keyAction, pickMimeType, presetOf, recorderBitsPerSecond, replayEvent, reusableStream, statusPill, streamStatusLabel } from "../src/lib/studio/broadcast";
 import { fallbackDue, gainValue, levelFromSamples, previewSize, transitionProgress } from "../src/lib/studio/compose";
 
@@ -135,72 +135,80 @@ describe("sahne yerleşimi", () => {
     expect(fitRect(10, 10, { x: 0, y: 0, w: 20, h: 40 }, "stretch")).toMatchObject({ dw: 20, dh: 40 });
   });
 
-  it("varsayılan sahneler", () => {
+  it("varsayılan: kaynaklar çoklu görünümde, düzenler hazır kalıptan", () => {
     const c = defaultConfig();
-    expect(c.scenes.map((s) => s.name)).toEqual(["Kamera 1", "Kamera 2", "Resim içinde resim", "Yan yana"]);
+    expect(c.version).toBe(2);
+    expect(c.scenes.map((s) => s.name)).toEqual(["Resim içinde resim", "Yan yana"]);
     expect(c.sources.map((s) => s.deviceIndex)).toEqual([0, 1]);
-    expect(c.scenes[2].layers[1].layout).toEqual({ type: "pip", corner: "br", size: 30 });
-    expect(c.scenes[3].layers.map((l) => l.fit)).toEqual(["contain", "contain"]);
-    expect(c.overlay.scorebug).toBe(true);
+    expect(c.scenes[0].layers[1].layout).toEqual({ type: "pip", corner: "br", size: 30 });
+    expect(c.scenes[1].layers.map((l) => l.fit)).toEqual(["contain", "contain"]);
+    expect(c.programSceneId).toBe("src:src_cam1");
+    expect(c.previewSceneId).toBe("src:src_cam2");
+    expect(c.overlay).toEqual({ scorebug: true, variant: "small" });
   });
 
-  it("sahne işlemleri", () => {
+  it("düzen işlemleri", () => {
     let c = defaultConfig();
     const added = addScene(c, "Devre arası");
     c = added.config;
-    expect(c.scenes).toHaveLength(5);
+    expect(c.scenes).toHaveLength(3);
     c = renameScene(c, added.scene.id, "  Mola  ");
-    expect(c.scenes[4].name).toBe("Mola");
+    expect(c.scenes[2].name).toBe("Mola");
     c = moveScene(c, added.scene.id, -1);
-    expect(c.scenes[3].id).toBe(added.scene.id);
+    expect(c.scenes[1].id).toBe(added.scene.id);
     c = moveScene(c, c.scenes[0].id, -1);
-    expect(c.scenes[0].id).toBe("sc_cam1");
+    expect(c.scenes[0].id).toBe("sc_pip");
     const dup = duplicateScene(c, "sc_pip");
-    expect(dup.config.scenes[3].name).toBe("Resim içinde resim (kopya)");
-    expect(dup.config.scenes[3].layers[0].id).not.toBe(dup.config.scenes[2].layers[0].id);
-    c = { ...c, programSceneId: "sc_cam2", previewSceneId: "sc_cam2" };
-    c = removeScene(c, "sc_cam2");
-    expect(c.programSceneId).toBe("sc_cam1");
-    expect(c.previewSceneId).toBe("sc_cam1");
-    const one = { ...c, scenes: [c.scenes[0]] };
-    expect(removeScene(one, one.scenes[0].id)).toBe(one);
+    expect(dup.config.scenes[1].name).toBe("Resim içinde resim (kopya)");
+    expect(dup.config.scenes[1].layers[0].id).not.toBe(dup.config.scenes[0].layers[0].id);
+    c = { ...c, programSceneId: "sc_sbs", previewSceneId: "sc_sbs" };
+    c = removeScene(c, "sc_sbs");
+    // Düzen silinince ilk kaynağa düşülür.
+    expect(c.programSceneId).toBe("src:src_cam1");
+    expect(c.previewSceneId).toBe("src:src_cam1");
+    const bare = { ...c, sources: [], scenes: [c.scenes[0]] };
+    expect(removeScene(bare, bare.scenes[0].id)).toBe(bare);
   });
 
   it("katman ve kaynak işlemleri", () => {
     let c = defaultConfig();
     const { config, source } = addSource(c, { kind: "image", url: "data:image/png;base64,AAA", name: "Sponsor" });
-    c = addLayer(config, "sc_cam1", source.id, { type: "pip", corner: "tr", size: 20 });
-    const scene = () => c.scenes.find((s) => s.id === "sc_cam1");
-    expect(scene().layers.map((l) => l.sourceId)).toEqual(["src_cam1", source.id]);
-    const lid = scene().layers[1].id;
-    c = moveLayer(c, "sc_cam1", lid, -1);
-    expect(scene().layers[0].id).toBe(lid);
-    c = updateLayer(c, "sc_cam1", lid, { visible: false });
-    expect(scene().layers[0].visible).toBe(false);
-    expect(sourceUsage(c, "src_cam1")).toEqual(["Kamera 1", "Resim içinde resim", "Yan yana"]);
+    c = addLayer(config, "sc_pip", source.id, { type: "pip", corner: "tr", size: 20 });
+    const scene = () => c.scenes.find((s) => s.id === "sc_pip");
+    expect(scene().layers.map((l) => l.sourceId)).toEqual(["src_cam1", "src_cam2", source.id]);
+    const lid = scene().layers[2].id;
+    c = moveLayer(c, "sc_pip", lid, -1);
+    expect(scene().layers[1].id).toBe(lid);
+    c = updateLayer(c, "sc_pip", lid, { visible: false });
+    expect(scene().layers[1].visible).toBe(false);
+    expect(sourceUsage(c, "src_cam1")).toEqual(["Resim içinde resim", "Yan yana"]);
     c = removeSource(c, "src_cam1");
     expect(c.sources.some((s) => s.id === "src_cam1")).toBe(false);
     expect(c.scenes.every((s) => s.layers.every((l) => l.sourceId !== "src_cam1"))).toBe(true);
+    expect(c.scenes[1].preset.a).toBeNull();
+    // Program o kaynaktaydı: kalan ilk kaynağa geçer.
+    expect(c.programSceneId).toBe("src:src_cam2");
   });
 
   it("kayıt okunur, bozuksa varsayılana döner; nesne adresleri atılır", () => {
     const mem = new Map();
     const storage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
-    expect(loadConfig(storage).scenes).toHaveLength(4);
+    expect(loadConfig(storage).scenes).toHaveLength(2);
     const c = addSource(defaultConfig(), { kind: "video", url: "blob:file:///x", name: "Tanıtım" }).config;
     expect(saveConfig(storage, c)).toBe(true);
     const back = loadConfig(storage);
     expect(back.sources.find((s) => s.kind === "video").url).toBeNull();
+    expect(back.scenes[0].preset).toMatchObject({ kind: "pip", a: "src_cam1", b: "src_cam2" });
     mem.set(STORAGE_KEY, "{bozuk");
-    expect(loadConfig(storage).scenes).toHaveLength(4);
-    expect(normalizeConfig({ scenes: [], sources: [] }).scenes).toHaveLength(4);
+    expect(loadConfig(storage).scenes).toHaveLength(2);
+    expect(normalizeConfig({ scenes: [], sources: [] }).scenes).toHaveLength(2);
     const n = normalizeConfig({ sources: [{ id: "a", kind: "camera" }, { id: "b", kind: "laser" }], scenes: [{ id: "s", name: "S", layers: [{ sourceId: "a", layout: { type: "nope" } }, { sourceId: "b" }] }], previewSceneId: "zz" });
     expect(n.sources).toHaveLength(1);
     expect(n.scenes[0].layers).toHaveLength(1);
     expect(n.scenes[0].layers[0].layout).toEqual({ type: "full" });
-    expect(n.previewSceneId).toBe("s");
+    expect(n.previewSceneId).toBe("src:a");
     expect(saveConfig({ setItem: () => { throw new Error("dolu"); } }, c)).toBe(false);
-    expect(loadConfig({ getItem: () => { throw new Error("yok"); } }).scenes).toHaveLength(4);
+    expect(loadConfig({ getItem: () => { throw new Error("yok"); } }).scenes).toHaveLength(2);
   });
 
   it("kamera aygıtı: kimlik, etiket, sıra", () => {
@@ -391,5 +399,43 @@ describe("karıştırıcı yardımcıları", () => {
     expect(gainValue(100, false)).toBe(1);
     expect(gainValue(100, true)).toBe(0);
     expect(gainValue(400, false)).toBe(1.5);
+  });
+});
+
+describe("maç seçici", () => {
+  const day = "2026-11-05";
+  it("canlı maçlar gün ne olursa olsun en üstte, günün maçları saate göre", () => {
+    const { live, ofDay } = buildMatchOptions({
+      day,
+      dayItems: [
+        { id: 2, date: day, time: "21:00", home: "Ankara Gençlikspor", away: "Karadeniz FK" },
+        { id: 1, date: day, time: "19:00", home: "A", away: "B" },
+      ],
+      listItems: [
+        { id: 9, date: "2026-11-04", match_time: "22:00:00", first_team_name: "X", second_team_name: "Y", mac_durumu: "canli" },
+        { id: 2, date: day, mac_durumu: "canli" },
+        { id: 5, date: "2026-11-03", mac_durumu: "yayinlanmis" },
+      ],
+    });
+    expect(live.map((m) => m.id)).toEqual([2, 9]);
+    expect(live[0].home).toBe("Ankara Gençlikspor");
+    expect(ofDay.map((m) => m.id)).toEqual([1]);
+  });
+  it("günün maçları ucu boşken genel listeden o gün süzülür", () => {
+    const { live, ofDay } = buildMatchOptions({
+      day,
+      dayItems: [],
+      listItems: [
+        { id: 3, date: `${day}T00:00:00.000Z`, match_time: "20:30:00", first_team_name: "C", second_team_name: "D", mac_durumu: "zamanlanmis" },
+        { id: 4, date: "2026-11-06", first_team_name: "E", second_team_name: "F" },
+      ],
+    });
+    expect(live).toEqual([]);
+    expect(ofDay.map((m) => m.id)).toEqual([3]);
+    expect(matchOptionLabel(ofDay[0])).toBe("C – D · 20:30");
+  });
+  it("geçersiz satır atlanır", () => {
+    expect(normalizeListMatch(null)).toBeNull();
+    expect(normalizeListMatch({})).toBeNull();
   });
 });

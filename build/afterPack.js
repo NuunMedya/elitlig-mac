@@ -1,4 +1,4 @@
-// Apple Developer kimliği olmadan dağıtılan uygulamayı "ad-hoc" imzalar.
+// Mac: Apple Developer kimliği olmadan dağıtılan uygulamayı "ad-hoc" imzalar.
 //
 // Electron'un hazır ikilileri imzalıdır; electron-builder Info.plist'i ve
 // kaynakları değiştirince bu imza bozulur ve Apple Silicon Mac'ler uygulamayı
@@ -12,6 +12,13 @@ const path = require("node:path");
 const fs = require("node:fs");
 
 exports.default = async function afterPack(context) {
+  // Windows: imza yok; yalnız Yayın Stüdyosu ffmpeg.exe'sinin pakete girdiği doğrulanır
+  // (build/fetch-ffmpeg.js --platform win32 çalıştırılmadıysa derleme burada durur).
+  if (context.electronPlatformName === "win32") {
+    const exe = path.join(context.appOutDir, "resources", "ffmpeg", "ffmpeg.exe");
+    if (!fs.existsSync(exe)) throw new Error(`Yayın Stüdyosu ffmpeg pakette yok: ${exe} (önce: npm run ffmpeg:win)`);
+    return;
+  }
   if (context.electronPlatformName !== "darwin" || process.platform !== "darwin") return;
   if (/-temp$/.test(context.appOutDir)) return;
   const appPath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);

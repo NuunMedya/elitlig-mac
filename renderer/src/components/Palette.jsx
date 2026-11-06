@@ -2,7 +2,7 @@
 // (görevler, notlar, kişiler, tablolar, muhasebe kayıtları, sohbetler ve
 // mesaj gönderilebilecek kişiler).
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Icon, Kbd } from "./ui";
+import { Icon, Kbd, keyLabel } from "./ui";
 import { get, useDebounced } from "../api";
 import { includesTr, formatMoney, formatDate } from "../lib/helpers";
 
@@ -31,6 +31,11 @@ export default function Palette({ onClose, go, routes }) {
   const sources = useRef(null);
 
   // İçerik araması için veriler bir kez okunur (bağlantı yoksa önbellekten).
+  // Kapanınca odak paleti açan öğeye döner.
+  useEffect(() => {
+    const opener = document.activeElement;
+    return () => { if (opener && opener !== document.body && opener.isConnected) opener.focus({ preventScroll: true }); };
+  }, []);
   useEffect(() => {
     inputRef.current?.focus();
     Promise.all([
@@ -84,13 +89,20 @@ export default function Palette({ onClose, go, routes }) {
     setContent(out);
   }, [query]);
 
+  // Gruplar: Araçlar · Komutlar · Sonuçlar (arama yapılınca içerik eşleşmeleri).
   const items = useMemo(() => {
-    const nav = routes.map((r) => ({ label: r.label, icon: r.icon, route: r.key, hint: r.shortcut }));
-    const base = [...nav, ...ACTIONS].filter((item) => !q.trim() || includesTr(`${item.label} ${item.hint}`, q));
-    return [...base, ...content];
+    const match = (item) => !q.trim() || includesTr(`${item.label} ${item.hint}`, q);
+    const nav = routes.map((r) => ({ label: r.label, icon: r.icon, route: r.key, hint: keyLabel(r.shortcut), group: "Araçlar" })).filter(match);
+    const actions = ACTIONS.map((a) => ({ ...a, hint: keyLabel(a.hint), group: "Komutlar" })).filter(match);
+    return [...nav, ...actions, ...content.map((c) => ({ ...c, group: "Sonuçlar" }))];
   }, [q, content, routes]);
 
   useEffect(() => setIndex(0), [q]);
+  // Klavyeyle seçilen satır görünür alanda kalır.
+  const listRef = useRef(null);
+  useEffect(() => {
+    listRef.current?.querySelector(`#palette-opt-${index}`)?.scrollIntoView({ block: "nearest" });
+  }, [index, items.length]);
 
   const run = (item) => {
     if (!item) return;
@@ -100,30 +112,45 @@ export default function Palette({ onClose, go, routes }) {
   };
 
   const onKey = (e) => {
-    if (e.key === "ArrowDown") { e.preventDefault(); setIndex((i) => Math.min(items.length - 1, i + 1)); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setIndex((i) => Math.max(0, i - 1)); }
+    const last = items.length - 1;
+    if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) { e.preventDefault(); setIndex((i) => (i >= last ? 0 : i + 1)); }
+    else if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) { e.preventDefault(); setIndex((i) => (i <= 0 ? Math.max(0, last) : i - 1)); }
+    else if (e.key === "PageDown") { e.preventDefault(); setIndex((i) => Math.min(last, i + 8)); }
+    else if (e.key === "PageUp") { e.preventDefault(); setIndex((i) => Math.max(0, i - 8)); }
+    else if ((e.key === "Home" || e.key === "End") && e.altKey) { e.preventDefault(); setIndex(e.key === "Home" ? 0 : Math.max(0, last)); }
     else if (e.key === "Enter") { e.preventDefault(); run(items[index]); }
     else if (e.key === "Escape") onClose();
   };
 
   return (
     <div className="palette-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="palette" role="dialog" aria-label="Komut paleti">
+      <div className="palette" role="dialog" aria-modal="true" aria-label="Komut paleti">
         <div className="palette__input">
           <Icon name="search" />
-          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="Araç, komut ya da sohbet, kişi, görev, not, proje, tablo ara…" aria-label="Ara" />
+          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} placeholder="Araç, komut ya da sohbet, kişi, görev, not, proje, tablo ara…" aria-label="Ara"
+            role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list" aria-activedescendant={items.length ? `palette-opt-${index}` : undefined} />
           <Kbd>esc</Kbd>
         </div>
-        <ul className="palette__list" role="listbox">
+        <ul className="palette__list" role="listbox" id="palette-list" aria-label="Sonuçlar" ref={listRef}>
           {items.map((item, i) => (
-            <li key={`${item.route || item.label}-${i}`} role="option" aria-selected={i === index} className={i === index ? "is-active" : ""} onMouseEnter={() => setIndex(i)} onMouseDown={(e) => { e.preventDefault(); run(item); }}>
-              <Icon name={item.icon} size={15} />
-              <span className="palette__label">{item.label}</span>
-              <span className="palette__hint">{item.hint}</span>
-            </li>
+            <React.Fragment key={`${item.route || item.label}-${i}`}>
+              {(i === 0 || items[i - 1].group !== item.group) && <li className="palette__group" role="presentation">{item.group}</li>}
+              <li id={`palette-opt-${i}`} role="option" aria-selected={i === index} className={i === index ? "is-active" : ""} onMouseMove={() => { if (i !== index) setIndex(i); }} onMouseDown={(e) => { e.preventDefault(); run(item); }}>
+                <span className="palette__icon"><Icon name={item.icon} size={14} /></span>
+                <span className="palette__label">{item.label}</span>
+                {item.hint && <span className="palette__hint">{item.hint}</span>}
+              </li>
+            </React.Fragment>
           ))}
-          {!items.length && <li className="palette__empty">Sonuç yok</li>}
+          {!items.length && <li className="palette__empty" role="presentation">{q.trim().length >= 2 ? `“${q.trim()}” için sonuç yok` : "Sonuç yok"}</li>}
         </ul>
+        <div className="palette__foot" aria-hidden="true">
+          <span><Kbd>↑</Kbd><Kbd>↓</Kbd> gez</span>
+          <span><Kbd>↩</Kbd> aç</span>
+          <span><Kbd>esc</Kbd> kapat</span>
+          <span className="spacer" />
+          <span>{q.trim().length >= 2 ? `${items.length} sonuç` : "İçerikte aramak için en az 2 harf"}</span>
+        </div>
       </div>
     </div>
   );

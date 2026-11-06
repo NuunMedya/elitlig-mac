@@ -16,6 +16,8 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
   const [since, setSince] = useState(null);
   const [mode, setMode] = useState(null); // "live" | "rehearsal"
   const [info, setInfo] = useState(null);
+  const [localPath, setLocalPath] = useState(null); // tam maç yerel kaydı (yayınla birlikte)
+  const [localInfo, setLocalInfo] = useState(null);
   const recRef = useRef(null);
   const genRef = useRef(0);
   const chainRef = useRef(Promise.resolve());
@@ -50,7 +52,7 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
       rec = new MediaRecorder(new MediaStream(tracks), {
         mimeType: opts.mimeType || undefined,
         videoBitsPerSecond: recorderBitsPerSecond(opts.videoBitrateKbps),
-        audioBitsPerSecond: AUDIO_BITRATE_KBPS * 1000,
+        audioBitsPerSecond: (Number(opts.audioBitrateKbps) || AUDIO_BITRATE_KBPS) * 1000,
       });
     } catch (err) {
       errRef.current?.(`Kaydedici açılamadı: ${err?.message || err}`);
@@ -88,16 +90,33 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
       }
     });
     const offRestart = s?.onRestartRecorder?.(() => { if (optsRef.current) startRecorder(); });
-    return () => { offStatus?.(); offRestart?.(); };
+    // Yerel kayıt: { state, path, mp4Path, bytes, error }
+    const offLocal = s?.onLocalRecord?.((p) => { if (p) setLocalInfo(p); });
+    return () => { offStatus?.(); offRestart?.(); offLocal?.(); };
   }, [startRecorder, stopRecorder]);
 
-  /** url null → prova (yayınsız kayıt). */
-  const start = useCallback(async ({ url, preset }) => {
+  /**
+   * url null → prova (yayınsız kayıt). localRecord: { enabled, dir?, videoBitrateKbps?, height? }
+   * → maçın tamamı bu bilgisayara da kaydedilir (YouTube / RTMP ile birlikte); kalite
+   * alanlarını desteklemeyen ana süreç yayın kalitesinde kaydeder.
+   * stream (Ayarlar › Yayın): { audioKbps, keyframeSec, encoder: "auto" | "hardware" | "software" }.
+   */
+  const start = useCallback(async ({ url, preset, localRecord = null, matchId = null, matchName = null, stream = null }) => {
     const s = studio();
     if (!s?.start) throw new Error("Yayın motoru bu sürümde yok. Uygulamayı güncelleyin.");
     if (typeof MediaRecorder === "undefined") throw new Error("Bu sistemde MediaRecorder yok.");
     const mimeType = pickMimeType((t) => MediaRecorder.isTypeSupported(t));
-    const opts = { url: url || null, width: preset.width, height: preset.height, fps: preset.fps, videoBitrateKbps: preset.videoBitrateKbps, audioBitrateKbps: AUDIO_BITRATE_KBPS, mimeType };
+    const lr = localRecord?.enabled ? {
+      enabled: true,
+      ...(localRecord.dir ? { dir: localRecord.dir } : {}),
+      ...(Number(localRecord.videoBitrateKbps) > 0 ? { videoBitrateKbps: Number(localRecord.videoBitrateKbps) } : {}),
+      ...(Number(localRecord.height) > 0 ? { height: Number(localRecord.height) } : {}),
+    } : null;
+    const extra = {
+      ...(stream?.keyframeSec ? { keyframeSec: Number(stream.keyframeSec) } : {}),
+      ...(stream?.encoder && stream.encoder !== "auto" ? { encoderPreference: stream.encoder } : {}),
+    };
+    const opts = { url: url || null, width: preset.width, height: preset.height, fps: preset.fps, videoBitrateKbps: preset.videoBitrateKbps, audioBitrateKbps: Number(stream?.audioKbps) || AUDIO_BITRATE_KBPS, mimeType, ...extra, ...(matchId ? { matchId, matchName: matchName || null } : {}), ...(lr ? { localRecord: lr } : {}) };
     setStatus({ state: "starting" });
     const res = await s.start(opts);
     if (!res?.ok) {
@@ -105,6 +124,8 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
       throw new Error(res?.error?.message || "Kodlayıcı başlatılamadı.");
     }
     optsRef.current = opts;
+    setLocalPath(res.localPath || null);
+    setLocalInfo(null);
     setMode(url ? "live" : "rehearsal");
     if (!startRecorder()) {
       optsRef.current = null;
@@ -137,5 +158,9 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
     if (activeRef.current) studio()?.stop?.();
   }, []);
 
-  return { status, since, mode, info, active: isEncoding(status.state), start, stop, available: Boolean(studio()?.start) };
+  // Yerel kayıt dosyası: başlangıçta ya da durumla gelir (ana süreç boyutu da bildirebilir).
+  const local = localInfo?.path || localInfo?.mp4Path
+    ? { path: localInfo.mp4Path || localInfo.path, sizeBytes: localInfo.bytes, state: localInfo.state, error: localInfo.error || null }
+    : status.localRecord || (localPath ? { path: localPath } : null);
+  return { status, since, mode, info, active: isEncoding(status.state), start, stop, available: Boolean(studio()?.start), localRecord: local };
 }

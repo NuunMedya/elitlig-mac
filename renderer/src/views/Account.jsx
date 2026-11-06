@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Icon, ViewHeader, useConfirm } from "../components/ui";
+import { Icon, ViewHeader, isMac, keyLabel, useConfirm } from "../components/ui";
 import { formatDate } from "../lib/helpers";
 
 export default function Account({ auth }) {
@@ -14,7 +14,7 @@ export default function Account({ auth }) {
   const daysLeft = auth.endsAt ? Math.max(0, Math.ceil((auth.endsAt - Date.now()) / 86400000)) : null;
 
   const logout = async () => {
-    const ok = await confirm({ title: "Oturumu kapat", message: "Bu Mac'teki oturum ve çevrimdışı veriler silinir. Yeniden kullanmak için giriş yapmanız gerekir.", confirmLabel: "Oturumu kapat", danger: true });
+    const ok = await confirm({ title: "Oturumu kapat", message: `${isMac() ? "Bu Mac'teki" : "Bu bilgisayardaki"} oturum ve çevrimdışı veriler silinir. Yeniden kullanmak için giriş yapmanız gerekir.`, confirmLabel: "Oturumu kapat", danger: true });
     if (ok) window.elitlig.auth.logout();
   };
 
@@ -34,7 +34,7 @@ export default function Account({ auth }) {
           <dt>Giriş tarihi</dt><dd>{auth.loginAt ? formatDate(auth.loginAt, { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</dd>
           <dt>Oturum bitişi</dt><dd>{auth.endsAt ? `${formatDate(auth.endsAt, { day: "numeric", month: "long", year: "numeric" })} (${daysLeft} gün kaldı)` : "—"}</dd>
           <dt>Eşitleme</dt><dd>{sync ? (sync.online ? "Çevrimiçi" : "Çevrimdışı") + (sync.pending ? ` · ${sync.pending} değişiklik bekliyor` : "") : "—"}</dd>
-          <dt>Hızlı kayıt</dt><dd>{info?.shortcut?.replace("Control", "⌃").replace("Alt", "⌥").replace(/\+/g, "") || "⌃⌥N"} — uygulama arka plandayken de açılır</dd>
+          <dt>Hızlı kayıt</dt><dd>{keyLabel(info?.shortcut?.replace("Control", "⌃").replace("Alt", "⌥").replace(/\+/g, "") || "⌃⌥N")} — uygulama arka plandayken de açılır</dd>
           <dt>Sürüm</dt><dd>{info?.version || "—"}</dd>
         </dl>
         <div className="row-gap">

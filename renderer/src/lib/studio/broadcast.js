@@ -10,6 +10,78 @@ export const QUALITY_PRESETS = [
 export const AUDIO_BITRATE_KBPS = 128;
 export const presetOf = (key) => QUALITY_PRESETS.find((p) => p.key === key) || QUALITY_PRESETS[0];
 
+/* ------------------- kodlama: çözünürlük · fps · bit hızı (elle) ------------------- */
+
+export const RESOLUTION_CHOICES = [
+  { key: "720p", label: "720p", width: 1280, height: 720 },
+  { key: "1080p", label: "1080p", width: 1920, height: 1080 },
+];
+export const FPS_CHOICES = [30, 60];
+export const BITRATE_MIN_KBPS = 800;
+export const BITRATE_MAX_KBPS = 20000;
+/** Hazır bit hızları (YouTube önerileri: 720p30 ≈ 2,5–4 Mbps, 1080p60 ≈ 6–9 Mbps). */
+export const BITRATE_PRESETS = [
+  { kbps: 2500, label: "2,5 Mbps", hint: "Zayıf / mobil bağlantı" },
+  { kbps: 4500, label: "4,5 Mbps", hint: "1080p30 için iyi" },
+  { kbps: 6000, label: "6 Mbps", hint: "1080p60 için iyi" },
+  { kbps: 9000, label: "9 Mbps", hint: "Fiber, en net görüntü" },
+];
+
+/** Çözünürlük + fps için önerilen bit hızı (kbps). */
+export function recommendedBitrate(resolution, fps) {
+  const hd = resolution === "1080p";
+  const hi = Number(fps) >= 60;
+  if (hd) return hi ? 6000 : 4500;
+  return hi ? 4000 : 2500;
+}
+
+/**
+ * Elle girilen bit hızı. Dönüş: { ok, value (kbps, sınırlı), message }.
+ * Boş / sayı değil → ok:false; sınır dışı → ok:false ama value sınıra çekilmiş.
+ */
+export function validateBitrate(input) {
+  const raw = String(input ?? "").trim().replace(/\s/g, "").replace(",", ".");
+  if (!raw) return { ok: false, value: null, message: "Bit hızı gir (kbps)." };
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return { ok: false, value: null, message: "Bit hızı sayı olmalı (ör. 4500)." };
+  const v = Math.round(n);
+  if (v < BITRATE_MIN_KBPS) return { ok: false, value: BITRATE_MIN_KBPS, message: `En az ${BITRATE_MIN_KBPS} kbps.` };
+  if (v > BITRATE_MAX_KBPS) return { ok: false, value: BITRATE_MAX_KBPS, message: `En çok ${BITRATE_MAX_KBPS} kbps.` };
+  return { ok: true, value: v, message: null };
+}
+
+/** Gereken yükleme hızı (Mbps): görüntü + ses, %50 pay. */
+export const uploadNeedMbps = (kbps) => Math.round((((Number(kbps) || 0) + AUDIO_BITRATE_KBPS) * 1.5) / 100) / 10;
+
+/** Bit hızı uyarısı (çözünürlüğe göre çok düşük / çok yüksek). */
+export function bitrateAdvice(enc) {
+  const rec = recommendedBitrate(enc.resolution, enc.fps);
+  const v = Number(enc.bitrateKbps) || 0;
+  if (v < rec * 0.6) return `Bu çözünürlük için düşük: görüntü bloklanabilir (önerilen ≈ ${rec} kbps).`;
+  if (v > 12000) return "YouTube 1080p için 12 Mbps'ın üstü gereksiz; bağlantı zorlanabilir.";
+  return null;
+}
+
+/**
+ * Kayıtlı tercih → { resolution, fps, bitrateKbps }. Eski "quality" anahtarı
+ * ("1080p60" …) da okunur.
+ */
+export function normalizeEncoding(raw, legacyQuality) {
+  const legacy = legacyQuality ? presetOf(legacyQuality) : null;
+  const resolution = RESOLUTION_CHOICES.some((r) => r.key === raw?.resolution) ? raw.resolution : legacy ? (legacy.height >= 1080 ? "1080p" : "720p") : "720p";
+  const fps = FPS_CHOICES.includes(Number(raw?.fps)) ? Number(raw.fps) : legacy ? legacy.fps : 30;
+  const b = validateBitrate(raw?.bitrateKbps);
+  const bitrateKbps = b.ok ? b.value : b.value ?? (legacy ? legacy.videoBitrateKbps : recommendedBitrate(resolution, fps));
+  return { resolution, fps, bitrateKbps };
+}
+
+/** Kodlayıcıya giden ayar: { key, width, height, fps, videoBitrateKbps }. */
+export function encodingPreset(enc) {
+  const e = normalizeEncoding(enc);
+  const r = RESOLUTION_CHOICES.find((x) => x.key === e.resolution);
+  return { key: `${e.resolution}${e.fps}`, width: r.width, height: r.height, fps: e.fps, videoBitrateKbps: e.bitrateKbps };
+}
+
 /** MediaRecorder biçimi: önce H.264 (ffmpeg kopyalar), yoksa VP8 (ffmpeg kodlar). */
 export const MIME_PREFERENCE = [
   "video/x-matroska;codecs=avc1,opus",
@@ -17,8 +89,15 @@ export const MIME_PREFERENCE = [
   "video/webm;codecs=vp8,opus",
   "video/webm",
 ];
-export function pickMimeType(isSupported) {
-  for (const type of MIME_PREFERENCE) {
+/** Sessiz görüntü (açı kaydı, özet): ses kodeki olmadan. */
+export const VIDEO_ONLY_MIME_PREFERENCE = [
+  "video/x-matroska;codecs=avc1",
+  "video/webm;codecs=h264",
+  "video/webm;codecs=vp8",
+  "video/webm",
+];
+export function pickMimeType(isSupported, list = MIME_PREFERENCE) {
+  for (const type of list) {
     try { if (isSupported(type)) return type; } catch { /* sonraki */ }
   }
   return "";
@@ -138,30 +217,90 @@ export function isTypingTarget(target) {
   return Boolean(target.isContentEditable) || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
+/** Varsayılan tuşlar (settings/settings.js DEFAULT_HOTKEYS ile aynı). */
+export const KEY_DEFAULTS = { transition: [" ", "Enter"], lastScene: ["l"], mic: ["m"], replay: ["r"], moment: ["b"], goalArm: ["g"], var: ["v"], chapter: ["c"], help: ["?"] };
+
 /**
- * Tuş → stüdyo eylemi. Dönüş: { type: "mic" | "replay" | "scene" | "transition" | "goal", ... } | null
- *   M mikrofon · R son golün tekrarı · 1–9 sahneyi önizlemeye al ·
- *   Boşluk / Enter geçiş · G sonra H (ev) / A (deplasman) gol.
+ * Tuş → stüdyo eylemi. Dönüş: { type: "mic" | "replay" | "scene" | "transition" | "goal" | … } | null
+ *   Varsayılan: M mikrofon · R son tekrar · B "önemli an" · 1–9 sahneyi önizlemeye al ·
+ *   Boşluk / Enter geçiş · L son sahne · C bölüm işareti · G sonra H (ev) / A (deplasman) gol.
+ * opts.hotkeys: { eylem: [tuş] } (Ayarlar › Kısayollar ile değiştirilir).
  */
-export function keyAction(e, { pendingGoal = false } = {}) {
+export function keyAction(e, { pendingGoal = false, hotkeys = KEY_DEFAULTS } = {}) {
   if (!e || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return null;
   if (isTypingTarget(e.target)) return null;
   const key = String(e.key || "");
-  const lower = key.toLocaleLowerCase("en-US");
+  const lower = key.length === 1 ? key.toLocaleLowerCase("en-US") : key;
   if (pendingGoal) {
     if (lower === "h" || lower === "e") return { type: "goal", side: "home" };
     if (lower === "a" || lower === "d") return { type: "goal", side: "away" };
     return { type: "goalCancel" };
   }
-  if (lower === "m") return { type: "mic" };
-  if (lower === "r") return { type: "replay" };
-  if (lower === "g") return { type: "goalArm" };
-  if (key === " " || key === "Enter") {
-    // Düğmede Boşluk/Enter düğmeye basar; geçiş yapmaz.
-    const tag = String(e.target?.tagName || "").toUpperCase();
-    if (tag === "BUTTON" || tag === "A") return null;
-    return { type: "transition" };
-  }
   if (/^[1-9]$/.test(key)) return { type: "scene", index: Number(key) - 1 };
+  for (const [type, list] of Object.entries(hotkeys || KEY_DEFAULTS)) {
+    if (!Array.isArray(list) || !list.includes(lower)) continue;
+    if (type === "transition" && (key === " " || key === "Enter")) {
+      // Düğmede Boşluk/Enter düğmeye basar; geçiş yapmaz.
+      const tag = String(e.target?.tagName || "").toUpperCase();
+      if (tag === "BUTTON" || tag === "A") return null;
+    }
+    return { type };
+  }
   return null;
+}
+
+/* ------------------------------ YouTube bölümleri ------------------------------ */
+
+/** "0:00" / "12:31" / "1:02:09" (YouTube bölüm damgası). */
+export function chapterStamp(ms) {
+  const t = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const sec = String(t % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${String(m).padStart(2, "0")}:${sec}`;
+}
+
+/**
+ * Bölüm işaretleri → YouTube açıklamasına yapıştırılan liste.
+ * markers: [{ atMs (yayın başından), label }]. YouTube kuralları: ilk bölüm 00:00,
+ * bölümler en az 10 sn arayla (yakın olanlar birleştirilir), sıralı.
+ */
+export function youtubeChapters(markers, { first = "Başlangıç", minGapMs = 10_000 } = {}) {
+  const list = [...(markers || [])].filter((m) => Number.isFinite(Number(m?.atMs))).sort((a, b) => a.atMs - b.atMs);
+  const out = [{ atMs: 0, label: first }];
+  for (const m of list) {
+    const label = String(m.label || "Bölüm").trim().slice(0, 80) || "Bölüm";
+    const last = out[out.length - 1];
+    if (m.atMs - last.atMs < minGapMs) {
+      if (m.atMs < minGapMs && out.length === 1) { out[0] = { atMs: 0, label }; continue; }
+      if (!last.label.includes(label)) last.label = `${last.label} · ${label}`;
+      continue;
+    }
+    out.push({ atMs: m.atMs, label });
+  }
+  return out.map((m) => `${chapterStamp(m.atMs)} ${m.label}`).join("\n");
+}
+
+/* ------------------------------ yayın sağlığı ------------------------------ */
+
+/**
+ * Yayın sağlığı özeti (üst çubuk göstergesi). status: ana süreç onStatus
+ * ({ fps, droppedFrames, bitrateKbps, speed }); draw: karıştırıcı
+ * ({ fps, drawMs, stalls }); targetFps: çıkış kare hızı.
+ * Dönüş { tone: "ok" | "warn" | "bad" | "idle", fps, dropped, bitrateKbps, speed, warnings: [metin] }.
+ * speed < 0,95: kodlayıcı gerçek zamana yetişemiyor (YouTube kesintisi / tamponlama).
+ */
+export function streamHealth({ status = {}, draw = {}, targetFps = 30, encoding = false } = {}) {
+  const fps = Number.isFinite(status.fps) ? Math.round(status.fps) : Number(draw.fps) || 0;
+  const speed = Number.isFinite(Number(status.speed)) ? Number(status.speed) : null;
+  const dropped = Number(status.droppedFrames) || 0;
+  const bitrateKbps = Number.isFinite(status.bitrateKbps) ? Math.round(status.bitrateKbps) : null;
+  const warnings = [];
+  let tone = encoding ? "ok" : "idle";
+  const worse = (t) => { if (t === "bad" || (t === "warn" && tone !== "bad")) tone = t; };
+  if (encoding && speed != null && speed < 0.95) { warnings.push(`Kodlayıcı hızı ${speed.toFixed(2)}× — gerçek zamana yetişemiyor (kaliteyi / bit hızını düşür).`); worse(speed < 0.85 ? "bad" : "warn"); }
+  if (Number(draw.fps) && Number(draw.fps) < targetFps * 0.85) { warnings.push(`Program çizimi ${draw.fps} fps (hedef ${targetFps}).`); worse(encoding ? "warn" : tone); }
+  if (Number(draw.stalls) > 0) { warnings.push(`Son saniyede ${draw.stalls} takılma (uygulama meşgul).`); worse(encoding ? "warn" : tone); }
+  if (encoding && status.state === "reconnecting") { warnings.push("Yayın sunucusuna yeniden bağlanılıyor."); worse("bad"); }
+  return { tone, fps, dropped, bitrateKbps, speed, drawMs: Number(draw.drawMs) || 0, warnings };
 }

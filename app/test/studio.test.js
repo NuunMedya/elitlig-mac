@@ -14,6 +14,9 @@ const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 
 /* --------------------------------- ffmpeg.js --------------------------------- */
 
+// Sert sonlandırma: macOS/Linux SIGKILL; Windows'ta sinyalsiz child.kill() (+ taskkill).
+const HARD_KILL = process.platform === "win32" ? undefined : "SIGKILL";
+
 test("yayın komutu: tee ile RTMP (onfail=ignore) + 2 sn'lik TS halkası, 2 sn anahtar kare", () => {
   const opts = ff.normalizeStreamOptions({ url: "rtmps://a.rtmps.youtube.com:443/live2/abcd-efgh", width: 1280, height: 720, fps: 30, videoBitrateKbps: 4500, audioBitrateKbps: 160 });
   const args = ff.buildStreamArgs({ ...opts, encoder: "h264_videotoolbox", segmentStart: 12, listFile: "list-3.csv" });
@@ -23,6 +26,7 @@ test("yayın komutu: tee ile RTMP (onfail=ignore) + 2 sn'lik TS halkası, 2 sn a
   assert.equal(at("-progress"), "pipe:1");
   assert.equal(at("-c:v"), "h264_videotoolbox");
   assert.equal(at("-allow_sw"), "1");
+  assert.equal(at("-level"), "4.1");
   assert.equal(at("-g"), "60");
   assert.equal(at("-b:v"), "4500k");
   assert.equal(at("-maxrate"), "4500k");
@@ -30,7 +34,10 @@ test("yayın komutu: tee ile RTMP (onfail=ignore) + 2 sn'lik TS halkası, 2 sn a
   assert.equal(at("-force_key_frames"), "expr:gte(t,n_forced*2)");
   assert.equal(at("-c:a"), "aac");
   assert.equal(at("-b:a"), "160k");
-  assert.equal(at("-ar"), "44100");
+  assert.equal(at("-ar"), "48000");
+  assert.equal(at("-fps_mode"), "cfr");
+  assert.equal(at("-r"), "30");
+  assert.equal(at("-loglevel"), "level+warning");
   assert.equal(at("-ac"), "2");
   assert.equal(at("-flags"), "+global_header");
   assert.match(at("-vf"), /^scale=1280:720.*fps=30/);
@@ -49,6 +56,7 @@ test("yalnız kayıt (url yok): tek çıkış parça halkası; libx264 ayarları
   assert.equal(args[args.indexOf("-preset") + 1], "veryfast");
   assert.equal(args[args.indexOf("-g") + 1], "50");
   assert.equal(args[args.indexOf("-sc_threshold") + 1], "0");
+  assert.equal(args[args.indexOf("-level") + 1], "4.1");
 });
 
 test("seçenekler sınırlanır, boyutlar çift sayıya yuvarlanır", () => {
@@ -126,9 +134,10 @@ test("yoklama: VideoToolbox listede ama açılamıyorsa kullanılmaz", async () 
     if (args.includes("-muxers")) return { ok: true, stdout: "  E tee  x\n  E segment  x\n DE flv  x\n" };
     return { ok: !args.includes("h264_videotoolbox"), stdout: "", stderr: "" };
   };
-  const info = await ff.probeFfmpeg({ path: "/f", source: "env" }, { runImpl });
+  const info = await ff.probeFfmpeg({ path: "/f", source: "env" }, { runImpl, platform: "darwin" });
   assert.equal(info.available, true);
-  assert.deepEqual(info.encoders, { videotoolbox: false, libx264: true });
+  assert.deepEqual(info.encoders, { videotoolbox: false, nvenc: false, qsv: false, amf: false, mf: false, libx264: true });
+  assert.equal(info.encoder, "libx264");
   assert.equal(ff.pickEncoder(info.encoders), "libx264");
   assert.equal(ff.pickEncoder({ videotoolbox: true, libx264: true }), "h264_videotoolbox");
   assert.equal((await ff.probeFfmpeg(null)).available, false);
@@ -168,8 +177,8 @@ test("CSV parça listesi ayrıştırılır, bozuk satırlar atlanır", () => {
 });
 
 test("klip adı / yolu: klasör dışına çıkılamaz", () => {
-  const dir = "/data/clips";
-  assert.equal(clips.safeClipPath(dir, "clip-20261105-101010-123.mp4"), "/data/clips/clip-20261105-101010-123.mp4");
+  const dir = path.resolve("/data/clips");
+  assert.equal(clips.safeClipPath(dir, "clip-20261105-101010-123.mp4"), path.join(dir, "clip-20261105-101010-123.mp4"));
   for (const bad of ["../clip-a.mp4", "clip-a.mp4/../../etc/passwd", "/etc/clip-a.mp4", "clip-..mp4.txt", "seg00001.ts", "", null, "clip-a.mp4\0", "clip-a/../b.mp4", "..\\clip-a.mp4"]) {
     assert.equal(clips.safeClipPath(dir, bad), null, String(bad));
   }
@@ -368,7 +377,7 @@ test("motor: RTMP koparsa 2,4,8,16,16 sn arayla 5 deneme, her denemede kaydedici
   engine.pushChunk(HEADER);
   progress(children[0], 2000);
   children[0].stderr.emit("data", "[tcp @ 0x1] Connection to tcp://h:1935 failed: Connection refused\n[tee @ 0x2] Slave muxer #0 failed: Connection refused, continuing with 1/2 slaves.\n");
-  assert.equal(children[0].killed, "SIGKILL");
+  assert.equal(children[0].killed, HARD_KILL);
   await tick();
   const delays = [];
   for (let attempt = 1; attempt <= 5; attempt += 1) {
@@ -438,22 +447,24 @@ test("motor: bağlantı zaman aşımı yeniden denemeye düşer", async () => {
   const { engine, children, timers, statuses } = setupEngine({ connectTimeoutMs: 25000 });
   await engine.start({ url: "rtmp://h/live/k" });
   timers.runNext(25000);
-  assert.equal(children[0].killed, "SIGKILL");
+  assert.equal(children[0].killed, HARD_KILL);
   await tick();
   assert.equal(statuses.at(-1).state, "reconnecting");
   assert.equal(statuses.at(-1).code, "TIMEOUT");
   await engine.stop();
 });
 
-test("motor: ilerleme 15 sn kesilirse yeniden başlatılır", async () => {
-  const { engine, children, timers, statuses, restarts } = setupEngine();
+test("motor: ilerleme ve parçalar 15 sn kesilirse yeniden başlatılır", async () => {
+  let t = 1_000_000;
+  const { engine, children, timers, statuses, restarts } = setupEngine({ now: () => t });
   await engine.start({ url: "rtmp://h/live/k" });
   engine.pushChunk(HEADER);
   progress(children[0], 1000);
   progress(children[0], 2000);
-  assert.equal([...timers.pending.values()].filter((t) => t.ms === 15000).length, 1);
+  assert.equal([...timers.pending.values()].filter((x) => x.ms === 15000).length, 1);
+  t += 15000;
   timers.runNext(15000);
-  assert.equal(children[0].killed, "SIGKILL");
+  assert.equal(children[0].killed, HARD_KILL);
   await tick();
   assert.equal(statuses.at(-1).code, "STALLED");
   timers.runNext(2000);
@@ -471,7 +482,7 @@ test("motor: stdin 32 MB'ı aşarsa süreç yeniden başlar, 8 MB'ta 'slow' uyar
   assert.equal(statuses.at(-1).warning, "slow");
   child.stdin.writableLength = 33 * 1024 * 1024;
   engine.pushChunk(Buffer.from([1]));
-  assert.equal(child.killed, "SIGKILL");
+  assert.equal(child.killed, HARD_KILL);
   await tick();
   assert.equal(statuses.at(-1).code, "SLOW");
   await engine.stop();
@@ -486,7 +497,7 @@ test("motor: durdurma 5 sn içinde bitmezse SIGKILL; parça klasörü silinir", 
   const stopping = engine.stop();
   assert.equal(fs.existsSync(dir), true);
   timers.runNext(5000);
-  assert.equal(child.killed, "SIGKILL");
+  assert.equal(child.killed, HARD_KILL);
   assert.equal(await stopping, true);
   assert.equal(fs.existsSync(dir), false);
   assert.ok(res.ok);

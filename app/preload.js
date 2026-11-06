@@ -10,6 +10,9 @@ const on = (channel) => (callback) => {
   return () => ipcRenderer.removeListener(channel, listener);
 };
 
+// Yayın Stüdyosu parçaları: ArrayBuffer ya da Uint8Array (Blob değil: önce blob.arrayBuffer()).
+const toBytes = (data) => (data instanceof ArrayBuffer ? new Uint8Array(data) : ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : null);
+
 contextBridge.exposeInMainWorld("elitlig", {
   platform: process.platform,
   auth: {
@@ -68,7 +71,7 @@ contextBridge.exposeInMainWorld("elitlig", {
     start: (opts) => ipcRenderer.invoke("studio:start", opts),
     // Yanıtsız, sık çağrılır: ArrayBuffer ya da Uint8Array (Blob değil: önce blob.arrayBuffer()).
     pushChunk: (data) => {
-      const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : null;
+      const bytes = toBytes(data);
       if (bytes && bytes.byteLength) ipcRenderer.send("studio:chunk", bytes);
     },
     stop: () => ipcRenderer.invoke("studio:stop"),
@@ -79,6 +82,79 @@ contextBridge.exposeInMainWorld("elitlig", {
     deleteClip: (name) => ipcRenderer.invoke("studio:deleteClip", name),
     uploadClip: (opts) => ipcRenderer.invoke("studio:uploadClip", opts || {}),
     revealClip: (name) => ipcRenderer.invoke("studio:revealClip", name),
+    // Çok açılı kayıt: her kaynak (kamera vb.) için ayrı MediaRecorder akışı (Matroska/WebM).
+    // sources: [{ id, name, width, height, fps, mimeType }] — mimeType H.264 ise
+    // ("video/x-matroska;codecs=avc1", 1 sn'de bir anahtar kare) ffmpeg yeniden kodlamaz (kopya).
+    angles: {
+      start: (opts) => ipcRenderer.invoke("studio:angles:start", opts || {}),
+      pushChunk: (sourceId, data) => {
+        const bytes = toBytes(data);
+        if (bytes && bytes.byteLength) ipcRenderer.send("studio:angleChunk", { id: String(sourceId), data: bytes });
+      },
+      stop: (sourceId) => ipcRenderer.invoke("studio:angles:stop", sourceId ?? null),
+      status: () => ipcRenderer.invoke("studio:angles:status"),
+      onStatus: on("studio:angles:status"),
+      onRestartRecorder: on("studio:angles:restartRecorder"),
+    },
+    // Tekrarlar: program + açılar aynı zaman penceresinden (userData/replays/<kimlik>/).
+    saveReplay: (opts) => ipcRenderer.invoke("studio:saveReplay", opts || {}),
+    listReplays: () => ipcRenderer.invoke("studio:listReplays"),
+    getReplay: (id) => ipcRenderer.invoke("studio:getReplay", id),
+    updateReplay: (id, patch) => ipcRenderer.invoke("studio:updateReplay", id, patch || {}),
+    deleteReplay: (id) => ipcRenderer.invoke("studio:deleteReplay", id),
+    revealReplay: (id, angle) => ipcRenderer.invoke("studio:revealReplay", id, angle || "program"),
+    // Öne çıkanlar: ekran dışı canvas'ın MediaRecorder parçaları → H.264 MP4 (userData/highlights/).
+    render: {
+      start: (opts) => ipcRenderer.invoke("studio:render:start", opts || {}),
+      pushChunk: (renderId, data) => {
+        const bytes = toBytes(data);
+        if (bytes && bytes.byteLength) ipcRenderer.send("studio:renderChunk", { id: String(renderId), data: bytes });
+      },
+      finish: (renderId) => ipcRenderer.invoke("studio:render:finish", renderId),
+      cancel: (renderId) => ipcRenderer.invoke("studio:render:cancel", renderId),
+      onProgress: on("studio:render:progress"),
+    },
+    uploadHighlight: (opts) => ipcRenderer.invoke("studio:uploadHighlight", opts || {}),
+    deleteHighlight: (opts) => ipcRenderer.invoke("studio:deleteHighlight", opts || {}),
+    // { kind: "highlight" | "interview", matchId, loaded, total }
+    onUploadProgress: on("studio:uploadProgress"),
+    // Yayın sağlığı: oturum günlüğü (userData/logs/studio-<zaman>.log) ve son hatalar.
+    // → { logPath, lastErrors, ffmpegErrors, truncated, uploads: [Yükleme günlüğü, en yeni önce], uploadLogPath }
+    diagnostics: () => ipcRenderer.invoke("studio:diagnostics"),
+    clearUploadLog: () => ipcRenderer.invoke("studio:clearUploadLog"),
+    revealDiagnostics: () => ipcRenderer.invoke("studio:revealDiagnostics"),
+    // Yerel tam kayıt: start({ …, localRecord: { enabled, dir?, videoBitrateKbps?, height?, fps?, allowSoftware? } });
+    // kalite yayından farklıysa ikinci kodlayıcı (yalnız donanım kodlayıcıda; info().localQuality.supported).
+    // start → { …, localQuality: { separate, width, height, fps, videoBitrateKbps } | { separate: false, reason, message } }
+    // klasör seçimi hatırlanır.
+    recordDir: () => ipcRenderer.invoke("studio:recordDir"),
+    chooseRecordDir: () => ipcRenderer.invoke("studio:chooseRecordDir"),
+    revealLocal: (path) => ipcRenderer.invoke("studio:revealLocal", path || null),
+    onLocalRecord: on("studio:localRecord"),
+    // Röportaj: program parçaları o andan sabitlenir; stop → MP4 (userData/interviews/).
+    interview: {
+      start: (opts) => ipcRenderer.invoke("studio:interview:start", opts || {}),
+      stop: (id) => ipcRenderer.invoke("studio:interview:stop", id),
+      status: () => ipcRenderer.invoke("studio:interview:status"),
+      list: () => ipcRenderer.invoke("studio:interview:list"),
+      delete: (name) => ipcRenderer.invoke("studio:interview:delete", name),
+      reveal: (name) => ipcRenderer.invoke("studio:interview:reveal", name),
+      upload: (opts) => ipcRenderer.invoke("studio:interview:upload", opts || {}),
+      onStatus: on("studio:interview:status"),
+    },
+    // LED çıkışı: ikinci ekranda tam ekran pencere (web: elitlig.com/led/<maç>; studio: #led-output).
+    displays: () => ipcRenderer.invoke("studio:displays"),
+    onDisplaysChanged: on("studio:displays:changed"),
+    led: {
+      open: (opts) => ipcRenderer.invoke("studio:led:open", opts || {}),
+      close: () => ipcRenderer.invoke("studio:led:close"),
+      status: () => ipcRenderer.invoke("studio:led:status"),
+      onStatus: on("studio:led:status"),
+      // Stüdyo → LED (yanıtsız); LED penceresi onState ile alır, açılışta getState ile son durumu ister.
+      sendState: (state) => ipcRenderer.send("studio:led:sendState", state ?? null),
+      getState: () => ipcRenderer.invoke("studio:led:getState"),
+      onState: on("studio:led:state"),
+    },
   },
   print: (html, title) => ipcRenderer.invoke("print:html", { html, title }),
   pdf: (html, title, options = {}) => ipcRenderer.invoke("print:html", { html, title, pdf: options }),

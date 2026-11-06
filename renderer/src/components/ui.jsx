@@ -4,6 +4,25 @@ import React, { createContext, useCallback, useContext, useEffect, useLayoutEffe
 import { createPortal } from "react-dom";
 import { cleanMenuItems, menuPosition } from "../lib/menuUtils";
 
+/* ------------------------------ platform / tuşlar ------------------------------ */
+/** Mac mi? (önizlemede/testte köprü yoksa Mac sayılır.) */
+export const isMac = () => {
+  try { return (window.elitlig?.platform || "darwin") === "darwin"; } catch { return true; }
+};
+const MOD_NAMES = { "⌃": "Ctrl", "⌘": "Ctrl", "⌥": "Alt", "⇧": "Shift" };
+const MOD_ORDER = ["Ctrl", "Alt", "Shift"];
+/**
+ * Kısayol metnini platforma çevirir: Mac'te olduğu gibi (⇧⌘M), Windows/Linux'ta
+ * "Ctrl+Shift+M". Metnin geri kalanı (açıklamalar) değişmez.
+ */
+export function keyLabel(text, mac = isMac()) {
+  if (mac || typeof text !== "string") return text;
+  return text.replace(/[⌃⌘⌥⇧]+/g, (run) => {
+    const mods = new Set([...run].map((c) => MOD_NAMES[c]));
+    return `${MOD_ORDER.filter((m) => mods.has(m)).join("+")}+`;
+  }).replace(/\+↩/g, "+Enter");
+}
+
 /* --------------------------------- simgeler --------------------------------- */
 // 24×24, çizgi simgeler (lucide benzeri, elle çizildi).
 const PATHS = {
@@ -138,6 +157,7 @@ export function Icon({ name, size = 16, className = "", strokeWidth = 1.8, title
 
 /* ------------------------------ bildirim balonu ------------------------------ */
 const ToastContext = createContext(() => {});
+const TOAST_ICONS = { success: "check", error: "alert", warn: "alert", info: "info" };
 export const useToast = () => useContext(ToastContext);
 
 export function ToastProvider({ children }) {
@@ -152,9 +172,11 @@ export function ToastProvider({ children }) {
       {children}
       <div className="toasts" role="status" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast toast--${t.tone}`}>
+          <div key={t.id} className={`toast toast--${t.tone}`} role={t.tone === "error" ? "alert" : undefined}>
+            {TOAST_ICONS[t.tone] && <Icon name={TOAST_ICONS[t.tone]} size={15} className="toast__icon" />}
             <span>{t.message}</span>
             {t.action && <button type="button" className="toast__action" onClick={() => { t.action.run(); setToasts((l) => l.filter((x) => x.id !== t.id)); }}>{t.action.label}</button>}
+            <button type="button" className="toast__close" aria-label="Bildirimi kapat" onClick={() => setToasts((l) => l.filter((x) => x.id !== t.id))}><Icon name="x" size={13} /></button>
           </div>
         ))}
       </div>
@@ -181,10 +203,17 @@ export function useResult() {
 const modalStack = [];
 /** Açık pencere sayısı: üstüne açılan katmanlar (yan panel) z-index'i buna göre seçer. */
 export const openModalCount = () => modalStack.length;
+const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+let modalSeq = 0;
 export function Modal({ title, onClose, children, footer, width = 560, className = "" }) {
   const ref = useRef(null);
   const idRef = useRef(null);
   if (!idRef.current) idRef.current = Symbol("modal");
+  const [titleId] = useState(() => `modal-title-${++modalSeq}`);
+  // onClose her çizimde yeni bir işlev olabilir: etkiler ona bağlanmaz (aksi hâlde
+  // üst bileşen her yeniden çizildiğinde odak ilk alana zıplar, açık <select> kapanır).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   // İç içe pencereler (ve aradaki yan paneller) sırayla üst üste çizilir.
   const [depth] = useState(() => modalStack.length);
   useEffect(() => {
@@ -192,25 +221,48 @@ export function Modal({ title, onClose, children, footer, width = 560, className
     modalStack.push(id);
     return () => { const i = modalStack.lastIndexOf(id); if (i >= 0) modalStack.splice(i, 1); };
   }, []);
+  // Yalnız açılışta: ilk alana odaklan; kapanınca odağı açan öğeye geri ver.
+  useEffect(() => {
+    const opener = document.activeElement;
+    const box = ref.current;
+    if (box && !box.contains(document.activeElement)) {
+      const first = box.querySelector('.modal__body input:not(:disabled):not([type="hidden"]), .modal__body textarea:not(:disabled), .modal__body select:not(:disabled), button.btn--primary:not(:disabled)');
+      (first || box).focus({ preventScroll: true });
+    }
+    return () => {
+      if (opener && opener !== document.body && opener.isConnected && typeof opener.focus === "function") opener.focus({ preventScroll: true });
+    };
+  }, []);
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key !== "Escape") return;
-      // Açık bir menü varsa Escape önce menüyü kapatır; iç içe pencerede yalnız üstteki kapanır.
-      if (document.querySelector(".menu__list") || modalStack[modalStack.length - 1] !== idRef.current) return;
-      e.stopPropagation();
-      onClose?.();
+      const top = modalStack[modalStack.length - 1] === idRef.current;
+      if (e.key === "Escape") {
+        // Açık bir menü varsa Escape önce menüyü kapatır; iç içe pencerede yalnız üstteki kapanır.
+        if (document.querySelector(".menu__list") || !top) return;
+        e.stopPropagation();
+        onCloseRef.current?.();
+        return;
+      }
+      // Tab pencerenin içinde döner (arkadaki sayfaya kaçmaz).
+      if (e.key === "Tab" && top && ref.current) {
+        const items = [...ref.current.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
+        if (!items.length) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        const inside = ref.current.contains(document.activeElement);
+        if (e.shiftKey && (document.activeElement === first || !inside)) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && (document.activeElement === last || !inside)) { e.preventDefault(); first.focus(); }
+      }
     };
     window.addEventListener("keydown", onKey, true);
-    const first = ref.current?.querySelector("input, textarea, select, button.btn--primary");
-    first?.focus();
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  }, []);
   return (
-    <div className="modal-backdrop" style={depth ? { zIndex: 50 + depth * 2 } : undefined} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
-      <div className={`modal ${className}`} style={{ width }} ref={ref} role="dialog" aria-modal="true" aria-label={title}>
+    <div className="modal-backdrop" style={depth ? { zIndex: 50 + depth * 2 } : undefined} onMouseDown={(e) => { if (e.target === e.currentTarget) onCloseRef.current?.(); }}>
+      <div className={`modal ${className}`} style={{ width }} ref={ref} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
         <header className="modal__head">
-          <h2>{title}</h2>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Kapat"><Icon name="x" /></button>
+          <h2 id={titleId}>{title}</h2>
+          <button type="button" className="icon-btn" onClick={() => onCloseRef.current?.()} aria-label="Kapat" title="Kapat (esc)"><Icon name="x" /></button>
         </header>
         <div className="modal__body">{children}</div>
         {footer && <footer className="modal__foot">{footer}</footer>}
@@ -247,7 +299,7 @@ export const Empty = ({ icon = "note", title, text, action }) => (
   <div className="empty">
     <span className="empty__icon"><Icon name={icon} size={28} /></span>
     <strong>{title}</strong>
-    {text && <p>{text}</p>}
+    {text && <p>{keyLabel(text)}</p>}
     {action}
   </div>
 );
@@ -389,4 +441,4 @@ export function MenuButton({ items, label = "Diğer", icon = "more", text, class
   );
 }
 
-export const Kbd = ({ children }) => <kbd className="kbd">{children}</kbd>;
+export const Kbd = ({ children }) => <kbd className="kbd">{keyLabel(children)}</kbd>;

@@ -4,7 +4,10 @@
 //   POST /matches/:id     yayını aç (varsa olanı döndürür) → RTMP adresi + anahtar
 //   GET  /matches/:id     durum (YouTube kotası harcar: yalnız görüntü giderken 30 sn'de bir)
 //   POST /matches/:id/end yayını bitir
-import { useCallback, useEffect, useState } from "react";
+//   POST /youtube/connect  → { auth_url } tarayıcıda Google girişi; sunucu jetonu saklar
+//   POST /youtube/disconnect
+// Bağlanırken yapılandırma 2 dakika boyunca 3 sn'de bir yoklanır.
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./studioApi";
 
 export function useYoutube(matchId, { encodingLive }) {
@@ -12,16 +15,53 @@ export function useYoutube(matchId, { encodingLive }) {
   const [stream, setStream] = useState(null);
   const [privacy, setPrivacy] = useState("public");
 
-  useEffect(() => {
-    let live = true;
-    api.getLiveConfig().then((r) => {
-      if (!live) return;
-      const c = r.ok ? r.data || {} : {};
-      setConfig({ loading: false, configured: Boolean(c.configured), privacy: c.privacy || "public", error: r.ok ? null : r.error?.message || null });
-      if (c.privacy) setPrivacy(c.privacy);
-    });
-    return () => { live = false; };
+  const [connecting, setConnecting] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
+
+  const loadConfig = useCallback(async () => {
+    const r = await api.getLiveConfig();
+    if (!mounted.current) return null;
+    const c = r.ok ? r.data || {} : {};
+    const next = {
+      loading: false,
+      configured: Boolean(c.configured),
+      connected: c.connected != null ? Boolean(c.connected) : Boolean(c.configured),
+      channel: c.channel || null,
+      oauthReady: c.oauth_ready !== false,
+      oauthKnown: c.oauth_ready != null,
+      privacy: c.privacy || "public",
+      error: r.ok ? null : r.error?.message || null,
+    };
+    setConfig(next);
+    if (c.privacy) setPrivacy(c.privacy);
+    return next;
   }, []);
+
+  useEffect(() => { loadConfig(); }, [loadConfig]);
+
+  /** "YouTube kanalını bağla": Google girişi tarayıcıda; bağlanınca kendiliğinden görünür. */
+  const connect = useCallback(async () => {
+    const data = await api.must(api.connectYoutube(), "YouTube bağlantısı başlatılamadı.");
+    if (!data?.auth_url) throw new Error("Sunucu giriş adresi vermedi.");
+    await window.elitlig?.app?.openExternal?.(data.auth_url);
+    setConnecting(true);
+    const until = Date.now() + 120_000;
+    const poll = async () => {
+      if (!mounted.current) return;
+      const c = await loadConfig();
+      if (c?.configured && c.connected !== false) { setConnecting(false); return; }
+      if (Date.now() > until) { setConnecting(false); return; }
+      setTimeout(poll, 3000);
+    };
+    setTimeout(poll, 3000);
+    return true;
+  }, [loadConfig]);
+
+  const disconnect = useCallback(async () => {
+    await api.must(api.disconnectYoutube(), "Bağlantı kesilemedi.");
+    await loadConfig();
+  }, [loadConfig]);
 
   const refresh = useCallback(async () => {
     if (!matchId) return null;
@@ -50,5 +90,5 @@ export function useYoutube(matchId, { encodingLive }) {
     return s;
   }, [matchId]);
 
-  return { config, stream, privacy, setPrivacy, refresh, open, end };
+  return { config, stream, privacy, setPrivacy, refresh, open, end, connect, disconnect, connecting, reloadConfig: loadConfig };
 }

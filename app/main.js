@@ -21,7 +21,8 @@
 //   - Talepler (⇧⌘T): onay bekleyen talepler (/api/admin/requests); toplam
 //     kenar çubuğunda, Dock'ta ve menü çubuğunda; yeni talep socket'ten
 //     ("admin:requests") gelir, pencere arka plandayken bildirim olur.
-//   - Yayın Stüdyosu (2.9): arayüzün <canvas> programı MediaRecorder ile buraya
+//   - Yayın Stüdyosu (2.9; 2.11: fifo ile kopmadan yeniden bağlanma, açı kopya kipi,
+//     yerel tam kayıt, röportaj, LED çıkışı, tanılama günlüğü): arayüzün <canvas> programı MediaRecorder ile buraya
 //     akar; ffmpeg (uygulamayla gelir) yeniden kodlayıp RTMP(S)'ye (YouTube)
 //     ve 2 sn'lik klip halkasına yazar; gol klipleri MP4 olarak kaydedilip
 //     sunucuya yüklenir (app/studio/). Kamera / mikrofon / ekran izinleri.
@@ -43,25 +44,34 @@ const { createFocus, trayTitle } = require("./focus");
 const { createReminders } = require("./reminders");
 const { createChatLink, buildMultipart, mimeOf } = require("./chat");
 const { accessFromUser, probeAccess, sameAccess } = require("./access");
-const { registerStudio, STUDIO_SCHEME } = require("./studio");
+const { registerStudio, applyStudioSwitches, STUDIO_SCHEME } = require("./studio");
+const { isAllowedExternal } = require("./links");
 
 // Sohbet medyası (fotoğraf, ses, belge) bu şemayla ana süreç üzerinden açılır:
 // diskte önbelleklenir, çevrimdışı da görünür; arayüzün güvenlik politikası
 // dış adreslerden ses/video çalmaya izin vermediği için de gereklidir.
 const MEDIA_SCHEME = "elitlig-media";
-// Yayın Stüdyosu klipleri (userData/clips) elitlig-studio://clips/<ad> ile,
-// Range destekli oynatılır; yalnız klip klasöründeki dosyalar sunulur.
+// Yayın Stüdyosu klipleri, tekrarları ve öne çıkanları (userData/clips, replays,
+// highlights) elitlig-studio://clips/<ad>, replays/<kimlik>/<dosya>, highlights/<ad> ile,
+// Range destekli oynatılır; yalnız bu klasörlerdeki beyaz listedeki adlar sunulur.
 protocol.registerSchemesAsPrivileged([
   { scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
   { scheme: STUDIO_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true } },
 ]);
 
 app.setName(config.APP_NAME);
+// Yayın Stüdyosu: pencere arkada / örtülü / küçültülmüşken Chromium çizimi ve
+// zamanlayıcıları kısmasın (canvas → MediaRecorder akışı durup yayın kopmasın).
+applyStudioSwitches(app);
 if (process.env.ELITLIG_USER_DATA) app.setPath("userData", process.env.ELITLIG_USER_DATA);
 
 const RENDERER = path.join(__dirname, "..", "renderer", "dist", "index.html");
 const DEV_URL = process.env.ELITLIG_RENDERER_URL || null;
 const ASSETS = path.join(__dirname, "assets");
+// Windows: pencere çerçevesi / tepsi / menü ve bildirimler için platform ayrımı.
+const IS_MAC = process.platform === "darwin";
+// Windows bildirimleri uygulama kimliği ister (NSIS kısayolu da appId'yi taşır).
+if (process.platform === "win32") app.setAppUserModelId("com.elitlig.araclar");
 
 let mainWindow = null;
 let quickWindow = null;
@@ -276,9 +286,13 @@ function refreshTray() {
 }
 
 function createTray() {
-  const image = nativeImage.createFromPath(path.join(ASSETS, "trayTemplate.png"));
-  image.setTemplateImage(true);
+  // Mac: tek renkli şablon simge; Windows: renkli uygulama simgesi (şablon koyu görev çubuğunda görünmez).
+  const image = IS_MAC
+    ? nativeImage.createFromPath(path.join(ASSETS, "trayTemplate.png"))
+    : nativeImage.createFromPath(path.join(ASSETS, "icon.png")).resize({ width: 32, height: 32, quality: "best" });
+  if (IS_MAC) image.setTemplateImage(true);
   tray = new Tray(image);
+  if (!IS_MAC) tray.on("click", () => showMain());
   tray.on("mouse-enter", () => tray.setToolTip(chatLink?.unread() ? `${config.APP_NAME} · ${chatLink.unread()} okunmamış mesaj` : config.APP_NAME));
   tray.setToolTip(config.APP_NAME);
   refreshTray();
@@ -346,11 +360,10 @@ function createMainWindow() {
     minWidth: 980,
     minHeight: 620,
     show: false,
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 18, y: 18 },
-    vibrancy: "sidebar",
-    visualEffectState: "followWindow",
-    backgroundColor: "#00000000",
+    // hiddenInset Windows'ta çerçevesiz (düğmesiz) pencere açar; vibrancy yalnız Mac'te.
+    ...(IS_MAC
+      ? { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 18, y: 18 }, vibrancy: "sidebar", visualEffectState: "followWindow", backgroundColor: "#00000000" }
+      : { autoHideMenuBar: true, backgroundColor: nativeTheme.shouldUseDarkColors ? "#1e1e1e" : "#ffffff" }),
     icon: path.join(ASSETS, "icon.png"),
     webPreferences: secureWebPreferences(),
   });
@@ -468,13 +481,15 @@ function buildMenu() {
           if (response === 0) await logout();
         } },
         { type: "separator" },
-        { role: "services", label: "Servisler" },
-        { type: "separator" },
-        { role: "hide", label: `${config.APP_NAME}'ı Gizle` },
-        { role: "hideOthers", label: "Diğerlerini Gizle" },
-        { role: "unhide", label: "Tümünü Göster" },
-        { type: "separator" },
-        { label: `${config.APP_NAME}'tan Çık`, accelerator: "Cmd+Q", click: () => { quitting = true; app.quit(); } },
+        ...(IS_MAC ? [
+          { role: "services", label: "Servisler" },
+          { type: "separator" },
+          { role: "hide", label: `${config.APP_NAME}'ı Gizle` },
+          { role: "hideOthers", label: "Diğerlerini Gizle" },
+          { role: "unhide", label: "Tümünü Göster" },
+          { type: "separator" },
+        ] : []),
+        { label: `${config.APP_NAME}'tan Çık`, accelerator: IS_MAC ? "Cmd+Q" : "Ctrl+Q", click: () => { quitting = true; app.quit(); } },
       ],
     },
     {
@@ -520,7 +535,7 @@ function buildMenu() {
         ...(app.isPackaged ? [] : [{ role: "toggleDevTools", label: "Geliştirici Araçları" }]),
       ],
     },
-    { label: "Pencere", role: "window", submenu: [{ role: "minimize", label: "Küçült" }, { role: "zoom", label: "Büyüt" }, { type: "separator" }, { role: "front", label: "Tümünü Öne Getir" }] },
+    { label: "Pencere", role: "window", submenu: [{ role: "minimize", label: "Küçült" }, ...(IS_MAC ? [{ role: "zoom", label: "Büyüt" }, { type: "separator" }, { role: "front", label: "Tümünü Öne Getir" }] : [])] },
     { label: "Yardım", role: "help", submenu: [
       { label: "Klavye Kısayolları", accelerator: "CmdOrCtrl+/", click: () => sendCommand("shortcuts") },
       { label: "elitlig.com'u Aç", click: () => shell.openExternal(config.SITE_ORIGIN) },
@@ -654,8 +669,9 @@ function registerIpc() {
   });
 
   ipcMain.handle("app:info", () => ({ version: app.getVersion(), shortcut: config.QUICK_SHORTCUT, siteOrigin: config.SITE_ORIGIN, sessionDays: config.SESSION_DAYS }));
+  // https://accounts.google.com (YouTube bağlama) ve API sunucusu adresleri dahil tüm https.
   ipcMain.handle("app:openExternal", (_e, url) => {
-    if (/^(https?|mailto|tel|sms|whatsapp|facetime):/i.test(String(url))) return shell.openExternal(url);
+    if (isAllowedExternal(url)) return shell.openExternal(String(url).trim());
     return null;
   });
   ipcMain.handle("app:openWeb", (_e, pathname) => shell.openExternal(new URL(String(pathname || "/"), config.SITE_ORIGIN).toString()));
@@ -785,6 +801,10 @@ if (!app.requestSingleInstanceLock()) {
       ipcMain, api, broadcast, app, electronSession, systemPreferences, desktopCapturer, powerSaveBlocker, protocol, shell,
       isOwnUrl,
       isSignedIn: () => authState().signedIn,
+      dialog, screen, BrowserWindow, loadRenderer, powerMonitor,
+      preloadPath: path.join(__dirname, "preload.js"),
+      siteOrigin: config.SITE_ORIGIN,
+      apiOrigin: config.API_ORIGIN,
       log: (...args) => { if (!app.isPackaged || process.env.ELITLIG_STUDIO_DEBUG) console.log(...args); },
     });
     focus = createFocus({ dataDir: dataDir() });

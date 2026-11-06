@@ -1,6 +1,6 @@
 // Uygulama kabuğu: giriş kontrolü, kenar çubuğu, görünümler, komut paleti.
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ConfirmProvider, Icon, Kbd, Modal, Spinner, useToast } from "./components/ui";
+import { ConfirmProvider, Icon, Kbd, Modal, Spinner, isMac, keyLabel, useToast } from "./components/ui";
 import Palette from "./components/Palette";
 import Login from "./views/Login";
 import { refreshAll, useResource } from "./api";
@@ -42,6 +42,11 @@ export const ROUTES = [
 ];
 const ROUTE_KEYS = new Set([...ROUTES.map((r) => r.key), "account"]);
 
+const SIDEBAR_KEY = "sidebar.collapsed";
+const readCollapsed = () => {
+  try { return localStorage.getItem(SIDEBAR_KEY) === "1"; } catch { return false; }
+};
+
 const readRoute = () => {
   try {
     const saved = localStorage.getItem("route");
@@ -71,7 +76,21 @@ function Shell({ auth }) {
   const [routeArg, setRouteArg] = useState(null);
   const [palette, setPalette] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  // Daraltılmış kenar çubuğu: yalnız simgeler (ipucu balonuyla). Tercih hatırlanır.
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [tip, setTip] = useState(null);
+  // Yayın Stüdyosu tüm pencereyi kullanır: kenar çubuğu HİÇ çizilmez (yanlışlıkla
+  // tıklanıp yayının kopmasını önler). Stüdyodan çıkış üst çubuktaki
+  // "Programdan çık" düğmesiyle (yayın / kayıt sürüyorsa onay sorulur).
+  const bare = route === "studio";
+  const toggleSidebar = useCallback(() => {
+    setCollapsed((v) => {
+      const next = !v;
+      try { localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0"); } catch { /* yoksay */ }
+      return next;
+    });
+    setTip(null);
+  }, []);
   const [sync, setSync] = useState({ online: true, pending: 0 });
   const [focusState, setFocusState] = useState(null);
   const [chatUnread, setChatUnread] = useState(0);
@@ -98,9 +117,9 @@ function Shell({ auth }) {
   useEffect(() => window.elitlig.onCommand((cmd) => {
     if (cmd === "palette") setPalette(true);
     if (cmd === "refresh") { refreshAll(); window.elitlig.sync.flush(); }
-    if (cmd === "sidebar") setCollapsed((v) => !v);
+    if (cmd === "sidebar") toggleSidebar();
     if (cmd === "shortcuts") setShortcuts(true);
-  }), []);
+  }), [toggleSidebar]);
   useEffect(() => {
     window.elitlig.sync.status().then(setSync);
     const offStatus = window.elitlig.sync.onStatus(setSync);
@@ -131,7 +150,8 @@ function Shell({ auth }) {
   }, []);
   useEffect(() => {
     const onKey = (e) => {
-      if (e.metaKey && e.key.toLowerCase() === "k") { e.preventDefault(); setPalette(true); }
+      // ⌘K (Mac) / Ctrl+K (Windows): komut paleti.
+      if ((isMac() ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") { e.preventDefault(); setPalette(true); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -145,43 +165,74 @@ function Shell({ auth }) {
   const View = route === "account" ? Account : current?.view || Today;
   const s = summary.data;
   const reqTotal = Number(requestsSummary?.total) || 0;
+  const badgeTone = (key, sum) => (key === "messages" ? "is-chat" : key === "requests" ? "is-req" : sum?.overdue ? "is-alert" : "");
   const badges = { todos: s ? (s.overdue || 0) + (s.today || 0) || null : null, messages: chatUnread ? (chatUnread > 99 ? "99+" : chatUnread) : null, requests: reqTotal ? (reqTotal > 99 ? "99+" : reqTotal) : null };
   const name = auth.user?.fullName || auth.user?.username || "";
 
   const syncLabel = !sync.online ? "Çevrimdışı" : sync.pending ? `${sync.pending} değişiklik bekliyor` : "Eşitlendi";
 
   return (
-    <div className={`shell ${collapsed ? "shell--collapsed" : ""}`}>
-      <aside className="sidebar">
+    <div className={`shell ${bare ? "shell--bare" : collapsed ? "shell--collapsed" : ""}`} style={bare ? { gridTemplateColumns: "minmax(0, 1fr)" } : undefined}>
+      {!bare && <aside className="sidebar" aria-label="Kenar çubuğu">
         <div className="sidebar__drag" />
-        <div className="sidebar__brand"><img src={logo} alt="Elitlig" /><span>Araçlar</span></div>
-        <button type="button" className="sidebar__search" onClick={() => setPalette(true)}>
-          <Icon name="search" size={14} /><span>Ara veya komut…</span><Kbd>⌘K</Kbd>
-        </button>
-        <nav className="sidebar__nav" aria-label="Araçlar">
-          {routes.map((r, i) => (
-            <React.Fragment key={r.key}>
-              {(i === 0 || routes[i - 1].group !== r.group) && <div className="sidebar__section">{r.group}</div>}
-              <button type="button" data-tool={r.key} className={`nav-item ${route === r.key ? "is-active" : ""}`} onClick={() => go(r.key)} title={`${r.label} (${r.shortcut})`}>
-                <span className="nav-item__icon"><Icon name={r.icon} size={15} strokeWidth={2} /></span>
-                <span className="nav-item__label">{r.label}</span>
-                {r.key === "focus" && focusState?.running && <span className="nav-item__timer">{formatClock(focusState.mode === "stopwatch" ? focusState.elapsedMs : focusState.remainingMs)}</span>}
-                {badges[r.key] ? <span className={`nav-item__badge ${r.key === "messages" ? "is-chat" : r.key === "requests" ? "is-req" : s?.overdue ? "is-alert" : ""}`}>{badges[r.key]}</span> : null}
-              </button>
-            </React.Fragment>
-          ))}
-        </nav>
-        <div className="sidebar__foot">
-          <button type="button" className={`sync-pill ${!sync.online ? "is-offline" : sync.pending ? "is-pending" : ""}`} onClick={() => window.elitlig.sync.flush()} title="Şimdi eşitle">
-            <Icon name={sync.online ? "cloud" : "cloudOff"} size={14} /> {syncLabel}
-          </button>
-          <button type="button" className={`account-btn ${route === "account" ? "is-active" : ""}`} onClick={() => go("account")}>
-            <span className="avatar">{(name[0] || "?").toLocaleUpperCase("tr-TR")}</span>
-            <span className="account-btn__text"><strong>{name}</strong><small>{auth.user?.roleLabel || auth.user?.city || "Elitlig"}</small></span>
+        <div className="sidebar__brand">
+          <img src={logo} alt="Elitlig" /><span>Araçlar</span>
+          <button type="button" className="sidebar__toggle" onClick={toggleSidebar} aria-label={collapsed ? "Kenar çubuğunu genişlet" : "Kenar çubuğunu daralt"} aria-expanded={!collapsed}
+            title={`${collapsed ? "Genişlet" : "Daralt"} (${keyLabel("⌘⌥S")})`}>
+            <Icon name={collapsed ? "chevronRight" : "chevronLeft"} size={15} strokeWidth={2.2} />
           </button>
         </div>
-      </aside>
-      <main className="content" data-tool={route}>
+        <button type="button" className="sidebar__search" onClick={() => setPalette(true)} aria-label="Ara veya komut çalıştır" {...railTip(collapsed, setTip, "Ara veya komut", "⌘K")}>
+          <Icon name="search" size={14} /><span>Ara veya komut…</span><Kbd>⌘K</Kbd>
+        </button>
+        <nav className="sidebar__nav" aria-label="Araçlar" onKeyDown={onNavKey} onScroll={() => setTip(null)}>
+          {routes.map((r, i) => {
+            const badge = badges[r.key];
+            const timer = r.key === "focus" && focusState?.running ? formatClock(focusState.mode === "stopwatch" ? focusState.elapsedMs : focusState.remainingMs) : null;
+            return (
+              <React.Fragment key={r.key}>
+                {(i === 0 || routes[i - 1].group !== r.group) && <div className="sidebar__section" role="presentation">{r.group}</div>}
+                <button type="button" data-tool={r.key} className={`nav-item ${route === r.key ? "is-active" : ""}`} onClick={() => go(r.key)}
+                  aria-current={route === r.key ? "page" : undefined}
+                  aria-label={collapsed ? `${r.label}${badge ? ` (${badge})` : ""}` : undefined}
+                  title={collapsed ? undefined : `${r.label} (${keyLabel(r.shortcut)})`}
+                  {...railTip(collapsed, setTip, r.label, r.shortcut, badge || timer)}>
+                  <span className="nav-item__icon"><Icon name={r.icon} size={15} strokeWidth={2} />
+                    {collapsed && badge ? <span className={`nav-item__badge ${badgeTone(r.key, s)}`}>{badge}</span> : null}
+                  </span>
+                  <span className="nav-item__label">{r.label}</span>
+                  {timer && <span className="nav-item__timer">{timer}</span>}
+                  {!collapsed && badge ? <span className={`nav-item__badge ${badgeTone(r.key, s)}`}>{badge}</span> : null}
+                </button>
+              </React.Fragment>
+            );
+          })}
+        </nav>
+        <div className="sidebar__foot">
+          {(!sync.online || sync.pending > 0) && (
+            <button type="button" className={`sync-pill ${!sync.online ? "is-offline" : "is-pending"}`} onClick={() => window.elitlig.sync.flush()} title="Şimdi eşitle">
+              <Icon name={sync.online ? "cloud" : "cloudOff"} size={14} /> {syncLabel}
+            </button>
+          )}
+          <div className="sidebar__account">
+            <button type="button" className={`account-btn ${route === "account" ? "is-active" : ""}`} onClick={() => go("account")} aria-current={route === "account" ? "page" : undefined}
+              aria-label={collapsed ? `Hesabım: ${name}` : undefined} {...railTip(collapsed, setTip, name || "Hesabım", null, auth.user?.roleLabel)}>
+              <span className="avatar">{(name[0] || "?").toLocaleUpperCase("tr-TR")}</span>
+              <span className="account-btn__text"><strong>{name}</strong><small>{auth.user?.roleLabel || auth.user?.city || "Elitlig"}</small></span>
+            </button>
+            <button type="button" className={`sync-dot ${!sync.online ? "is-offline" : sync.pending ? "is-pending" : ""}`} onClick={() => window.elitlig.sync.flush()}
+              aria-label={`${syncLabel}: şimdi eşitle`} title={collapsed ? undefined : `${syncLabel} · şimdi eşitle`} {...railTip(collapsed, setTip, syncLabel, null, "şimdi eşitle")}>
+              <Icon name={sync.online ? "cloud" : "cloudOff"} size={15} />
+            </button>
+          </div>
+        </div>
+      </aside>}
+      {!bare && collapsed && tip && (
+        <div className="rail-tip" style={{ top: tip.top }} role="tooltip">
+          {tip.label}{tip.extra ? <span className="rail-tip__badge">{tip.extra}</span> : null}{tip.shortcut ? <Kbd>{tip.shortcut}</Kbd> : null}
+        </div>
+      )}
+      <main className="content" data-tool={route} style={bare ? { borderRadius: 0 } : undefined}>
         <div className="content__drag" />
         <Suspense fallback={<Spinner />}>
           <View key={route} go={go} arg={routeArg} auth={auth} summary={s} />
@@ -191,6 +242,28 @@ function Shell({ auth }) {
       {shortcuts && <ShortcutsHelp onClose={() => setShortcuts(false)} />}
     </div>
   );
+}
+
+/** Dar kenar çubuğunda ipucu balonu: fareyle üzerine gelince ya da klavye odağında. */
+function railTip(collapsed, setTip, label, shortcut, extra) {
+  if (!collapsed) return {};
+  const show = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setTip({ label, shortcut, extra: extra || null, top: r.top + r.height / 2 });
+  };
+  const hide = () => setTip(null);
+  return { onMouseEnter: show, onMouseLeave: hide, onFocus: show, onBlur: hide };
+}
+
+/** Kenar çubuğunda ↑ ↓ Home End ile araçlar arasında gezinme. */
+function onNavKey(e) {
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+  const items = [...e.currentTarget.querySelectorAll(".nav-item")];
+  const i = items.indexOf(document.activeElement);
+  if (i < 0) return;
+  e.preventDefault();
+  const next = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : (i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+  items[next].focus();
 }
 
 function ShortcutsHelp({ onClose }) {

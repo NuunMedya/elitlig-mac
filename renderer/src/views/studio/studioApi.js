@@ -35,3 +35,10 @@ export const getLiveConfig = () => live("GET", `${YT}/config`);
 export const getMatchStream = (id) => live("GET", `${YT}/matches/${id}`);
 export const createMatchStream = (id, body) => live("POST", `${YT}/matches/${id}`, body);
 export const endMatchStream = (id) => live("POST", `${YT}/matches/${id}/end`, {});
+export const connectYoutube = () => live("POST", `${YT}/youtube/connect`, {});
+export const disconnectYoutube = () => live("POST", `${YT}/youtube/disconnect`, {});
+/** Maç sayfasındaki canlı yayın / video bağlantısı (elle RTMP'de izleme linki). */
+export const setMatchVideo = (id, url) => live("PATCH", `/maclar/${id}`, { match_video: url });
+
+// Maç özeti (sunucu: routes/matchHighlights; yükleme / silme ana süreçte studio.uploadHighlight / deleteHighlight)
+export const getMatchHighlights = (matchId) => live("GET", "/api/match-highlights", undefined, { match_id: matchId });
