@@ -21,7 +21,6 @@
 // İlk açılışta eski şerit (studio.rail.v1), sahne ızgarası (studio.stage.v1) ve alt
 // panel (studio.dock.v1) kayıtlarından göç edilir (migrateLayout).
 import { DEFAULT_RAIL, RAIL_GROUPS, RAIL_WIDGETS, widgetOf } from "../shortcuts/railModel";
-import { STAGE_PRESETS } from "../../../lib/studio/stageGrid";
 
 export const LAYOUT_KEY = "studio.layout.v1";
 export const ROW_H = 40;           // pano satır yüksekliği (px)
@@ -455,29 +454,36 @@ export function missingPanels(layout) {
 
 const RAIL = { tabs: ["board~rail"], size: 12 };
 const OPS = (active = "yonetim") => ({ tabs: ["yonetim", "sahne", "tekrar", "ses", "yayin", "var", "led", "roportaj", "ozet", "olaylar"], active });
+// Monitörler yan yana 16:9 (bölme boyu ≈ en × 9/16 + başlık): boş alan kalmaz. Geçiş sahne şeridinin
+// solunda yatay düzende (dar sütunda boş kalan dikey alan yok).
+const MONITORS = (size) => ({ size, row: [{ tabs: ["pvw"], size: 1 }, { tabs: ["pgm"], size: 1 }] });
+const TAKE_STRIP = (size) => ({ size, row: [{ tabs: ["gecis"], size: 1.3 }, { tabs: ["sahneSerit"], size: 6 }] });
+/** Klasik ekran bölgesi (göçte sahne ızgarası kaydı yoksa da kullanılır). */
+export const CLASSIC_SCREEN = { col: [MONITORS(46), TAKE_STRIP(15)] };
 
 export const LAYOUT_PRESETS = [
   {
-    key: "klasik", label: "Klasik yayın", icon: "board", hint: "Solda kısayollar · önizleme | geçiş | program · sahne şeridi · altta Reji | Sahneler | Tekrar | Ses",
+    key: "klasik", label: "Klasik yayın", icon: "board", hint: "Solda kısayollar · önizleme | program · geçiş + sahne şeridi · altta Reji | Sahneler | Tekrar | Ses",
     spec: { row: [RAIL, { size: 88, col: [
-      { size: 50, row: [{ tabs: ["pvw"], size: 5 }, { tabs: ["gecis"], size: 1.6 }, { tabs: ["pgm"], size: 5 }] },
-      { tabs: ["sahneSerit"], size: 14 },
-      { size: 36, row: [{ tabs: ["yonetim", "olaylar"], size: 1.25 }, { tabs: ["sahne", "yayin", "led"], size: 1 }, { tabs: ["tekrar", "var", "roportaj", "ozet"], size: 1.35 }, { tabs: ["ses"], size: 0.9 }] },
+      MONITORS(46),
+      TAKE_STRIP(15),
+      { size: 39, row: [{ tabs: ["yonetim", "olaylar"], size: 1.25 }, { tabs: ["sahne", "yayin", "led"], size: 1 }, { tabs: ["tekrar", "var", "roportaj", "ozet"], size: 1.35 }, { tabs: ["ses"], size: 0.9 }] },
     ] }] },
   },
   {
     key: "laptop", label: "Tek ekran laptop", icon: "overview", hint: "Dar şerit, önizleme ve program küçük; tüm işletim panelleri tek sekme grubunda",
     spec: { row: [{ tabs: ["board~rail"], size: 11 }, { size: 89, col: [
-      { size: 46, row: [{ tabs: ["pvw"], size: 4 }, { tabs: ["gecis"], size: 1.4 }, { tabs: ["pgm"], size: 4 }] },
-      { size: 54, row: [{ ...OPS("yonetim"), size: 3 }, { tabs: ["sahneSerit", "ses"], size: 1.2 }] },
+      MONITORS(44),
+      TAKE_STRIP(14),
+      { size: 42, row: [{ ...OPS("yonetim"), size: 3 }, { tabs: ["ses"], size: 1.2 }] },
     ] }] },
   },
   {
     key: "led", label: "Çift monitör (LED)", icon: "overview", hint: "LED önizleme ve program büyük; önizleme, geçiş, sahneler; altta LED · Reji · Tekrar · Ses",
     spec: { row: [RAIL, { size: 88, col: [
       { size: 44, row: [{ tabs: ["ledPvw"], size: 1 }, { tabs: ["pgm"], size: 1 }] },
-      { size: 22, row: [{ tabs: ["pvw"], size: 3 }, { tabs: ["gecis"], size: 1.4 }, { tabs: ["sahneSerit"], size: 5 }] },
-      { size: 34, row: [{ tabs: ["led", "yayin"], size: 1 }, { tabs: ["yonetim", "sahne", "olaylar"], size: 1.2 }, { tabs: ["tekrar", "var"], size: 1.2 }, { tabs: ["ses"], size: 0.9 }] },
+      { size: 27, row: [{ tabs: ["pvw"], size: 2.4 }, { tabs: ["gecis"], size: 1.2 }, { tabs: ["sahneSerit"], size: 4.6 }] },
+      { size: 29, row: [{ tabs: ["led", "yayin"], size: 1 }, { tabs: ["yonetim", "sahne", "olaylar"], size: 1.2 }, { tabs: ["tekrar", "var"], size: 1.2 }, { tabs: ["ses"], size: 0.9 }] },
     ] }] },
   },
   {
@@ -488,18 +494,18 @@ export const LAYOUT_PRESETS = [
     ] }] },
   },
   {
-    key: "reji", label: "Reji ağırlıklı", icon: "zap", hint: "Maç yönetimi büyük; monitörler üstte küçük; yanda olay girişi ve tekrar",
+    key: "reji", label: "Reji ağırlıklı", icon: "zap", hint: "Maç yönetimi büyük; monitörler üstte küçük, yanda saat ve geçiş; altta olay girişi ve tekrar",
     spec: { row: [RAIL, { size: 88, col: [
-      { size: 38, row: [{ tabs: ["pvw"], size: 4 }, { tabs: ["gecis"], size: 1.5 }, { tabs: ["pgm"], size: 4 }, { tabs: ["saat"], size: 1.6 }] },
-      { size: 62, row: [{ tabs: ["yonetim"], size: 2.6 }, { size: 1.4, col: [{ tabs: ["olaylar", "golMuzigi"], size: 1 }, { tabs: ["tekrar", "sahne", "ses"], size: 1 }] }] },
+      { size: 38, row: [{ tabs: ["pvw"], size: 4 }, { tabs: ["pgm"], size: 4 }, { size: 2, col: [{ tabs: ["saat"], size: 1 }, { tabs: ["gecis"], size: 1.4 }] }] },
+      { size: 62, row: [{ tabs: ["yonetim"], size: 2.6 }, { size: 1.4, col: [{ tabs: ["olaylar", "golMuzigi"], size: 1 }, { tabs: ["tekrar", "sahneSerit", "sahne", "ses"], size: 1 }] }] },
     ] }] },
   },
   {
     key: "ses", label: "Ses ağırlıklı", icon: "mic", hint: "Geniş ses karıştırıcı ve ölçerler; monitörler üstte",
     spec: { row: [RAIL, { size: 88, col: [
-      { size: 42, row: [{ tabs: ["pvw"], size: 4 }, { tabs: ["gecis"], size: 1.4 }, { tabs: ["pgm"], size: 4 }] },
-      { tabs: ["olcer"], size: 9 },
-      { size: 49, row: [{ tabs: ["ses"], size: 2.6 }, { tabs: ["tekrar", "yonetim", "sahne", "yayin"], size: 1.4 }] },
+      MONITORS(44),
+      { size: 11, row: [{ tabs: ["gecis"], size: 1.3 }, { tabs: ["olcer"], size: 6 }] },
+      { size: 45, row: [{ tabs: ["ses"], size: 2.6 }, { tabs: ["tekrar", "sahneSerit", "yonetim", "sahne", "yayin"], size: 1.4 }] },
     ] }] },
   },
 ];
@@ -558,7 +564,7 @@ export function tilesToSpec(tiles) {
  */
 export function migrateLayout({ rail = null, stage = null, dock = null, dockH = 300, viewportH = 900 } = {}) {
   const boards = { rail: defaultRailBoard(Array.isArray(rail) ? rail : DEFAULT_RAIL) };
-  const stageSpec = tilesToSpec(stage?.tiles) || tilesToSpec(STAGE_PRESETS[0].tiles);
+  const stageSpec = tilesToSpec(stage?.tiles) || CLASSIC_SCREEN;
   const opsKeys = ["yonetim", "sahne", "tekrar", "ses", "var", "roportaj", "ozet", "yayin", "led", "olaylar"];
   let bottom = null;
   if (dock && dock.mode === "tabs") {
@@ -574,7 +580,9 @@ export function migrateLayout({ rail = null, stage = null, dock = null, dockH = 
     bottom = presetOf("klasik").spec.row[1].col[2];
   }
   const vh = Math.max(500, Number(viewportH) || 900);
-  const dh = Math.min(0.62, Math.max(0.15, (Number(dockH) || 300) / vh));
+  // Sahne ızgarası kaydı yoksa Klasik oranları (monitörler 16:9 dolsun); varsa eski alt panel yüksekliği.
+  const dh = !stage?.tiles ? 0.39 : Math.min(0.62, Math.max(0.15, (Number(dockH) || 300) / vh));
   const spec = { row: [RAIL, { size: 88, col: [{ ...stageSpec, size: 1 - dh }, ...(bottom ? [{ ...bottom, size: dh }] : [])] }] };
+  // (aynı yöndeki iç içe dallar specToDock'ta düzleşir: Klasik ekran bölgesi monitörler + geçiş/şerit olarak kalır)
   return normalizeLayout({ v: 1, dock: specToDock(spec), boards, removed: [], mins: {}, preset: null });
 }

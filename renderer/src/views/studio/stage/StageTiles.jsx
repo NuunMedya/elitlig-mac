@@ -19,6 +19,7 @@ import { drawGraphicsSafe } from "../scenes/graphicsBridge";
 import { LED_WEB_BASE } from "../led/useLed";
 import { ledRouteLabel, ledTargetScene } from "../led/ledRouting";
 import Monitor from "../scenes/Monitor";
+import "./stage.css";
 
 /** Kutunun iç boyutu (ResizeObserver). */
 function useSize() {

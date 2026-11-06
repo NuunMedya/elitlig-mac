@@ -274,3 +274,8 @@
 .lw-presets .lw-preset { min-width: 0; }
 .lw-cell { container-type: inline-size; }
 @container (max-width: 120px) { .lw-item__name, .lw-item__wh { display: none; } .lw-item__bar { justify-content: space-between; gap: 1px; } }
+/* bölmede kutular içerikten değil bölmeden boy alır (sahne şeridi kendi boyunu ölçer: geri besleme olmasın) */
+.lw-panel > .stg-box, .lw-panel > .stg-cell { flex: 1 1 0; min-height: 0; height: 0; overflow: hidden; }
+.lw-autotr { flex: 1 1 0; min-height: 0; height: 0; overflow: auto; scrollbar-width: none; }
+.lw-panel .stg-box > .stg-strip { flex: 1 1 0; height: 0; min-height: 0; }
+.lw-panel.is-monitor > .st-monitor { flex: 1 1 0; height: 0; }

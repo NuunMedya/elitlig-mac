@@ -49,13 +49,14 @@ describe("yerleşim: hazır düzenler → dockview", () => {
       expect(out.grid.orientation).toBe(json.grid.orientation);
     }
   });
-  it("Klasik: solda kısayol panosu, üstte önizleme | geçiş | program, altta işletim panelleri sekme gruplarında", () => {
+  it("Klasik: solda kısayol panosu, üstte önizleme | program, geçiş sahne şeridinin solunda, altta işletim panelleri", () => {
     const t = dockTree(specToDock(presetOf("klasik").spec));
     expect(t.root.dir).toBe("row");
     expect(t.root.children[0].views.map((v) => v.id)).toEqual(["board~rail"]);
     const main = t.root.children[1];
     expect(main.dir).toBe("col");
-    expect(main.children[0].children.map((g) => g.views[0].id)).toEqual(["pvw", "gecis", "pgm"]);
+    expect(main.children[0].children.map((g) => g.views[0].id)).toEqual(["pvw", "pgm"]);
+    expect(main.children[1].children.map((g) => g.views[0].id)).toEqual(["gecis", "sahneSerit"]);
     expect(main.children[2].children[0].views.map((v) => v.id)).toEqual(["yonetim", "olaylar"]);
   });
   it("tek çocuklu dallar açılır, aynı yönlüler düzleşir, yinelenen / bilinmeyen paneller atılır", () => {
