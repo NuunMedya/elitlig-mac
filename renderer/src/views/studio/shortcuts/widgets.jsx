@@ -141,7 +141,7 @@ const replay = {
         <strong className="st-w__title">{r ? r.title : "Henüz tekrar yok"}</strong>
         {r && <small className="st-w__meta">{r.angles} açı{R.previewing ? " · önizlemede" : ""}</small>}
         <button type="button" className="st-w__cta" onClick={togglePop} disabled={!n}><Icon name="video" size={14} /> Açıları seç</button>
-        <button type="button" className="st-w__link" disabled={!n} onClick={R.playLatest}>Son tekrarı hemen ver {hk(ctx, "replay") ? `(${hk(ctx, "replay")})` : ""}</button>
+        <button type="button" className="st-w__link" disabled={!n} onClick={R.playLatest} title="Son tekrarı önizlemeye yükler; yayına GEÇİŞ ile">Son tekrar önizlemeye {hk(ctx, "replay") ? `(${hk(ctx, "replay")})` : ""}</button>
       </div>
     );
   },
@@ -152,7 +152,8 @@ const moment = {
 };
 
 const varW = {
-  render: ({ ctx, big }) => <Tile tone="danger" icon="target" big={big} on={ctx.var.active} blink={ctx.var.active} label={ctx.var.active ? "VAR · ÇIK" : "VAR"} sub={ctx.var.active ? "yayında" : "kontrol"} onClick={ctx.var.toggle} kbd={hk(ctx, "var")} />,
+  // [önizleme-geçiş] VAR önce önizlemeye; yayına GEÇİŞ ile. Yayındayken: canlıya dön.
+  render: ({ ctx, big }) => <Tile tone="danger" icon="target" big={big} on={ctx.var.active || ctx.var.previewing} blink={ctx.var.active} label={ctx.var.active ? "VAR · ÇIK" : "VAR"} sub={ctx.var.active ? "yayında" : ctx.var.previewing ? "önizlemede" : "önizlemeye"} onClick={ctx.var.toggle} kbd={hk(ctx, "var")} />,
 };
 
 const event = {
@@ -181,7 +182,7 @@ const goalMusic = {
     if (ctx.GoalMusicButtons && gm) return <div className={`st-w is-amber is-panel ${big ? "is-big" : ""}`}><ctx.GoalMusicButtons gm={gm} goalMusic={gm} compact={!big} /></div>;
     if (!gm) return <Tile tone="amber" icon="music" big={big} label="GOL MÜZİĞİ" sub="modül yok" disabled title="Gol müziği modülü bu sürümde yok" />;
     const playing = Boolean(gm.playing);
-    return <Tile tone="amber" icon={playing ? "stop" : "music"} big={big} on={playing} label={playing ? "MÜZİĞİ DURDUR" : "GOL MÜZİĞİ"} sub={gm.trackName || gm.current?.name || ""} onClick={() => (playing ? gm.stop?.() : gm.play?.())} kbd={hk(ctx, "goalMusic")} />;
+    return <Tile tone="amber" icon={playing ? "stop" : "music"} big={big} on={playing} label={playing ? "MÜZİĞİ KES" : "GOL MÜZİĞİ"} sub={gm.trackName || gm.current?.name || ""} onClick={() => (playing ? gm.stop?.() : gm.play?.())} kbd={hk(ctx, "goalMusic")} />;
   },
 };
 

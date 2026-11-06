@@ -121,7 +121,7 @@ function ReplayPanelInner({ api }) {
         </Part>
         <Part id="rate" label="Hız / ağır çekim">
         <div className={`st-rate ${onAir ? "is-live" : ""}`}>
-          <span className="st-rate__head"><strong>Hız {String(rate).replace(".", ",")}×</strong>{rate < 1 && <em>ağır çekim</em>}{onAir && <em className="is-live">yayında anında uygulanır</em>}</span>
+          <span className="st-rate__head"><strong>Hız {String(rate).replace(".", ",")}×</strong>{rate < 1 && <em>ağır çekim</em>}{onAir && <em>önizlemeye uygulanır · yayına GEÇİŞ ile</em>}</span>
           <input type="range" min={0.25} max={1} step={0.05} value={rate} onChange={(e) => onRate(Math.round(Number(e.target.value) * 20) / 20)} aria-label="Tekrar hızı" />
           <span className="st-chips">{[0.25, 0.5, 0.75, 1].map((v) => <button key={v} type="button" className={`st-chip ${rate === v ? "is-on" : ""}`} onClick={() => onRate(v)}>{String(v).replace(".", ",")}×</button>)}</span>
         </div>
@@ -132,7 +132,7 @@ function ReplayPanelInner({ api }) {
       <section className="st-replays__list">
         <header className="st-dock-head">
           <h4>Tekrarlar <span className="muted">({list.length})</span></h4>
-          <span className="st-hint">Satıra tıkla: önizle · kutu: kuyruğa ekle · <Kbd>R</Kbd> sonuncuyu yayına verir.</span>
+          <span className="st-hint">Satıra tıkla: önizle · kutu: kuyruğa ekle · <Kbd>R</Kbd> sonuncuyu önizlemeye alır · yayına GEÇİŞ (<Kbd>Boşluk</Kbd>).</span>
           <span className="st-top__spacer" />
           <label className="toggle small"><input type="checkbox" checked={onlyMatch} onChange={(e) => setOnlyMatch(e.target.checked)} /> Yalnız bu maç</label>
           {selectedCount > 0 && <button type="button" className="btn btn--xs" onClick={() => setSelection({})}>Seçimi temizle</button>}
@@ -189,7 +189,7 @@ function ReplayPanelInner({ api }) {
             {player.index + 1 < player.total && <button type="button" className="btn btn--block" onClick={player.skip}><Icon name="skip" size={13} /> Sıradakine geç</button>}
           </>
         ) : (
-          <p className="st-hint">{queue.length ? `Kuyruk: ${selectedCount} tekrar · ${queue.length} açı · ≈ ${Math.round((queueMs * (1 / (rate || 1))) / 1000)} sn` : "Kuyruk boş: yayına alınca önizlenen klip oynar."}</p>
+          <p className="st-hint">{queue.length ? `Kuyruk: ${selectedCount} tekrar · ${queue.length} açı · ≈ ${Math.round((queueMs * (1 / (rate || 1))) / 1000)} sn` : "Kuyruk boş: yayına önizlenen klip gider."}</p>
         )}
         <p className="st-hint">Aralarda seçili logo geçişi; kuyruk bitince canlıya dönülür. Geçiş türü ve ses solda.</p>
         </Part>

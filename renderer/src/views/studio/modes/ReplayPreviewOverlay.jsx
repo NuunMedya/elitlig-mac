@@ -9,7 +9,8 @@
 //              Önizleme giriş–çıkış arasında döner; "Yayına al" klibi girişten başlatır,
 //              çıkışta bitirir (15 sn'lik klibin istenen bölümü).
 //   Açılar     üstte açı düğmeleri (tıkla: önizlemede o açı).
-// Tekrar yayındayken denetimler YAYINDAKİ klibe uygulanır (canlı ağır çekim / durdurma).
+// [önizleme-geçiş] Denetimler YALNIZ önizlemeye uygulanır; "Yayına al" (Enter) Studio'nun tek
+// GEÇİŞ yolunu çağırır: önizlemede görünen klip(ler), açı, görünüm, giriş / çıkış ve hız aynen yayına gider.
 // Zaman göstergesi tek rAF döngüsünde, React yalnız ~8 kez/sn yenilenir.
 import React, { memo, useEffect, useRef, useState } from "react";
 import { Icon } from "../../../components/ui";

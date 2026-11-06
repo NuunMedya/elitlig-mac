@@ -8,10 +8,14 @@
 // ve başlangıç noktası tutulur. Görünüm önizlemede ve YAYINDA aynı uygulanır (program
 // çizimi kırpılmış bölgeyi çizer); başlangıç noktası yayına alınınca klibin oradan
 // başlamasını sağlar. transport: ileri / geri sarma, kare kare, oynat / duraklat —
-// tekrar yayındayken yayındaki klibe, değilse önizlemeye uygulanır.
+// [önizleme-geçiş] DÜZENLEYİCİ YALNIZ ÖNİZLEMEYİ düzenler: yayına alma anında önizlemenin
+// yükü (payload(): klip(ler), açı, giriş / çıkış, görünüm, hız — lib/studio/previewTake)
+// donar ve aynen oynar; yayındayken önizlemede yapılan değişiklik yayını etkilemez,
+// yeni GEÇİŞ'le yayındaki tekrarın yerine geçer. Yükleme: load / loadQueue / loadLatest.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { STINGER_MS } from "../../../lib/studio/stinger";
 import { PROGRAM_ANGLE, buildReplayQueue, defaultAngles, metaFor, replayBanner } from "../../../lib/studio/replays";
+import { playerQueueOf, replayPayload } from "../../../lib/studio/previewTake";
 import { isStingerKind } from "../../../lib/studio/transitions";
 import { drawReplayBadge } from "../../../lib/studio/scorebug";
 import { drawTransitionStinger } from "../../../lib/studio/transitions";
@@ -30,8 +34,29 @@ export function useReplayMode({ replays, rate, audio, between, onFinished, onErr
   const list = replays?.replays || [];
   const meta = replays?.meta || {};
   const recordAngles = replays?.recordAngles || [PROGRAM_ANGLE];
-  const [selection, setSelection] = useState({}); // replayId → [açı]
-  const [cursor, setCursor] = useState(null); // { replayId, angle }
+  // Seçim ve imleç ref'te de tutulur: yükleyip AYNI anda yayına almak (stüdyo modu kapalı,
+  // "R = doğrudan yayına") React yenilemesini beklemeden güncel yükü okur [önizleme-geçiş].
+  const [selection, setSelectionState] = useState({}); // replayId → [açı]
+  const [cursor, setCursorState] = useState(null); // { replayId, angle }
+  const [order, setOrderState] = useState(null); // kuyruk sırası (tekrar kimlikleri) ya da null
+  const selRef = useRef(selection);
+  const cursorRef = useRef(cursor);
+  const orderRef = useRef(order);
+  const setSelection = useCallback((v) => {
+    const next = typeof v === "function" ? v(selRef.current) : v;
+    selRef.current = next || {};
+    setSelectionState(selRef.current);
+  }, []);
+  const setCursor = useCallback((v) => {
+    const next = typeof v === "function" ? v(cursorRef.current) : v;
+    cursorRef.current = next || null;
+    setCursorState(cursorRef.current);
+  }, []);
+  const setOrder = useCallback((v) => { orderRef.current = v || null; setOrderState(orderRef.current); }, []);
+  const listRef = useRef(list);
+  listRef.current = list;
+  const rateRef = useRef(rate);
+  rateRef.current = rate;
   const previewEl = useMemo(mkVideo, []);
   const els = useMemo(() => [mkVideo(), mkVideo()], []);
   const replayRef = useRef({ active: false });
@@ -72,7 +97,7 @@ export function useReplayMode({ replays, rate, audio, between, onFinished, onErr
   const attach = audio?.attachMedia;
   useEffect(() => { if (attach) els.forEach((el) => attach(el, { strip: "media", on: true })); }, [attach, els]);
 
-  const queue = useMemo(() => buildReplayQueue(list, selection), [list, selection]);
+  const queue = useMemo(() => buildReplayQueue(list, selection, order ? { order: [...order, ...list.map((r) => r.id).filter((id) => !order.includes(id))] } : undefined), [list, selection, order]);
   const cursorItem = useMemo(() => {
     const c = cursor || (queue[0] ? { replayId: queue[0].replayId, angle: queue[0].angle } : null);
     if (!c) return null;
@@ -89,7 +114,13 @@ export function useReplayMode({ replays, rate, audio, between, onFinished, onErr
     if (!pUrl) { try { previewEl.pause(); } catch { /* yoksay */ } return undefined; }
     let alive = true;
     previewEl.loop = true;
-    prepare(previewEl, pUrl).then(() => { if (alive) { setPreviewReady(true); previewEl.playbackRate = rate; previewEl.play().catch(() => {}); } })
+    prepare(previewEl, pUrl).then(() => {
+      if (!alive) return;
+      // Önizleme klibi giriş noktasından başlar (yayına alınınca da oradan başlar).
+      const a = inRef.current.get(loopKeyRef.current) || 0;
+      if (a > 0) { try { previewEl.currentTime = a; } catch { /* yoksay */ } }
+      setPreviewReady(true); previewEl.playbackRate = rateRef.current; previewEl.play().catch(() => {});
+    })
       .catch((e) => { if (alive) errRef.current?.(e?.message || "Tekrar önizlenemedi."); });
     return () => { alive = false; };
   }, [pUrl, previewEl]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -131,17 +162,28 @@ export function useReplayMode({ replays, rate, audio, between, onFinished, onErr
   }, []);
   const player = useReplayPlayer({ els, replayRef, switchVia, firstImmediate: true, onFinished, bannerOf, rate, onError });
 
-  /** Yayına verilecek kuyruk: seçilenler, yoksa önizlenen klip. */
-  const airQueue = useCallback(() => {
-    if (queue.length) return queue;
-    return cursorItem ? [{ replayId: cursorItem.replayId, angle: cursorItem.angle, url: cursorItem.url, durationMs: cursorItem.durationMs, replay: cursorItem.replay }] : [];
-  }, [queue, cursorItem]);
+  /**
+   * ÖNİZLEMENİN YÜKÜ (eşzamanlı, ref'lerden): yayına aynen giden içerik [önizleme-geçiş].
+   * Önizlemedeki klipten başlar; imleç seçili kuyruktaysa kuyruğun kalanı sırayla.
+   */
+  const payload = useCallback(() => replayPayload({
+    list: listRef.current, selection: selRef.current, order: orderRef.current, cursor: cursorRef.current,
+    inOf: (k) => inRef.current.get(k) || 0, outOf: (k) => outRef.current.get(k) || 0, viewOf: (k) => viewsRef.current.get(k) || DEFAULT_VIEW,
+    keyOf: viewKey, rate: rateRef.current,
+  }), []);
+  /** Yayına verilecek kuyruk = önizlemenin yükü. */
+  const airQueue = useCallback(() => playerQueueOf(payload()), [payload]);
 
-  const start = useCallback(async (q) => {
-    const items = q || airQueue();
+  /** Yükü (verilmezse önizlemenin şimdiki yükünü) yayına ver: hız, görünüm, giriş / çıkış donar. */
+  const airPayloadRef = useRef(null);
+  const start = useCallback(async (p) => {
+    const pl = p && p.items ? p : payload();
+    const items = playerQueueOf(pl);
     if (!items.length) { errRef.current?.("Yayına verilecek tekrar seçilmedi."); return false; }
-    return player.play(withStart(items));
-  }, [airQueue, player, withStart]);
+    const ok = await player.play(items);
+    if (ok) airPayloadRef.current = pl;
+    return ok;
+  }, [payload, player]);
 
   const latestQueue = useCallback(() => {
     const r = replays?.latest || list[0];
@@ -149,18 +191,44 @@ export function useReplayMode({ replays, rate, audio, between, onFinished, onErr
     return buildReplayQueue([r], { [r.id]: defaultAngles(r, recordAngles) });
   }, [replays?.latest, list, recordAngles]);
 
-  /** Bir tekrarı seç ve önizlemeye yükle (ManageDock › onPlayReplay). */
-  const open = useCallback((replay) => {
-    if (!replay?.id) return;
-    const angles = defaultAngles(replay, recordAngles);
-    setSelection({ [replay.id]: angles });
-    setCursor({ replayId: replay.id, angle: angles[0] || PROGRAM_ANGLE });
-  }, [recordAngles]);
+  /**
+   * Bir tekrarı önizlemeye yükle [önizleme-geçiş]. angles: yayına sırayla gidecek açılar
+   * (verilmezse varsayılan açılar), angle: önizlenen açı (verilmezse ilki).
+   */
+  const load = useCallback((replay, { angles, angle } = {}) => {
+    if (!replay?.id) return false;
+    const r = listRef.current.find((x) => x.id === replay.id) || replay;
+    const have = (r.angles || []).filter((a) => a.url).map((a) => a.angle);
+    const want = (Array.isArray(angles) && angles.length ? angles : defaultAngles(r, recordAngles)).filter((a) => have.includes(a));
+    const chosen = want.length ? want : have.slice(0, 1);
+    if (!chosen.length) return false;
+    setOrder(null);
+    setSelection({ [r.id]: chosen });
+    setCursor({ replayId: r.id, angle: angle && chosen.includes(angle) ? angle : chosen[0] });
+    return true;
+  }, [recordAngles, setCursor, setOrder, setSelection]);
+  const open = useCallback((replay, opts) => load(replay, opts), [load]);
+  /** Birden çok tekrarı (her biri varsayılan açılarıyla) bu sırayla önizlemeye yükle. */
+  const loadQueue = useCallback((picked) => {
+    const items = (picked || []).map((x) => listRef.current.find((r) => r.id === x?.id) || x).filter((r) => r?.id && (r.angles || []).some((a) => a.url));
+    if (!items.length) return false;
+    const sel = Object.fromEntries(items.map((r) => [r.id, defaultAngles(r, recordAngles)]));
+    setOrder(items.map((r) => r.id));
+    setSelection(sel);
+    setCursor({ replayId: items[0].id, angle: sel[items[0].id][0] || PROGRAM_ANGLE });
+    return true;
+  }, [recordAngles, setCursor, setOrder, setSelection]);
+  /** Son tekrarı önizlemeye yükle (R). */
+  const loadLatest = useCallback(() => {
+    const r = replays?.latest || list[0];
+    return r ? load(r) : false;
+  }, [replays?.latest, list, load]);
 
   /** Program içeriği (tekrar + rozet + öğeler arası geçiş); operatörün yakınlaştırdığı bölge. */
   const drawProgram = useCallback((ctx, W, H, now) => {
     const r = replayRef.current;
-    if (r?.active && r.el) drawVideoView(ctx, r.el, W, H, viewOf(viewKey(r.item?.replayId, r.item?.angle)));
+    // Yayına alınan yükün görünümü (donmuş); önizleme aynı drawVideoView ile çizer [önizleme-geçiş].
+    if (r?.active && r.el) drawVideoView(ctx, r.el, W, H, r.item?.view || viewOf(viewKey(r.item?.replayId, r.item?.angle)));
     else { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
   }, [viewOf]);
   const drawProgramTop = useCallback((ctx, W, H, now) => {
@@ -186,11 +254,11 @@ export function useReplayMode({ replays, rate, audio, between, onFinished, onErr
   const event = useCallback((target) => (target === "program" ? replayRef.current?.event || null : cursorItem ? bannerOf(cursorItem) : null), [cursorItem, bannerOf]);
 
   /* ───────── düzenleyici: oynatma denetimi ───────── */
-  // Yayındaki klip varsa ona, yoksa önizlemeye uygulanır.
-  const transportEl = useCallback(() => (replayRef.current?.active && replayRef.current.el ? replayRef.current.el : previewEl), [previewEl]);
+  // YALNIZ önizlemeye uygulanır: yayındaki tekrar, yayına alındığı haliyle oynar [önizleme-geçiş].
+  const transportEl = useCallback(() => previewEl, [previewEl]);
   const transport = useMemo(() => ({
     el: transportEl,
-    onAir: () => Boolean(replayRef.current?.active),
+    onAir: () => false,
     toggle: () => { const el = transportEl(); if (!el) return; if (el.paused) el.play().catch(() => {}); else el.pause(); },
     play: () => { transportEl()?.play().catch(() => {}); },
     pause: () => { try { transportEl()?.pause(); } catch { /* yoksay */ } },
@@ -198,13 +266,14 @@ export function useReplayMode({ replays, rate, audio, between, onFinished, onErr
     nudge: (sec) => { const el = transportEl(); if (!el) return; transport.seek((el.currentTime || 0) + sec); },
     step: (frames) => { const el = transportEl(); if (!el) return; try { el.pause(); } catch { /* yoksay */ } transport.seek((el.currentTime || 0) + frames * FRAME_SEC); },
   }), [transportEl]); // eslint-disable-line react-hooks/exhaustive-deps
-  /** Yayındaki öğenin anahtarı (görünüm yayında canlı değişsin diye). */
+  /** Yayındaki öğenin anahtarı (bilgi); düzenleyici her zaman önizlenen klibi düzenler. */
   const airKey = player.item ? viewKey(player.item.replayId, player.item.angle) : null;
-  const editKey = airKey && replayRef.current?.active ? airKey : cursorKey;
+  const editKey = cursorKey;
 
   return {
     selection, setSelection, cursor: cursorItem, setCursor, queue, airQueue, latestQueue: () => withStart(latestQueue()), open,
-    player, start, stop: (withTr) => player.stop(withTr), drawProgram, drawProgramTop, drawPreview, event, previewEl, previewReady, ready: Boolean(airQueue().length),
+    load, loadQueue, loadLatest, payload, airPayload: () => (replayRef.current?.active ? airPayloadRef.current : null),
+    player, start, stop: (withTr) => player.stop(withTr), drawProgram, drawProgramTop, drawPreview, event, previewEl, previewReady, ready: Boolean(cursorItem),
     // düzenleyici
     viewTick, viewOf, setView: setViewFor, inPointOf: (key) => inRef.current.get(key) || 0, setInPoint: setInFor,
     outPointOf: (key) => outRef.current.get(key) || 0, setOutPoint: setOutFor,

@@ -148,7 +148,7 @@ function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, 
           <>
             <video className="st-hl__video" src={job.file.url} controls preload="metadata" />
             <small className="muted">{mmss(job.file.durationMs)} · {job.file.sizeBytes ? `${(job.file.sizeBytes / 1048576).toFixed(1)} MB` : ""}</small>
-            {inModes && <p className="st-hint">{onAir ? <><span className="md-chip is-live"><i /> YAYINDA</span> Özet programda kendi sesiyle oynuyor.</> : "Özet önizlemede. Yayına almak için soldaki “Yayına al”."}</p>}
+            {inModes && <p className="st-hint">{onAir ? <><span className="md-chip is-live"><i /> YAYINDA</span> Özet programda kendi sesiyle oynuyor.</> : "Özet önizlemedeyse GEÇİŞ (Boşluk) ya da soldaki “Yayına al” onu yayına verir; değilse önce “Önizlemeye al”."}</p>}
             {job.phase === "uploaded"
               ? <p className="st-hint"><Icon name="check" size={12} /> Maç sayfasına yüklendi.</p>
               : <button type="button" className="btn btn--red btn--block" disabled={busy} onClick={upload}><Icon name="upload" size={13} /> Maç sayfasına yükle</button>}

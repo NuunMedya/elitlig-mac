@@ -235,6 +235,9 @@ function SettingsPage({
           <Field label={`Oynatma hızı · ${String(rate).replace(".", ",")}×`}>
             <div className="st-seg">{[0.25, 0.5, 0.75, 1].map((r) => <button key={r} type="button" className={Number(rate) === r ? "is-on" : ""} onClick={() => setRate(r)}>{String(r).replace(".", ",")}×</button>)}</div>
           </Field>
+          {/* [önizleme-geçiş] R kısayolu: varsayılan son tekrarı ÖNİZLEME'ye yükler; açıksa aynı GEÇİŞ yoluyla hemen yayına alır. */}
+          <Toggle checked={Boolean(settings.replay.directTake)} onChange={(v) => set("replay", { directTake: v })} title="R = doğrudan yayına"
+            text="Kapalıyken R (ve “Son tekrar” düğmeleri) son tekrarı önizlemeye yükler, yayına GEÇİŞ alır. Açıkken önizlemeye yükleyip hemen aynı geçişle yayına verir." />
           {mcfg && (
             <Field label="Tekrarlar arasındaki geçiş">
               <select value={mcfg.between.kind} onChange={(e) => setPref("modes", (m) => ({ ...normalizeModeSettings(m), between: { kind: e.target.value } }))}>

@@ -1,6 +1,7 @@
 // Yayın Stüdyosu · TEKRAR kısayolu paneli: son tekrarların listesi, seçilen
 // tekrarın kaydedilmiş AÇILARI (canlı küçük video). Seçilen açılar önce
-// ÖNİZLEME'ye yüklenir (modes.openReplay), "Yayına al" seçili geçişle PROGRAM'a verir.
+// ÖNİZLEME'ye yüklenir (modes.loadReplay); "Önizle + yayına al" önce önizlemeye yükler,
+// sonra Studio'nun tek GEÇİŞ yolunu çağırır (önizlemede görünen aynen gider) [önizleme-geçiş].
 //
 //   ctx.replay = { list, meta, sources, playing, previewing, preview(r, angles), take(), stop(), openTab(), recordAngles }
 import React, { useEffect, useMemo, useState } from "react";
@@ -20,14 +21,14 @@ export default function ReplayPicker({ ctx, onClose }) {
   useEffect(() => { if (replay) setAngles(defaultAngles(replay, R.recordAngles)); }, [replay?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [busy, setBusy] = useState(false);
 
-  if (R.playing) {
-    return (
-      <div className="st-rp">
-        <p className="st-rp__live"><span className="gx-dot" /> Tekrar yayında</p>
-        <button type="button" className="st-rp__go is-back" onClick={() => { R.stop(); onClose(); }}><Icon name="stop" size={16} /> CANLIYA DÖN</button>
-      </div>
-    );
-  }
+  // [önizleme-geçiş] Tekrar yayındayken de başka bir tekrar önizlemeye alınabilir (GEÇİŞ yayındakinin yerine koyar).
+  const liveBar = R.playing ? (
+    <>
+      <p className="st-rp__live"><span className="gx-dot" /> Tekrar yayında</p>
+      <button type="button" className="st-rp__go is-back" onClick={() => { R.stop(); onClose(); }}><Icon name="stop" size={16} /> CANLIYA DÖN</button>
+    </>
+  ) : null;
+  if (R.playing && !list.length) return <div className="st-rp">{liveBar}</div>;
   if (!replay) {
     return (
       <div className="st-rp">
@@ -46,6 +47,7 @@ export default function ReplayPicker({ ctx, onClose }) {
   };
   return (
     <div className="st-rp">
+      {liveBar}
       <div className="st-rp__list" role="listbox" aria-label="Son tekrarlar">
         {list.map((r) => (
           <button key={r.id} type="button" role="option" aria-selected={r.id === replay.id} className={`st-rp__item ${r.id === replay.id ? "is-on" : ""} ${r.kind === "goal" ? "is-goal" : ""}`} onClick={() => setId(r.id)}>
@@ -71,7 +73,7 @@ export default function ReplayPicker({ ctx, onClose }) {
       </div>
       <div className="st-rp__actions">
         <button type="button" className={`btn btn--sm ${R.previewing ? "is-pvw" : ""}`} onClick={preview}><Icon name="eye" size={13} /> {R.previewing ? "Önizlemede · yenile" : "Önizlemeye al"}</button>
-        <button type="button" className="st-rp__go" onClick={take} disabled={busy}><Icon name="play" size={15} /> YAYINA AL</button>
+        <button type="button" className="st-rp__go" onClick={take} disabled={busy} title="Önizlemeye yükler ve aynı GEÇİŞ yoluyla yayına verir (önizlemede görünen aynen gider)"><Icon name="play" size={15} /> ÖNİZLE + YAYINA AL</button>
       </div>
       <button type="button" className="st-link st-rp__more" onClick={() => { R.openTab(); onClose(); }}>Tekrar sekmesinde ayrıntılı düzenle (ağır çekim, kuyruk, katmanlar) →</button>
     </div>

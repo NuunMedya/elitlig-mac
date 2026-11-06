@@ -53,7 +53,8 @@ import { FIXED_SHORTCUTS, WORKSPACES, workspaceOf } from "../../lib/studio/scene
 import { loadStage, presetForWorkspace, presetTiles, saveStage, setTileOpts, stageHasPreview } from "../../lib/studio/stageGrid";
 import { scorerLines } from "../../lib/studio/scorebug";
 import { eventLabel, isGoalCode, timerNowMs } from "../../lib/studio/match";
-import { PROGRAM_ANGLE, anglesOf, anglesToRecord, buildReplayQueue, defaultAngles, metaFor, recordableSources, replayBanner, replayTitle } from "../../lib/studio/replays";
+import { PROGRAM_ANGLE, angleLabel, anglesOf, anglesToRecord, buildReplayQueue, defaultAngles, metaFor, recordableSources, replayBanner, replayTitle } from "../../lib/studio/replays";
+import { payloadSummary, planTake, previewStateOf, programStateOf, samePayload, takeAfterLoad, takeLabel } from "../../lib/studio/previewTake"; // [önizleme-geçiş]
 import { useLiveMatch } from "./useLiveMatch";
 import { useStudioSources } from "./useStudioSources";
 import { useAudioMixer } from "./useAudioMixer";
@@ -120,6 +121,7 @@ const ProgramAudioStrip = audioStripMod?.default || audioStripMod?.ProgramAudioS
 const goalMusicMod = firstMod(import.meta.glob(["./goalmusic/index.js", "./goalmusic/index.jsx"], { eager: true }));
 const useGoalMusicMod = typeof goalMusicMod?.useGoalMusic === "function" ? goalMusicMod.useGoalMusic : null;
 const GoalMusicButtons = goalMusicMod?.GoalMusicButtons || null;
+const GoalMusicStopPill = goalMusicMod?.GoalMusicStopPill || null; // [gol-müziği] çalarken sahnenin üstünde "MÜZİĞİ KES"
 const useNoGoalMusic = () => null;
 const useGoalMusicSafe = useGoalMusicMod || useNoGoalMusic;
 // "Yayına giden ses" seçicisi (modes/ModeTab) — Ayarlar › Tekrar'da da (modül yoksa gösterilmez).
@@ -451,10 +453,10 @@ export default function Studio({ auth, go }) {
     if (!(await ask({ title: "Tekrarı sil", message: "Bu tekrar ve tüm açılarının dosyaları bu bilgisayardan silinsin mi? Profile yüklenen gol videosu kalır.", confirmLabel: "Sil", danger: true }))) return;
     replays.remove(r.id);
   });
-  /** Maç yönetiminden bir tekrarı oynat (seçili açılarla, yayına). */
+  /** Maç yönetiminden bir tekrar: ÖNİZLEME'ye yüklenir (yayına GEÇİŞ ile) [önizleme-geçiş]. */
   const playReplay = useStable((r) => {
     if (!r) return;
-    if (hasModes && modes.openReplay) { modes.openReplay(r); openPanel("tekrar"); return; }
+    if (hasModes && modes.loadReplay) { loadReplayAny(r); openPanel("tekrar"); return; }
     const item = replays.replays.find((x) => x.id === r.id) || r;
     player.play(buildReplayQueue([item], { [item.id]: defaultAngles(item, liveAngles) }));
   });
@@ -483,7 +485,9 @@ export default function Studio({ auth, go }) {
     drawScene(ctx, resolveScene(cfg, cfg.programSceneId), cfg.sources, src.runtimeRef.current, W, H, { now, matchClockMs: matchClockRef.current?.() ?? null });
   }, [src.runtimeRef]);
   const setModesPref = useCallback((fn) => setPref("modes", fn), [setPref]);
+  const takeRef = useRef(null); // [önizleme-geçiş] tek GEÇİŞ işlevi (aşağıda take) — kip sekmelerindeki "Yayına al" da bunu çağırır
   const modes = useBroadcastModesSafe({
+    takeRef,
     engine: { active: engine.active, mode: engine.mode, program: comp.program, drawScene: drawProgramScene },
     live, g, matchId, imagesRef, toast, ask,
     sources: { list: config.sources, runtimeRef: src.runtimeRef, programIds },
@@ -498,11 +502,32 @@ export default function Studio({ auth, go }) {
   const V = hasModes && modes.var ? modes.var : null;
   const replayPlaying = R ? Boolean(R.playing) : player.playing;
   const varActive = V ? Boolean(V.active) : vr.active;
-  const toggleVar = V ? V.toggle : vr.toggle;
+  // [önizleme-geçiş] V: VAR yayındaysa canlıya döner, değilse önizlemeye (stüdyo modu kapalıysa aynı GEÇİŞ yoluyla yayına).
+  const toggleVar = useStable(() => {
+    if (!V) { vr.toggle(); return; }
+    if (V.toggle() === "preview" && takeAfterLoad({ studioMode })) takeRef.current?.();
+  });
   const interview = hasModes && modes.interview ? modes.interview : iv;
   const showMicWarning = settings.notify.micOpen && (hasModes ? Boolean(modes.micWarning) || legacyMicWarning : legacyMicWarning);
   const stopReplay = useStable(() => { if (R) R.stop(); else player.stop(true); });
-  const playLatestAny = useStable(() => { if (R) R.playLatest(); else playLatest(); });
+  // [önizleme-geçiş] R / "Son tekrar" düğmeleri: son tekrar ÖNİZLEME'ye; "R = doğrudan yayına" açıksa
+  // (ya da stüdyo modu kapalıysa) hemen aynı GEÇİŞ yoluyla yayına — önizlemede görünen aynen gider.
+  const playLatestAny = useStable(() => {
+    if (!R || !modes.loadLatest) { playLatest(); return; }
+    if (modes.loadLatest() && takeAfterLoad({ studioMode, direct: settings.replay.directTake })) takeRef.current?.();
+  });
+  /** Tekrarı (seçilen açılarla) önizlemeye yükle; take: yükleyip aynı GEÇİŞ yoluyla yayına al. */
+  const loadReplayAny = useStable((r, { angles, angle, take: andTake = false } = {}) => {
+    if (!r) return false;
+    if (!modes.loadReplay) {
+      const item = replays.replays.find((x) => x.id === r.id) || r;
+      player.play(buildReplayQueue([item], { [item.id]: angles?.length ? angles : defaultAngles(item, liveAngles) }));
+      return true;
+    }
+    if (!modes.loadReplay(r, { angles, angle })) return false;
+    if (andTake || takeAfterLoad({ studioMode })) takeRef.current?.();
+    return true;
+  });
   modesRef.current = { previewOverride: modes.previewOverride || null, programOverride: modes.programOverride || null };
 
   /* ───────── gol müziği (isteğe bağlı modül: ./goalmusic) ───────── */
@@ -527,36 +552,82 @@ export default function Studio({ auth, go }) {
     setLastSceneId(historyRef.current[0] || null);
   };
 
-  /** Özel kip önizlemedeyse Geçiş onu yayına alır (karıştırıcı geçişi yapar). */
-  // Kip geçişi kendisi çizer (programOverride.draw + drawBase); karıştırıcı yalnız çağırır.
-  const takeMode = useStable(() => {
-    if (!modes.previewOverride) return false;
-    try { Promise.resolve(modes.takeToAir?.({ kind: tKind.key, ms: tMs })).catch(() => {}); } catch { /* yoksay */ }
-    return true;
-  });
-
-  const toProgram = useStable((id) => {
+  /* ───────── [önizleme-geçiş] ÖNİZLEME → PROGRAM: tek doğruluk kaynağı + tek GEÇİŞ ─────────
+     Önizleme durumu = önizlemedeki kip (tekrarda yüküyle: klip, açı, giriş / çıkış, görünüm, hız)
+     ya da önizleme sahnesi (lib/studio/previewTake › previewStateOf). take() planTake'in planını
+     uygular: önizlemede ne varsa AYNEN programa; sonra yayından düşen sahne önizlemeye gelir.
+     Durum eşzamanlı okunur (configRef + modes.previewNow / airNow): yükleyip hemen almak güvenli. */
+  const previewStateNow = () => {
+    const pm = modes.previewNow ? modes.previewNow() : modes.previewMode ? { mode: modes.previewMode, payload: null } : null;
+    return previewStateOf({ previewSceneId: configRef.current.previewSceneId, previewMode: pm?.mode || null, payload: pm?.payload || null });
+  };
+  const programStateNow = () => {
+    const air = modes.airNow ? modes.airNow() : modes.airMode ? { mode: modes.airMode, stage: modes.stage, payload: null } : null;
+    return programStateOf({ programSceneId: configRef.current.programSceneId, airMode: air?.mode || null, airStage: air?.stage || "idle", airPayload: air?.payload || null });
+  };
+  /** Yapılandırmayı hem ref'te (eşzamanlı okuma) hem durumda güncelle. */
+  const applyConfig = (fn) => { configRef.current = fn(configRef.current); setConfig(fn); };
+  const takingRef = useRef(false); // kip yayına alınırken (klip yükleniyor) ikinci GEÇİŞ yok sayılır
+  const take = useStable(async () => {
+    if (takingRef.current) return false;
     const cfg = configRef.current;
-    if (!id && modes.previewOverride && takeMode()) return;
-    const target = id || cfg.previewSceneId;
-    if (!target) return;
-    const swap = (c) => startSceneCountdowns({ ...c, programSceneId: target, previewSceneId: studioMode ? (target === c.previewSceneId && !id ? c.programSceneId : c.previewSceneId) : target }, target);
-    if (modes.isOnAir || modes.programOverride) {
-      // Özel kipten sahneye dön: kip çıkış geçişini kendisi çizer (öbür ucu drawBase = yeni program sahnesi).
-      try { if (modes.endOnAir) modes.endOnAir({ kind: tKind.key, ms: tMs }); else modes.onTransitionTake?.(target); } catch { /* yoksay */ }
-      restartVideosIn(target); pushHistory(cfg.programSceneId, target); setConfig(swap); return;
+    const plan = planTake({ preview: previewStateNow(), program: programStateNow(), studioMode });
+    const tr = { kind: tKind.key, ms: tMs };
+    if (plan.type === "none") {
+      // Eski yol (yayın modları modülü yokken): VAR / tekrar yayındaysa önizleme sahnesine dön.
+      const target = cfg.previewSceneId || cfg.programSceneId;
+      if (!target || (!vr.active && !player.playing)) return false;
+      if (vr.active) vr.exit(); else player.stop(true);
+      restartVideosIn(target); pushHistory(cfg.programSceneId, target);
+      applyConfig((c) => startSceneCountdowns({ ...c, programSceneId: target, previewSceneId: studioMode ? c.programSceneId : target }, target));
+      return true;
     }
-    if (vr.active) { vr.exit(); restartVideosIn(target); pushHistory(cfg.programSceneId, target); setConfig(swap); return; }
-    if (player.playing) { restartVideosIn(target); pushHistory(cfg.programSceneId, target); setConfig(swap); player.stop(true); return; }
-    if (target === cfg.programSceneId) return;
+    if (plan.type === "mode") {
+      takingRef.current = true;
+      let ok = false;
+      // Geçiş: Ayarlar › Tekrar "Yayına alma geçişi" (kip ayarı), yoksa seçili geçiş.
+      const modeTr = modes.settings?.transition || tr;
+      try { ok = Boolean(await modes.takeToAir?.(modeTr, plan.mode, plan.payload)); } catch { ok = false; } finally { takingRef.current = false; }
+      if (!ok) return false;
+      // Önizleme tutarlı: kip yayına gitti → önizlemeye kipten önceki (alttaki) sahne gelir; ikinci GEÇİŞ geri döner.
+      // Bu arada önizlemeye başka içerik yüklendiyse ona dokunulmaz.
+      const pvAfter = modes.previewNow?.();
+      if (pvAfter?.mode === plan.mode && (plan.mode !== "tekrar" || samePayload(pvAfter.payload, plan.payload))) {
+        modes.clearPreview?.(plan.mode);
+        if (plan.nextPreviewSceneId && studioMode) applyConfig((c) => ({ ...c, previewSceneId: plan.nextPreviewSceneId }));
+      }
+      return true;
+    }
+    // Sahne: yayındaki kip (tekrar / VAR / röportaj / özet) çıkış geçişiyle biter; öbür ucu yeni program sahnesi.
+    const target = plan.to;
+    const swap = (c) => startSceneCountdowns({ ...c, programSceneId: target, previewSceneId: plan.nextPreviewSceneId || target }, target);
+    if (plan.endMode) {
+      try { if (modes.endOnAir) modes.endOnAir(tr); else modes.onTransitionTake?.(target); } catch { /* yoksay */ }
+      restartVideosIn(target); pushHistory(cfg.programSceneId, target); applyConfig(swap); return true;
+    }
+    if (vr.active) { vr.exit(); restartVideosIn(target); pushHistory(cfg.programSceneId, target); applyConfig(swap); return true; }
+    if (player.playing) { restartVideosIn(target); pushHistory(cfg.programSceneId, target); applyConfig(swap); player.stop(true); return true; }
     restartVideosIn(target);
     comp.startTransition(cfg.programSceneId, target, tKind.key, tMs);
     pushHistory(cfg.programSceneId, target);
-    setConfig(swap);
+    applyConfig(swap);
+    return true;
+  });
+  takeRef.current = () => { take(); };
+  /** Sahneyi önizlemeye yükle (önizlemedeki kip bırakılır: önizlemede artık bu sahne var). */
+  const loadSceneToPreview = (id) => {
+    if (!id) return;
+    modes.clearPreview?.();
+    applyConfig((c) => (c.previewSceneId === id ? c : { ...c, previewSceneId: id }));
+  };
+  /** GEÇİŞ (id yok) ya da "bu sahneyi yayına" (id): önce önizlemeye yüklenir, sonra aynı take. */
+  const toProgram = useStable((id) => {
+    if (id) loadSceneToPreview(id);
+    return take();
   });
   const toPreview = useStable((id) => {
-    if (!studioMode) { toProgram(id); return; }
-    setConfig((c) => ({ ...c, previewSceneId: id }));
+    loadSceneToPreview(id);
+    if (!studioMode) take();
   });
   const backToLastScene = useStable(() => {
     const id = historyRef.current.find((x) => configRef.current.scenes.some((s) => s.id === x));
@@ -813,10 +884,10 @@ export default function Studio({ auth, go }) {
     const act = keyAction(e, { pendingGoal: goalArmed, hotkeys: settings.hotkeys });
     if (!act) return;
     if (act.type === "goalCancel") { setGoalArmed(false); return; }
-    if (editSceneId && act.type !== "mic") return; // düzenleyicide yalnız mikrofon kısayolu
+    if (editSceneId && act.type !== "mic" && act.type !== "goalMusicStop") return; // düzenleyicide yalnız mikrofon ve müziği kes
     e.preventDefault();
     if (act.type === "mic") toggleMic();
-    else if (act.type === "replay") { if (replayPlaying) stopReplay(); else playLatestAny(); }
+    else if (act.type === "replay") playLatestAny(); // [önizleme-geçiş] son tekrar önizlemeye (yayındaysa GEÇİŞ yerine koyar)
     else if (act.type === "moment") captureMoment();
     else if (act.type === "scene") { const id = sceneAtHotkey(configRef.current, act.index); if (id) toPreview(id); }
     else if (act.type === "transition") toProgram();
@@ -830,6 +901,7 @@ export default function Studio({ auth, go }) {
     else if (act.type === "goalHome") askGoal("home");
     else if (act.type === "goalAway") askGoal("away");
     else if (act.type === "goalMusic") { if (goalMusic?.playing) goalMusic.stop?.(); else goalMusic?.play?.(); }
+    else if (act.type === "goalMusicStop") { if (goalMusic?.playing) goalMusic.stop?.(); } // [gol-müziği] K: müziği kes
     else if (act.type === "subtitle") { if (g?.matchId) g.setSubtitleOnAir?.(!g.subtitle?.onAir); }
     else if (act.type === "interviewBand") { if (g?.matchId) g.setInterviewOnAir?.(!g.interview?.onAir); }
     else if (act.type === "interview") { if (interview?.recording) interview.stop(); else if (interview?.available && engine.active) interview.start(); }
@@ -883,10 +955,15 @@ export default function Studio({ auth, go }) {
   const replayTabKey = "tekrar";
 
   const programTitle = modes.programOverride ? modes.programOverride.label || "Özel kip" : vr.active ? "VAR kontrolü" : player.playing ? "Tekrar" : programScene?.name || "—";
-  const previewTitle = modes.previewOverride ? modes.previewOverride.label || "Özel kip" : previewScene?.name || "—";
+  // [önizleme-geçiş] Önizleme başlığı / GEÇİŞ düğmesi, take() ile aynı durumdan (previewStateNow) okunur.
+  const pvState = previewStateNow();
+  const pvPayload = pvState.kind === "replay" && !pvState.empty ? pvState : null;
+  const pvFirst = pvPayload?.items?.[0] || null;
+  const previewTitle = pvFirst
+    ? [`Tekrar · ${replayTitle(pvFirst.replay, metaFor(pvFirst.replay, replays.meta))}`, angleLabel(pvFirst.angle, config.sources), payloadSummary(pvPayload)].filter(Boolean).join(" · ")
+    : modes.previewOverride ? modes.previewOverride.label || "Özel kip" : previewScene?.name || "—";
   const programIdForTally = player.playing || vr.active || modes.programOverride ? null : config.programSceneId;
-  const canTake = Boolean(modes.previewOverride) || config.previewSceneId !== config.programSceneId || player.playing || vr.active || Boolean(modes.programOverride);
-  const hints = settings.view.hints;
+  const canTake = planTake({ preview: pvState, program: programStateNow(), studioMode }).type !== "none" || player.playing || vr.active;  const hints = settings.view.hints;
   const zoom = settings.view.scale / 100;
 
   /* ───────── monitör sağ tık menüsü ve tam ekran ───────── */
@@ -996,13 +1073,17 @@ export default function Studio({ auth, go }) {
     const r = Math.round(Math.min(1, Math.max(0.25, Number(v) || 1)) * 20) / 20;
     if (hasModes) setPref("modes", (m) => ({ ...normalizeModeSettings(m), rate: r })); else setReplayRate(r);
   });
-  /** Seçilen tekrarlar sırayla (her biri varsayılan açılarıyla) yayına. */
+  /** Seçilen tekrarlar sırayla (her biri varsayılan açılarıyla) ÖNİZLEME'ye; yayına GEÇİŞ ile [önizleme-geçiş]. */
   const playReplayQueue = useStable(async (list) => {
     const ids = (list || []).map((r) => r.id);
-    const items = replays.replays.filter((r) => ids.includes(r.id));
+    const items = ids.map((id) => replays.replays.find((r) => r.id === id)).filter(Boolean);
+    if (hasModes && modes.loadQueue) {
+      if (!modes.loadQueue(items)) return false;
+      if (takeAfterLoad({ studioMode })) takeRef.current?.();
+      return true;
+    }
     const q = buildReplayQueue(items, Object.fromEntries(items.map((r) => [r.id, defaultAngles(r, liveAngles)])), { order: ids });
     if (!q.length) { toast("Kuyrukta oynatılabilir açı yok.", { tone: "warn" }); return false; }
-    if (hasModes && modes.replay?.playQueue) return modes.replay.playQueue(q);
     player.play(q);
     return true;
   });
@@ -1021,7 +1102,6 @@ export default function Studio({ auth, go }) {
     try { await live.removeEvent(Number(last.id)); toast("Gol silindi.", { tone: "success" }); } catch (e) { toast(errorText(e, "Gol silinemedi."), { tone: "error" }); }
   });
   const latestReplay = replays.latest;
-  const pickAngles = (r, angles) => ({ ...r, angles: (r.angles || []).filter((a) => angles.includes(a.angle)) });
   const railCtx = {
     hints, hotkeys: settings.hotkeys, railPopRef, scenes: sceneList, score: live.match ? live.score : null, momentSeconds: settings.replay.seconds,
     live: { onAir, mode: engine.mode, since: engine.since, busy, start: topStart, stop: () => stopEncoder(), openTab: () => setTab("yayin") },
@@ -1030,31 +1110,23 @@ export default function Studio({ auth, go }) {
     clock: { live },                        // maç saati parçacığı
     toast,
     goalUndo: live.match ? goalUndo : null,
-    transition: { canTake, take: () => toProgram(), label: modes.previewOverride ? "YAYINA AL" : "GEÇİŞ", kind: tKind, onKind: (k) => setPref("transition", k), lastSceneName: lastSceneId ? resolveScene(config, lastSceneId)?.name : null, lastScene: backToLastScene },
+    transition: { canTake, take: () => toProgram(), label: takeLabel(pvState), kind: tKind, onKind: (k) => setPref("transition", k), lastSceneName: lastSceneId ? resolveScene(config, lastSceneId)?.name : null, lastScene: backToLastScene },
     chapter: { add: addChapter, count: chapters.chapters.length, items: chapters.chapters, startAt: chapters.startAt },
     fullscreen: (target) => setFullscreen(target),
     replay: {
       list: replays.replays, meta: replays.meta, sources: config.sources, recordAngles: liveAngles, playing: replayPlaying,
       previewing: hasModes && modes.previewMode === "tekrar",
       latestInfo: latestReplay ? { title: replayTitle(latestReplay, metaFor(latestReplay, replays.meta)), angles: anglesOf(latestReplay).length } : null,
-      preview: (r, angles) => {
-        if (hasModes && modes.openReplay) { modes.openReplay(pickAngles(r, angles), { angles }); return; }
-        toast("Önizleme için özel kip modülü yok: tekrar doğrudan yayına verilir.", { tone: "info" });
-      },
-      take: async (r, angles) => {
-        if (hasModes && modes.openReplay && modes.takeToAir) {
-          modes.openReplay(pickAngles(r, angles), { angles });
-          await new Promise((res) => setTimeout(res, 220)); // seçim önizlemeye işlensin
-          await modes.takeToAir(null, "tekrar");
-          return;
-        }
-        player.play(buildReplayQueue([r], { [r.id]: angles }));
-      },
-      stop: stopReplay, playLatest: playLatestAny, openTab: () => setTab(replayTabKey),
+      // [önizleme-geçiş] preview: önizlemeye yükle · take: önizlemeye yükle + aynı GEÇİŞ (bekleme / zamanlayıcı yok:
+      // durum eşzamanlı okunur, önizlemede görünen aynen yayına gider) · playLatest: R ile aynı.
+      preview: (r, angles) => loadReplayAny(r, { angles }),
+      take: async (r, angles) => { loadReplayAny(r, { angles, take: true }); },
+      direct: Boolean(settings.replay.directTake) || !studioMode,
+      stop: stopReplay, playLatest: playLatestAny, loadLatest: playLatestAny, openTab: () => setTab(replayTabKey),
       rate: replayRateNow, setRate: setReplayRateAny, playQueue: playReplayQueue,
     },
     moment: captureMoment,
-    var: { active: varActive, toggle: toggleVar },
+    var: { active: varActive, previewing: hasModes && modes.previewMode === "var", toggle: toggleVar },
     event: { live: live.status === "canli", minute: live.match ? live.minute : null, homeName: live.homeName, awayName: live.awayName, squads: live.squads, begin: beginEvent, submit: submitEvent, cancel: cancelEvent },
     goal: (side) => askGoal(side),
     goalMusic, GoalMusicButtons,
@@ -1119,22 +1191,16 @@ export default function Studio({ auth, go }) {
   defPanel("led", () => <LedPanel led={led} scenes={config.scenes} matchId={matchId} ledMode={g?.ledMode} g={hasGraphics ? g : null} live={live} />, { count: led.status.open ? "●" : null });
   defPanel("olaylar", () => <div className="st-dock-events"><EventEntry ctx={railCtx} onClose={() => {}} /></div>);
   dockPanelsRef.current = Object.keys(dockDefs);
-  // Sütun kipinde özel kip sütununa dokununca önizleme o kipe geçer; sütun kalkınca bırakılır.
-  const onDockActivate = useStable((key) => {
-    const m = panelOf(key)?.mode;
-    if (!hasModes || !m || dockRef.current.mode !== "columns" || !modes.setPreview) return;
-    if (modes.previewMode !== m) modes.setPreview(m);
-  });
-  const onDockDeactivate = useStable((key) => {
-    const m = panelOf(key)?.mode;
-    if (hasModes && m) modes.clearPreview?.(m);
-  });
-  // Sütun kipinde bir sahne önizlemeye alınınca özel kip önizlemesi bırakılır (sahne görünsün).
+  // [önizleme-geçiş] Sütuna / sekmeye dokunmak ya da sütunu kaldırmak önizlemeyi DEĞİŞTİRMEZ:
+  // önizleme yalnız içerik seçilince (sahne, tekrar / açı, "Önizlemeye al", R / V) değişir.
+  const onDockActivate = useStable(() => {});
+  const onDockDeactivate = useStable(() => {});
+  // Önizlemeye bir sahne gelince (ör. yeni sahne oluşturuldu) önizlemedeki kip bırakılır: önizlemede o sahne görünür.
   const lastPvwRef = useRef(config.previewSceneId);
   useEffect(() => {
     if (lastPvwRef.current === config.previewSceneId) return;
     lastPvwRef.current = config.previewSceneId;
-    if (hasModes && dockRef.current.mode === "columns" && modes.previewMode) modes.clearPreview?.(modes.previewMode);
+    if (hasModes && modes.previewMode && !takingRef.current) modes.clearPreview?.(modes.previewMode);
   }, [config.previewSceneId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ───────── Ayarlar: alt panelden taşınan yapılandırma bölümleri ───────── */
@@ -1236,6 +1302,8 @@ export default function Studio({ auth, go }) {
       {help && <HelpModal hotkeys={settings.hotkeys} onClose={() => setHelp(false)} />}
       {/* ── röportaj: kayıt bitince inceleme (izle → web sitesine yükle / sil) ── */}
       <InterviewReviewHost iv={interview} />
+      {/* [gol-müziği] çalarken büyük "MÜZİĞİ KES" hapı (portal: düzenden bağımsız, sahnenin üstünde ortada) */}
+      {GoalMusicStopPill && goalMusic && <GoalMusicStopPill gm={goalMusic} hotkey={settings.hotkeys.goalMusicStop?.[0] ? keyText(settings.hotkeys.goalMusicStop[0]) : null} />}
       {ytStart.dialog /* [medya] YouTube başlatma penceresi */}
     </div>
     </PartsProvider>
