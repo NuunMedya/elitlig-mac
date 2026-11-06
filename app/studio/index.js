@@ -415,7 +415,7 @@ function registerStudio({
       }
     }
     if (!sources.length) return { ok: false, error: { code: "NOT_STREAMING", message: "Tekrar için yayın, kayıt ya da açı kaydı sürüyor olmalı." } };
-    const res = await replays.save({ ...opts, sources, seconds: opts.seconds ?? 10, sessionId: engine.sessionId() });
+    const res = await replays.save({ ...opts, sources, seconds: opts.seconds ?? 15, sessionId: engine.sessionId() });
     if (res.ok && missing.length) res.skipped = [...(res.skipped || []), ...missing];
     return res;
   }
@@ -436,7 +436,7 @@ function registerStudio({
   /* ---------------------- klipler (geriye uyumlu: tekrar deposu) ---------------------- */
 
   ipcMain.handle("studio:saveClip", async (_e, { seconds } = {}) => {
-    const res = await saveReplay({ seconds: seconds ?? 10, angles: ["program"], kind: "goal" });
+    const res = await saveReplay({ seconds: seconds ?? 15, angles: ["program"], kind: "goal" });
     if (!res.ok) {
       if (res.error?.code === "NOT_STREAMING") return { ok: false, error: { code: "NOT_STREAMING", message: "Klip için yayın ya da kayıt sürüyor olmalı." } };
       return res;

@@ -26,6 +26,7 @@ import DockSettings from "./DockSettings";
 import ProfilesSection from "./ProfilesSection";
 import "./settings.css";
 import "../dock/dock.css";
+import VarThemeSection, { VAR_THEME_SECTION } from "./VarThemeSection"; // [var-tema]
 
 export const SETTINGS_GROUPS = [
   { key: "genel", label: "Genel" },
@@ -37,6 +38,7 @@ export const SETTINGS_SECTIONS = [
   { key: "yayin", label: "Yayın", icon: "broadcast", group: "genel" },
   { key: "kayit", label: "Kayıt", icon: "download", group: "genel" },
   { key: "tekrar", label: "Tekrar", icon: "repeat", group: "genel" },
+  { ...VAR_THEME_SECTION, group: "grafik" }, // [var-tema] Ayarlar › Grafikler › VAR teması
   { key: "gecis", label: "Geçiş", icon: "swap", group: "genel" },
   { key: "led", label: "LED ekran", icon: "overview", group: "genel" },
   { key: "gorunum", label: "Görünüm", icon: "grid", group: "genel" },
@@ -262,6 +264,8 @@ function SettingsPage({
         <p className="st-hint st-set__wide">Panelin her ayrıntısı (katmanlar, kuyruk, düzenleyici…) için: Ayarlar › Alt panel › Tekrar › Parçalar › “Paneli burada aç”.</p>
       </>
     );
+  } else if (section === VAR_THEME_SECTION.key) { // [var-tema]
+    body = <VarThemeSection prefs={prefs} setPref={setPref} />;
   } else if (section === "gecis") {
     body = <div className="st-set__wide"><TransitionsTab prefs={prefs} setPref={setPref} hasModes={hasModes} brandRef={brandRef} /></div>;
   } else if (section === "led") {

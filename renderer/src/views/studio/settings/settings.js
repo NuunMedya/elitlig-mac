@@ -3,7 +3,8 @@
 //   stream    kodlayıcı tercihi, anahtar kare aralığı, ses bit hızı (çözünürlük /
 //             fps / görüntü bit hızı Yayın sekmesiyle ortak: prefs.encoding)
 //   record    yerel kayıt: açık mı, klasör, KAYIT KALİTESİ (yayından ayrı)
-//   replay    gol öncesi kaç saniye tekrar yazılsın
+//   replay    gol öncesi kaç saniye tekrar yazılsın (varsayılan 15; v1 kayıtlarındaki eski
+//             varsayılan 10, kullanıcı değiştirmemiş sayılıp 15'e taşınır — migrateReplaySeconds)
 //   view      ipuçları ve kısayol rozetleri, arayüz ölçeği
 //   hotkeys   ana eylemlerin tuşları (yeniden atanabilir)
 //   notify    mikrofon açık uyarısı (VAR), düşük bit hızı, sessiz yayın
@@ -58,7 +59,7 @@ export const DEFAULT_HOTKEYS = Object.fromEntries(HOTKEY_ACTIONS.map((a) => [a.k
 export const RESERVED_KEYS = new Set(["1", "2", "3", "4", "5", "6", "7", "8", "9", "h", "a", "e", "d", "Escape", "Tab"]);
 
 export const DEFAULT_SETTINGS = {
-  v: 1,
+  v: 2,
   stream: { encoder: "auto", keyframeSec: 2, audioKbps: 128 },
   record: { enabled: false, dir: null, quality: "stream", customKbps: 10000, customHeight: 1080 },
   replay: { seconds: 15 }, // tekrar klibi 15 sn: önizlemede giriş–çıkışla istenen bölüm seçilir
@@ -88,11 +89,25 @@ function normHotkeys(raw) {
   return out;
 }
 
+/** Eski varsayılan tekrar süresi (v1). */
+export const LEGACY_REPLAY_SECONDS = 10;
+/**
+ * Tekrar süresi göçü: v1 kaydında süre eski varsayılanda (10 sn) ise kullanıcı
+ * değiştirmemiş sayılır → yeni varsayılan (15 sn). Başka bir değer seçildiyse
+ * ya da kayıt v2 ise (kullanıcı 10'u bilerek seçtiyse) dokunulmaz.
+ */
+export function migrateReplaySeconds(r) {
+  const sec = r?.replay?.seconds;
+  if (sec == null) return undefined;
+  const v = Number(r?.v) || 1;
+  return v < 2 && Number(sec) === LEGACY_REPLAY_SECONDS ? DEFAULT_SETTINGS.replay.seconds : sec;
+}
+
 export function normalizeSettings(raw) {
   const r = raw && typeof raw === "object" ? raw : {};
   const d = DEFAULT_SETTINGS;
   return {
-    v: 1,
+    v: 2,
     stream: {
       encoder: pick(r.stream?.encoder, ENCODER_PREFS.map((e) => e.key), d.stream.encoder),
       keyframeSec: pick(Number(r.stream?.keyframeSec), KEYFRAME_CHOICES, d.stream.keyframeSec),
@@ -105,7 +120,7 @@ export function normalizeSettings(raw) {
       customKbps: clamp(Math.round(num(r.record?.customKbps, d.record.customKbps)), 1000, 50000),
       customHeight: pick(Number(r.record?.customHeight), [720, 1080], d.record.customHeight),
     },
-    replay: { seconds: clamp(Math.round(num(r.replay?.seconds, d.replay.seconds)), 5, 30) },
+    replay: { seconds: clamp(Math.round(num(migrateReplaySeconds(r), d.replay.seconds)), 5, 30) },
     view: {
       hints: bool(r.view?.hints, d.view.hints),
       tooltips: bool(r.view?.tooltips, d.view.tooltips),

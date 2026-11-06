@@ -175,7 +175,7 @@ function LocalRecordCard({ value, onChange, engine, recordInfo, onOpenSettings }
   );
 }
 
-const SYNC_TEXT = { sending: "Gönderiliyor…", sent: "YouTube'da güncel", pending: "Gönderilecek (birkaç sn)", local: "Gönderilmedi", error: "Gönderilemedi", empty: "Henüz bölüm yok" };
+const SYNC_TEXT = { sending: "Gönderiliyor…", sent: "YouTube'da güncel", pending: "Gönderilecek (3 dk içinde)", local: "Gönderilmedi", error: "Gönderilemedi", empty: "Henüz bölüm yok" };
 const SYNC_TONE = { sending: "is-busy", sent: "is-ok", pending: "is-wait", local: "", error: "is-err", empty: "" };
 const agoText = (ms) => {
   if (!ms) return "";
@@ -231,12 +231,12 @@ function ChaptersCard({ chapters: ch, onAir, toast, hasBroadcast }) {
   return (
     <section className="st-card">
       <header className="st-card__head"><Icon name="flag" size={15} /><strong>YouTube bölümleri</strong><span className="st-col__count">{ch.normalized ? ch.normalized.length : list.length}</span></header>
-      <p className="st-hint">Goller kendiliğinden eklenir; <b>Bölüm</b> (C) işaret koyar. Zamanlar YouTube kaydının başından (ilk yayın başlangıcı; kopup yeniden bağlanınca sıfırlanmaz).</p>
+      <p className="st-hint">Her gol <b>45 sn</b>'lik bölüm olur: GOL'e basılan andan <b>15 sn önce</b> başlar, 30 sn sonra maç devam eder (“Ev 1 - 0 Deplasman | Gol: Golcü”). <b>Bölüm</b> (C) işaret koyar. Zamanlar YouTube kaydının başından (ilk yayın başlangıcı; kopup yeniden bağlanınca sıfırlanmaz).</p>
       {sync && (
         <div className="yt-ch__state">
           <span className={`yt-ch__pill ${SYNC_TONE[status] || ""}`}>{SYNC_TEXT[status] || status}</span>
           {sync.lastAt && <span className="muted">son gönderim {agoText(sync.lastAt)}</span>}
-          {sync.auto ? <span className="muted">· yayındayken kendiliğinden</span> : <span className="muted">· {hasBroadcast ? "" : "YouTube yayını açılınca kendiliğinden"}</span>}
+          {sync.auto ? <span className="muted">· yayındayken 3 dk'da bir ve yayın bitince kendiliğinden</span> : <span className="muted">· {hasBroadcast ? "" : "YouTube yayını açılınca kendiliğinden"}</span>}
         </div>
       )}
       {sync?.error && status === "error" && <p className="st-hint text-red">{sync.error}</p>}

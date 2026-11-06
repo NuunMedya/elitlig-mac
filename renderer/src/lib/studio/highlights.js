@@ -11,7 +11,7 @@
 // Tuval MediaRecorder ile kaydedilir, parçalar studio.render'a gider.
 import { STINGER_MS } from "./stinger";
 import { isGoalCode, sortEvents } from "./match";
-import { PROGRAM_ANGLE, defaultAngles } from "./replays";
+import { PROGRAM_ANGLE, REPLAY_SECONDS, defaultAngles } from "./replays";
 
 export const HIGHLIGHT_SIZE = Object.freeze({ width: 1920, height: 1080, fps: 30, videoBitrateKbps: 8000 });
 export const INTRO_MS = 5000;
@@ -123,7 +123,7 @@ export function buildHighlightPlan({ items, replays, introMs = INTRO_MS, outroMs
     for (const angle of item.angles || []) {
       const a = r.angles.find((x) => x.angle === angle && x.url);
       if (!a) continue;
-      push({ type: "clip", replayId: r.id, angle, url: a.url, ms: a.durationMs || r.durationMs || 10_000, replay: r, score: scoreOf(r) });
+      push({ type: "clip", replayId: r.id, angle, url: a.url, ms: a.durationMs || r.durationMs || REPLAY_SECONDS * 1000, replay: r, score: scoreOf(r) });
     }
   }
   push({ type: "outro", ms: outroMs });

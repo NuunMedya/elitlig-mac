@@ -102,7 +102,7 @@ describe("ayarlar kalıcılığı", () => {
     expect(n.view.scale).toBe(100);
     expect(n.notify.silenceSec).toBe(10);
     const throwing = { getItem: () => { throw new Error("x"); }, setItem: () => { throw new Error("x"); } };
-    expect(loadSettings(throwing).v).toBe(1);
+    expect(loadSettings(throwing).v).toBe(2); // v2: tekrar süresi göçü (10 → 15 sn)
     expect(saveSettings(throwing, n)).toBe(false);
   });
   it("kısayollar: yeniden atama çakışanı kaldırır, ayrılmış tuşlar atanamaz, keyAction yeni tuşu kullanır", () => {

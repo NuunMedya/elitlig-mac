@@ -13,6 +13,9 @@
 // (program) önce seçilir, gerçek başlangıcı diğerlerinin hedefi olur; böylece
 // açıların süreleri birbirine ~0,5 sn içinde kalır. Son -t ile kesilir.
 // H.264 düzeyi h264level.js ile düzeltilir, +faststart yazılır.
+// Siteye yüklenen dosya ise ayrı bir web kopyasıdır (program.web.mp4 +
+// program.web.jpg): H.264 High yuv420p + AAC + faststart, kapak ~1. saniyeden
+// (clips.prepareWebClip; sitede siyah görüntü hatası).
 //
 // 7 günden eski tekrarlar açılışta silinir (maç özetleri onlara ihtiyaç duyar);
 // oturum (yayın / açı kaydı / öne çıkan) sürerken hiç silinmez.
@@ -24,7 +27,7 @@ const crypto = require("node:crypto");
 const ff = require("./ffmpeg");
 const ffargs = require("./ffargs");
 const { computeH264Level } = require("./h264level");
-const { buildClipMultipart } = require("./clips");
+const { buildClipMultipart, prepareWebClip } = require("./clips");
 const { REPLAY_ID, safeJoin, safeReplayPath, replayUrl } = require("./scheme");
 
 const MAX_AGE_MS = 7 * 24 * 3600 * 1000;
@@ -73,8 +76,8 @@ const granularity = (items) => {
  * sources: [{ angle, name, complete, growing, segmentSeconds }]
  * → { endWall, startWall, plans: [{ angle, name, items, startWall, endWall, durationMs }], skipped: [{ angle, reason }] }
  */
-function planReplay({ sources = [], seconds = 10, minAngleMs = MIN_ANGLE_MS, staleEdgeMs = STALE_EDGE_MS }) {
-  const want = Math.min(30, Math.max(1, Number(seconds) || 10)) * 1000;
+function planReplay({ sources = [], seconds = 15, minAngleMs = MIN_ANGLE_MS, staleEdgeMs = STALE_EDGE_MS }) {
+  const want = Math.min(30, Math.max(1, Number(seconds) || 15)) * 1000;
   const prepared = sources.map((s) => ({ ...s, items: usableItems(s) }));
   const skipped = [];
   const withData = prepared.filter((s) => {
@@ -261,7 +264,7 @@ function createReplayStore({
    * sources: [{ angle: "program" | kaynak kimliği, name, complete, growing }]
    * → { ok, replay, skipped? } | { ok:false, error }
    */
-  async function save({ sources = [], seconds = 10, label, kind = "goal", eventId, playerName, minute, inSummary, sessionId = null } = {}) {
+  async function save({ sources = [], seconds = 15, label, kind = "goal", eventId, playerName, minute, inSummary, sessionId = null } = {}) {
     if (!sources.length) return error("NOT_STREAMING");
     const plan = planReplay({ sources, seconds });
     if (!plan.plans.length) return error("NO_BUFFER");
@@ -303,7 +306,7 @@ function createReplayStore({
         uploaded: null,
         durationMs: Math.max(...angles.map((a) => a.durationMs || 0)),
         sessionId,
-        window: { start: new Date(plan.startWall).toISOString(), end: new Date(plan.endWall).toISOString(), seconds: Math.min(30, Math.max(1, Number(seconds) || 10)) },
+        window: { start: new Date(plan.startWall).toISOString(), end: new Date(plan.endWall).toISOString(), seconds: Math.min(30, Math.max(1, Number(seconds) || 15)) },
         angles,
       };
       writeMeta(meta);
@@ -371,15 +374,17 @@ function createReplayStore({
     if (!replay) return error("NOT_FOUND");
     const a = replay.angles.find((x) => x.angle === String(angle));
     if (!a || !a.path || !fs.existsSync(a.path)) return error("BAD_ANGLE");
-    if (a.sizeBytes > UPLOAD_LIMIT) return error("TOO_LARGE");
-    const data = fs.readFileSync(a.path);
+    const web = await webCopy(replay.id, a.angle).catch(() => null);
+    const src = web ? { ...web, posterPath: web.posterPath || a.posterPath } : a;
+    if (src.sizeBytes > UPLOAD_LIMIT) return error("TOO_LARGE");
+    const data = fs.readFileSync(src.path);
     const fields = {
       event_id: String(eid),
-      duration_ms: String(Math.round(Number(durationMs ?? a.durationMs) || 0)),
-      width: String(Math.round(Number(width ?? a.width) || 0)),
-      height: String(Math.round(Number(height ?? a.height) || 0)),
+      duration_ms: String(Math.round(Number(durationMs ?? src.durationMs) || 0)),
+      width: String(Math.round(Number(width ?? src.width) || 0)),
+      height: String(Math.round(Number(height ?? src.height) || 0)),
     };
-    let extraFiles = a.posterPath ? [{ field: "poster", name: `gol-${mid}-${eid}.jpg`, mime: "image/jpeg", data: fs.readFileSync(a.posterPath) }] : [];
+    let extraFiles = src.posterPath ? [{ field: "poster", name: `gol-${mid}-${eid}.jpg`, mime: "image/jpeg", data: fs.readFileSync(src.posterPath) }] : [];
     const pathname = `/api/admin/live-streams/matches/${mid}/clips?event_id=${eid}`;
     const send = () => api.upload(pathname, buildClipMultipart({ fields, file: { name: `gol-${mid}-${eid}.mp4`, mime: "video/mp4", data }, extraFiles }), { timeout: UPLOAD_TIMEOUT_MS });
     let res = await send();
@@ -407,7 +412,14 @@ function createReplayStore({
     return res;
   }
 
-  return { save, list, get, update, remove, prune, upload, dir: replaysDir };
+  /** Bir açının siteye yüklenecek web kopyası (bkz. clips.prepareWebClip); olmazsa null. */
+  async function webCopy(id, angle = "program") {
+    const a = get(id)?.angles?.find((x) => x.angle === String(angle));
+    if (!a?.path || !fs.existsSync(a.path)) return null;
+    return prepareWebClip({ input: a.path, ffmpegPath: getFfmpegPath(), runImpl });
+  }
+
+  return { save, list, get, update, remove, prune, upload, webCopy, dir: replaysDir };
 }
 
 module.exports = { createReplayStore, planReplay, usableItems, isUnexpectedFieldError, MAX_AGE_MS, ERR };
