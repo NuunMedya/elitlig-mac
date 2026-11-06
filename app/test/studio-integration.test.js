@@ -119,7 +119,7 @@ test("uçtan uca (fifo yok): RTMP bağlanamazsa 'reconnecting' + kaydedici yenid
   const info = await getInfo();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "studio-int-"));
   // Eski davranış (fifo'suz ffmpeg): RTMP düşünce süreç yeniden başlar.
-  const engine = createStudioEngine({ getFfmpeg: async () => ({ ...info, muxers: { ...info.muxers, fifo: false }, encoders: forcedEncoders(info) }), tempRoot: root, backoffMs: [300, 300] });
+  const engine = createStudioEngine({ getFfmpeg: async () => ({ ...info, muxers: { ...info.muxers, fifo: false }, encoders: forcedEncoders(info) }), tempRoot: root, backoffMs: [300, 300], relay: false });
   const statuses = [];
   const restarts = [];
   engine.events.on("status", (s) => statuses.push(s));
@@ -161,7 +161,7 @@ test("uçtan uca (fifo): RTMP kopunca süreç YENİDEN BAŞLAMADAN yeniden bağl
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "studio-int-"));
   const port = 19000 + Math.floor(Math.random() * 900);
   const url = `rtmp://127.0.0.1:${port}/live2/anahtar`;
-  const engine = createStudioEngine({ getFfmpeg: async () => ({ ...info, encoders: forcedEncoders(info) }), tempRoot: root });
+  const engine = createStudioEngine({ getFfmpeg: async () => ({ ...info, encoders: forcedEncoders(info) }), tempRoot: root, relay: false });
   const statuses = [];
   const restarts = [];
   engine.events.on("status", (s) => statuses.push(s));
@@ -190,6 +190,54 @@ test("uçtan uca (fifo): RTMP kopunca süreç YENİDEN BAŞLAMADAN yeniden bağl
     assert.equal(restarts.length, 0, "kaydedici yeniden başlatılmamalı");
     assert.ok(engine.bufferedMs() > 8000, `halka ${engine.bufferedMs()} ms`);
     t.diagnostic(`sunucuya ulaşan süre ${received} sn, durumlar ${[...new Set(statuses.map((s) => s.state))].join(",")}`);
+  } finally {
+    listener?.kill();
+    await engine.stop();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("uçtan uca (aktarıcı): RTMP kopunca YALNIZ aktarıcı yeniden bağlanır; kodlayıcı, kaydedici ve halka sürer", { timeout: 120000 }, async (t) => {
+  const why = await skipReason();
+  if (why) { t.skip(why); return; }
+  const info = await getInfo();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "studio-int-"));
+  const port = 19000 + Math.floor(Math.random() * 900);
+  const url = `rtmp://127.0.0.1:${port}/live2/anahtar`;
+  const engine = createStudioEngine({ getFfmpeg: async () => ({ ...info, encoders: forcedEncoders(info) }), tempRoot: root, relayOptions: { backoffMs: [300, 600, 1000] } });
+  const statuses = [];
+  const restarts = [];
+  engine.events.on("status", (s) => statuses.push(s));
+  engine.events.on("restartRecorder", () => restarts.push(Date.now()));
+  const seconds = 22;
+  const input = await makeInput(info.path, seconds);
+  const res = await engine.start({ url, width: 640, height: 360, fps: 30, videoBitrateKbps: 1000 });
+  assert.equal(res.ok, true);
+  assert.equal(res.relay, true);
+  let listener = null;
+  try {
+    const feeding = feed(engine, input, seconds);
+    // İlk 4 sn sunucu yok: aktarıcı yeniden dener, kodlayıcı sürer.
+    await sleep(4000);
+    const down = statuses.filter((s) => s.state === "reconnecting");
+    assert.ok(down.length > 0, statuses.map((s) => s.state).join(","));
+    assert.match(down.at(-1).message, /^Yeniden bağlanıyor… \(\d+\. deneme\)/);
+    assert.equal(down.at(-1).network.lastError.code, "CONNECTION_REFUSED");
+    listener = rtmpListener(info.path, url, 6);
+    const got = await listener.done;
+    assert.match(got, /Input #0, flv/);
+    assert.ok(statuses.some((s) => s.state === "live"), "yayına bağlanmalı");
+    // Sunucu kapandı (-t 6): aktarıcı yeniden dener; yeni sunucu açılınca bağlanır.
+    await sleep(1500);
+    listener = rtmpListener(info.path, url, 5);
+    const got2 = await listener.done;
+    assert.match(got2, /Video: h264/);
+    await feeding;
+    assert.equal(restarts.length, 0, "kaydedici yeniden başlatılmamalı");
+    const last = statuses.at(-1);
+    assert.ok(last.network.reconnects >= 1, JSON.stringify(last.network));
+    assert.ok(engine.bufferedMs() > 8000, `halka ${engine.bufferedMs()} ms`);
+    t.diagnostic(`yeniden bağlanma ${last.network.reconnects}, durumlar ${[...new Set(statuses.map((s) => s.state))].join(",")}`);
   } finally {
     listener?.kill();
     await engine.stop();

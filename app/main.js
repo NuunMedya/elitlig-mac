@@ -276,6 +276,8 @@ function refreshTray() {
     template.push({ label: "Yaklaşan", enabled: false }, ...(upcoming.length ? upcoming : [{ label: "Önümüzdeki 7 gün boş", enabled: false }]));
     template.push({ type: "separator" });
   }
+  // LED çıkışı açıksa her zaman buradan kapatılabilir (LED ekranı stüdyoyu örtse bile).
+  if (studio?.led?.status?.().open) template.push({ label: "LED çıkışını kapat", click: () => studio?.led?.close("MENU") }, { type: "separator" });
   template.push(
     { label: focusLabel, click: () => focus.command("toggle") },
     ...(state.running || state.remainingMs !== state.totalMs ? [{ label: "Sayacı sıfırla", click: () => focus.command("reset") }] : []),
@@ -365,7 +367,9 @@ function createMainWindow() {
       ? { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 18, y: 18 }, vibrancy: "sidebar", visualEffectState: "followWindow", backgroundColor: "#00000000" }
       : { autoHideMenuBar: true, backgroundColor: nativeTheme.shouldUseDarkColors ? "#1e1e1e" : "#ffffff" }),
     icon: path.join(ASSETS, "icon.png"),
-    webPreferences: secureWebPreferences(),
+    // Yayın Stüdyosu bu pencerede: gizli / küçültülmüş / örtülüyken de program tuvali
+    // çizilsin ve MediaRecorder parça üretsin (yayın sürerken studio/index.js ayrıca açar).
+    webPreferences: { ...secureWebPreferences(), backgroundThrottling: false },
   });
   mainWindow = win;
   guardNavigation(win);
@@ -535,7 +539,13 @@ function buildMenu() {
         ...(app.isPackaged ? [] : [{ role: "toggleDevTools", label: "Geliştirici Araçları" }]),
       ],
     },
-    { label: "Pencere", role: "window", submenu: [{ role: "minimize", label: "Küçült" }, ...(IS_MAC ? [{ role: "zoom", label: "Büyüt" }, { type: "separator" }, { role: "front", label: "Tümünü Öne Getir" }] : [])] },
+    { label: "Pencere", role: "window", submenu: [
+      { role: "minimize", label: "Küçült" },
+      ...(IS_MAC ? [{ role: "zoom", label: "Büyüt" }, { type: "separator" }, { role: "front", label: "Tümünü Öne Getir" }] : []),
+      { type: "separator" },
+      // Kısayol LED açıkken genel kısayol olarak kaydedilir (studio/led.js); burada yalnız gösterilir.
+      { label: "LED Çıkışını Kapat", accelerator: "CommandOrControl+Shift+L", registerAccelerator: false, click: () => { studio?.led?.close("MENU"); showMain(); } },
+    ] },
     { label: "Yardım", role: "help", submenu: [
       { label: "Klavye Kısayolları", accelerator: "CmdOrCtrl+/", click: () => sendCommand("shortcuts") },
       { label: "elitlig.com'u Aç", click: () => shell.openExternal(config.SITE_ORIGIN) },
@@ -801,12 +811,14 @@ if (!app.requestSingleInstanceLock()) {
       ipcMain, api, broadcast, app, electronSession, systemPreferences, desktopCapturer, powerSaveBlocker, protocol, shell,
       isOwnUrl,
       isSignedIn: () => authState().signedIn,
-      dialog, screen, BrowserWindow, loadRenderer, powerMonitor,
+      dialog, screen, BrowserWindow, loadRenderer, powerMonitor, globalShortcut,
       preloadPath: path.join(__dirname, "preload.js"),
       siteOrigin: config.SITE_ORIGIN,
       apiOrigin: config.API_ORIGIN,
       log: (...args) => { if (!app.isPackaged || process.env.ELITLIG_STUDIO_DEBUG) console.log(...args); },
     });
+    // LED açılıp kapanınca menü çubuğu simgesindeki "LED çıkışını kapat" güncellenir.
+    studio.led?.events.on("status", () => refreshTray());
     focus = createFocus({ dataDir: dataDir() });
     reminders = createReminders({
       dataDir: dataDir(),

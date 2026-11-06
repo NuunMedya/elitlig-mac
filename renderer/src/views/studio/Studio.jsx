@@ -42,7 +42,7 @@ import {
   removeLayer, removeScene, removeSource, renameScene, resolveScene, saveScenesConfig, sceneAtHotkey, sceneFromSource, sceneFromTemplate,
   sourceUsage, startSceneCountdowns, updateLayer, updateSource,
 } from "../../lib/studio/scenes";
-import { encodingPreset, ingestUrl, keyAction, normalizeEncoding, reusableStream, statusPill } from "../../lib/studio/broadcast";
+import { backupIngestUrl, encodingPreset, ingestUrl, keyAction, normalizeEncoding, reusableStream, statusPill } from "../../lib/studio/broadcast";
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../lib/studio/transitions";
 import { DEFAULT_BRANDING } from "../../lib/studio/stinger";
 import { micWarning } from "../../lib/studio/var";
@@ -294,10 +294,10 @@ export default function Studio({ auth, go }) {
   const [busy, setBusy] = useState(false);
   const [startedVia, setStartedVia] = useState(null); // "youtube" | "manual" | "rehearsal"
 
-  const begin = useCallback(async (url) => {
+  const begin = useCallback(async (url, backupUrl = null) => {
     mixer.resume();
     const localRecord = localRecordOptions(settings.record, { streamVideoKbps: preset.videoBitrateKbps, streamHeight: preset.height });
-    await engine.start({ url, preset, localRecord, stream: settings.stream, matchId, matchName: live.match ? `${live.homeName} – ${live.awayName}` : null });
+    await engine.start({ url, backupUrl, preset, localRecord, stream: settings.stream, matchId, matchName: live.match ? `${live.homeName} – ${live.awayName}` : null });
   }, [engine, mixer, preset, settings.record, settings.stream, matchId, live.match, live.homeName, live.awayName]);
 
   const startYoutube = async () => {
@@ -307,7 +307,7 @@ export default function Studio({ auth, go }) {
       const open = reusableStream(yt.stream) ? yt.stream : await yt.open();
       const url = ingestUrl(open);
       if (!url) throw new Error("YouTube yayın adresi alınamadı.");
-      await begin(url);
+      await begin(url, backupIngestUrl(open));
       setStartedVia("youtube");
       toast("Görüntü YouTube'a gönderiliyor. Yayın birkaç saniye içinde canlıya geçer.", { tone: "success", timeout: 5000 });
       setTimeout(() => live.refresh?.(), 8000); // match_video sunucuda yazılınca onay çipi görünür

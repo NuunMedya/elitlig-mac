@@ -160,7 +160,22 @@ export function ingestUrl(stream) {
   return stream.rtmp_publish_url || joinRtmp(stream.rtmp_url, stream.stream_key);
 }
 
-export const isRtmpUrl = (url) => /^rtmps?:\/\/[^\s/]+\/\S+/i.test(String(url || "").trim());
+/**
+ * Yedek giriş adresi (YouTube backup ingest): sunucu tam adresi backup_ingest_url
+ * olarak verir; eski / başka adlar (backup_ingestion_address, backupIngestionAddress)
+ * yalnız taban adresse anahtar eklenir. Ana adresle aynıysa ya da RTMP değilse null.
+ * Motor 3 ardışık kopmadan sonra buna geçer (ve geri döner).
+ */
+export function backupIngestUrl(stream) {
+  if (!stream) return null;
+  const full = stream.backup_ingest_url || stream.backupIngestUrl || null;
+  const base = stream.backup_ingestion_address || stream.backupIngestionAddress || null;
+  const url = full ? String(full).trim() : base ? joinRtmp(base, stream.stream_key || stream.streamName || stream.stream_name) : null;
+  if (!url || !isRtmpUrl(url) || url === ingestUrl(stream)) return null;
+  return url;
+}
+
+export const isRtmpUrl = (url) =>/^rtmps?:\/\/[^\s/]+\/\S+/i.test(String(url || "").trim());
 
 export function streamStatusLabel(status) {
   switch (String(status ?? "").toLowerCase()) {
@@ -301,6 +316,28 @@ export function streamHealth({ status = {}, draw = {}, targetFps = 30, encoding 
   if (encoding && speed != null && speed < 0.95) { warnings.push(`Kodlayıcı hızı ${speed.toFixed(2)}× — gerçek zamana yetişemiyor (kaliteyi / bit hızını düşür).`); worse(speed < 0.85 ? "bad" : "warn"); }
   if (Number(draw.fps) && Number(draw.fps) < targetFps * 0.85) { warnings.push(`Program çizimi ${draw.fps} fps (hedef ${targetFps}).`); worse(encoding ? "warn" : tone); }
   if (Number(draw.stalls) > 0) { warnings.push(`Son saniyede ${draw.stalls} takılma (uygulama meşgul).`); worse(encoding ? "warn" : tone); }
-  if (encoding && status.state === "reconnecting") { warnings.push("Yayın sunucusuna yeniden bağlanılıyor."); worse("bad"); }
-  return { tone, fps, dropped, bitrateKbps, speed, drawMs: Number(draw.drawMs) || 0, warnings };
+  if (encoding && status.state === "reconnecting") { warnings.push(status.message || "Yayın sunucusuna yeniden bağlanılıyor."); worse("bad"); }
+  const network = status.network || null;
+  if (encoding && network?.dropping) { warnings.push("Bağlantı yayına yetişemiyor: bazı kareler atlanıyor (bit hızını düşür)."); worse("warn"); }
+  if (encoding && network?.target === "backup") warnings.push("Yedek yayın sunucusu kullanılıyor.");
+  return {
+    tone, fps, dropped, bitrateKbps, speed, drawMs: Number(draw.drawMs) || 0, warnings,
+    // Ağ (RTMP aktarıcısı): gönderilen bit hızı, yeniden bağlanma sayısı, son hata.
+    sentKbps: Number.isFinite(network?.sentKbps) ? network.sentKbps : null,
+    reconnects: Number(network?.reconnects) || 0,
+    lastError: network?.lastError?.message || null,
+  };
+}
+
+/** Kısa ağ özeti (üst çubuk ipucu): "Gönderim 4,6 Mbps · 2 kez yeniden bağlandı". */
+export function networkSummary(status = {}) {
+  const n = status?.network;
+  if (!n) return null;
+  const parts = [];
+  if (Number.isFinite(n.sentKbps)) parts.push(`Gönderim ${(n.sentKbps / 1000).toFixed(1).replace(".", ",")} Mbps`);
+  if (n.reconnects) parts.push(`${n.reconnects} kez yeniden bağlandı`);
+  if (n.target === "backup") parts.push("yedek sunucu");
+  if (n.state !== "up" && n.attempt) parts.push(`${n.attempt}. deneme`);
+  if (n.state !== "up" && n.lastError?.message) parts.push(n.lastError.message);
+  return parts.length ? parts.join(" · ") : null;
 }

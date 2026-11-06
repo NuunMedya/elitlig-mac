@@ -6,7 +6,9 @@ import React, { memo } from "react";
 import { Field, Icon } from "../../../components/ui";
 import { LedGraphicsPanel } from "../scenes/graphicsBridge";
 
-const dispText = (d) => `${d.label || `Ekran ${d.id}`}${d.primary ? " (ana ekran)" : ""} · ${d.bounds?.width || "?"}×${d.bounds?.height || "?"}${d.scaleFactor > 1 ? ` @${d.scaleFactor}x` : ""}`;
+const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent || "");
+const CLOSE_KEYS = isMac ? "⌘⇧L" : "Ctrl+Shift+L";
+const dispText = (d) => `${d.label || `Ekran ${d.id}`}${d.primary ? " (ana ekran)" : ""}${d.hostsStudio ? " · stüdyo bu ekranda" : ""} · ${d.bounds?.width || "?"}×${d.bounds?.height || "?"}${d.scaleFactor > 1 ? ` @${d.scaleFactor}x` : ""}`;
 
 const ROUTES = [
   { key: "program", title: "Yayın (Program)", text: "Yayındaki sahneyi izler; program değişince LED de değişir (önerilen)" },
@@ -36,13 +38,19 @@ function LedPanel({ led, scenes, matchId, ledMode, g, live }) {
             <button type="button" className="icon-btn" onClick={led.refreshDisplays} title="Ekranları yenile"><Icon name="refresh" size={14} /></button>
           </div>
         </Field>
-        {led.displays.length === 1 && <p className="st-hint is-armed">Yalnız bir ekran var: LED çıkışı bu ekranı kaplar (Esc ile kapanır).</p>}
+        {(() => {
+          const sel = led.displays.find((d) => String(d.id) === String(p.displayId));
+          if (led.displays.length === 1) return <p className="st-hint is-armed">Yalnız bir ekran var: LED çıkışı tam ekran açılmaz, normal pencere olarak açılır (Esc ya da {CLOSE_KEYS} ile kapanır).</p>;
+          if (sel?.hostsStudio) return <p className="st-hint is-armed">Seçilen ekranda stüdyo da açık: LED bu ekranda normal pencere olarak açılır. Tam ekran için LED'i ikinci ekrana (LED / projektör) ver.</p>;
+          return null;
+        })()}
         <div className="st-row">
           {st.open
             ? <button type="button" className="btn btn--block" onClick={led.close}><Icon name="stop" size={13} /> LED çıkışını kapat</button>
             : <button type="button" className="btn btn--primary btn--block" disabled={!led.available || p.displayId == null} onClick={() => led.open()}><Icon name="play" size={13} /> LED çıkışını aç</button>}
         </div>
-        {st.open && <p className="st-hint">Açık: {openDisplay ? dispText(openDisplay) : `ekran ${st.displayId ?? "?"}`} · {st.mode === "web" ? "web LED sayfası" : `stüdyo · ${led.targetId ? sceneName(led.targetId) || "sahne" : "siyah"}`}</p>}
+        {st.open && <p className="st-hint">Açık: {openDisplay ? dispText(openDisplay) : `ekran ${st.displayId ?? "?"}`} · {st.mode === "web" ? "web LED sayfası" : `stüdyo · ${led.targetId ? sceneName(led.targetId) || "sahne" : "siyah"}`}{st.windowed ? " · pencere" : ""}</p>}
+        {st.open && <p className="st-hint">Kapatmak için: buradaki düğme, {CLOSE_KEYS} (her yerden), LED penceresinde {st.windowed ? "Esc" : "iki kez Esc"} ya da “Kapat” düğmesi.</p>}
         {led.error && <p className="st-hint text-red">{led.error}</p>}
         <div className="st-seg">
           <button type="button" className={!p.web ? "is-on" : ""} onClick={() => led.setPref({ web: false })}><Icon name="layers" size={12} /> Stüdyo görüntüsü</button>

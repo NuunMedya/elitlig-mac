@@ -12,6 +12,7 @@
 // IPC (preload "studio"):
 //   invoke: studio:info, studio:mediaAccess, studio:requestMediaAccess,
 //           studio:listScreens, studio:selectScreen, studio:start, studio:stop,
+//           studio:restartEncoder, studio:network (RTMP aktarıcısı, relay.js),
 //           studio:saveClip, studio:listClips, studio:deleteClip,
 //           studio:uploadClip, studio:revealClip,
 //           studio:angles:start, studio:angles:stop, studio:angles:status,
@@ -96,7 +97,7 @@ function registerStudio({
   ipcMain, api, broadcast, app, electronSession, systemPreferences, desktopCapturer,
   powerSaveBlocker, protocol, shell, isOwnUrl, isSignedIn = () => true, log = () => {},
   dialog = null, screen = null, BrowserWindow = null, loadRenderer = null, preloadPath = null, powerMonitor = null,
-  siteOrigin = "https://elitlig.com", apiOrigin = null,
+  siteOrigin = "https://elitlig.com", apiOrigin = null, globalShortcut = null,
 }) {
   const appRoot = path.join(__dirname, "..", "..");
   const tempRoot = path.join(app.getPath("temp"), "elitlig-studio");
@@ -174,13 +175,23 @@ function registerStudio({
 
   /* -------------------------- uyku engeli ve durum -------------------------- */
 
-  let blockerId = null;
-  const keepAwake = (on) => {
-    if (on && blockerId === null) blockerId = powerSaveBlocker.start("prevent-display-sleep");
-    if (!on && blockerId !== null) {
-      try { powerSaveBlocker.stop(blockerId); } catch { /* yoksay */ }
-      blockerId = null;
+  // Oturum sürerken: uygulama askıya alınmaz (App Nap / sistem uykusu: zamanlayıcılar ve
+  // ağ durmasın) ve — kapatılmadıysa (start({ keepDisplayAwake: false })) — ekran da uyumaz
+  // (ekran uyuyunca bazı Mac'lerde tuval çizimi durur).
+  const blockers = { app: null, display: null };
+  let keepDisplayAwake = true;
+  const blocker = (kind, type, on) => {
+    if (on && blockers[kind] === null) {
+      try { blockers[kind] = powerSaveBlocker.start(type); } catch { /* yoksay */ }
     }
+    if (!on && blockers[kind] !== null) {
+      try { powerSaveBlocker.stop(blockers[kind]); } catch { /* yoksay */ }
+      blockers[kind] = null;
+    }
+  };
+  const keepAwake = (on) => {
+    blocker("app", "prevent-app-suspension", on);
+    blocker("display", "prevent-display-sleep", on && keepDisplayAwake);
   };
   // Parçaları yalnız oturumu başlatan pencere gönderebilir: program, açılar ve
   // her öne çıkan oturumu için ayrı sahip. Pencere gizlenince (⌘W / arka plan)
@@ -190,7 +201,8 @@ function registerStudio({
   let unthrottled = new Set();
   const applyOwners = () => {
     const now = new Set([owners.program, owners.angles, ...renderOwners.values()].filter((wc) => wc && !wc.isDestroyed()));
-    for (const wc of unthrottled) if (!now.has(wc) && !wc.isDestroyed()) wc.setBackgroundThrottling(true);
+    // Kısma oturum bitince de geri AÇILMAZ: ana pencere zaten backgroundThrottling: false
+    // ile açılır (main.js); yeniden açmak sonraki yayının ilk saniyelerinde çizimi kısabilir.
     for (const wc of now) if (!unthrottled.has(wc)) wc.setBackgroundThrottling(false);
     unthrottled = now;
     keepAwake(anyActive() || now.size > 0);
@@ -322,7 +334,10 @@ function registerStudio({
     } else {
       delete o.localRecord;
     }
-    if (!engine.active()) diagnostics.begin({ recordOnly: !o.url, localRecord: Boolean(o.localRecord), matchId: o.matchId ?? null });
+    if (!engine.active()) diagnostics.begin({ recordOnly: !o.url, localRecord: Boolean(o.localRecord), matchId: o.matchId ?? null, backupUrl: Boolean(o.backupUrl) });
+    // Ekran uykusu engeli (varsayılan açık); yedek giriş adresi (backupUrl) motora olduğu gibi gider.
+    keepDisplayAwake = o.keepDisplayAwake !== false;
+    delete o.keepDisplayAwake;
     const res = await engine.start(o);
     if (res.ok && o.localRecord) settings.set({ recordDir: o.localRecord.dir });
     if (res.ok) res.logPath = diagnostics.logPath();
@@ -343,6 +358,14 @@ function registerStudio({
     releaseOwner("program");
     return true;
   });
+  // Arayüz görüntü izinin takıldığını / kuyruğun şiştiğini gördü: kodlayıcı yeni
+  // başlıkla yeniden başlar (restartRecorder olayı gelir), deneme sayılmaz.
+  ipcMain.handle("studio:restartEncoder", (event, reason) => {
+    if (!ownerOk(owners.program, event.sender)) return false;
+    return engine.restartEncoder(reason ? String(reason).slice(0, 60) : "RECORDER");
+  });
+  // RTMP aktarıcısının ayrıntılı durumu (status.network ile aynı) | null.
+  ipcMain.handle("studio:network", () => engine.network());
 
   /* --------------------------------- açılar --------------------------------- */
 
@@ -536,15 +559,41 @@ function registerStudio({
 
   /* -------------------------------- LED çıkışı -------------------------------- */
 
-  const led = screen && BrowserWindow ? createLedManager({ BrowserWindow, screen, loadRenderer, preloadPath, siteOrigin, apiOrigin, log, powerMonitor }) : null;
+  const led = screen && BrowserWindow ? createLedManager({ BrowserWindow, screen, loadRenderer, preloadPath, siteOrigin, apiOrigin, log, powerMonitor, globalShortcut }) : null;
   if (led) {
     led.events.on("status", (st) => broadcast("studio:led:status", st));
     led.events.on("displays", (list) => broadcast("studio:displays:changed", list));
   }
   const noLed = { ok: false, error: { code: "NO_LED", message: "LED çıkışı bu sürümde kullanılamıyor." } };
   ipcMain.handle("studio:displays", () => (led ? led.displays() : []));
-  ipcMain.handle("studio:led:open", (_e, opts = {}) => (led ? led.open(opts || {}) : noLed));
-  ipcMain.handle("studio:led:close", () => (led ? led.close() : false));
+  /**
+   * LED'i aç. Seçilen ekran stüdyonun ekranıysa (ya da tek ekran) led.open önce
+   * SHARED_DISPLAY döner: kullanıcıya ana süreçten, arayüzü bloklamadan (yayın
+   * sürerken tuval çizimi durmasın) sorulur; onaylarsa normal pencere açılır.
+   * → { ok, … } | { ok: false, canceled: true } | { ok: false, needsConfirm, error } (dialog yoksa)
+   */
+  let asking = null;
+  ipcMain.handle("studio:led:open", async (event, opts = {}) => {
+    if (!led) return noLed;
+    const o = { ...(opts || {}) };
+    const res = led.open(o);
+    if (res.ok || !res.needsConfirm || !dialog?.showMessageBox) return res;
+    if (asking) return { ok: false, canceled: true, error: { code: "BUSY", message: "LED sorusu zaten açık." } };
+    const parent = BrowserWindow?.fromWebContents?.(event.sender) || undefined;
+    asking = dialog.showMessageBox(parent, {
+      type: "warning",
+      buttons: ["Pencere olarak aç", "Vazgeç"],
+      defaultId: 0,
+      cancelId: 1,
+      message: "LED çıkışı stüdyonun ekranında açılacak",
+      detail: `${res.error.message}\n\nPencere Esc ya da ${process.platform === "darwin" ? "⌘⇧L" : "Ctrl+Shift+L"} ile kapanır; menüde "LED Çıkışını Kapat" da var.`,
+    }).catch(() => ({ response: 1 }));
+    let answer;
+    try { answer = await asking; } finally { asking = null; }
+    if (answer?.response !== 0) return { ok: false, canceled: true, error: { code: "CANCELED", message: "LED çıkışı açılmadı." } };
+    return led.open({ ...o, confirmShared: true });
+  });
+  ipcMain.handle("studio:led:close", () => (led ? led.close("STUDIO") : false));
   ipcMain.handle("studio:led:status", () => (led ? led.status() : { open: false, displayId: null, mode: null, url: null }));
   ipcMain.handle("studio:led:getState", () => (led ? led.getState() : null));
   ipcMain.on("studio:led:sendState", (event, state) => {

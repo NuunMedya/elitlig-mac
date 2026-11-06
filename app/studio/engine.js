@@ -13,7 +13,17 @@
 //     MediaRecorder açar ve ilk parçası (başlık) yeni sürece gider.
 //   - stdin yavaşlarsa (ffmpeg / ağ yetişemiyor) Node tamponu büyür: 8 MB'ta
 //     "slow" uyarısı, 32 MB'ta süreç yeniden başlatılır.
-//   - RTMP koparsa (tee "Slave muxer failed" ya da süreç hatayla biterse)
+//   - RTMP AKTARICISI (relay.js, varsayılan): RTMP bağlantısı kodlayıcıdan
+//     ayrı, gözetimli bir ffmpeg sürecidir. Kodlayıcı MPEG-TS'yi yerel TCP ile
+//     aktarıcıya verir; RTMP koparsa YALNIZ aktarıcı 1, 2, 4, 8, 10 … sn arayla
+//     (kullanıcı durdurana kadar) yeniden bağlanır, son anahtar kareden devam
+//     eder; 3 hatadan sonra yedek giriş adresine (backupUrl) geçer. Kodlayıcı,
+//     MediaRecorder, tekrar halkası ve yerel kayıt kesilmez. Durum: "live" ⇄
+//     "reconnecting" (message: "Yeniden bağlanıyor… (3. deneme) …"), ayrıntı
+//     status.network. Aktarıcıda kodlayıcı hataları da geri çekilmeyle sonsuz
+//     denenir (yalnız ffmpeg / kodlayıcı hiç açılamazsa "failed").
+//   - Aktarıcı kapalıysa (relay: false ya da yerel soket açılamadı) eski yol:
+//     RTMP koparsa (tee "Slave muxer failed" ya da süreç hatayla biterse)
 //     2, 4, 8, 16, 16 sn arayla 5 kez yeniden denenir; sonra "failed".
 //   - fifo (ffmpeg.js RTMP_FIFO_OPTIONS) varsa RTMP kopması süreci yeniden
 //     BAŞLATMAZ: ffmpeg kendi içinde 2 sn arayla yeniden bağlanır, durum
@@ -53,6 +63,7 @@ const { spawn } = require("node:child_process");
 const { EventEmitter } = require("node:events");
 const ff = require("./ffmpeg");
 const { killProcess } = require("./proc");
+const { createRelay } = require("./relay");
 
 const EBML_MAGIC = [0x1a, 0x45, 0xdf, 0xa3];
 const isContainerHeader = (buf) => Boolean(buf) && buf.length >= 4 && EBML_MAGIC.every((b, i) => buf[i] === b);
@@ -84,6 +95,7 @@ const MESSAGES = {
   speedSlow: "Kodlayıcı gerçek zamana yetişemiyor (hız < 0,95). Bir sonraki yeniden başlatmada daha hızlı ayar kullanılacak; çözünürlük / bit hızını düşürmeyi ya da açıları kapatmayı deneyin.",
   localFailed: "Yerel kayıt yazılamıyor (disk dolu ya da klasöre erişilemiyor); yayın sürüyor.",
   localQualitySoftware: "Donanım kodlayıcı yok: yerel kayıt yayınla aynı kalitede yazılıyor (ikinci kodlama işlemciyi yayını düşürecek kadar yükler).",
+  recorderRestart: "Görüntü kaydedici yeniden başlatılıyor.",
 };
 
 const FIFO_DOWN = /\[fifo @[^\]]*\].*(Error opening|Error writing|Recovery failed|Maximal number of)/i;
@@ -154,6 +166,9 @@ function createStudioEngine({
   adjustAfterFailure = null, // (opts, reason) => yeni seçenekler | null (ilk ilerlemeden önce; açılar: kopya → kodlama)
   remuxLocal = null, // async ({ parts, outFile, ffmpegPath }) => { ok, path }
   beforeCleanup = null, // async (session) => {} — parça klasörü silinmeden önce (röportajlar)
+  relay: useRelay = true, // RTMP'yi ayrı aktarıcı süreçle gönder (relay.js); false: eski tee/fifo yolu
+  relayFactory = createRelay,
+  relayOptions = {}, // createRelay'e ek seçenekler (testler: backoffMs, stallMs …)
 } = {}) {
   const MSG = { ...MESSAGES, ...messages };
   const events = new EventEmitter();
@@ -183,12 +198,44 @@ function createStudioEngine({
       outTimeMs: session ? session.totalOutMs + (p.outTimeMs || 0) : 0,
       attempt: session?.attempts || 0,
       warning: session?.warning || null,
-      rtmp: session?.opts.url ? (session.rtmpDown ? "down" : "up") : undefined,
+      rtmp: session?.opts.url ? (rtmpUp(session) ? "up" : "down") : undefined,
       speedLevel: session?.speedLevel || 0,
+      ...(session?.relay ? networkFields(session) : {}),
       ...(session?.local ? { localPath: session.local.current || null, localBytes: localBytes(session), localFailed: session.local.failed || false, ...(session.local.qualityState ? { localQuality: session.local.qualityState } : {}) } : {}),
       ...extra,
     });
   };
+
+  const rtmpUp = (s) => (s.relay ? s.relay.status().state === "up" : !s.rtmpDown);
+
+  /** Aktarıcı ayrıntıları (arayüz: ağ sağlığı). */
+  function networkFields(s) {
+    const n = s.relay.status();
+    return {
+      network: n,
+      reconnects: n.reconnects,
+      ingest: n.target, // "primary" | "backup"
+      sentKbps: n.sentKbps,
+      lastError: n.lastError?.message || null,
+    };
+  }
+
+  /** Yayının kullanıcıya görünen durumu (ilerleme geldikten sonra). */
+  function liveState(s) {
+    if (!s.opts.url) return "recording";
+    if (s.relay) {
+      const n = s.relay.status();
+      if (n.state === "up") return "live";
+      return n.attempt > 0 || n.everUp ? "reconnecting" : "connecting";
+    }
+    return s.rtmpDown ? "reconnecting" : "live";
+  }
+
+  function relayExtra(s) {
+    const n = s.relay?.status();
+    if (!n?.message) return {};
+    return { message: n.message, ...(n.state !== "up" && n.lastError ? { code: n.lastError.code } : {}) };
+  }
 
   function localBytes(s) {
     if (!s?.local) return 0;
@@ -346,9 +393,12 @@ function createStudioEngine({
     }
     runInfo.slaves = ff.streamSlaves({ url: s.opts.url, localFile });
     const localEncode = localFile ? localEncodeFor(s) : null;
-    const args = buildArgs({ ...s.opts, encoder: s.encoder, segmentSeconds, segmentStart: s.nextSegment, listFile: runInfo.listFile, fifo: s.fifo, localFile, ...(localEncode ? { localEncode } : {}), speedLevel: s.speedLevel, fpsMode: s.fpsMode, platform });
+    // Aktarıcı: RTMP yerine yerel TCP'ye MPEG-TS (bağlantıyı aktarıcı süreç kurar).
+    const net = s.relay ? { url: null, relayUrl: s.relay.url() } : {};
+    if (s.relay) s.relay.arm();
+    const args = buildArgs({ ...s.opts, ...net, encoder: s.encoder, segmentSeconds, segmentStart: s.nextSegment, listFile: runInfo.listFile, fifo: s.fifo, localFile, ...(localEncode ? { localEncode } : {}), speedLevel: s.speedLevel, fpsMode: s.fpsMode, platform });
     log("studio: ffmpeg başlıyor", { run: s.run, encoder: s.encoder, url: ff.maskUrl(s.opts.url) });
-    note(`ffmpeg başlıyor (çalıştırma ${s.run})`, { encoder: s.encoder, speedLevel: s.speedLevel, fifo: s.fifo, args: ff.maskSecrets(args.join(" ")) });
+    note(`ffmpeg başlıyor (çalıştırma ${s.run})`, { encoder: s.encoder, speedLevel: s.speedLevel, fifo: s.fifo, relay: Boolean(s.relay), args: ff.maskSecrets(args.join(" ")) });
     let child;
     try {
       child = spawnImpl(s.ffmpegPath, args, { cwd: s.dir, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
@@ -410,15 +460,17 @@ function createStudioEngine({
       if (s.lastErrors.length > 20) s.lastErrors.shift();
     }
     if (s.stopping) return;
-    // fifo: RTMP süreç içinde yeniden bağlanıyor.
-    if (s.opts.url && FIFO_UP.test(line)) {
+    // fifo: RTMP süreç içinde yeniden bağlanıyor (aktarıcısız eski yol).
+    if (s.relay) {
+      if (FIFO_QUEUE_FULL.test(line) && !s.relayQueueNoted) { s.relayQueueNoted = true; note("aktarıcı soketi yetişemiyor (yerel fifo doldu, paket atılıyor)"); }
+    } else if (s.opts.url && FIFO_UP.test(line)) {
       s.rtmpDown = false;
       s.fifoAuth = 0;
       note("RTMP yeniden bağlandı (fifo)");
       if (runInfo.gotProgress) sessionStatus("live");
       return;
     }
-    if (s.opts.url && FIFO_DOWN.test(line)) {
+    if (!s.relay && s.opts.url && FIFO_DOWN.test(line)) {
       const reason = ff.mapFfmpegError(`${s.stderrTail.slice(-3).join("\n")}\n${line}`);
       if (!s.rtmpDown) note("RTMP koptu; fifo yeniden bağlanıyor", { reason: reason.code });
       s.rtmpDown = true;
@@ -434,7 +486,7 @@ function createStudioEngine({
       if (runInfo.gotProgress) sessionStatus("reconnecting", rtmpDownExtra(s));
       return;
     }
-    if (s.opts.url && FIFO_QUEUE_FULL.test(line)) {
+    if (!s.relay && s.opts.url && FIFO_QUEUE_FULL.test(line)) {
       const t = now();
       if (!s.queueFull || t - s.queueFull.last > 5000) s.queueFull = { first: t, last: t };
       else s.queueFull.last = t;
@@ -494,10 +546,16 @@ function createStudioEngine({
     checkSpeed(s, runInfo, p);
     if (s.child?.stdin && s.child.stdin.writableLength < SLOW_BYTES / 2 && s.warning === "slow" && !s.speedSlow) s.warning = null;
     if (s.warning === "network" && s.queueFull && now() - s.queueFull.last > 10000) { s.warning = null; s.queueFull = null; }
-    const state = s.opts.url ? (s.rtmpDown ? "reconnecting" : "live") : "recording";
-    const extra = s.notice ? { message: s.notice } : s.rtmpDown ? rtmpDownExtra(s) : s.speedSlow ? { message: MSG.speedSlow } : {};
+    const state = liveState(s);
+    const extra = s.notice ? { message: s.notice } : s.relay && relayExtra(s).message ? relayExtra(s) : !s.relay && s.rtmpDown ? rtmpDownExtra(s) : s.speedSlow ? { message: MSG.speedSlow } : {};
     sessionStatus(state, extra);
     s.notice = null;
+    // Dakikada bir yayın sağlığı tanılama günlüğüne (uzun yayınlarda kopmaların izi).
+    if (s.opts.url && (s.healthAt === undefined || now() - s.healthAt >= 60000)) {
+      s.healthAt = now();
+      const n = s.relay?.status();
+      note("yayın sağlığı", { state, fps: p.fps, speed: p.speed, droppedFrames: p.droppedFrames, dupFrames: p.dupFrames, encodedKbps: s.bitrateKbps ?? null, pendingBytes: s.child?.stdin?.writableLength ?? 0, ...(n ? { rtmp: n.state, sentKbps: n.sentKbps, reconnects: n.reconnects, attempt: n.attempt, ingest: n.target, droppedBytes: n.droppedBytes, lastError: n.lastError?.code || null } : {}) });
+    }
   }
 
   function rtmpDownExtra(s) {
@@ -577,7 +635,7 @@ function createStudioEngine({
     }
     // Çağıranın geri düşüşü (açılar: H.264 kopyası açılamadı → yeniden kodlama). Deneme sayılmaz.
     // Zaman aşımı / takılma / birikme kaydedici kaynaklıdır, biçim sorunu değil: geri düşüş yok.
-    if (!runInfo.gotProgress && typeof adjustAfterFailure === "function" && !["SPAWN", "TIMEOUT", "STALLED", "SLOW"].includes(reason.code)) {
+    if (!runInfo.gotProgress && typeof adjustAfterFailure === "function" && !["SPAWN", "TIMEOUT", "STALLED", "SLOW", "RECORDER"].includes(reason.code)) {
       const adjusted = adjustAfterFailure(s.opts, reason);
       if (adjusted) {
         s.opts = adjusted;
@@ -601,16 +659,24 @@ function createStudioEngine({
       fail(reason.code === "SPAWN" ? MSG.noFfmpeg : MSG.noEncoder, reason.code);
       return;
     }
+    // Arayüz kaydediciyi yeniden kurmak istedi (görüntü izi takıldı): deneme sayılmaz.
+    if (reason.code === "RECORDER") {
+      s.lastCode = reason.code;
+      spawnRun();
+      return;
+    }
     s.attempts += 1;
     s.lastCode = reason.code;
-    if (s.attempts > backoffMs.length) {
+    // Aktarıcıyla (canlı yayın) kodlayıcı da kullanıcı durdurana kadar denenir; son bekleme tavandır.
+    const unlimited = Boolean(s.relay);
+    if (!unlimited && s.attempts > backoffMs.length) {
       fail(`${reason.message} ${MSG.failed}`, reason.code);
       return;
     }
-    s.lastMessage = `(${s.attempts}/${backoffMs.length}) ${reason.message}`;
+    s.lastMessage = unlimited ? `(${s.attempts}. deneme) ${reason.message}` : `(${s.attempts}/${backoffMs.length}) ${reason.message}`;
     sessionStatus(s.opts.url ? "reconnecting" : "starting", { message: s.lastMessage, code: reason.code });
     clearTimer("retryTimer");
-    s.retryTimer = timers.setTimeout(() => { if (session === s) { s.retryTimer = null; spawnRun(); } }, backoffMs[s.attempts - 1]);
+    s.retryTimer = timers.setTimeout(() => { if (session === s) { s.retryTimer = null; spawnRun(); } }, backoffMs[Math.min(s.attempts, backoffMs.length) - 1]);
   }
 
   function fail(message, code) {
@@ -618,6 +684,7 @@ function createStudioEngine({
     if (!s) return;
     s.failed = true;
     clearTimer("retryTimer");
+    try { s.relay?.dispose(); } catch { /* yoksay */ }
     sessionStatus("failed", { message, code: code || "FAILED" });
     events.emit("ended", { sessionId: s.id, failed: true });
   }
@@ -663,6 +730,9 @@ function createStudioEngine({
     if (session?.failed) await stop();
     const opts = normalizeOptions(rawOpts);
     if (opts.url && !validateUrl(opts.url)) return { ok: false, error: { code: "BAD_URL", message: MSG.badUrl } };
+    // Yedek giriş adresi (YouTube backup ingest): geçersizse yok sayılır (ana adresle sürer).
+    const rawBackup = rawOpts.backupUrl ? String(rawOpts.backupUrl).trim() : null;
+    const backupUrl = opts.url && rawBackup && rawBackup !== opts.url && validateUrl(rawBackup) ? rawBackup : null;
     const local = normalizeLocal(rawOpts.localRecord, rawOpts);
     if (local?.error) return { ok: false, error: local.error };
     const info = await getFfmpeg();
@@ -683,11 +753,53 @@ function createStudioEngine({
       pins: new Map(), pinSeq: 0, retained: [], lastErrors: [], chunkCount: 0, lastChunkAt: null,
       local: local ? { ...local, parts: [], current: null, failed: false } : null,
     };
-    note("oturum başladı", { sessionId: id, url: ff.maskUrl(opts.url), width: opts.width, height: opts.height, fps: opts.fps, videoBitrateKbps: opts.videoBitrateKbps, encoder, ffmpeg: info.version, fifo: session.fifo, local: local ? local.dir : null });
+    const s0 = session;
+    if (opts.url && useRelay) {
+      const relay = relayFactory({
+        ffmpegPath: info.path, primaryUrl: opts.url, backupUrl, spawnImpl, timers, now, platform, killImpl, log,
+        note: (message, data) => note(message, data),
+        ...relayOptions,
+      });
+      try {
+        await relay.listen();
+        s0.relay = relay;
+        relay.events.on("status", () => onRelayStatus(s0));
+      } catch (e) {
+        note("aktarıcı açılamadı; RTMP doğrudan kodlayıcıdan gönderilecek", { error: e.message });
+        try { relay.dispose(); } catch { /* yoksay */ }
+      }
+      if (session !== s0) { s0.relay?.dispose(); return { ok: false, error: { code: "STOPPED", message: "Yayın başlatılırken durduruldu." } }; }
+    }
+    note("oturum başladı", { sessionId: id, url: ff.maskUrl(opts.url), backupUrl: backupUrl ? ff.maskUrl(backupUrl) : null, relay: Boolean(s0.relay), width: opts.width, height: opts.height, fps: opts.fps, videoBitrateKbps: opts.videoBitrateKbps, audioBitrateKbps: opts.audioBitrateKbps, encoder, ffmpeg: info.version, fifo: session.fifo, local: local ? local.dir : null });
     sessionStatus("starting");
     spawnRun();
     if (!session) return { ok: false, error: { code: "NO_FFMPEG", message: MSG.noFfmpeg } };
-    return { ok: true, sessionId: id, encoder: session.encoder, ...(session.local?.qualityState ? { localQuality: session.local.qualityState } : {}) };
+    return { ok: true, sessionId: id, encoder: session.encoder, relay: Boolean(session.relay), backupUrl: Boolean(backupUrl), ...(session.local?.qualityState ? { localQuality: session.local.qualityState } : {}) };
+  }
+
+  /** Aktarıcı durumu değişti: arayüze yay (kodlayıcı ilerlemesini beklemeden). */
+  function onRelayStatus(s) {
+    if (session !== s || s.stopping || s.failed) return;
+    const n = s.relay.status();
+    const key = `${n.state}|${n.attempt}|${n.target}|${n.dropping}|${n.reconnects}`;
+    if (key === s.relayKey) return; // ilerleme her saniye zaten yayılır
+    s.relayKey = key;
+    if (!s.runInfo?.gotProgress) { sessionStatus(status.state === "starting" ? "starting" : "connecting", relayExtra(s)); return; }
+    sessionStatus(liveState(s), relayExtra(s));
+  }
+
+  /**
+   * Arayüz kaydediciyi yeniden kurmak istiyor (görüntü izi takıldı / kuyruk
+   * şişti): kodlayıcı yeni başlıkla yeniden başlar, deneme sayılmaz.
+   */
+  function restartEncoder(reason = "RECORDER") {
+    const s = session;
+    if (!s || !s.child || s.stopping || s.failed) return false;
+    if (s.runInfo?.failReason) return true;
+    s.runInfo.failReason = { code: "RECORDER", message: MSG.recorderRestart };
+    note("yeniden başlatma: arayüz istedi", { reason: String(reason).slice(0, 60) });
+    killChild(s);
+    return true;
   }
 
   /** MediaRecorder parçası. Hiç fırlatmaz; uygun değilse atar. */
@@ -764,6 +876,7 @@ function createStudioEngine({
         if (typeof hooks.beforeCleanup === "function" && s.pins.size) {
           try { await hooks.beforeCleanup({ sessionId: s.id, dir: s.dir }); } catch (e) { note("temizlik öncesi hata", { error: e.message }); }
         }
+        try { await s.relay?.stop(); } catch { /* yoksay */ }
         removeDir(s.dir);
         if (session === s) session = null;
         const local = finishLocal(s);
@@ -787,6 +900,7 @@ function createStudioEngine({
     s.stopping = true;
     for (const t of ["retryTimer", "connectTimer", "stableTimer", "stallTimer", "killTimer"]) clearTimer(t);
     killChild(s);
+    try { s.relay?.dispose(); } catch { /* yoksay */ }
     removeDir(s.dir);
     session = null;
   }
@@ -808,6 +922,9 @@ function createStudioEngine({
     pin,
     unpin,
     pinnedSources,
+    restartEncoder,
+    /** RTMP aktarıcısının durumu (yoksa null). */
+    network: () => session?.relay?.status() || null,
     /** Son ffmpeg uyarı / hata satırları (anahtar gizli). */
     lastErrors: () => (session ? [...session.lastErrors] : []),
     setBeforeCleanup: (fn) => { hooks.beforeCleanup = fn; },

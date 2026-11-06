@@ -75,8 +75,13 @@ contextBridge.exposeInMainWorld("elitlig", {
       if (bytes && bytes.byteLength) ipcRenderer.send("studio:chunk", bytes);
     },
     stop: () => ipcRenderer.invoke("studio:stop"),
+    // start({ …, backupUrl?, keepDisplayAwake? }) — backupUrl: yedek giriş adresi (YouTube backup ingest).
+    // status: { state, message, rtmp, reconnects, ingest, sentKbps, lastError, network: { state, attempt, … } }
     onStatus: on("studio:status"),
     onRestartRecorder: on("studio:restartRecorder"),
+    // Görüntü izi takıldı: kodlayıcı yeni başlıkla yeniden başlar (onRestartRecorder gelir).
+    restartEncoder: (reason) => ipcRenderer.invoke("studio:restartEncoder", reason || null),
+    network: () => ipcRenderer.invoke("studio:network"),
     saveClip: (opts) => ipcRenderer.invoke("studio:saveClip", opts || {}),
     listClips: () => ipcRenderer.invoke("studio:listClips"),
     deleteClip: (name) => ipcRenderer.invoke("studio:deleteClip", name),
