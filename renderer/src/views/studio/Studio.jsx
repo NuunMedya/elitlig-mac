@@ -80,6 +80,9 @@ import { BrandTab, GraphicsToolbar, LinksPanel, PresetsTab, ScoreboardTab, Spons
 import { StudioAudioPanel, hasModes, useBroadcastModesSafe, useStudioAudioMod } from "./scenes/modesBridge";
 import { useVar } from "./var/useVar";
 import VarPanel from "./var/VarPanel";
+// ── gol müziği + röportaj inceleme penceresi (reji ekibi) ──
+import { useGoalMusic } from "./goalmusic";
+import { InterviewReviewHost } from "./modes/InterviewPanel";
 import { useLed } from "./led/useLed";
 import LedPanel from "./led/LedPanel";
 import SettingsPage, { WorkspacePic } from "./settings/SettingsPage";
@@ -260,6 +263,9 @@ export default function Studio({ auth, go }) {
   const timer = live.timer;
   const matchClockRef = useRef(null);
   matchClockRef.current = () => (timer ? timerNowMs(timer, Date.now()) : null);
+  // ── gol müziği (goalmusic/): yalnız hoparlör, yayına gitmez; ayarlar Reji'de ──
+  const goalMusic = useGoalMusic({ homeTeamId: live.homeTeamId, awayTeamId: live.awayTeamId, homeName: live.homeName, awayName: live.awayName, toast });
+  // ── /gol müziği ──
   const scorers = useMemo(() => scorerLines(live.events, { homeTeamId: live.homeTeamId, awayTeamId: live.awayTeamId, nameOf: live.nameOf }), [live.events, live.homeTeamId, live.awayTeamId, live.nameOf]);
   bugRef.current = live.match ? {
     homeName: live.homeName, awayName: live.awayName, homeScore: live.score.home, awayScore: live.score.away,
@@ -681,7 +687,10 @@ export default function Studio({ auth, go }) {
     replays.attach(entry.key, { eventId: Number(event?.id) || null, scorer: playerName || live.nameOf(event?.oyuncu_id), side, code: code || event?.olay_kodu });
   });
   useEffect(() => () => dockGoalClipsRef.current.forEach((x) => clearTimeout(x.timer)), []);
-  const askGoal = useStable((side) => askEvent(side, "GOAL_RIGHT_FOOT", `${side === "home" ? live.homeName : live.awayName} — golü atan`));
+  const askGoal = useStable((side) => {
+    if (live.status === "canli") goalMusic.onGoal(side); // ── gol müziği: otomatik çal açıksa ──
+    askEvent(side, "GOAL_RIGHT_FOOT", `${side === "home" ? live.homeName : live.awayName} — golü atan`);
+  });
   const record = async (playerId) => {
     if (!picker) return;
     setSaving(true);
@@ -947,7 +956,7 @@ export default function Studio({ auth, go }) {
         )}
 
         <Dock tabs={TABS} tab={tab} onTab={setTab} height={prefs.dockH} onHeight={setDockH} extra={<button type="button" className="st-dock__settings" onClick={() => openSettings()}><Icon name="sliders" size={13} /> Ayarlar</button>}>
-          {tab === "yonetim" && <ManageDock matchId={matchId} match={live.match} live={live} onOpenMatch={setMatchId} graphics={hasGraphics ? g : undefined} scenes={sceneList} replays={replays.replays} onPlayReplay={playReplay} onGoalTap={onDockGoalTap} onEventCreated={onDockEventCreated} />}
+          {tab === "yonetim" && <ManageDock matchId={matchId} match={live.match} live={live} onOpenMatch={setMatchId} graphics={hasGraphics ? g : undefined} scenes={sceneList} replays={replays.replays} onPlayReplay={playReplay} onGoalTap={onDockGoalTap} onEventCreated={onDockEventCreated} goalMusic={goalMusic} />}
           {tab === "marka" && BrandTab && <BrandTab {...gfxProps} />}
           {tab === "onayar" && PresetsTab && <PresetsTab {...gfxProps} />}
           {tab === "skorbord" && ScoreboardTab && <ScoreboardTab {...gfxProps} />}
@@ -1012,6 +1021,8 @@ export default function Studio({ auth, go }) {
       )}
       {tplKey && <TemplateDialog tplKey={tplKey} config={config} onCreate={createFromTemplate} onClose={() => setTplKey(null)} />}
       {help && <HelpModal hotkeys={settings.hotkeys} onClose={() => setHelp(false)} />}
+      {/* ── röportaj: kayıt bitince inceleme (izle → web sitesine yükle / sil) ── */}
+      <InterviewReviewHost iv={interview} />
     </div>
   );
 }
