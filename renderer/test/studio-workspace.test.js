@@ -2,7 +2,7 @@
 import { DockviewComponent } from "dockview-core";
 import {
   LAYOUT_COMPONENTS, LAYOUT_PANELS, LAYOUT_PRESETS, RAIL_COLS, addItem, applyGrid, defaultRailBoard, dockPanelIds, dockTree, loadLayout, migrateLayout,
-  missingPanels, normalizeBoard, normalizeLayout, packItems, paramsOfId, presetOf, pushRemoved, railToBoardItems, saveLayout, setBoardCols, simplifySpec,
+  LAYOUT_REV, missingPanels, normalizeBoard, normalizeLayout, upgradeLayout, packItems, paramsOfId, presetOf, pushRemoved, railToBoardItems, saveLayout, setBoardCols, simplifySpec,
   specIds, specToDock, tilesToSpec, widgetSize,
 } from "../src/views/studio/layout/layoutModel";
 import { DEFAULT_RAIL, RAIL_WIDGETS } from "../src/views/studio/shortcuts/railModel";
@@ -88,26 +88,28 @@ describe("yerleşim: eski düzenlerden göç", () => {
     expect(big.root.children[0].views[0].id).toBe("pgm");
     expect(big.root.children[1].children.map((g) => g.views[0].id)).toEqual(["pvw", "gecis", "sahneSerit"]);
   });
-  it("şerit + sahne ızgarası + alt panel sütunları tek yerleşime göç eder; hiçbir panel kaybolmaz", () => {
+  it("2.15 kaydından göç: kısayol düğmeleri panoya geçer, ekran temiz Klasik yayın düzeniyle açılır (eski ızgara / sütun geometrisi taşınmaz)", () => {
     const rail = [{ id: "a", type: "golive", w: 2, h: 2 }, { id: "b", type: "mic", w: 1, h: 1 }, { id: "c", type: "var", w: 1, h: 1 }];
     const stage = { tiles: STAGE_PRESETS.find((p) => p.key === "pp4").tiles };
     const dock = { mode: "columns", columns: [{ id: "c1", panel: "tekrar", w: 1.4 }, { id: "c2", panel: "ses", w: 0.9 }], disabled: ["ozet"] };
     const l = migrateLayout({ rail, stage, dock, dockH: 320, viewportH: 1000 });
-    const ids = dockPanelIds(l.dock);
-    expect(ids).toEqual(expect.arrayContaining(["board~rail", "pvw", "pgm", "gecis", "sceneCell~0", "sceneCell~3", "tekrar", "ses", "yonetim", "sahne", "yayin"]));
-    expect(ids).not.toContain("ozet");
+    expect(dockPanelIds(l.dock).sort()).toEqual(dockPanelIds(specToDock(presetOf("klasik").spec)).sort());
+    expect(l.preset).toBe("klasik");
+    expect(l.rev).toBe(LAYOUT_REV);
     expect(l.boards.rail.items.map((x) => [x.t, x.x, x.y, x.w, x.h])).toEqual([["w:golive", 0, 0, 2, 4], ["w:mic", 0, 4, 1, 2], ["w:var", 1, 4, 1, 2]]);
     roundTrip(l.dock);
-  });
-  it("tek sekme kipindeki alt panel tek sekme grubuna döner; kayıt yoksa varsayılan düzen", () => {
-    const l = migrateLayout({ dock: { mode: "tabs", order: ["ses", "tekrar", "yonetim"], tab: "tekrar", disabled: [] } });
-    const kids = dockTree(l.dock).root.children[1].children;
-    const g = kids[kids.length - 1];
-    expect(g.views.map((v) => v.id)).toEqual(["ses", "tekrar", "yonetim"]);
-    expect(g.active).toBe("tekrar");
     const d = migrateLayout({});
-    expect(dockPanelIds(d.dock)).toEqual(expect.arrayContaining(["board~rail", "pvw", "pgm", "ses"]));
     expect(d.boards.rail.items).toHaveLength(DEFAULT_RAIL.length);
+  });
+  it("2.16.0 yerleşimi bir kez Klasik'e sıfırlanır, panolar korunur; sonra dokunulmaz", () => {
+    const old = normalizeLayout({ dock: specToDock({ row: ["pvw", "ses"] }), boards: { rail: defaultRailBoard([{ id: "x", type: "mic", w: 1, h: 1 }]), b1: { title: "Benim", items: [] } } });
+    expect(old.rev).toBe(0);
+    const up = upgradeLayout(old);
+    expect(up.rev).toBe(LAYOUT_REV);
+    expect(dockPanelIds(up.dock)).toContain("gecis");
+    expect(up.boards.rail.items).toHaveLength(1);
+    expect(up.boards.b1.title).toBe("Benim");
+    expect(upgradeLayout(up)).toBe(up);
   });
 });
 

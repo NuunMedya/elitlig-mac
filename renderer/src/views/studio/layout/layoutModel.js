@@ -23,6 +23,8 @@
 import { DEFAULT_RAIL, RAIL_GROUPS, RAIL_WIDGETS, widgetOf } from "../shortcuts/railModel";
 
 export const LAYOUT_KEY = "studio.layout.v1";
+/** Yerleşim kayıt düzeyi: 2 = temiz Klasik'e bir kez sıfırlandı (2.16.1). */
+export const LAYOUT_REV = 2;
 export const ROW_H = 40;           // pano satır yüksekliği (px)
 export const RAIL_COLS = 2;        // sol şerit panosu
 export const BOARD_COLS = 12;      // yeni pano
@@ -282,7 +284,7 @@ export function setBoardCols(board, cols) {
 
 /* ───────────────────────── yerleşim durumu ───────────────────────── */
 
-export const EMPTY_LAYOUT = Object.freeze({ v: 1, dock: null, boards: {}, removed: [], mins: {}, preset: null, autoHide: true });
+export const EMPTY_LAYOUT = Object.freeze({ v: 1, rev: 2, dock: null, boards: {}, removed: [], mins: {}, preset: null, autoHide: true });
 
 export function normalizeLayout(raw) {
   const r = raw && typeof raw === "object" ? raw : {};
@@ -295,7 +297,7 @@ export function normalizeLayout(raw) {
   const removed = (Array.isArray(r.removed) ? r.removed : []).filter((x) => x && (x.kind === "panel" || x.kind === "item") && typeof x.id === "string").slice(0, MAX_REMOVED);
   const mins = {};
   for (const [g, v] of Object.entries(r.mins && typeof r.mins === "object" ? r.mins : {})) if (v === "h" || v === "w") mins[g] = v;
-  return { v: 1, dock, boards, removed, mins, preset: typeof r.preset === "string" ? r.preset : null, autoHide: r.autoHide !== false };
+  return { v: 1, rev: Number(r.rev) || 0, dock, boards, removed, mins, preset: typeof r.preset === "string" ? r.preset : null, autoHide: r.autoHide !== false };
 }
 
 export function loadLayout(storage) {
@@ -559,30 +561,23 @@ export function tilesToSpec(tiles) {
 }
 
 /**
- * İlk açılış: eski kayıtlardan yerleşim. rail: şerit öğeleri, stage: { tiles },
- * dock: alt panel ({ mode, columns, tab, order, disabled }), dockH: alt panel yüksekliği (px).
+ * İlk açılış: eski kayıtlardan yerleşim. Eski sahne ızgarası / alt panel geometrisi
+ * TAŞINMAZ (karışık düzen üretiyordu): ekran her zaman temiz "Klasik yayın" hazır
+ * düzeniyle açılır; yalnız kısayol şeridindeki düğmeler "Kısayollar" panosuna geçer.
+ * (stage, dock, dockH, viewportH eski çağrılarla uyum için kabul edilir, kullanılmaz.)
  */
-export function migrateLayout({ rail = null, stage = null, dock = null, dockH = 300, viewportH = 900 } = {}) {
-  const boards = { rail: defaultRailBoard(Array.isArray(rail) ? rail : DEFAULT_RAIL) };
-  const stageSpec = tilesToSpec(stage?.tiles) || CLASSIC_SCREEN;
-  const opsKeys = ["yonetim", "sahne", "tekrar", "ses", "var", "roportaj", "ozet", "yayin", "led", "olaylar"];
-  let bottom = null;
-  if (dock && dock.mode === "tabs") {
-    const order = (Array.isArray(dock.order) ? dock.order : opsKeys).filter((k) => opsKeys.includes(k) && !(dock.disabled || []).includes(k));
-    bottom = order.length ? { tabs: order, active: order.includes(dock.tab) ? dock.tab : order[0] } : null;
-  } else if (dock && Array.isArray(dock.columns) && dock.columns.length) {
-    const seen = new Set();
-    const cols = dock.columns.filter((c) => opsKeys.includes(c.panel) && !seen.has(c.panel) && seen.add(c.panel));
-    // Sütunlarda olmayan açık paneller ilk sütuna sekme olarak eklenir (kaybolmasın).
-    const rest = opsKeys.filter((k) => !seen.has(k) && !(dock.disabled || []).includes(k));
-    bottom = { row: cols.map((c, n) => ({ tabs: n === 0 ? [c.panel, ...rest] : [c.panel], active: c.panel, size: Number(c.w) || 1 })) };
-  } else {
-    bottom = presetOf("klasik").spec.row[1].col[2];
-  }
-  const vh = Math.max(500, Number(viewportH) || 900);
-  // Sahne ızgarası kaydı yoksa Klasik oranları (monitörler 16:9 dolsun); varsa eski alt panel yüksekliği.
-  const dh = !stage?.tiles ? 0.39 : Math.min(0.62, Math.max(0.15, (Number(dockH) || 300) / vh));
-  const spec = { row: [RAIL, { size: 88, col: [{ ...stageSpec, size: 1 - dh }, ...(bottom ? [{ ...bottom, size: dh }] : [])] }] };
-  // (aynı yöndeki iç içe dallar specToDock'ta düzleşir: Klasik ekran bölgesi monitörler + geçiş/şerit olarak kalır)
-  return normalizeLayout({ v: 1, dock: specToDock(spec), boards, removed: [], mins: {}, preset: null });
+export function migrateLayout({ rail = null } = {}) {
+  const boards = { rail: defaultRailBoard(Array.isArray(rail) && rail.length ? rail : DEFAULT_RAIL) };
+  return normalizeLayout({ v: 1, rev: LAYOUT_REV, dock: specToDock(presetOf("klasik").spec), boards, removed: [], mins: {}, preset: "klasik" });
+}
+
+/**
+ * Eski sürümün (2.16.0) göçle kurduğu yerleşim bir kez Klasik'e sıfırlanır; panolar
+ * (Kısayollar ve özel sekmeler) korunur. Dönüş: güncel yerleşim (gerekirse yeni).
+ */
+export function upgradeLayout(layout) {
+  if (!layout || (layout.rev || 0) >= LAYOUT_REV) return layout;
+  const boards = { ...layout.boards };
+  if (!boards.rail) boards.rail = defaultRailBoard();
+  return normalizeLayout({ ...layout, rev: LAYOUT_REV, boards, dock: specToDock(presetOf("klasik").spec), mins: {}, preset: "klasik" });
 }

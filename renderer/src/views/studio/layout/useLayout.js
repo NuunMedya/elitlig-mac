@@ -4,14 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DOCK_KEY } from "../dock/dockModel";
 import { RAIL_KEY } from "../shortcuts/railModel";
 import { STAGE_KEY } from "../../../lib/studio/stageGrid";
-import { LAYOUT_KEY, dockPanelIds, loadLayout, migrateLayout, normalizeLayout, saveLayout } from "./layoutModel";
+import { LAYOUT_KEY, dockPanelIds, loadLayout, migrateLayout, normalizeLayout, saveLayout, upgradeLayout } from "./layoutModel";
 
 const store = () => { try { return window.localStorage; } catch { return null; } };
 const readJSON = (s, k) => { try { return JSON.parse(s?.getItem(k) || "null"); } catch { return null; } };
 
 /** Eski kayıtlardan ilk yerleşim (göç). */
 export function initialLayout(storage = store(), { dockH = 300 } = {}) {
-  const saved = loadLayout(storage);
+  const saved = upgradeLayout(loadLayout(storage));
   if (saved?.dock) return saved;
   const railRaw = readJSON(storage, RAIL_KEY);
   const rail = Array.isArray(railRaw) ? railRaw : Array.isArray(railRaw?.items) ? railRaw.items : null;

@@ -92,7 +92,7 @@ function BoardItem({ item, boardId, boards, edit, ctx, pop, setPop, onRemove, on
       onPointerDownCapture={() => { if (meta?.panel) ctx.onActivate?.(meta.panel); }}>
       <div className="lw-item__body">{body}</div>
       {edit && (
-        <div className="lw-item__bar" title={`${label} — tutamaçtan sürükle: taşı · köşeden: boyutla`}>
+        <div className="lw-item__bar" title={`${label} — sürükle: taşı · sağ alt köşe / kenar: boyutla`}>
           <span className="lw-drag" aria-label="Taşı"><Icon name="grip" size={13} /></span>
           <span className="lw-item__name">{label}</span>
           <span className="lw-item__wh">{item.w}×{item.h}</span>
@@ -239,7 +239,6 @@ export default function Board({ boardId, panelId }) {
         isResizable={edit}
         isDroppable={edit}
         resizeHandles={["se", "e", "s"]}
-        draggableHandle=".lw-drag"
         draggableCancel=".lw-item__menu, .lw-item__x, .lw-xdrag, input, select, button"
         onDragStop={commit}
         onResizeStop={commit}
