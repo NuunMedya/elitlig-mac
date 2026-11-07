@@ -120,7 +120,7 @@ function SlowPlay({ ctx, w, h }) {
   const R = ctx.replay;
   const rate = Number(R.rate) || 1;
   const r = playable(R)[0] || null;
-  const rates = w >= 2 ? RATE_STEPS : [0.5, 1];
+  const rates = w >= 3 ? RATE_STEPS : w >= 2 ? [0.25, 0.5, 0.75, 1] : [0.5, 1];
   return (
     <Shell tone="violet" w={w} h={h} state={R.playing ? "air" : null} className="wx-slow">
       <Head icon="repeat" label="AĞIR ÇEKİM" right={<em className="wx-big">{rateText(rate)}</em>} />

@@ -134,7 +134,7 @@ function CardFlow({ ctx, item, onClose, setWide }) {
   const it = useIntent(item);
   const [st, setSt] = useState(() => cardStart({ color: it.color, side: it.side }));
   const [busy, setBusy] = useState(false);
-  useEffect(() => { setWide?.(st.step === "player"); }, [st.step, setWide]);
+  useEffect(() => { setWide?.(st.step !== "color" && st.step !== "team"); }, [st.step, setWide]);
   if (!liveOk(ctx)) return <FlowNote tone="warn" icon="alert">{notLive}</FlowNote>;
   const finish = (reason) => {
     const next = cardPickReason(st, reason);
@@ -581,7 +581,7 @@ function LogTile({ ctx, item, w, h, togglePop }) {
         ))}
         {!rows.length && <li className="st-w__empty">Henüz olay yok.</li>}
       </ul>
-      {last && (w >= 2 || h >= 2) && <button type="button" className="wx-undo" onClick={() => removeEv(ctx, last.ev, "Son olay geri alınsın mı?")}><Icon name="undo" size={12} /> Son olayı geri al</button>}
+      {last && (w >= 2 || h >= 2) && <button type="button" className="wx-undo" onClick={() => removeEv(ctx, last.ev, "Son olay geri alınsın mı?")} title="Son olayı geri al"><Icon name="undo" size={12} /> {w >= 2 ? "Son olayı geri al" : "Geri al"}</button>}
     </Shell>
   );
 }

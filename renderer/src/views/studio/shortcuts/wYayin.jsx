@@ -325,7 +325,7 @@ function TransitionPro({ ctx, w, h }) {
         {list.map((t) => <button key={t.key} type="button" className={T.kind.key === t.key ? "is-on" : ""} onClick={() => T.onKind(t.key)}>{t.label}</button>)}
       </div>
       {h >= 2 && T.onMs && T.kind.key !== "cut" && (
-        <div className="wx-row is-dur"><span>Süre</span>{TRANSITION_MS_STEPS.map((ms) => <button key={ms} type="button" className={T.ms === ms ? "is-on" : ""} onClick={() => T.onMs(ms)}>{ms >= 1000 ? `${ms / 1000} sn` : `${ms} ms`}</button>)}</div>
+        <div className="wx-row is-dur"><span>sn</span>{TRANSITION_MS_STEPS.map((ms) => <button key={ms} type="button" className={T.ms === ms ? "is-on" : ""} onClick={() => T.onMs(ms)} title={`Geçiş süresi ${ms} ms`}>{String(ms / 1000).replace(".", ",")}</button>)}</div>
       )}
     </Shell>
   );
@@ -347,7 +347,7 @@ function ReadyPro({ ctx, w, h }) {
         ))}
       </div>
       {h >= 2 && w >= 2 && Rd.setMinutes && sel !== "end" && (
-        <div className="wx-row is-dur"><span>Geri sayım</span>{READY_MINUTES.map((m) => <button key={m} type="button" className={mins === m ? "is-on" : ""} onClick={() => Rd.setMinutes(sel, m)}>{m} dk</button>)}</div>
+        <div className="wx-row is-dur"><span>dk</span>{READY_MINUTES.map((m) => <button key={m} type="button" className={mins === m ? "is-on" : ""} onClick={() => Rd.setMinutes(sel, m)} title={`Geri sayım ${m} dakika`}>{m}</button>)}</div>
       )}
     </Shell>
   );

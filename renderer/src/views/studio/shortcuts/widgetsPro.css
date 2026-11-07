@@ -530,4 +530,13 @@ button.st-w.wx:hover:not(:disabled) { border-color: rgba(var(--c-rgb), 0.85); }
 .lw-thumb.is-w > .st-ri.is-preview > .st-w { flex: 1; }
 .lw-thumb.is-w.is-s1x1, .lw-thumb.is-w.is-s1x2 { width: 124px; }
 .lw-thumb.is-w .st-w { font-size: inherit; }
-.lw-cat__grid.is-widgets { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.lw-cat__grid.is-widgets { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+
+/* taşmaya karşı: ortalı içerik sığmazsa baştan hizalanır (simge dışarı itilmez) */
+.wx-undo, .wx-var__go, .wx-kill, .wx-primary, .wx-take, .wx-per__b, .wx-ready__b, .wx-btn, .wx-half, .wx-cardbtn { justify-content: safe center; }
+.st-w.wx.wx-tile.is-tall .wx-t { font-size: 11.5px; overflow-wrap: normal; word-break: normal; }
+.wx-log__list li > button { overflow: hidden; }
+.wx-cardrow .wx-cardbtn { gap: 5px; font-size: 10.5px; letter-spacing: 0.02em; padding: 0 4px; }
+.wx-cardrow .wx-cardbtn i { width: 10px; height: 14px; }
+.wx-jog.is-idle .wx-btn { flex: none; min-height: 30px; }
+.wx-row.is-dur select { flex: 1 1 auto; min-width: 0; }
