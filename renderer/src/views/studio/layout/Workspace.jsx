@@ -5,11 +5,14 @@
 //              ortasına (sekme olur), kenarına (sağa / sola / alta / üste bölünür) ya da
 //              ekranın dış kenarına bırakılır; × ile kaldırılır (Kutu ekle'den geri gelir).
 //   Başlık     sağda: küçült / geri aç, büyüt (tam alan) ve ⋯ (sekme ekle, sağa / alta böl,
-//              yüzen pencere, grubu kaldır, parçalara ayır). Düzenle kapalıyken tek panelli
+//              yüzen pencere, grubu kaldır, sekmelere ayır, parçalara ayır). Düzenle kapalıyken tek panelli
 //              bölmelerde başlık YOK (panelin kendi başlığı yeter); sekme şeridi yalnız 2+ sekmede.
 //   Paneller   grubun içinde çizilir (renderer "onlyWhenVisible": arayüz ölçeğinde kayma olmaz);
 //              monitör tuvalleri karıştırıcıda çizilmeye devam eder, görünür olunca yeniden
 //              bağlanır (scenes/Monitor).
+//   Ayır       "Sekmelere ayır": sekmeli panel (Maç yönetimi) ya da parçalı panel (Yayın, Tekrar,
+//              Ses…) aynı grupta ayrı sekmelere bölünür (Maç yönetimi › Reji …, comp~<bileşen>).
+//              "Parçalara ayır": panel yerinde bileşen panosu olur. Durum parçalar arasında ortak.
 //
 // Studio, LayoutCtx üzerinden şunları verir: renderPanel(kind, opts), panelInfo(kind) →
 // { icon, count, accent, pvw }, renderComponent(item, extra) (panolar), onActivate /
@@ -20,7 +23,7 @@ import "dockview/dist/styles/dockview.css";
 import { Icon, MenuButton } from "../../../components/ui";
 import { PanelScope } from "../dock/parts";
 import {
-  boardPanelId, defaultRailBoard, defaultTitle, addItem, dockPanelIds, dropRemoved, newId, normalizeBoard, panelMeta, paramsOfId, parseId, presetOf, pushRemoved, specToDock, tilesToSpec,
+  TAB_SPLITS, boardPanelId, compPanelId, defaultRailBoard, defaultTitle, addItem, dockPanelIds, dropRemoved, isKnownPanelId, newId, normalizeBoard, panelMeta, paramsOfId, parseId, presetOf, pushRemoved, specToDock, tilesToSpec,
 } from "./layoutModel";
 import Board from "./Board";
 import Catalog from "./Catalog";
@@ -39,13 +42,22 @@ const DECOMPOSE = {
   tekrar: ["part:tekrar:air", "part:tekrar:list", "tekrar.angles", "part:tekrar:rate", "part:tekrar:route", "part:tekrar:angles", "part:tekrar:moment", "part:tekrar:queue", "part:tekrar:between", "part:tekrar:layers", "part:tekrar:uploads"],
   yayin: ["part:yayin:youtube", "part:yayin:rtmp", "part:yayin:rehearsal", "part:yayin:localrec", "part:yayin:chapters", "part:yayin:encoding", "part:yayin:encoder"],
   led: ["part:led:output", "part:led:route", "part:led:graphics"],
-  yonetim: ["reji.home", "reji.center", "reji.away", "reji.events", "reji.any", "reji.music"],
+  yonetim: ["reji.home", "reji.center", "reji.away", "reji.events", "reji.any", "reji.music", "mg.maclar.live"],
+  yonetimReji: ["reji.home", "reji.center", "reji.away", "reji.events", "reji.any", "reji.music"],
+  yonetimMaclar: ["mg.maclar.live", "mg.maclar.filters", "mg.maclar.list"],
+  yonetimKadro: ["mg.kadro.home", "mg.kadro.away"],
+  yonetimMacsonu: ["mg.macsonu.summary", "mg.macsonu.ratings", "mg.macsonu.awards", "mg.macsonu.goal", "mg.macsonu.save", "mg.macsonu.content", "mg.macsonu.stats"],
   golMuzigi: ["golmuzik.buttons", "golmuzik.panel"],
   var: ["part:var:air", "part:var:main"],
   roportaj: ["part:roportaj:air", "part:roportaj:main"],
   ozet: ["part:ozet:air", "part:ozet:main"],
 };
 const BIG = Number.MAX_SAFE_INTEGER;
+/** "Sekmelere ayır" ile oluşacak panel kimlikleri (yoksa []). */
+export function splitTargets(kind) {
+  if (TAB_SPLITS[kind]) return TAB_SPLITS[kind];
+  return (DECOMPOSE[kind] || []).map(compPanelId).filter(isKnownPanelId);
+}
 
 class Boundary extends React.Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -68,6 +80,11 @@ function StudioPanel({ params, api }) {
   useEffect(() => () => deact.current?.(kind), [kind]);
   if (kind === "board") {
     return <div className="lw-panel is-board"><Boundary><Board boardId={opts.board} panelId={api.id} /></Boundary></div>;
+  }
+  if (kind === "comp") {
+    // Tek bileşen panel olarak (Sekmelere ayır): pano öğesi gibi çizilir.
+    const item = { i: api.id, t: opts.t, x: 0, y: 0, w: 12, h: 12 };
+    return <div className="lw-panel is-comp" data-comp={opts.t}><Boundary>{ctx.renderComponent(item, {})}</Boundary></div>;
   }
   const body = ctx.renderPanel(kind, opts, api.id);
   return (
@@ -119,10 +136,16 @@ function GroupActions({ group, containerApi, activePanel }) {
   const floating = group.api.location?.type === "floating";
   const min = ctx.layout.mins?.[group.id];
   const c = ctx.ctrl();
+  const akind = activePanel?.params?.kind;
+  const splits = activePanel ? splitTargets(akind) : [];
+  const ayir = [
+    ...(splits.length ? [{ label: `“${activePanel.title}” sekmelere ayır (${splits.length} sekme, bu bölmede)`, icon: "layers", onClick: () => c.splitTabs(activePanel.id) }] : []),
+    ...(activePanel && DECOMPOSE[akind] ? [{ label: `“${activePanel.title}” parçalara ayır (pano: bileşenleri taşı / boyutla)`, icon: "grid", onClick: () => c.decompose(activePanel.id, (ctx.mixer?.strips || []).map((x) => x.id)) }] : []),
+  ];
   const items = [
     { label: "Bu gruba sekme ekle…", icon: "plus", onClick: () => ctx.openCatalog({ group: group.id }) },
     { label: "Yeni pano (sekme) ekle", icon: "grid", onClick: () => c.newBoard({ group: group.id }) },
-    ...(activePanel && DECOMPOSE[activePanel.params?.kind] ? [{ label: `“${activePanel.title}” parçalara ayır (bileşenleri taşı / boyutla)`, icon: "layers", onClick: () => c.decompose(activePanel.id, (ctx.mixer?.strips || []).map((x) => x.id)) }] : []),
+    ...ayir,
     "-",
     { label: "Etkin sekmeyi sağa böl", icon: "chevronRight", disabled: !activePanel || group.panels.length < 2, onClick: () => c.split(activePanel.id, "right") },
     { label: "Etkin sekmeyi alta böl", icon: "chevronDown", disabled: !activePanel || group.panels.length < 2, onClick: () => c.split(activePanel.id, "below") },
@@ -138,6 +161,7 @@ function GroupActions({ group, containerApi, activePanel }) {
       {min && <button type="button" className="lw-gact__b is-on" onClick={() => c.minimize(group.id)} title="Geri aç"><Icon name="chevronDown" size={13} /></button>}
       {!floating && <button type="button" className="lw-gact__b" onClick={() => c.maximize(group.id)} title={max ? "Eski boyutuna dön" : "Büyüt (tüm alan)"} aria-pressed={max}><Icon name={max ? "x" : "overview"} size={12} /></button>}
       {ctx.edit && <MenuButton items={items} label="Bölme seçenekleri" size={14} align="end" className="lw-gact__menu" />}
+      {!ctx.edit && ayir.length > 0 && <MenuButton items={ayir} label="Ayır: sekmelere / parçalara" icon="layers" size={13} align="end" className="lw-gact__menu is-split" />}
     </div>
   );
 }
@@ -380,6 +404,28 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
         setLayout((l) => ({ ...l, boards: { ...l.boards, [bid]: board } }));
         c.add(boardPanelId(bid), { panel: id, direction: "within" });
         c.remove(id);
+      },
+      /**
+       * Sekmelere ayır: sekmeli / parçalı panel aynı grupta ayrı sekmelere bölünür (Maç yönetimi →
+       * Maçlar, Reji, Kadro, Maç sonu, Takımlar; Yayın → YouTube, RTMP…). Birleşik panel
+       * "Kaldırılanlar"a gider (Kutu ekle'den geri gelir). Ekranda zaten olan sekme bu gruba taşınır.
+       */
+      splitTabs(id) {
+        const a = api();
+        const p = a?.getPanel(id);
+        const ids = splitTargets(parseId(id).kind);
+        if (!p || !ids.length) return [];
+        const gid = p.group?.id;
+        const made = [];
+        for (const nid of ids) {
+          if (a.getPanel(nid)) c.move(nid, { group: gid });
+          else c.add(nid, { panel: id, direction: "within" });
+          made.push(nid);
+        }
+        c.remove(id);
+        c.activate(made[0]);
+        save();
+        return made;
       },
       deleteBoard(id) {
         const pid = boardPanelId(id);

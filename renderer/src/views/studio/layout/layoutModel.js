@@ -9,6 +9,9 @@
 //              Sahne şeridi, LED önizleme, işletim panelleri (Reji, Sahneler, Tekrar,
 //              Ses…) ve PANOLAR. Panel kimliği "tür" ya da "tür~ek" (ör. "board~rail",
 //              "sceneCell~2", "saat~1"); dockview parametresi { kind, opts }.
+//              Sekmeli paneller sekme sekme ayrılır: "Maç yönetimi › Reji" (yonetimReji) …;
+//              "comp~<bileşen>" herhangi bir pano bileşenini tek başına panel yapar
+//              ("Sekmelere ayır": Yayın › YouTube kartı, Tekrar › liste …).
 //   PANO       (board) serbest bileşen tuvali (react-grid-layout): içindeki her BİLEŞEN
 //              (ses kanal şeridi, tümünü kapat, tekrar listesi, kısayol parçacıkları…)
 //              taşınır, eni / boyu değişir, başka panoya taşınır. Özel sekmeler panodur;
@@ -36,6 +39,7 @@ export const NOMINAL = { width: 1600, height: 900 };
 export const PANEL_GROUPS = [
   { key: "ekran", label: "Ekranlar ve geçiş" },
   { key: "islem", label: "İşletim panelleri" },
+  { key: "yonetim", label: "Maç yönetimi · ayrı sekmeler" },
   { key: "pano", label: "Panolar (özel sekmeler)" },
 ];
 
@@ -67,7 +71,19 @@ export const LAYOUT_PANELS = [
   { key: "golMuzigi", label: "Gol müziği", icon: "music", group: "islem", hint: "Takım başına gol müziği, çal / durdur" },
   { key: "yukleme", label: "Yükleme günlüğü", icon: "upload", group: "islem", hint: "Gol klibi yüklemeleri ve bağlantı denemesi" },
   { key: "board", label: "Pano", icon: "grid", group: "pano", multi: true, hint: "Serbest bileşen panosu: düğmeler, ses şeritleri, tekrar parçaları…" },
+  // Maç yönetiminin sekmeleri ayrı paneller (birleşik "Maç yönetimi" de kalır; durum ortak).
+  { key: "yonetimMaclar", label: "Maç yönetimi › Maçlar", icon: "calendar", group: "yonetim", tab: "maclar", hint: "Maç seçimi: şu an canlı, süzgeçler, maç listesi, yeni maç" },
+  { key: "yonetimReji", label: "Maç yönetimi › Reji", icon: "zap", group: "yonetim", tab: "reji", hint: "Skor, saat, iki takımın eylemleri (gol, kart, değişiklik), olaylar" },
+  { key: "yonetimKadro", label: "Maç yönetimi › Kadro", icon: "shirt", group: "yonetim", tab: "kadro", hint: "İki takımın maç kadrosu" },
+  { key: "yonetimMacsonu", label: "Maç yönetimi › Maç sonu", icon: "award", group: "yonetim", tab: "macsonu", hint: "Puanlar, MVP, maçın golü, içerik, yayınla" },
+  { key: "yonetimTakimlar", label: "Maç yönetimi › Takımlar", icon: "users", group: "yonetim", tab: "takimlar", hint: "Takım ve oyuncu oluştur / düzenle" },
+  // Tek bileşen panel olarak ("Sekmelere ayır" üretir; katalogda ayrıca listelenmez).
+  { key: "comp", label: "Parça", icon: "grid", group: "parca", multi: true, hint: "Bir panel parçası tek başına" },
 ];
+/** "Sekmelere ayır": sekmeli panel → aynı grupta ayrı sekmeler (panel kimlikleri). */
+export const TAB_SPLITS = {
+  yonetim: ["yonetimMaclar", "yonetimReji", "yonetimKadro", "yonetimMacsonu", "yonetimTakimlar"],
+};
 export const panelMeta = (kind) => LAYOUT_PANELS.find((p) => p.key === kind) || null;
 
 /** "board~rail" → { kind: "board", suffix: "rail" } */
@@ -81,16 +97,25 @@ export function paramsOfId(id) {
   const { kind, suffix } = parseId(id);
   if (kind === "board") return { kind, opts: { board: suffix } };
   if (kind === "sceneCell") return { kind, opts: { index: Math.max(0, Number(suffix) || 0) } };
+  if (kind === "comp") return { kind, opts: { t: suffix || "" } };
   return { kind, opts: {} };
 }
-export const isKnownPanelId = (id) => Boolean(panelMeta(parseId(id).kind));
+export const compPanelId = (t) => `comp~${t}`;
+export const isKnownPanelId = (id) => {
+  const { kind, suffix } = parseId(id);
+  if (kind === "comp") { const m = componentOf(suffix); return Boolean(m && !m.widget && !m.multi); }
+  return Boolean(panelMeta(kind));
+};
 
 /* ───────────────────────── bileşen kataloğu (panolar için) ───────────────────────── */
 
 export const COMPONENT_GROUPS = [
   { key: "ses", label: "Ses" },
   { key: "tekrar", label: "Tekrar" },
+  { key: "maclar", label: "Maç yönetimi · Maçlar" },
   { key: "reji", label: "Reji (maç yönetimi)" },
+  { key: "kadro", label: "Maç yönetimi · Kadro" },
+  { key: "macsonu", label: "Maç yönetimi · Maç sonu" },
   { key: "yayin", label: "Yayın" },
   { key: "led", label: "LED ekran" },
   { key: "kip", label: "VAR · Röportaj · Özet" },
@@ -129,10 +154,23 @@ export const LAYOUT_COMPONENTS = [
   // ── reji ──
   { key: "reji.home", group: "reji", label: "Reji · ev sahibi sütunu", icon: "ball", size: [3, 11], min: [2, 4], hint: "Büyük GOL, kart, değişiklik, diğer olaylar (ev sahibi)" },
   { key: "reji.away", group: "reji", label: "Reji · deplasman sütunu", icon: "ball", size: [3, 11], min: [2, 4], hint: "Büyük GOL, kart, değişiklik, diğer olaylar (deplasman)" },
-  { key: "reji.center", group: "reji", label: "Reji · skor ve saat", icon: "clock", size: [5, 5], min: [3, 3], hint: "Skor, büyük saat, başlat / durdur / devre / bitir" },
+  { key: "reji.center", group: "reji", label: "Reji · skor ve saat", icon: "clock", size: [5, 7], min: [3, 3], hint: "Skor, büyük saat, başlat / durdur / devre / bitir" },
   { key: "reji.any", group: "reji", label: "Reji · takım seçmeden olay", icon: "pencil", size: [5, 2], min: [2, 1] },
   { key: "reji.events", group: "reji", label: "Reji · olay listesi", icon: "list", size: [5, 7], min: [3, 3], hint: "Olaylar (en yeni üstte), süzgeç, son olayı geri al" },
-  { key: "reji.music", group: "reji", label: "Reji · gol müziği şeridi", icon: "music", size: [6, 3], min: [3, 2] },
+  { key: "reji.music", group: "reji", label: "Reji · gol müziği şeridi", icon: "music", size: [8, 6], min: [3, 2] },
+  // ── maç yönetimi bölümleri (ManagePart; süzgeç / taslak durumu parçalar arasında ortak) ──
+  { key: "mg.maclar.live", group: "maclar", label: "Maçlar · şu an canlı", icon: "broadcast", size: [12, 4], min: [3, 2], hint: "Canlı maç kartları: tıkla → Reji" },
+  { key: "mg.maclar.filters", group: "maclar", label: "Maçlar · süzgeçler", icon: "filter", size: [12, 3], min: [4, 2], hint: "Gün / tarih, durum, arama, il / lig, yeni maç" },
+  { key: "mg.maclar.list", group: "maclar", label: "Maçlar · maç listesi", icon: "list", size: [12, 8], min: [4, 3], hint: "Süzgeçlere göre maçlar: seç → Reji" },
+  { key: "mg.kadro.home", group: "kadro", label: "Kadro · ev sahibi", icon: "shirt", size: [6, 10], min: [4, 4] },
+  { key: "mg.kadro.away", group: "kadro", label: "Kadro · deplasman", icon: "shirt", size: [6, 10], min: [4, 4] },
+  { key: "mg.macsonu.summary", group: "macsonu", label: "Maç sonu · skor ve yayınla", icon: "checks", size: [12, 3], min: [4, 2] },
+  { key: "mg.macsonu.ratings", group: "macsonu", label: "Maç sonu · puanlar", icon: "star", size: [8, 10], min: [4, 4] },
+  { key: "mg.macsonu.awards", group: "macsonu", label: "Maç sonu · MVP ve ödüller", icon: "award", size: [6, 7], min: [3, 3] },
+  { key: "mg.macsonu.goal", group: "macsonu", label: "Maç sonu · maçın golü", icon: "ball", size: [6, 8], min: [3, 3] },
+  { key: "mg.macsonu.save", group: "macsonu", label: "Maç sonu · maçın kurtarışı", icon: "shield", size: [6, 8], min: [3, 3] },
+  { key: "mg.macsonu.content", group: "macsonu", label: "Maç sonu · içerik", icon: "note", size: [8, 9], min: [4, 4] },
+  { key: "mg.macsonu.stats", group: "macsonu", label: "Maç sonu · istatistik", icon: "activity", size: [8, 9], min: [4, 4] },
   // ── yayın ──
   { ...P("yayin", "youtube", "Yayın · YouTube kartı", [6, 8], [3, 3]), group: "yayin", icon: "broadcast" },
   { ...P("yayin", "rtmp", "Yayın · elle RTMP", [6, 5], [3, 3]), group: "yayin", icon: "link" },
@@ -411,6 +449,7 @@ export function defaultTitle(id) {
   if (kind === "board" && suffix === "rail") return "Kısayollar";
   if (kind === "sceneCell") return `Sahne ${Number(suffix || 0) + 1}`;
   if (kind === "saat" && suffix) return `Saat ${suffix}`;
+  if (kind === "comp") return componentOf(suffix)?.label || "Parça";
   return m.label;
 }
 

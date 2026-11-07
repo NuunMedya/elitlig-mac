@@ -246,6 +246,11 @@ export default function Studio({ auth, go }) {
     if (!panelMeta(key)) return;
     const c = lay.ctrlRef.current;
     if (!c) return;
+    // Maç yönetimi sekmelerine ayrılmışsa birleşik panel geri eklenmez: ayrılmış sekme öne gelir.
+    if (key === "yonetim" && !c.has(key)) {
+      const part = ["yonetimReji", "yonetimMaclar", "yonetimKadro", "yonetimMacsonu", "yonetimTakimlar"].find((k) => c.has(k));
+      if (part) { c.activate(part); setDockFlash(part); setTimeout(() => setDockFlash((f) => (f === part ? null : f)), 1200); return; }
+    }
     const had = c.has(key);
     c.add(key);
     setDockFlash(key);
@@ -1218,8 +1223,14 @@ export default function Studio({ auth, go }) {
   );
   const dockDefs = {};
   const defPanel = (key, render, extra = {}) => { if (render) dockDefs[key] = { ...panelOf(key), ...extra, render }; };
-  defPanel("yonetim", () => <ManageDock matchId={matchId} match={live.match} live={live} onOpenMatch={setMatchId} graphics={hasGraphics ? g : undefined} scenes={sceneList} replays={replays.replays} onPlayReplay={playReplay} onGoalTap={onDockGoalTap} onEventCreated={onDockEventCreated} goalMusic={goalMusic || undefined} />,
-    { count: live.status === "canli" ? "●" : null });
+  // Maç yönetimi: birleşik panel + ayrılmış sekmeler ("Maç yönetimi › Reji" …) + pano bölümleri
+  // (layout/components ManagePart). Seçili maç burada; süzgeç / taslaklar manage/manageStore'da ortak.
+  const manageProps = { matchId, match: live.match, live, onOpenMatch: setMatchId, replays: replays.replays, onPlayReplay: playReplay, onGoalTap: onDockGoalTap, onEventCreated: onDockEventCreated, goalMusic: goalMusic || undefined };
+  const liveCount = live.status === "canli" ? "●" : null;
+  defPanel("yonetim", (o) => <ManageDock {...manageProps} graphics={hasGraphics ? g : undefined} scenes={sceneList} onSplit={o?.onSplit} />, { count: liveCount });
+  for (const [key, tab] of [["yonetimMaclar", "maclar"], ["yonetimReji", "reji"], ["yonetimKadro", "kadro"], ["yonetimMacsonu", "macsonu"], ["yonetimTakimlar", "takimlar"]]) {
+    defPanel(key, () => <ManageDock {...manageProps} only={tab} />, { count: tab === "reji" ? liveCount : null, icon: panelMeta(key)?.icon });
+  }
   defPanel("sahne", () => (
     <ScenesTab config={config} configRef={configRef} runtimeRef={src.runtimeRef} register={registerTile} version={src.version} studioMode={studioMode} ledId={ledId} actions={{ ...sceneActions, tileMenu }} libActions={libActions}
       selectedSceneId={inlineSceneId} onSelectScene={setInlineSceneId} selectedLayerId={selectedLayerId} onSelectLayer={setSelectedLayerId}
@@ -1255,12 +1266,14 @@ export default function Studio({ auth, go }) {
     if (kind === "gecis") return <AutoTransition render={transition} />;
     if (STAGE_KIND[kind]) return renderStageTile({ id: panelId, type: STAGE_KIND[kind], x: 0, y: 0, w: 4, h: 4 });
     const d = dockDefs[kind];
+    if (kind === "yonetim") return d ? d.render({ passive: true, column: true, onSplit: () => lay.ctrlRef.current?.splitTabs(panelId) }) : null;
     return d ? d.render({ passive: true, column: true }) : null;
   };
   const layoutValue = {
     renderPanel: renderLayoutPanel,
     panelBody: (kind) => dockDefs[kind]?.render({ passive: true, column: true }) ?? null,
-    panelInfo: (kind) => {
+    panelInfo: (kind, opts) => {
+      if (kind === "comp") return { icon: componentOf(opts?.t)?.icon || "grid" };
       const m = panelMeta(kind);
       const d = dockDefs[kind];
       return { icon: d?.icon || m?.icon, count: d?.count || null, accent: Boolean(m?.mode), pvw: hasModes && Boolean(m?.mode) && modes.previewMode === m.mode, flash: dockFlash === kind };
@@ -1272,6 +1285,7 @@ export default function Studio({ auth, go }) {
     meters: { strip: programAudio, mixer, muted },
     angles: { replays: replays.replays, meta: replays.meta, sources: config.sources, cursor: RE?.previewing ? RE.rm.cursor : null, onPick: pickAngle },
     reji: { matchId, live, ready: Boolean(live.match && Number(live.match.id) === Number(matchId)), onGoalTap: onDockGoalTap, onEventCreated: onDockEventCreated, goalMusic },
+    manage: manageProps,
     GoalMusicPanel, GoalMusicButtons, EventEntry,
   };
   // Kısayol tuşu (Olay gir): panolardaki parçacığın açılır paneli.

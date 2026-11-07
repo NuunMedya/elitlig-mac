@@ -19,6 +19,11 @@
 //   goalMusic                             useGoalMusic (isteğe bağlı): golde otomatik çal + ayarlar
 //
 //   POST/PUT/DELETE /api/maclar/:id/olaylar — skor olaylardan yazılır (useLiveMatch)
+//
+// PARÇALAR (part): "home" | "away" (takım sütunu) · "center" (skor + saat + maç akışı) ·
+// "any" (takım seçmeden olay) · "events" (olay listesi + süzgeç + son olayı geri al) ·
+// "music" (gol müziği). part verilmezse hepsi. Parçalar ayrı panellerde / panolarda
+// olabilir: süzgeç, "kaydediliyor" durumu ve müzik paneli ortak durumdadır (./manageStore).
 import React, { useEffect, useMemo, useState } from "react";
 import { Icon, Kbd, Modal, useConfirm, useToast } from "../../../components/ui";
 import { TIMELINE_CODES } from "../../../lib/studio/match";
@@ -29,6 +34,7 @@ import { GoalMusicButtons, GoalMusicPanel } from "../goalmusic";
 import EventForm from "./EventForm";
 import RejiControls from "./RejiControls";
 import SubModal from "./SubModal";
+import { useShared } from "./manageStore";
 import { GOAL_KIND_CODES, dualPlayerLists, goalBeneficiary, other, teamActions } from "./rejiLogic";
 
 const FILTERS = [
@@ -127,17 +133,20 @@ function DualPicker({ title, subtitle, live, busy, onPick, onClose }) {
   );
 }
 
-export default function RejiTab({ matchId, live, onGoalTap, onEventCreated, goalMusic = null }) {
+export const REJI_PARTS = ["home", "center", "away", "any", "events", "music"];
+
+export default function RejiTab({ matchId, live, onGoalTap, onEventCreated, goalMusic = null, part = null }) {
   const toast = useToast();
   const confirm = useConfirm();
-  const [busy, setBusy] = useState(false);
+  const show = (p) => !part || part === p;
+  const [busy, setBusy] = useShared(`reji.busy.${matchId}`, false);
   const [picker, setPicker] = useState(null); // { side, code, goal, note }
   const [dual, setDual] = useState(null); // { code, label, input }
   const [sub, setSub] = useState(null); // { side }
   const [detail, setDetail] = useState(null); // form
   const [editing, setEditing] = useState(null); // { ev, form }
-  const [filter, setFilter] = useState("all");
-  const [musicOpen, setMusicOpen] = useState(() => { try { return localStorage.getItem(MUSIC_KEY) !== "0"; } catch { return true; } });
+  const [filter, setFilter] = useShared("reji.filter", "all");
+  const [musicOpen, setMusicOpen] = useShared("reji.musicOpen", () => { try { return localStorage.getItem(MUSIC_KEY) !== "0"; } catch { return true; } });
   useEffect(() => { try { localStorage.setItem(MUSIC_KEY, musicOpen ? "1" : "0"); } catch { /* yoksay */ } }, [musicOpen]);
   const events = live?.events || [];
   const nameOf = live?.nameOf || (() => null);
@@ -214,19 +223,21 @@ export default function RejiTab({ matchId, live, onGoalTap, onEventCreated, goal
   const nudge = (d) => runSafe(() => live.nudgeClock(d), "Saat düzeltilemedi.");
 
   return (
-    <div className="rj rj3">
-      <TeamColumn side="home" name={teamName("home")} tally={tally.home} busy={busy} onTap={tap} goalMusic={goalMusic} onDetail={(s) => setDetail(blankDetail(s))} />
+    <div className={`rj rj3${part ? ` is-part is-${part}` : ""}`} data-reji-part={part || "all"}>
+      {show("home") && <TeamColumn side="home" name={teamName("home")} tally={tally.home} busy={busy} onTap={tap} goalMusic={goalMusic} onDetail={(s) => setDetail(blankDetail(s))} />}
 
+      {(show("center") || show("any") || show("events")) && (
       <section className="rj-panel rj-center" aria-label="Skor, saat ve olaylar">
-        <RejiControls live={live} busy={busy} onControl={control} onFinish={finish} onNudge={nudge} />
+        {show("center") && <RejiControls live={live} busy={busy} onControl={control} onFinish={finish} onNudge={nudge} />}
 
-        <div className="rj-any" aria-label="Takım seçmeden olay">
+        {show("any") && <div className="rj-any" aria-label="Takım seçmeden olay">
           <span className="rj-any__label">Takım seçmeden <span className="rj-minute" title="Olaylar bu dakikayla yazılır">{live?.minute ?? 0}'</span></span>
           {ANY_TEAM.map((a) => (
             <button key={a.code} type="button" className={`rj-chip is-${a.tone}`} disabled={busy} onClick={() => setDual(a)}><CardMark tone={a.tone} />{a.label}</button>
           ))}
-        </div>
+        </div>}
 
+        {show("events") && <>
         <header className="rj-head">
           <h5><Icon name="list" size={14} /> Olaylar <small>{events.length}</small></h5>
           <span className="mg-grow" />
@@ -257,11 +268,14 @@ export default function RejiTab({ matchId, live, onGoalTap, onEventCreated, goal
             ))}
           </ul>
         ) : <div className="mg-empty"><Icon name="list" size={20} /><p>{events.length ? "Bu süzgeçte olay yok." : "Henüz olay yok."}</p></div>}
+        </>}
       </section>
+      )}
 
-      <TeamColumn side="away" name={teamName("away")} tally={tally.away} busy={busy} onTap={tap} goalMusic={goalMusic} onDetail={(s) => setDetail(blankDetail(s))} />
+      {show("away") && <TeamColumn side="away" name={teamName("away")} tally={tally.away} busy={busy} onTap={tap} goalMusic={goalMusic} onDetail={(s) => setDetail(blankDetail(s))} />}
 
-      {goalMusic && (
+      {show("music") && !goalMusic && part === "music" && <div className="mg-empty"><Icon name="music" size={20} /><p>Gol müziği bu maçta yok.</p></div>}
+      {show("music") && goalMusic && (
         <section className={`rj-panel rj-music${musicOpen ? " is-open" : ""}`} aria-label="Gol müziği">
           {musicOpen ? <GoalMusicPanel gm={goalMusic} /> : (
             <div className="rj-music__bar">
