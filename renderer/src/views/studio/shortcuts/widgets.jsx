@@ -16,6 +16,11 @@ import { keyText } from "../settings/settings";
 import ReplayPicker from "./ReplayPicker";
 import EventEntry from "./EventEntry";
 import { MORE_WIDGETS } from "./widgetsMore";
+import { REJI_WIDGETS } from "./wReji";
+import { SES_WIDGETS } from "./wSes";
+import { TEKRAR_WIDGETS } from "./wTekrar";
+import { YAYIN_WIDGETS } from "./wYayin";
+import "./widgetsPro.css";
 
 const clock = (ms) => {
   const t = Math.max(0, Math.floor(ms / 1000));
@@ -65,14 +70,14 @@ const golive = {
     const label = L.onAir ? (L.mode === "rehearsal" ? "PROVA" : "YAYINDA") : "YAYINI BAŞLAT";
     if (!big) {
       return <Tile tone="live" icon={L.onAir ? "stop" : "broadcast"} on={L.onAir} disabled={L.busy} label={label} sub={L.onAir ? <Elapsed since={L.since} /> : "YouTube"} onClick={L.onAir ? L.stop : L.start}
-        title={L.onAir ? "Görüntüyü durdur (onay sorulur)" : "Yayını başlat (YouTube bağlıysa doğrudan; değilse Yayın sekmesi açılır)"} />;
+        title={L.onAir ? (L.mode === "rehearsal" ? "Provayı bitir" : "Yayını kapat: kodlayıcı durur, YouTube yayını bitirilir (onay sorulur)") : "Yayını başlat (YouTube bağlıysa doğrudan; değilse Yayın sekmesi açılır)"} />;
     }
     return (
       <div className={`st-w is-live is-big is-panel ${L.onAir ? "is-on" : ""}`}>
         <span className="st-w__state"><i className={L.onAir ? "is-rec" : ""} /> {L.onAir ? (L.mode === "rehearsal" ? "PROVA KAYDI" : "CANLI YAYIN") : "YAYIN KAPALI"}</span>
         <strong className="st-w__clock">{L.onAir ? <Elapsed since={L.since} /> : "00:00"}</strong>
         <button type="button" className="st-w__cta" disabled={L.busy} onClick={L.onAir ? L.stop : L.start}>
-          <Icon name={L.onAir ? "stop" : "broadcast"} size={15} /> {L.onAir ? (L.mode === "rehearsal" ? "Provayı bitir" : "Yayını durdur") : "Yayını başlat"}
+          <Icon name={L.onAir ? "stop" : "broadcast"} size={15} /> {L.onAir ? (L.mode === "rehearsal" ? "Provayı bitir" : "Yayını kapat") : "Yayını başlat"}
         </button>
         <button type="button" className="st-w__link" onClick={L.openTab}>Yayın ayarları · prova · RTMP</button>
       </div>
@@ -333,5 +338,7 @@ export const WIDGET_IMPL = {
   ledMode, interview, led, ready, scene,
   // ek çeşitler (./widgetsMore.jsx)
   ...MORE_WIDGETS,
+  // çok işlevli düğmeler (reji, ses, tekrar, grafik / sahne / yayın / VAR / röportaj / müzik)
+  ...REJI_WIDGETS, ...SES_WIDGETS, ...TEKRAR_WIDGETS, ...YAYIN_WIDGETS,
 };
 

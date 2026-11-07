@@ -72,6 +72,8 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
   const stingerRef = useRef(null); // { startedAt, ms, onMid, onEnd, midFired }
   const statsRef = useRef({ fps: 0, drawMs: 0, stalls: 0, totalStalls: 0 });
   const trackRef = useRef(null);
+  // Kare aboneleri (WebCodecs kodlayıcısı): program karesi çizildikten hemen sonra çağrılır.
+  const frameSubsRef = useRef(new Set());
 
   useEffect(() => {
     program.width = width; program.height = height;
@@ -242,6 +244,7 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       if (f.last && now - f.last > interval * 2.5) { f.stalls += 1; f.total += 1; }
       f.last = now;
       draw(now);
+      for (const fn of frameSubsRef.current) { try { fn(now); } catch { /* kodlayıcı hatası çizimi durdurmasın */ } }
     };
     const loop = () => {
       if (!alive) return;
@@ -281,10 +284,13 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
 
   const getVideoTrack = useCallback(() => trackRef.current, []);
   const getStats = useCallback(() => statsRef.current, []);
+  const getCanvas = useCallback(() => program, [program]);
+  /** fn(now) her program karesinden sonra; dönüş: aboneliği kaldır. */
+  const subscribeFrames = useCallback((fn) => { frameSubsRef.current.add(fn); return () => frameSubsRef.current.delete(fn); }, []);
   const busy = useCallback(() => Boolean(transitionRef.current || stingerRef.current), []);
   const transitionNow = useCallback(() => transitionRef.current, []);
 
-  return { program, preview, getStats, startTransition, playStinger, getVideoTrack, busy, transitionNow };
+  return { program, preview, getStats, startTransition, playStinger, getVideoTrack, getCanvas, subscribeFrames, busy, transitionNow };
 }
 
 /**

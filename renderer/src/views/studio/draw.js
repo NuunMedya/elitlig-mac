@@ -6,6 +6,8 @@
 // Yapay kaynaklar (renk / gradyan, metin, saat, slayt) burada boyanır.
 import { fitRect } from "../../lib/studio/layouts";
 import { clockText, slideIndex } from "../../lib/studio/scenes";
+import { effectiveFx, fxActive, fxOrientOnly } from "../../lib/studio/videoFx";
+import { processFrame } from "./fx/fxProcessor";
 
 const PLACEHOLDER = {
   waiting: "Açılıyor…",
@@ -44,8 +46,9 @@ export function drawableOf(rt, now = 0) {
 /** Kaynağın doğal boyutu (oranı korumak için); bilinmiyorsa null. */
 export function naturalSize(source, rt) {
   const d = drawableOf(rt, Date.now());
-  if (d) return { w: d.w, h: d.h };
-  return null;
+  if (!d) return null;
+  const r = effectiveFx(source, null)?.rotate;
+  return r === 90 || r === 270 ? { w: d.h, h: d.w } : { w: d.w, h: d.h };
 }
 
 const byIdCache = new WeakMap();
@@ -135,13 +138,45 @@ export function drawLayer(ctx, layer, source, rt, W, H, opts = {}) {
   ctx.translate(L.x * W + bw / 2, L.y * H + bh / 2);
   if (L.rot) ctx.rotate((L.rot * Math.PI) / 180);
   ctx.translate(-bw / 2, -bh / 2);
+  // İsteğe bağlı görünüm: saydamlık, gölge, köşe yuvarlama (kırpma), çerçeve. Ölçüler
+  // çıkış pikseli (1920 genişlik) üzerinden; küçük tuvallerde orantılı.
+  const k = W / 1920;
+  if (L.opacity != null && L.opacity < 1) ctx.globalAlpha *= Math.max(0, L.opacity);
+  const rad = L.radius > 0 ? Math.min(bw, bh) * Math.min(0.5, L.radius) : 0;
+  const shape = () => { ctx.beginPath(); if (rad && ctx.roundRect) ctx.roundRect(0, 0, bw, bh, rad); else ctx.rect(0, 0, bw, bh); };
+  if (L.shadow?.blur > 0) {
+    ctx.save();
+    ctx.shadowColor = L.shadow.color || "#000";
+    ctx.shadowBlur = L.shadow.blur * k;
+    ctx.shadowOffsetY = L.shadow.blur * k * 0.25;
+    ctx.fillStyle = "#000";
+    shape();
+    ctx.fill();
+    ctx.restore();
+  }
+  if (rad) { shape(); ctx.clip(); }
   try {
     const kind = source.kind;
     if (kind === "color") drawColor(ctx, bw, bh, source, H);
     else if (kind === "text") drawText(ctx, bw, bh, source, source.text, H);
     else if (kind === "clock") drawText(ctx, bw, bh, source, clockText(source, Date.now(), { matchClockMs: opts.matchClockMs }), H);
     else {
-      const d = drawableOf(rt, opts.now ?? performance.now());
+      let d = drawableOf(rt, opts.now ?? performance.now());
+      // Görüntü ayarı (kaynağın ya da katmana özel): yalnız çevirme ise 2D dönüşüm,
+      // değilse paylaşılan WebGL işlemcisi (aynı kare tüm çıkışlarda bir kez işlenir).
+      // opts.fx: önizleme penceresi için açık ayar (false = ayarsız "önce" görüntüsü).
+      let flip = null;
+      if (d) {
+        const fx = opts.fx !== undefined ? (opts.fx && fxActive(opts.fx) ? opts.fx : null) : effectiveFx(source, L);
+        if (fx) {
+          flip = fxOrientOnly(fx);
+          if (!flip) {
+            const key = opts.fx !== undefined ? `${source.id}|ui` : layer.fx ? `${source.id}|${layer.id}` : source.id;
+            const p = processFrame(key, d, fx, { now: performance.now(), maxAge: opts.fxMaxAge ?? 12 });
+            if (p) d = p;
+          }
+        }
+      }
       if (!d) { if (opts.placeholders) drawPlaceholder(ctx, bw, bh, source, rt || (kind === "replay" ? { status: "empty" } : null)); }
       else {
         const c = L.crop || { l: 0, t: 0, r: 0, b: 0 };
@@ -150,18 +185,25 @@ export function drawLayer(ctx, layer, source, rt, W, H, opts = {}) {
         const f = fitRect(cw, ch, { x: 0, y: 0, w: bw, h: bh }, L.fit || "cover");
         if (f) {
           if (L.fit === "cover") { ctx.beginPath(); ctx.rect(0, 0, bw, bh); ctx.clip(); }
-          if (source.mirror) { ctx.translate(f.dx * 2 + f.dw, 0); ctx.scale(-1, 1); }
+          if (flip?.flipH) { ctx.translate(f.dx * 2 + f.dw, 0); ctx.scale(-1, 1); }
+          if (flip?.flipV) { ctx.translate(0, f.dy * 2 + f.dh); ctx.scale(1, -1); }
           ctx.drawImage(d.el, d.w * c.l + f.sx, d.h * c.t + f.sy, f.sw, f.sh, f.dx, f.dy, f.dw, f.dh);
         }
       }
     }
   } catch { /* kare hazır değil */ }
+  if (L.border?.width > 0) {
+    const lw = Math.max(1, L.border.width * k);
+    ctx.lineWidth = rad ? lw * 2 : lw; // kırpılmış şekilde çizginin yarısı dışarıda kalır
+    ctx.strokeStyle = L.border.color || "#fff";
+    if (rad) { shape(); ctx.stroke(); } else ctx.strokeRect(lw / 2, lw / 2, bw - lw, bh - lw);
+  }
   ctx.restore();
 }
 
 /** Sahneyi (katmanlar alttan üste) çizer. opts.transparent: zemini boyama. */
 export function drawScene(ctx, scene, sources, runtime, W, H, opts = {}) {
-  if (!opts.transparent) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
+  if (!opts.transparent) { ctx.fillStyle = scene?.bg || "#000"; ctx.fillRect(0, 0, W, H); }
   if (!scene) return;
   const byId = sourcesById(sources);
   for (const layer of scene.layers) {
@@ -170,12 +212,12 @@ export function drawScene(ctx, scene, sources, runtime, W, H, opts = {}) {
   }
 }
 
-/** Tek kaynağı kutuya çizer (küçük resim). */
+/** Tek kaynağı kutuya çizer (küçük resim). Görüntü ayarı sonucu daha toleranslı paylaşılır. */
 export function drawSource(ctx, source, rt, box, fit = "cover", opts = {}) {
   if (!source) return;
   ctx.save();
   ctx.translate(box.x, box.y);
-  drawLayer(ctx, { id: "_thumb", visible: true, x: 0, y: 0, w: 1, h: 1, rot: 0, crop: null, fit }, source, rt, box.w, box.h, { ...opts, placeholders: opts.placeholders ?? true });
+  drawLayer(ctx, { id: "_thumb", visible: true, x: 0, y: 0, w: 1, h: 1, rot: 0, crop: null, fit }, source, rt, box.w, box.h, { fxMaxAge: 60, ...opts, placeholders: opts.placeholders ?? true });
   ctx.restore();
 }
 

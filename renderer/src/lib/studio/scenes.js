@@ -25,6 +25,7 @@
 // sahnesi olur ("Kamera 1"), hazır düzenler (Resim içinde resim / Yan yana)
 // serbest katmanlara çevrilir; önizleme / program aynı görüntüde kalır.
 import { STORAGE_KEY as V2_KEY, layerRect, normalizeConfig as normalizeV2 } from "./layouts";
+import { migrateSourceFx, normalizeLayerFx } from "./videoFx";
 
 export const SCENES_KEY = "studio.v3";
 export const SCENES_VERSION = 3;
@@ -78,7 +79,7 @@ export const defaultFit = (kind) => (kind === "image" || kind === "slideshow" ? 
 export function sourceDefaults(kind, { cameraCount = 0 } = {}) {
   const base = { kind, name: kind === "camera" ? `Kamera ${cameraCount + 1}` : sourceKindLabel(kind) };
   switch (kind) {
-    case "camera": return { ...base, deviceId: null, deviceIndex: cameraCount, resolution: "1080p", fps: 30, mirror: false };
+    case "camera": return { ...base, deviceId: null, deviceIndex: cameraCount, resolution: "1080p", fps: 30 };
     case "video": return { ...base, url: null, loop: true, restartOnShow: true };
     case "slideshow": return { ...base, images: [], intervalMs: 5000 };
     case "color": return { ...base, name: "Renk plakası", color: "#54009c", color2: "#c026d3", gradient: false, gradientAngle: 135, text: "", textColor: "#ffffff" };
@@ -144,7 +145,54 @@ export function normalizeLayer(l, sourceKind) {
     rot: ((num(l.rot, 0) % 360) + 360) % 360,
     crop: normCrop(l.crop),
     fit: FIT_KEYS.has(l.fit) ? l.fit : defaultFit(sourceKind),
+    ...layerStyle(l),
   };
+}
+
+/* ------------------------------ katman görünümü (isteğe bağlı) ------------------------------ */
+//
+// Katmanın isteğe bağlı görünüm alanları (yalnız varsayılandan farklıysa kayda yazılır):
+//   name     katmanın kendi adı (boşsa kaynağın adı)
+//   opacity  0…1 (varsayılan 1)
+//   radius   köşe yuvarlama: kutunun kısa kenarına oran 0…0.5
+//   border   { width (çıkış px, 0…40), color }
+//   shadow   { blur (çıkış px, 0…80), color }
+//   muted    true: katmanın sesi (video) yayına gitmez
+//   fx       görüntü ayarı: kaynağın ayarı yerine BU katmana özel (videoFx.js); yoksa kaynağınki
+const HEX = /^#[0-9a-f]{3,8}$/i;
+const color = (v, d) => (typeof v === "string" && HEX.test(v) ? v : d);
+export const LAYER_STYLE_DEFAULTS = Object.freeze({ opacity: 1, radius: 0, border: { width: 0, color: "#ffffff" }, shadow: { blur: 0, color: "#000000" }, muted: false, name: "" });
+export function layerStyle(l) {
+  const out = {};
+  const name = str(l?.name ?? "", "", 40).trim();
+  if (name) out.name = name;
+  const op = clamp(num(l?.opacity, 1), 0, 1);
+  if (op < 1) out.opacity = Math.round(op * 100) / 100;
+  const r = clamp(num(l?.radius, 0), 0, 0.5);
+  if (r > 0) out.radius = r;
+  const bw = clamp(num(l?.border?.width, 0), 0, 40);
+  if (bw > 0) out.border = { width: bw, color: color(l.border.color, "#ffffff") };
+  const sb = clamp(num(l?.shadow?.blur, 0), 0, 80);
+  if (sb > 0) out.shadow = { blur: sb, color: color(l.shadow.color, "#000000") };
+  if (l?.muted === true) out.muted = true;
+  const fx = normalizeLayerFx(l?.fx);
+  if (fx) out.fx = fx;
+  return out;
+}
+
+/* ------------------------------ sahne ayarları (isteğe bağlı) ------------------------------ */
+//
+//   bg          sahne zemini (renk; varsayılan siyah)
+//   transition  { kind, ms } bu sahne YAYINA alınırken kullanılacak geçiş (yoksa seçili geçiş)
+export function sceneExtras(sc) {
+  const out = {};
+  const bg = color(sc?.bg, null);
+  if (bg && bg.toLowerCase() !== "#000" && bg.toLowerCase() !== "#000000") out.bg = bg;
+  const t = sc?.transition;
+  if (t && typeof t === "object" && typeof t.kind === "string" && t.kind) {
+    out.transition = { kind: str(t.kind, "", 30), ...(Number.isFinite(Number(t.ms)) && Number(t.ms) >= 0 ? { ms: Math.round(clamp(Number(t.ms), 0, 5000)) } : {}) };
+  }
+  return out;
 }
 
 /** Oturumlar arasında yaşayan adres mi (blob: ölür; elitlig-studio://media kalıcıdır). */
@@ -153,7 +201,8 @@ export const persistentUrl = (url) => typeof url === "string" && /^(https?|data|
 export const sourceNeedsFile = (s) => Boolean(s && (s.kind === "image" || s.kind === "video") && (!s.url || s.fileMissing));
 
 function normalizeSource(s) {
-  const out = { ...s, name: str(s.name || sourceKindLabel(s.kind)) };
+  // Görüntü ayarı: eski "mirror" (ayna) → fx.flipH; fx yalnız varsayılandan farklı alanlar.
+  const out = { ...migrateSourceFx(s), name: str(s.name || sourceKindLabel(s.kind)) };
   // Eski kayıtlar: nesne adresleri (blob:) oturum sonunda geçersizleşir → "dosya bulunamadı, yeniden seç".
   // Yeni kayıtlar dosyanın tam yolunu (filePath) ve kalıcı elitlig-studio://media adresini tutar.
   if (typeof out.url === "string" && out.url && !persistentUrl(out.url)) {
@@ -198,7 +247,7 @@ export function normalizeScenesConfig(input) {
   const kinds = new Map(sources.map((s) => [s.id, s.kind]));
   const scenes = input.scenes
     .filter((sc) => sc && typeof sc.id === "string")
-    .map((sc) => ({ id: sc.id, name: str(sc.name || "Sahne"), ...(typeof sc.template === "string" ? { template: sc.template } : {}), layers: (Array.isArray(sc.layers) ? sc.layers : []).filter((l) => l && kinds.has(l.sourceId)).map((l) => normalizeLayer(l, kinds.get(l.sourceId))) }));
+    .map((sc) => ({ id: sc.id, name: str(sc.name || "Sahne"), ...(typeof sc.template === "string" ? { template: sc.template } : {}), ...sceneExtras(sc), layers: (Array.isArray(sc.layers) ? sc.layers : []).filter((l) => l && kinds.has(l.sourceId)).map((l) => normalizeLayer(l, kinds.get(l.sourceId))) }));
   if (!scenes.length) scenes.push({ id: uid("sc"), name: "Sahne 1", layers: [] });
   const out = { version: SCENES_VERSION, sources, scenes };
   const fb = firstSceneId(out);
@@ -304,7 +353,7 @@ export function addScene(config, name, layers = []) {
 export function duplicateScene(config, sceneId) {
   const src = config.scenes.find((s) => s.id === sceneId);
   if (!src) return { config, scene: null };
-  const scene = { id: uid("sc"), name: str(`${src.name} (kopya)`), layers: src.layers.map((l) => ({ ...l, crop: { ...l.crop }, id: uid("ly") })) };
+  const scene = { id: uid("sc"), name: str(`${src.name} (kopya)`), ...sceneExtras(src), layers: src.layers.map((l) => ({ ...l, crop: { ...l.crop }, id: uid("ly") })) };
   const scenes = [...config.scenes];
   scenes.splice(config.scenes.indexOf(src) + 1, 0, scene);
   return { config: { ...config, scenes }, scene };
@@ -343,10 +392,51 @@ export function addLayer(config, sceneId, sourceId, patch = {}) {
   return { config: mapScene(config, sceneId, (s) => ({ ...s, layers: [...s.layers, layer] })), layer };
 }
 
-export const updateLayer = (config, sceneId, layerId, patch) =>
-  mapScene(config, sceneId, (s) => ({ ...s, layers: s.layers.map((l) => (l.id === layerId ? { ...l, ...patch, ...(patch.crop ? { crop: normCrop({ ...l.crop, ...patch.crop }) } : {}) } : l)) }));
+const STYLE_KEYS = ["name", "opacity", "radius", "border", "shadow", "muted", "fx"];
+export const updateLayer = (config, sceneId, layerId, patch) => {
+  const next = mapScene(config, sceneId, (s) => ({ ...s, layers: s.layers.map((l) => (l.id === layerId ? { ...l, ...patch, ...(patch.crop ? { crop: normCrop({ ...l.crop, ...patch.crop }) } : {}) } : l)) }));
+  return STYLE_KEYS.some((k) => k in (patch || {})) ? updateLayerStyle(next, sceneId, layerId, {}) : next;
+};
 
 export const removeLayer = (config, sceneId, layerId) => mapScene(config, sceneId, (s) => ({ ...s, layers: s.layers.filter((l) => l.id !== layerId) }));
+
+/** Katman görünümünü yamala (normalize: varsayılana dönen alan kayıttan silinir). */
+export const updateLayerStyle = (config, sceneId, layerId, patch) =>
+  mapScene(config, sceneId, (s) => ({ ...s, layers: s.layers.map((l) => {
+    if (l.id !== layerId) return l;
+    const merged = { ...l, ...patch };
+    const { name, opacity, radius, border, shadow, muted, fx, ...rest } = merged; // eslint-disable-line no-unused-vars
+    return { ...rest, ...layerStyle(merged) };
+  }) }));
+
+/** Katmanı hemen üstüne çoğaltır (biraz kaydırılmış). Dönüş: { config, layer }. */
+export function duplicateLayer(config, sceneId, layerId) {
+  const sc = config.scenes.find((s) => s.id === sceneId);
+  const i = sc ? sc.layers.findIndex((l) => l.id === layerId) : -1;
+  if (i < 0) return { config, layer: null };
+  const src = sc.layers[i];
+  const off = src.w >= 0.99 && src.h >= 0.99 ? 0 : 0.02;
+  const layer = { ...src, crop: { ...src.crop }, id: uid("ly"), x: src.x + off, y: src.y + off * (16 / 9), locked: false, ...(src.border ? { border: { ...src.border } } : {}), ...(src.shadow ? { shadow: { ...src.shadow } } : {}) };
+  const layers = [...sc.layers];
+  layers.splice(i + 1, 0, layer);
+  return { config: mapScene(config, sceneId, (s) => ({ ...s, layers })), layer };
+}
+
+/** Sahne düzeyi alanlar: ad, zemin, geçiş (null = kaldır). */
+export function updateScene(config, sceneId, patch) {
+  return mapScene(config, sceneId, (s) => {
+    const merged = { ...s, ...patch };
+    const { bg, transition, ...rest } = merged; // eslint-disable-line no-unused-vars
+    const name = patch.name != null ? str(String(patch.name).trim()) || s.name : s.name;
+    return { ...rest, name, ...sceneExtras(merged) };
+  });
+}
+
+/** Sahneyi olduğu gibi değiştir (geri al / yinele). Kimlik korunur. */
+export const replaceScene = (config, sceneId, scene) => (scene ? mapScene(config, sceneId, () => ({ ...scene, id: sceneId })) : config);
+
+/** Sahnenin geçiş ayarı (yoksa null). */
+export const sceneTransitionOf = (config, sceneId) => config?.scenes?.find((s) => s.id === sceneId)?.transition || null;
 
 /** Katmanı dizide `to` konumuna taşır (dizi sonu en üstte çizilir). */
 export const moveLayerTo = (config, sceneId, layerId, to) =>
@@ -365,6 +455,12 @@ export function addSource(config, source) {
 }
 
 export const updateSource = (config, sourceId, patch) => ({ ...config, sources: config.sources.map((s) => (s.id === sourceId ? { ...s, ...patch } : s)) });
+
+/** Kaynağın görüntü ayarını yazar (canlı panel): fx yalnız farklı alanlar, eski mirror kalkar. */
+export const updateSourceFx = (config, sourceId, fx) => ({
+  ...config,
+  sources: config.sources.map((s) => (s.id === sourceId ? migrateSourceFx({ ...s, mirror: undefined, fx }) : s)),
+});
 
 export function removeSource(config, sourceId) {
   const next = {

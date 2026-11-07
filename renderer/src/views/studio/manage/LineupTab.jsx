@@ -8,12 +8,17 @@
 //   GET  /api/players/admin-list?q=            oyuncu araması
 //   POST /maclar/:id/guest-players             { playerName, teamId, side, position } → yeni oyuncu
 //   POST /api/maclar/:id/kadro                 { home: [...], away: [...] } (buildLineupPayload)
+//
+// PARÇALAR (part): "home" | "away" — yalnız o takımın kadrosu (takım seçici yok). Kadro
+// taslağı maç başına ORTAK durumdadır (./manageStore): ev sahibi ve deplasman parçaları
+// ayrı panellerde düzenlenip herhangi birinden ikisi birlikte kaydedilir.
 import React, { useEffect, useMemo, useState } from "react";
 import { Icon, Spinner, useConfirm } from "../../../components/ui";
 import { addLineupPick, buildLineupPayload, buildLineupSide, lineupCounts, lineupWarnings, sortLineup, updateLineupPick } from "../../../lib/studio/manage";
 import { POSITIONS, asArray, isNationwide } from "../../../lib/studio/manageMatches";
 import * as api from "./manageApi";
 import { PlayerSearch } from "./pickers";
+import { useShared } from "./manageStore";
 import { useLoad, useRun } from "./useManage";
 
 const ROLES = [
@@ -22,7 +27,7 @@ const ROLES = [
   { value: "", label: "—" },
 ];
 
-export default function LineupTab({ matchId, match, live, user }) {
+export default function LineupTab({ matchId, match, live, user, part = null }) {
   const { run, busy, toast } = useRun();
   const confirm = useConfirm();
   const homeTeamId = Number(match?.home_team_id) || live?.homeTeamId || null;
@@ -33,9 +38,10 @@ export default function LineupTab({ matchId, match, live, user }) {
   const homeRoster = useLoad(() => api.getTeamRoster(homeTeamId), [homeTeamId], { enabled: Boolean(homeTeamId) });
   const awayRoster = useLoad(() => api.getTeamRoster(awayTeamId), [awayTeamId], { enabled: Boolean(awayTeamId) });
 
-  const [state, setState] = useState({ home: {}, away: {} });
-  const [dirty, setDirty] = useState(false);
-  const [side, setSide] = useState("home");
+  const [state, setState] = useShared(`kadro.${matchId}.state`, () => ({ home: {}, away: {} }));
+  const [dirty, setDirty] = useShared(`kadro.${matchId}.dirty`, false);
+  const [sharedSide, setSide] = useShared("kadro.side", "home");
+  const side = part === "home" || part === "away" ? part : sharedSide;
   const [q, setQ] = useState("");
   const [onlyPicked, setOnlyPicked] = useState(false);
   const [adding, setAdding] = useState(null); // "search" | "new"
@@ -97,15 +103,15 @@ export default function LineupTab({ matchId, match, live, user }) {
   if (!ready) return <Spinner label="Kadro yükleniyor…" />;
 
   return (
-    <div className="mg-stack">
-      <div className="mg-toolbar">
-        <div className="mg-sides" role="tablist">
+    <div className={`mg-stack${part ? ` mg-part is-${part}` : ""}`} data-lineup-part={part || "all"}>
+      <div className="mg-toolbar mg-wrap">
+        {part ? <strong className={`mg-side is-${side} is-on is-fixed`}>{names[side]} <small>{counts[side].starters} + {counts[side].bench}</small></strong> : <div className="mg-sides" role="tablist">
           {["home", "away"].map((s) => (
             <button key={s} type="button" role="tab" aria-selected={side === s} className={`mg-side is-${s}${side === s ? " is-on" : ""}`} onClick={() => setSide(s)}>
               {names[s]} <small>{counts[s].starters} + {counts[s].bench}</small>
             </button>
           ))}
-        </div>
+        </div>}
         <div className="mg-search"><Icon name="search" size={13} /><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Kadroda ara…" /></div>
         <label className="toggle"><input type="checkbox" checked={onlyPicked} onChange={(e) => setOnlyPicked(e.target.checked)} /> Yalnız seçilenler</label>
         <span className="mg-grow" />

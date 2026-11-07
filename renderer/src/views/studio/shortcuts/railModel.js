@@ -16,29 +16,39 @@ export const RAIL_SIZES = {
   "1x2": { w: 1, h: 2, label: "1×2", hint: "dar ve uzun" },
   "2x1": { w: 2, h: 1, label: "2×1", hint: "geniş şerit" },
   "2x2": { w: 2, h: 2, label: "2×2", hint: "büyük panel" },
+  // Yalnız geniş panolarda (sol şerit iki sütun: orada 2×2'ye iner).
+  "3x2": { w: 3, h: 2, label: "3×2", hint: "geniş panel" },
+  "4x2": { w: 4, h: 2, label: "4×2", hint: "çok geniş panel" },
 };
 export const SIZE_KEYS = Object.keys(RAIL_SIZES);
-const ALL = SIZE_KEYS;
+/** Sol şeride sığan boyutlar (en çok iki sütun). */
+export const RAIL_FIT_KEYS = SIZE_KEYS.filter((k) => RAIL_SIZES[k].w <= 2);
+const ALL = ["1x1", "1x2", "2x1", "2x2"];
+const WIDE = ["2x2", "3x2", "4x2"];
 
 export const RAIL_GROUPS = [
-  { key: "yayin", label: "Yayın, ses ve geçiş" },
-  { key: "tekrar", label: "Tekrar" },
-  { key: "olay", label: "VAR, gol ve olaylar" },
-  { key: "grafik", label: "Grafikler" },
-  { key: "diger", label: "Sahneler, LED ve röportaj" },
+  { key: "reji", label: "Reji", icon: "ball" },
+  { key: "ses", label: "Ses", icon: "sliders" },
+  { key: "tekrar", label: "Tekrar", icon: "repeat" },
+  { key: "grafik", label: "Grafik", icon: "trophy" },
+  { key: "sahne", label: "Sahne", icon: "layers" },
+  { key: "yayin", label: "Yayın", icon: "broadcast" },
+  { key: "var", label: "VAR", icon: "target" },
+  { key: "roportaj", label: "Röportaj", icon: "users" },
+  { key: "muzik", label: "Müzik", icon: "music" },
 ];
 
 /** family: aynı işlevin çeşitleri (katalogda yan yana, önizlemede gruplanır). */
 export const RAIL_WIDGETS = [
   // ── yayın, ses, geçiş ──
   { type: "golive", family: "golive", label: "Yayın", icon: "broadcast", group: "yayin", size: "2x2", sizes: ["1x1", "2x1", "2x2"], hint: "Yayını başlat / durdur, süre ve durum" },
-  { type: "mic", family: "mic", label: "Mikrofon", icon: "mic", group: "yayin", size: "1x1", sizes: ALL, hint: "Mikrofonu aç / kapat, ses seviyesi", hotkey: "mic" },
-  { type: "micPtt", family: "mic", label: "Bas-konuş", icon: "mic", group: "yayin", size: "2x1", sizes: ["1x1", "2x1", "2x2"], hint: "Basılı tuttukça mikrofon açık, bırakınca kapanır" },
-  { type: "mixer", family: "mic", label: "Ses karıştırıcı", icon: "sliders", group: "yayin", size: "2x2", sizes: ["2x1", "1x2", "2x2"], hint: "Kanalların sesi kapat / aç, seviye, ölçer" },
-  { type: "transition", family: "transition", label: "Geçiş", icon: "chevronRight", group: "yayin", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "Önizlemeyi yayına al (büyükte geçiş türü)", hotkey: "transition" },
-  { type: "transitionKinds", family: "transition", label: "Geçiş + tür ızgarası", icon: "swap", group: "yayin", size: "2x2", sizes: ["2x1", "2x2"], hint: "Büyük GEÇİŞ düğmesi ve geçiş türleri tek dokunuşta" },
-  { type: "lastScene", family: "transition", label: "Son sahne", icon: "undo", group: "yayin", size: "1x1", sizes: ["1x1", "2x1"], hint: "Bir önceki sahneye dön", hotkey: "lastScene" },
-  { type: "clock", family: "clock", label: "Maç saati", icon: "clock", group: "yayin", size: "2x1", sizes: ["1x1", "2x1", "2x2"], hint: "Saat, devre; başlat / durdur, ±10 sn / ±1 dk" },
+  { type: "mic", family: "mic", label: "Mikrofon", icon: "mic", group: "ses", size: "1x1", sizes: ALL, hint: "Mikrofonu aç / kapat, ses seviyesi", hotkey: "mic" },
+  { type: "micPtt", family: "mic", label: "Bas-konuş", icon: "mic", group: "ses", size: "2x1", sizes: ["1x1", "2x1", "2x2"], hint: "Basılı tuttukça mikrofon açık, bırakınca kapanır" },
+  { type: "mixer", family: "mic", label: "Ses karıştırıcı", icon: "sliders", group: "ses", size: "2x2", sizes: ["2x1", "1x2", "2x2"], hint: "Kanalların sesi kapat / aç, seviye, ölçer" },
+  { type: "transition", family: "transition", label: "Geçiş", icon: "chevronRight", group: "sahne", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "Önizlemeyi yayına al (büyükte geçiş türü)", hotkey: "transition" },
+  { type: "transitionKinds", family: "transition", label: "Geçiş + tür ızgarası", icon: "swap", group: "sahne", size: "2x2", sizes: ["2x1", "2x2"], hint: "Büyük GEÇİŞ düğmesi ve geçiş türleri tek dokunuşta" },
+  { type: "lastScene", family: "transition", label: "Son sahne", icon: "undo", group: "sahne", size: "1x1", sizes: ["1x1", "2x1"], hint: "Bir önceki sahneye dön", hotkey: "lastScene" },
+  { type: "clock", family: "clock", label: "Maç saati", icon: "clock", group: "reji", size: "2x1", sizes: ["1x1", "2x1", "2x2"], hint: "Saat, devre; başlat / durdur, ±10 sn / ±1 dk" },
   { type: "chapter", family: "chapter", label: "Bölüm", icon: "flag", group: "yayin", size: "1x1", sizes: ["1x1", "2x1"], hint: "YouTube bölüm işareti", hotkey: "chapter" },
   { type: "chapterList", family: "chapter", label: "Bölümler · son işaretler", icon: "flag", group: "yayin", size: "2x2", sizes: ["1x2", "2x2"], hint: "Son bölüm işaretleri ve hızlı ekle" },
   { type: "fullscreen", family: "fullscreen", label: "Tam ekran", icon: "overview", group: "yayin", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "Programı (ya da önizlemeyi) tam ekran göster", hotkey: "fullscreen" },
@@ -51,26 +61,84 @@ export const RAIL_WIDGETS = [
   { type: "replayQueue", family: "replay", label: "Tekrar kuyruğu", icon: "list", group: "tekrar", size: "2x2", sizes: ["1x2", "2x2"], hint: "Tekrarları sırayla seç, kuyruğu önizlemeye al" },
   { type: "moment", family: "moment", label: "Önemli an", icon: "star", group: "tekrar", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "Son saniyeleri tekrar olarak kaydet", hotkey: "moment" },
   // ── olay ──
-  { type: "var", family: "var", label: "VAR", icon: "target", group: "olay", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "VAR önizlemeye / yayındaysa canlıya dön", hotkey: "var" },
-  { type: "event", family: "event", label: "Olay gir", icon: "pencil", group: "olay", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "Olay türü → oyuncu → kaydet", hotkey: "event" },
-  { type: "goalHome", family: "goal", label: "Ev sahibi GOL", icon: "ball", group: "olay", size: "1x1", sizes: ALL, hint: "Ev sahibine gol (golcü seçilir)", hotkey: "goalHome" },
-  { type: "goalAway", family: "goal", label: "Deplasman GOL", icon: "ball", group: "olay", size: "1x1", sizes: ALL, hint: "Deplasmana gol (golcü seçilir)", hotkey: "goalAway" },
-  { type: "goalBoth", family: "goal", label: "GOL · iki takım", icon: "ball", group: "olay", size: "2x1", sizes: ["2x1", "2x2"], hint: "İki takımın GOL düğmesi yan yana, skorla" },
-  { type: "goalMusic", family: "goalMusic", label: "Gol müziği", icon: "music", group: "olay", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "Gol müziğini çal / durdur", hotkey: "goalMusic" },
+  { type: "var", family: "var", label: "VAR", icon: "target", group: "var", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "VAR önizlemeye / yayındaysa canlıya dön", hotkey: "var" },
+  { type: "event", family: "event", label: "Olay gir", icon: "pencil", group: "reji", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "Olay türü → oyuncu → kaydet", hotkey: "event" },
+  { type: "goalHome", family: "goal", label: "Ev sahibi GOL", icon: "ball", group: "reji", size: "1x1", sizes: ALL, hint: "Ev sahibine gol (golcü seçilir)", hotkey: "goalHome" },
+  { type: "goalAway", family: "goal", label: "Deplasman GOL", icon: "ball", group: "reji", size: "1x1", sizes: ALL, hint: "Deplasmana gol (golcü seçilir)", hotkey: "goalAway" },
+  { type: "goalBoth", family: "goal", label: "GOL · iki takım", icon: "ball", group: "reji", size: "2x1", sizes: ["2x1", "2x2"], hint: "İki takımın GOL düğmesi yan yana, skorla" },
+  { type: "goalMusic", family: "goalMusic", label: "Gol müziği", icon: "music", group: "muzik", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "Gol müziğini çal / durdur", hotkey: "goalMusic" },
   // ── grafik ──
   { type: "scoreboard", family: "scoreboard", label: "Skorbord · açılır liste", icon: "trophy", group: "grafik", size: "2x2", sizes: ["1x1", "2x1", "2x2"], hint: "Skorbord çeşidini değiştir" },
   { type: "scoreChips", family: "scoreboard", label: "Skorbord · çeşit ızgarası", icon: "grid", group: "grafik", size: "2x2", sizes: ["2x1", "2x2"], hint: "Tüm skorbord çeşitleri çip ızgarasında" },
-  { type: "scoreControl", family: "scoreboard", label: "Skor +/−", icon: "trophy", group: "grafik", size: "2x2", sizes: ["2x1", "2x2"], hint: "Takım başına + (gol, golcü seçilir) / − (son golü geri al)" },
+  { type: "scoreControl", family: "scoreboard", label: "Skor +/−", icon: "trophy", group: "reji", size: "2x2", sizes: ["2x1", "2x2"], hint: "Takım başına + (gol, golcü seçilir) / − (son golü geri al)" },
   { type: "subtitle", family: "subtitle", label: "Altyazı", icon: "list", group: "grafik", size: "1x1", sizes: ["1x1", "2x1"], hint: "Altyazı şeridini aç / kapat", hotkey: "subtitle" },
   { type: "subtitleQuick", family: "subtitle", label: "Altyazı · hazır metinler", icon: "list", group: "grafik", size: "2x2", sizes: ["1x2", "2x2"], hint: "Tek dokunuşla hazır metni ekle ve yayına al" },
-  { type: "interviewBand", family: "interviewBand", label: "Röportaj bandı", icon: "users", group: "grafik", size: "1x1", sizes: ["1x1", "2x1"], hint: "Röportaj bandını yayına al / kaldır", hotkey: "interviewBand" },
+  { type: "interviewBand", family: "interviewBand", label: "Röportaj bandı", icon: "users", group: "roportaj", size: "1x1", sizes: ["1x1", "2x1"], hint: "Röportaj bandını yayına al / kaldır", hotkey: "interviewBand" },
   { type: "ledMode", family: "led", label: "LED içeriği", icon: "grid", group: "grafik", size: "1x1", sizes: ["1x1", "2x1"], hint: "Sahadaki LED ekranın içeriği" },
   // ── sahneler, LED, röportaj ──
-  { type: "interview", family: "interview", label: "Röportaj kaydı", icon: "mic", group: "diger", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "Röportaj kaydını başlat / bitir", hotkey: "interview" },
-  { type: "led", family: "led", label: "LED çıkışı · yönlendirme", icon: "overview", group: "diger", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "LED ekranda ne görünsün, aç / kapat" },
-  { type: "ready", family: "ready", label: "Hazır ekranlar", icon: "clock", group: "diger", size: "2x2", sizes: ["1x2", "2x1", "2x2"], hint: "Başlıyor · Devre arası · Bitti" },
-  { type: "sceneGrid", family: "scene", label: "Sahne ızgarası (mini)", icon: "layers", group: "diger", size: "2x2", sizes: ["2x1", "1x2", "2x2"], hint: "İlk sahneler canlı küçük resimle; tık: önizleme · çift tık: yayın" },
-  { type: "scene", family: "scene", label: "Sahne", icon: "layers", group: "diger", size: "1x1", sizes: ALL, hint: "Tek sahne: tık önizleme · çift tık yayın", multi: true },
+  { type: "interview", family: "interview", label: "Röportaj kaydı", icon: "mic", group: "roportaj", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "Röportaj kaydını başlat / bitir", hotkey: "interview" },
+  { type: "led", family: "led", label: "LED çıkışı · yönlendirme", icon: "overview", group: "grafik", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "LED ekranda ne görünsün, aç / kapat" },
+  { type: "ready", family: "ready", label: "Hazır ekranlar", icon: "clock", group: "sahne", size: "2x2", sizes: ["1x2", "2x1", "2x2"], hint: "Başlıyor · Devre arası · Bitti" },
+  { type: "sceneGrid", family: "scene", label: "Sahne ızgarası (mini)", icon: "layers", group: "sahne", size: "2x2", sizes: ["2x1", "1x2", "2x2"], hint: "İlk sahneler canlı küçük resimle; tık: önizleme · çift tık: yayın" },
+  { type: "scene", family: "scene", label: "Sahne", icon: "layers", group: "sahne", size: "1x1", sizes: ALL, hint: "Tek sahne: tık önizleme · çift tık yayın", multi: true },
+  // ══════════ çok işlevli düğmeler (./wReji, ./wSes, ./wTekrar, ./wYayin) ══════════
+  // ── reji ──
+  { type: "goalProHome", family: "goalPro", label: "GOL · ev sahibi (tür → golcü → asist)", icon: "ball", group: "reji", size: "1x1", sizes: ALL, hint: "Tık: tekrar klibi hemen başlar; gol türü, golcü, asist seçilir; gol müziği + bölüm + geri al" },
+  { type: "goalProAway", family: "goalPro", label: "GOL · deplasman (tür → golcü → asist)", icon: "ball", group: "reji", size: "1x1", sizes: ALL, hint: "Deplasman golü: tür → golcü (no + fotoğraf) → asist (atlanabilir)" },
+  { type: "goalProBoth", family: "goalPro", label: "GOL · iki takım (bölünmüş)", icon: "ball", group: "reji", size: "2x1", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "İki yarım: takım GOL'ü; genişte hızlı tür çipleri (sağ / sol / kafa / penaltı)" },
+  { type: "scorePro", family: "goalPro", label: "Skor kartı · + / −", icon: "trophy", group: "reji", size: "2x1", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Takım renkleri, skor, saat; + gol akışı, − son golü geri al" },
+  { type: "cardPro", family: "cardPro", label: "Kart (renk → takım → oyuncu → neden)", icon: "tag", group: "reji", size: "2x1", sizes: ["1x1", "1x2", "2x1", "2x2", "3x2"], hint: "Sarı / kırmızı; büyükte takım × renk ızgarası; neden isteğe bağlı" },
+  { type: "subPro", family: "subPro", label: "Değişiklik (çıkan → giren)", icon: "swap", group: "reji", size: "2x1", sizes: ALL, hint: "Takım → sahadaki oyuncular (çıkan) → yedekler (giren)" },
+  { type: "penaltyPro", family: "penaltyPro", label: "Penaltı (gol · kaçtı · kurtarıldı)", icon: "target", group: "reji", size: "2x1", sizes: ALL, hint: "Takım → sonuç → oyuncu (kurtarışta rakip kaleci); golde klip ve müzik" },
+  { type: "statPro", family: "statPro", label: "Faul · istatistik olayları", icon: "alert", group: "reji", size: "2x1", sizes: ["1x1", "2x1", "2x2", "3x2"], hint: "Faul (takım yarımları) · büyükte kurtarış, tehlike, ikili mücadele… (sunucunun tanıdıkları)" },
+  { type: "eventPro", family: "eventPro", label: "Olay gir · adım adım", icon: "pencil", group: "reji", size: "1x1", sizes: ALL, hint: "Tür (tüm kodlar) → takım → oyuncu; değişiklik ve gol kendi akışıyla" },
+  { type: "clockPro", family: "clockPro", label: "Maç saati · tam denetim", icon: "clock", group: "reji", size: "2x2", sizes: ["1x1", "2x1", "2x2", "3x2"], hint: "Başlat / durdur, ±10 sn / ±1 dk, devre seçimi, uzatma dakikası (altyazıya)" },
+  { type: "periodPro", family: "clockPro", label: "Devre düğmeleri", icon: "flag", group: "reji", size: "2x2", sizes: ["1x1", "1x2", "2x1", "2x2", "3x2"], hint: "Başlat · Devre arası · 2. yarı · Uzatma · Bitir (onaylı); sıradaki parlar" },
+  { type: "eventLog", family: "eventLog", label: "Olay günlüğü · düzenle / geri al", icon: "list", group: "reji", size: "2x2", sizes: ["1x2", "2x2", "3x2", "4x2"], hint: "Son olaylar; tık: dakika / oyuncu düzenle, sil; son olayı geri al" },
+  { type: "undoLast", family: "eventLog", label: "Son olayı geri al", icon: "undo", group: "reji", size: "1x1", sizes: ["1x1", "2x1", "1x2"], hint: "En son girilen olayı siler (onay sorulur)" },
+  { type: "teamStats", family: "teamStats", label: "Takım istatistiği (mini)", icon: "activity", group: "reji", size: "2x2", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Gol, kart, değişiklik, faul, kurtarış: iki takım çubuklarla" },
+  // ── ses ──
+  { type: "fader", family: "fader", label: "Kanal fader'ı", icon: "sliders", group: "ses", size: "1x2", sizes: ALL, hint: "Tek kanal: sessiz, solo, seviye, ölçer · sağ tık / basılı tut: kanal seç" },
+  { type: "miniMixer", family: "fader", label: "Mini karıştırıcı (2–6 kanal)", icon: "sliders", group: "ses", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2", "4x2"], hint: "Seçtiğin kanallar yan yana; genişledikçe kanal sayısı artar" },
+  { type: "masterKill", family: "masterKill", label: "Ana çıkış + tümünü kapat", icon: "broadcast", group: "ses", size: "1x2", sizes: ALL, hint: "Master fader, stereo ölçer, TÜMÜNÜ KAPAT" },
+  { type: "micDuck", family: "mic", label: "Mikrofon + müzik kısma", icon: "mic", group: "ses", size: "1x1", sizes: ALL, hint: "Mikrofon açılınca müzik kısılır, kapanınca geri gelir · sağ tık: kısma dB" },
+  { type: "audioRoute", family: "audioRoute", label: "Yayına giden ses (hızlı)", icon: "grid", group: "ses", size: "2x1", sizes: ["2x1", "2x2", "3x2"], hint: "Canlı / tekrar / video / özet sırasında MİK · VİDEO · MÜZİK; sahne başına mikrofon" },
+  { type: "audioPreset", family: "audioPreset", label: "Ses ön ayarları (A–D)", icon: "sliders", group: "ses", size: "2x1", sizes: ALL, hint: "Tık: karıştırıcı anlık görüntüsünü çağır · sağ tık: kaydet / üzerine yaz" },
+  { type: "dump", family: "dump", label: "Sessize al N sn", icon: "micOff", group: "ses", size: "1x1", sizes: ["1x1", "2x1", "1x2", "2x2"], hint: "Yayın sesi N saniye kesilir (halka geri sayar) · sağ tık: süre" },
+  // ── tekrar ──
+  { type: "replayToPvw", family: "replayPro", label: "Son tekrar → önizleme", icon: "eye", group: "tekrar", size: "2x1", sizes: ALL, hint: "Son tekrar varsayılan açılarla ÖNİZLEME'ye (yayına GEÇİŞ ile)" },
+  { type: "replayToAir", family: "replayPro", label: "Son tekrar → yayına", icon: "play", group: "tekrar", size: "2x1", sizes: ALL, hint: "Önizlemeye yükler ve aynı GEÇİŞ yoluyla hemen yayına verir" },
+  { type: "anglePick", family: "replayPro", label: "Açı seç (canlı küçük resim)", icon: "video", group: "tekrar", size: "2x2", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Tık: o açı önizlemede · çift tık: yayına" },
+  { type: "angleSeq", family: "replayPro", label: "Çok açılı dizi", icon: "layers", group: "tekrar", size: "3x2", sizes: WIDE, hint: "Açıları sırayla seç → önizle → yayına (açılar sırayla oynar)" },
+  { type: "slowPlay", family: "replayPro", label: "Ağır çekim + oynat", icon: "repeat", group: "tekrar", size: "2x2", sizes: ["2x1", "2x2"], hint: "Hız çipleri (0,25× – 1×), önizle, yayına" },
+  { type: "replayJog", family: "replayPro", label: "Giriş / çıkış · kare kare", icon: "sliders", group: "tekrar", size: "2x2", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Önizlemedeki tekrar: −1 sn / +1 sn, kare adımı, GİRİŞ / ÇIKIŞ" },
+  { type: "goalReplays", family: "replayPro", label: "Son goller (tekrar)", icon: "ball", group: "tekrar", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2"], hint: "Son N gol tekrarı: tık önizleme, ▶ yayına · sağ tık: kaç gol" },
+  { type: "momentPro", family: "moment", label: "Önemli an · saniye + geri sayım", icon: "star", group: "tekrar", size: "2x1", sizes: ALL, hint: "10 / 15 / 20 / 30 sn; isteğe bağlı geri sayımlı kayıt" },
+  { type: "replayVar", family: "replayPro", label: "Tekrar + VAR", icon: "target", group: "tekrar", size: "1x1", sizes: ["1x1", "2x1"], hint: "Son tekrarı VAR penceresine koyar, VAR'ı önizlemeye alır" },
+  { type: "queuePro", family: "replayPro", label: "Tekrarı sırala ve yayınla", icon: "list", group: "tekrar", size: "2x2", sizes: ["1x2", "2x2", "3x2", "4x2"], hint: "Tekrarları sırala (↑), önizle ya da tek tıkla YAYINLA" },
+  // ── grafik ──
+  { type: "sbPro", family: "scoreboard", label: "Skorbord · çeşit + göster / gizle", icon: "trophy", group: "grafik", size: "2x2", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Çeşit çipleri, açılır liste, AÇIK / GİZLİ anahtarı" },
+  { type: "sbToggle", family: "scoreboard", label: "Skorbord aç / kapat", icon: "eye", group: "grafik", size: "1x1", sizes: ["1x1", "2x1"], hint: "Tek dokunuş: gizle; tekrar: son çeşitle göster" },
+  { type: "subtitlePro", family: "subtitle", label: "Altyazı · metin + süre", icon: "list", group: "grafik", size: "3x2", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Hazır metinler, serbest metin, N sn göster (geri sayar)" },
+  { type: "sponsorPro", family: "sponsor", label: "Sponsor göster / dönüşüm", icon: "handshake", group: "grafik", size: "2x2", sizes: ["1x1", "2x1", "2x2", "3x2"], hint: "Sponsoru alt bantta göster (süreli), sıradaki, altyazı dönüşümü" },
+  { type: "ledPro", family: "led", label: "LED · yönlendirme + içerik", icon: "overview", group: "grafik", size: "2x2", sizes: ["2x1", "2x2", "3x2"], hint: "Aç / kapat, Program · Önizleme · Kapalı, LED içeriği" },
+  // ── sahne ──
+  { type: "sceneNav", family: "scene", label: "Önceki / sonraki sahne", icon: "chevronRight", group: "sahne", size: "2x1", sizes: ["2x1", "1x2", "2x2"], hint: "‹ › sahneyi önizlemeye; büyükte YAYINA" },
+  { type: "sceneBank", family: "scene", label: "Sahne bankası (4–8)", icon: "layers", group: "sahne", size: "3x2", sizes: WIDE, hint: "Canlı küçük resimli sahneler; tık önizleme · çift tık yayın" },
+  { type: "transitionPro", family: "transition", label: "Geçiş · tür + süre", icon: "swap", group: "sahne", size: "2x2", sizes: ["2x1", "2x2", "3x2"], hint: "Büyük GEÇİŞ, tür çipleri, süre (250 ms – 2 sn)" },
+  { type: "readyPro", family: "ready", label: "Hazır ekranlar · geri sayım", icon: "clock", group: "sahne", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2"], hint: "Başlıyor · Devre arası · Bitti; geri sayım dakikası" },
+  // ── yayın ──
+  { type: "chapterPro", family: "chapter", label: "Bölüm · adlı işaret", icon: "flag", group: "yayin", size: "2x1", sizes: ["2x1", "2x2", "3x2"], hint: "Bölüm adı yaz ya da hazır adlardan seç (YouTube)" },
+  { type: "goLivePro", family: "golive", label: "Yayın + sağlık", icon: "broadcast", group: "yayin", size: "2x2", sizes: ["2x1", "2x2", "3x2"], hint: "Başlat / durdur, süre, FPS, kbps, düşen kare" },
+  { type: "recordPro", family: "record", label: "Kayıt (prova / bilgisayara)", icon: "video", group: "yayin", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "Prova kaydı başlat / bitir; maçı bilgisayara kaydet anahtarı" },
+  // ── VAR ──
+  { type: "varPro", family: "var", label: "VAR · durum + karar", icon: "target", group: "var", size: "3x2", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "VAR'a gir / çık, İNCELEME · KONTROL · KARAR, GOL · İPTAL · PENALTI…" },
+  // ── röportaj ──
+  { type: "interviewPro", family: "interview", label: "Röportaj kaydı · incele", icon: "mic", group: "roportaj", size: "2x1", sizes: ["1x1", "2x1", "2x2"], hint: "Kaydı başlat / bitir (süre), yükleme, incele, bant" },
+  { type: "bandPro", family: "interviewBand", label: "Röportaj bandı · kişi seç", icon: "users", group: "roportaj", size: "2x1", sizes: ALL, hint: "Kişi (kadrodan / elle) → bant yayında · tık aç / kapat" },
+  // ── müzik ──
+  { type: "musicPlayer", family: "music", label: "Müzik çalar", icon: "music", group: "muzik", size: "2x2", sizes: ALL, hint: "Dosya seç, çal / duraklat / durdur, ilerleme, seviye, döngü" },
+  { type: "goalMusicPro", family: "goalMusic", label: "Gol müziği · takım + ses", icon: "music", group: "muzik", size: "2x2", sizes: ALL, hint: "Takım müziğini çal, ses seviyesi, otomatik, MÜZİĞİ KES" },
 ];
 
 export const widgetOf = (type) => RAIL_WIDGETS.find((w) => w.type === type) || null;
@@ -86,22 +154,85 @@ export function fitSize(type, key) {
   return { ...RAIL_SIZES[pick] };
 }
 
-/** Varsayılan şerit: en sık kullanılanlar yukarıda. */
+/**
+ * Pano öğesinin (en × boy birimi) parçacık boyutu: 3×2 / 4×2 yalnız izin veren
+ * çeşitlerde; izinli değilse önce dar olana (2 en), sonra en yakın izinliye iner.
+ */
+export function boardWidgetSize(type, w, h) {
+  const hh = Number(h) >= 4 ? 2 : 1;
+  const allowed = sizesOf(type);
+  for (let ww = Math.min(4, Math.max(1, Number(w) || 1)); ww >= 1; ww -= 1) {
+    const k = `${ww}x${hh}`;
+    if (RAIL_SIZES[k] && allowed.includes(k)) return k;
+  }
+  // Hücre çeşidin en küçük boyutundan da küçük: en küçük izinli boyut (en dar, en alçak).
+  return [...allowed].filter((k) => RAIL_SIZES[k]).sort((x, y) => RAIL_SIZES[x].w * RAIL_SIZES[x].h - RAIL_SIZES[y].w * RAIL_SIZES[y].h || RAIL_SIZES[x].w - RAIL_SIZES[y].w)[0] || "1x1";
+}
+
+/**
+ * Varsayılan "Kısayollar" panosu: en sık kullanılan çok işlevli düğmeler (yayın, mikrofon,
+ * GOL / kart / değişiklik / penaltı akışları, maç saati, tekrar, VAR, altyazı, röportaj).
+ */
 export const DEFAULT_RAIL = [
-  { id: "w_golive", type: "golive", w: 2, h: 2 },
-  { id: "w_mic", type: "mic", w: 1, h: 1 },
+  { id: "w_golive", type: "goLivePro", w: 2, h: 1 },
+  { id: "w_micDuck", type: "micDuck", w: 1, h: 1 },
+  { id: "w_dump", type: "dump", w: 1, h: 1 },
+  { id: "w_goalBoth", type: "goalProBoth", w: 2, h: 1 },
+  { id: "w_card", type: "cardPro", w: 2, h: 1 },
+  { id: "w_sub", type: "subPro", w: 1, h: 1 },
+  { id: "w_pen", type: "penaltyPro", w: 1, h: 1 },
+  { id: "w_clock", type: "clockPro", w: 2, h: 1 },
+  { id: "w_rpvw", type: "replayToPvw", w: 1, h: 1 },
+  { id: "w_rair", type: "replayToAir", w: 1, h: 1 },
+  { id: "w_angles", type: "anglePick", w: 2, h: 2 },
+  { id: "w_moment", type: "momentPro", w: 1, h: 1 },
   { id: "w_var", type: "var", w: 1, h: 1 },
-  { id: "w_replay", type: "replay", w: 2, h: 2 },
-  { id: "w_replayGo", type: "replayGo", w: 2, h: 1 },
-  { id: "w_moment", type: "moment", w: 1, h: 1 },
-  { id: "w_event", type: "event", w: 1, h: 1 },
-  { id: "w_goalBoth", type: "goalBoth", w: 2, h: 1 },
-  { id: "w_scoreboard", type: "scoreboard", w: 2, h: 2 },
+  { id: "w_event", type: "eventPro", w: 1, h: 1 },
+  { id: "w_undo", type: "undoLast", w: 1, h: 1 },
   { id: "w_subtitle", type: "subtitle", w: 1, h: 1 },
-  { id: "w_interview", type: "interview", w: 1, h: 1 },
-  { id: "w_chapter", type: "chapter", w: 1, h: 1 },
-  { id: "w_led", type: "led", w: 1, h: 1 },
+  { id: "w_interview", type: "interviewPro", w: 1, h: 1 },
 ];
+
+/** Hazır düzenlerin Kısayollar panosu (Reji ağırlıklı / Ses ağırlıklı / Tekrar operatörü). */
+export const PRESET_RAILS = {
+  reji: [
+    { id: "w_gh", type: "goalProHome", w: 1, h: 1 },
+    { id: "w_ga", type: "goalProAway", w: 1, h: 1 },
+    { id: "w_score", type: "scorePro", w: 2, h: 1 },
+    { id: "w_card", type: "cardPro", w: 2, h: 2 },
+    { id: "w_sub", type: "subPro", w: 2, h: 1 },
+    { id: "w_pen", type: "penaltyPro", w: 2, h: 1 },
+    { id: "w_stat", type: "statPro", w: 2, h: 1 },
+    { id: "w_period", type: "periodPro", w: 2, h: 2 },
+    { id: "w_log", type: "eventLog", w: 2, h: 2 },
+    { id: "w_event", type: "eventPro", w: 1, h: 1 },
+    { id: "w_undo", type: "undoLast", w: 1, h: 1 },
+  ],
+  ses: [
+    { id: "w_mix", type: "miniMixer", w: 2, h: 2 },
+    { id: "w_fmic", type: "fader", w: 1, h: 2, opts: { strip: "mic" } },
+    { id: "w_master", type: "masterKill", w: 1, h: 2 },
+    { id: "w_duck", type: "micDuck", w: 1, h: 1 },
+    { id: "w_dump", type: "dump", w: 1, h: 1 },
+    { id: "w_route", type: "audioRoute", w: 2, h: 2 },
+    { id: "w_preset", type: "audioPreset", w: 2, h: 1 },
+    { id: "w_music", type: "musicPlayer", w: 2, h: 2 },
+    { id: "w_gm", type: "goalMusicPro", w: 2, h: 1 },
+    { id: "w_mic", type: "mic", w: 1, h: 1 },
+    { id: "w_ptt", type: "micPtt", w: 1, h: 1 },
+  ],
+  tekrar: [
+    { id: "w_rpvw", type: "replayToPvw", w: 2, h: 1 },
+    { id: "w_rair", type: "replayToAir", w: 2, h: 1 },
+    { id: "w_angles", type: "anglePick", w: 2, h: 2 },
+    { id: "w_slow", type: "slowPlay", w: 2, h: 2 },
+    { id: "w_jog", type: "replayJog", w: 2, h: 2 },
+    { id: "w_goals", type: "goalReplays", w: 2, h: 1 },
+    { id: "w_moment", type: "momentPro", w: 1, h: 1 },
+    { id: "w_rvar", type: "replayVar", w: 1, h: 1 },
+    { id: "w_queue", type: "queuePro", w: 2, h: 2 },
+  ],
+};
 
 let seq = 0;
 export const newWidgetId = (type) => `w_${type}_${Date.now().toString(36)}${(seq++).toString(36)}`;

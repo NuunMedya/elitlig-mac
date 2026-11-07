@@ -119,7 +119,7 @@ describe("yerleşim: panolar", () => {
     expect(items.every((x) => x.x + x.w <= RAIL_COLS)).toBe(true);
     const b = defaultRailBoard();
     expect(b.cols).toBe(RAIL_COLS);
-    expect(b.items[0]).toMatchObject({ t: "w:golive", x: 0, y: 0, w: 2, h: 4 });
+    expect(b.items[0]).toMatchObject({ t: "w:goLivePro", x: 0, y: 0, w: 2, h: 2 });
   });
   it("her şerit parçacığı pano bileşenidir; boyutlar dikey ve yatay", () => {
     for (const w of RAIL_WIDGETS) expect(LAYOUT_COMPONENTS.some((c) => c.key === `w:${w.type}`)).toBe(true);

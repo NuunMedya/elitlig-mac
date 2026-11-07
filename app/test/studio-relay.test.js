@@ -232,7 +232,7 @@ test("aktarıcı: bağlantı askıda (bayt artmıyor) ya da hiç kurulamazsa öl
   await relay.stop();
 });
 
-test("aktarıcı: ağ yetişemezse kuyruk büyümez, sonraki anahtar kareye kadar atlanır (gerçek zaman)", async () => {
+test("aktarıcı: ağ yetişemezse kuyruk büyümez, sonraki anahtar kareye kadar GÖRÜNTÜ atlanır; SES sürer", async () => {
   const { relay, children, statuses } = setupRelay({ highWaterBytes: 10000, lowWaterBytes: 1000 });
   relay.write(gop(1));
   sent(children[0], 100);
@@ -241,21 +241,30 @@ test("aktarıcı: ağ yetişemezse kuyruk büyümez, sonraki anahtar kareye kada
   child.stdin.writableLength = 20000;
   relay.write(Buffer.concat([vid(1), aud()]));
   relay.write(Buffer.concat([vid(1), aud()]));
-  assert.equal(child.written.length, before, "yazılmamalı");
+  // Yalnız ses paketleri yazılır (sesde boşluk = izleyicide patlama).
+  assert.equal(child.written.length, before + 2);
+  assert.ok(child.written.slice(before).every((b) => b.equals(aud())), "yalnız ses");
   assert.equal(statuses.at(-1).dropping, true);
-  assert.match(statuses.at(-1).message, /kareler atlandı/);
-  // Kuyruk boşaldı ama anahtar kare yok: hâlâ atlanır.
+  assert.match(statuses.at(-1).message, /kareler atlandı \(ses sürüyor\)/);
+  // Kuyruk boşaldı ama anahtar kare yok: görüntü hâlâ atlanır, ses gider.
   child.stdin.writableLength = 0;
   relay.write(Buffer.concat([vid(1), aud()]));
-  assert.equal(child.written.length, before);
-  // Anahtar kare: GOP'un başından (PAT) sürer.
+  assert.equal(child.written.length, before + 3);
+  assert.equal(child.written.at(-1).equals(aud()), true);
+  // Anahtar kare: GOP'un başından (PAT) tamamı sürer.
   relay.write(gop(2));
-  assert.equal(child.written.length, before + 1);
+  assert.equal(child.written.length, before + 4);
   assert.equal(child.written.at(-1).subarray(0, 188).equals(pat()), true);
-  assert.equal(relay.status().droppedBytes, 6 * 188);
+  assert.equal(child.written.at(-1).length, gop(2).length);
+  assert.equal(relay.status().droppedBytes, 3 * 188);
   assert.equal(relay.status().dropEvents, 1);
   sent(child, 5000);
   assert.equal(relay.status().dropping, false);
+  // Ağ tamamen tıkalı (hardWater = 4 × highWater): ses de atılır.
+  child.stdin.writableLength = 50000;
+  relay.write(Buffer.concat([vid(2), aud()]));
+  assert.equal(child.written.length, before + 4);
+  assert.equal(relay.status().droppedBytes, 5 * 188);
   await relay.stop();
 });
 
@@ -301,6 +310,7 @@ test("aktarıcı komutu: -c copy FLV, no_duration_filesize, rw_timeout + tcp_nod
   assert.equal(at(a, "-i"), "pipe:0");
   assert.equal(at(a, "-c"), "copy");
   assert.equal(at(a, "-flvflags"), "no_duration_filesize");
+  assert.equal(at(a, "-bsf:a"), "aac_adtstoasc");
   assert.equal(at(a, "-rw_timeout"), "10000000");
   assert.equal(at(a, "-tcp_nodelay"), "1");
   assert.equal(at(a, "-progress"), "pipe:1");

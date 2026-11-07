@@ -94,7 +94,12 @@ contextBridge.exposeInMainWorld("elitlig", {
     onStatus: on("studio:status"),
     onRestartRecorder: on("studio:restartRecorder"),
     // Görüntü izi takıldı: kodlayıcı yeni başlıkla yeniden başlar (onRestartRecorder gelir).
-    restartEncoder: (reason) => ipcRenderer.invoke("studio:restartEncoder", reason || null),
+    // options: { videoCopy: false } → kodlama yolu değişir (WebCodecs → eski yol).
+    restartEncoder: (reason, options) => ipcRenderer.invoke("studio:restartEncoder", reason || null, options && typeof options === "object" ? { videoCopy: options.videoCopy } : null),
+    // Arayüzün kodlama sayaçları (tanılama günlüğü); düz nesne.
+    reportStats: (stats) => { if (stats && typeof stats === "object") ipcRenderer.send("studio:reportStats", stats); },
+    // Yayın tanılama: { pipeline, encoder, fps, speed, sentKbps, relayPendingBytes, client: {…} } | null
+    health: () => ipcRenderer.invoke("studio:health"),
     network: () => ipcRenderer.invoke("studio:network"),
     saveClip: (opts) => ipcRenderer.invoke("studio:saveClip", opts || {}),
     listClips: () => ipcRenderer.invoke("studio:listClips"),

@@ -17,7 +17,8 @@ import { Field, Icon, Kbd } from "../../../components/ui";
 import { BITRATE_PRESETS, FPS_CHOICES, RESOLUTION_CHOICES, encodingPreset, recommendedBitrate } from "../../../lib/studio/broadcast";
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../../lib/studio/transitions";
 import { WORKSPACES, FIXED_SHORTCUTS } from "../../../lib/studio/scenesWorkspace";
-import { AUDIO_KBPS_CHOICES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, RECORD_QUALITIES, RESERVED_KEYS, bindHotkey, keyText, recordEstimate } from "./settings";
+import { AUDIO_KBPS_CHOICES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, PIPELINES, RECORD_QUALITIES, RESERVED_KEYS, bindHotkey, keyText, recordEstimate } from "./settings";
+import QualityPresets from "../QualityPresets";
 import { RAIL_SIZES, RAIL_WIDGETS, addWidget, moveWidget, removeWidget, resizeWidget, sizeKey, sizesOf, widgetOf } from "../shortcuts/railModel";
 import { RailCatalog } from "../shortcuts/ShortcutRail";
 import TransitionsTab from "../scenes/TransitionsTab";
@@ -171,7 +172,13 @@ function SettingsPage({
             <div className="st-chips">{BITRATE_PRESETS.map((b) => <button key={b.kbps} type="button" className={`st-chip ${Number(enc.bitrateKbps) === b.kbps ? "is-on" : ""}`} onClick={() => setEnc({ bitrateKbps: b.kbps })} title={b.hint}>{b.label}</button>)}</div>
           </Field>
         </Section>
-        <Section title="Kodlayıcı" sub="Uygulama sürümü desteklemiyorsa otomatik seçim kullanılır.">
+        <Section title="Yayın kalitesi" sub="Hızlı ayar: çözünürlük, kare hızı ve bit hızı birlikte.">
+          <QualityPresets encoding={enc} onEncoding={(v) => setEnc(v)} locked={Boolean(engine?.active)} network={engine?.status?.network || null} />
+        </Section>
+        <Section title="Kodlama yolu" sub="Tek kodlama (WebCodecs): görüntü bir kez, donanımda kodlanır; ffmpeg yalnız kopyalar (OBS gibi). Sorun olursa yayın kesilmeden eski yola geçilir.">
+          <div className="st-choices">{PIPELINES.map((p) => <Choice key={p.key} on={settings.stream.pipeline === p.key} title={p.label} text={p.hint} onClick={() => set("stream", { pipeline: p.key })} />)}</div>
+        </Section>
+        <Section title="Kodlayıcı" sub="Eski kodlama yolunda ffmpeg'in kodlayıcısı. Uygulama sürümü desteklemiyorsa otomatik seçim kullanılır.">
           <div className="st-choices">{ENCODER_PREFS.map((e) => <Choice key={e.key} on={settings.stream.encoder === e.key} title={e.label} text={e.hint} onClick={() => set("stream", { encoder: e.key })} />)}</div>
           <div className="st-row st-row--wrap">
             <Field label="Anahtar kare aralığı">
@@ -311,6 +318,7 @@ function SettingsPage({
           <Toggle checked={settings.view.hints} onChange={(v) => set("view", { hints: v })} title="Kısayol rozetlerini göster" text="Düğmelerdeki tuş ipuçları (B, R, V …)" />
           <Toggle checked={settings.view.tooltips} onChange={(v) => set("view", { tooltips: v })} title="Açıklama balonlarını göster" />
           <Toggle checked={Boolean(prefs.previewGraphics)} onChange={(v) => setPref("previewGraphics", v)} title="Önizlemede grafikleri göster" text="Skorbord ve bantlar önizlemede soluk görünür" />
+          <Toggle checked={Boolean(prefs.sceneInline)} onChange={(v) => setPref("sceneInline", v)} title="Sahne katmanlarını yanda göster" text="Kalem büyük düzenleyici penceresi yerine Sahneler panelinde seçili sahnenin katmanlarını yanda açar" />
         </Section>
       </>
     );

@@ -12,7 +12,7 @@
 // IPC (preload "studio"):
 //   invoke: studio:info, studio:mediaAccess, studio:requestMediaAccess,
 //           studio:listScreens, studio:selectScreen, studio:start, studio:stop,
-//           studio:restartEncoder, studio:network (RTMP aktarıcısı, relay.js),
+//           studio:restartEncoder (reason, { videoCopy? }), studio:health, studio:network (RTMP aktarıcısı, relay.js),
 //           studio:saveClip, studio:listClips, studio:deleteClip,
 //           studio:uploadClip, studio:revealClip,
 //           studio:angles:start, studio:angles:stop, studio:angles:status,
@@ -30,7 +30,7 @@
 //           studio:led:getState,
 //           studio:media:allow (preload: webUtils yolu), studio:media:pick (dosya penceresi),
 //           studio:media:check, studio:media:forget  (media.js — kalıcı yerel dosya kaynakları)
-//   send:   studio:chunk (program parçası), studio:angleChunk { id, data },
+//   send:   studio:chunk (program parçası), studio:reportStats (arayüz kodlama sayaçları), studio:angleChunk { id, data },
 //           studio:renderChunk { id, data }, studio:led:sendState (yanıt yok)
 //   olay:   studio:status, studio:restartRecorder, studio:angles:status,
 //           studio:angles:restartRecorder, studio:render:progress,
@@ -300,7 +300,7 @@ function registerStudio({
       localQuality: { supported: Boolean(info.available && ff.isHardwareEncoder(info.encoder)), encoder: info.encoder || null },
       // Arayüzün özellik denetimi: yerel kaydın ayrı kalitesi (localRecord.videoBitrateKbps / height / fps),
       // kodlayıcı tercihi (encoderPreference), anahtar kare aralığı (keyframeSec), yükleme günlüğü.
-      features: { localRecordQuality: true, localRecordQualityHardware: Boolean(info.available && ff.isHardwareEncoder(info.encoder)), encoderPreference: true, keyframeSec: true, audioBitrate: true, uploadLog: true },
+      features: { localRecordQuality: true, localRecordQualityHardware: Boolean(info.available && ff.isHardwareEncoder(info.encoder)), encoderPreference: true, keyframeSec: true, audioBitrate: true, uploadLog: true, videoCopy: true, health: true },
     };
   });
   ipcMain.handle("studio:mediaAccess", () => ({ camera: mediaStatus("camera"), microphone: mediaStatus("microphone"), screen: mediaStatus("screen") }));
@@ -367,10 +367,19 @@ function registerStudio({
   });
   // Arayüz görüntü izinin takıldığını / kuyruğun şiştiğini gördü: kodlayıcı yeni
   // başlıkla yeniden başlar (restartRecorder olayı gelir), deneme sayılmaz.
-  ipcMain.handle("studio:restartEncoder", (event, reason) => {
+  // options.videoCopy (boolean): kodlama yolu değişir (WebCodecs hatası → eski yol, yeniden kodlama).
+  ipcMain.handle("studio:restartEncoder", (event, reason, options) => {
     if (!ownerOk(owners.program, event.sender)) return false;
-    return engine.restartEncoder(reason ? String(reason).slice(0, 60) : "RECORDER");
+    const o = options && typeof options.videoCopy === "boolean" ? { videoCopy: options.videoCopy } : null;
+    return engine.restartEncoder(reason ? String(reason).slice(0, 60) : "RECORDER", o);
   });
+  // Arayüzün kodlama sayaçları (5 sn'de bir; tanılama günlüğüne).
+  ipcMain.on("studio:reportStats", (event, stats) => {
+    if (!ownerOk(owners.program, event.sender)) return;
+    engine.clientStats(stats);
+  });
+  // Yayın tanılama: ffmpeg + aktarıcı + arayüz sayaçları.
+  ipcMain.handle("studio:health", () => engine.health());
   // RTMP aktarıcısının ayrıntılı durumu (status.network ile aynı) | null.
   ipcMain.handle("studio:network", () => engine.network());
 

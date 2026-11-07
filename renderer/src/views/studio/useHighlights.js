@@ -35,7 +35,7 @@ export function useHighlights(matchId) {
     if (p?.kind === "highlight" && p.total) setJob((j) => (j.phase === "uploading" ? { ...j, progress: Math.min(1, p.loaded / p.total) } : j));
   }), []);
 
-  const build = useCallback(async ({ plan, info, images, boardOf, stingerKind }) => {
+  const build = useCallback(async ({ plan, info, images, boardOf, stingerKind, music = null }) => {
     if (signalRef.current) return;
     const signal = { cancelled: false };
     signalRef.current = signal;
@@ -43,7 +43,7 @@ export function useHighlights(matchId) {
     let last = 0;
     try {
       const res = await renderHighlight({
-        plan, info, images, boardOf, signal, stingerKind,
+        plan, info, images, boardOf, signal, stingerKind, music,
         onPhase: (phase) => setJob((j) => ({ ...j, phase })),
         onProgress: (p, t, load) => {
           const now = performance.now();

@@ -9,6 +9,7 @@
 // yüklenir, geçişte boşluk olmaz. Tuval kirletilmesin diye her klip önce CORS'lu,
 // olmazsa düz yüklenir ve küçük tuvalde denenir.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { clipAudio } from "../../lib/studio/replays";
 
 function canvasSafe(video) {
   try {
@@ -52,7 +53,7 @@ export async function prepare(el, url) {
  * playStinger), firstImmediate ilk öğeyi geçişsiz gösterir (yayına alma geçişi
  * zaten örter), onFinished kuyruk bitince çağrılır (mod kendi geçişiyle canlıya döner).
  */
-export function useReplayPlayer({ els, replayRef, playStinger, switchVia, firstImmediate = false, onFinished, bannerOf, rate = 1, onError, onStart }) {
+export function useReplayPlayer({ els, soundEl = null, replayRef, playStinger, switchVia, firstImmediate = false, onFinished, bannerOf, rate = 1, onError, onStart }) {
   const [state, setState] = useState(null); // { queue, index }
   const tokenRef = useRef(0);
   const curRef = useRef({ queue: [], index: -1, slot: 0, nextReady: null });
@@ -68,7 +69,29 @@ export function useReplayPlayer({ els, replayRef, playStinger, switchVia, firstI
   const finRef = useRef(onFinished);
   finRef.current = onFinished;
 
-  const pauseAll = useCallback(() => { els.forEach((el) => { try { el.pause(); } catch { /* yoksay */ } }); }, [els]);
+  const pauseAll = useCallback(() => { [...els, soundEl].forEach((el) => { try { el?.pause(); } catch { /* yoksay */ } }); }, [els, soundEl]);
+
+  /**
+   * Kamera / kaynak açısı sessiz kaydedilir: o anın sesi (yorum mikrofonu dahil) program
+   * açısının aynı anından, ayrı ses öğesiyle (soundEl, "media" şeridi) aynı hızda çalınır.
+   */
+  const syncSound = useCallback((item, el) => {
+    if (!soundEl) return;
+    try { soundEl.pause(); } catch { /* yoksay */ }
+    const snd = item?.audioUrl ? item : clipAudio(item?.replay, { angle: item?.angle, durationMs: item?.durationMs });
+    if (!snd?.audioUrl) return;
+    const start = () => {
+      try { soundEl.currentTime = (Number(snd.audioOffsetMs) || 0) / 1000 + (el.currentTime || 0); } catch { /* yoksay */ }
+      soundEl.playbackRate = el.playbackRate || 1;
+      soundEl.play().catch(() => {});
+    };
+    if (soundEl.dataset.url === snd.audioUrl && soundEl.readyState >= 2) { start(); return; }
+    soundEl.dataset.url = snd.audioUrl;
+    if (!/^(blob|data):/i.test(snd.audioUrl)) soundEl.crossOrigin = "anonymous";
+    soundEl.addEventListener("loadeddata", () => { if (replayRef.current?.el === el && !el.paused) start(); }, { once: true });
+    soundEl.src = snd.audioUrl;
+    soundEl.load();
+  }, [soundEl, replayRef]);
 
   const goLive = useCallback((withStinger = true) => {
     tokenRef.current += 1;
@@ -94,19 +117,21 @@ export function useReplayPlayer({ els, replayRef, playStinger, switchVia, firstI
     const onMid = () => {
       if (tokenRef.current !== token) return;
       els.forEach((x) => { if (x !== el) { try { x.pause(); } catch { /* yoksay */ } } });
+      try { soundEl?.pause(); } catch { /* yoksay */ }
       // Düzenleyicide seçilen başlangıç noktası (yoksa baştan).
       try { el.currentTime = Math.max(0, Number(item?.startSec) || 0); } catch { el.currentTime = 0; }
       // [önizleme-geçiş] öğe kendi (yayına alındığı andaki) hızıyla oynar; yoksa genel hız.
       el.playbackRate = Number(item?.rate) > 0 ? Number(item.rate) : rateRef.current;
       replayRef.current = { active: true, el, event: bannerRef.current?.(item) || null, item };
       el.play().catch(() => {});
+      syncSound(item, el);
     };
     if (index === 0 && firstImmediate) onMid();
     else viaRef.current(onMid);
     curRef.current = { ...c, index, slot };
     setState({ queue: c.queue, index });
     preloadNext(token);
-  }, [els, firstImmediate, preloadNext, replayRef]);
+  }, [els, firstImmediate, preloadNext, replayRef, syncSound, soundEl]);
 
   const advance = useCallback(async () => {
     const token = tokenRef.current;
@@ -174,8 +199,9 @@ export function useReplayPlayer({ els, replayRef, playStinger, switchVia, firstI
     const cur = replayRef.current;
     if (cur?.active && Number(cur.item?.rate) > 0) return;
     els.forEach((el) => { el.playbackRate = r; });
-  }, [r, els, replayRef]);
-  useEffect(() => () => { tokenRef.current += 1; els.forEach((el) => { try { el.pause(); } catch { /* yoksay */ } }); }, [els]);
+    if (soundEl) soundEl.playbackRate = r;
+  }, [r, els, replayRef, soundEl]);
+  useEffect(() => () => { tokenRef.current += 1; [...els, soundEl].forEach((el) => { try { el?.pause(); } catch { /* yoksay */ } }); }, [els, soundEl]);
 
   return {
     playing: Boolean(state),

@@ -8,7 +8,8 @@
 // Küçük resimler TEK zamanlayıcıyla (saniyede ~6 kare) doğrudan tuvallere
 // çizilir; görünmeyen kutu ve gizli pencere atlanır. React durumu kare başına
 // değişmez — program tuvalinin kare hızını bozmaz.
-import React, { memo, useCallback, useEffect, useRef } from "react";
+import React, { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Icon, MenuButton } from "../../components/ui";
 import { resolveScene } from "../../lib/studio/scenes";
 import { drawScene } from "./draw";
@@ -55,9 +56,49 @@ export function tileWarning(config, runtime, tile) {
   return null;
 }
 
-/** Tek sahne kutusu (şerit, ızgara, dikey liste ortak). size: "strip" | "grid" | "row". */
+/**
+ * Sağ tık menüsü (imleç konumunda; MenuButton ile aynı görünüm ve öğe biçimi).
+ * items: [{ label, icon, onClick, danger, disabled } | "-"].
+ */
+export function ContextMenu({ at, items, onClose, label = "Menü" }) {
+  const ref = useRef(null);
+  const [pos, setPos] = useState(null);
+  useLayoutEffect(() => {
+    const m = ref.current?.getBoundingClientRect();
+    if (!m) return;
+    const x = Math.max(4, Math.min(at.x, window.innerWidth - m.width - 4));
+    const y = at.y + m.height > window.innerHeight - 4 ? Math.max(4, at.y - m.height) : at.y;
+    setPos({ x, y });
+  }, [at.x, at.y]);
+  useEffect(() => {
+    const down = (e) => { if (!ref.current?.contains(e.target)) onClose(); };
+    const key = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    window.addEventListener("mousedown", down, true);
+    window.addEventListener("keydown", key, true);
+    window.addEventListener("blur", onClose);
+    window.addEventListener("resize", onClose);
+    return () => { window.removeEventListener("mousedown", down, true); window.removeEventListener("keydown", key, true); window.removeEventListener("blur", onClose); window.removeEventListener("resize", onClose); };
+  }, [onClose]);
+  useEffect(() => { if (pos) ref.current?.querySelector("button:not(:disabled)")?.focus({ preventScroll: true }); }, [pos]);
+  const list = (items || []).filter(Boolean);
+  return createPortal(
+    <div ref={ref} className="menu__list vfx-ctx" role="menu" aria-label={label} style={pos ? { top: pos.y, left: pos.x } : { top: at.y, left: at.x, visibility: "hidden" }}
+      onContextMenu={(e) => e.preventDefault()}>
+      {list.map((item, i) => (item === "-" ? <hr key={`hr${i}`} /> : (
+        <button key={`${item.label}${i}`} type="button" role="menuitem" disabled={item.disabled} title={item.hint} className={item.danger ? "is-danger" : ""} onClick={() => { onClose(); item.onClick?.(); }}>
+          {item.icon && <Icon name={item.icon} size={14} />}<span>{item.label}</span>
+        </button>
+      )))}
+    </div>,
+    document.body,
+  );
+}
+
+/** Tek sahne kutusu (şerit, ızgara, dikey liste ortak). size: "strip" | "grid" | "row". Sağ tık: menü. */
 export const Tile = memo(function Tile({ tile, register, onAir, inPreview, onLed = false, bad, studioMode, onPreview, onProgram, onToLed, onEdit, menu, size = "strip", large = false }) {
   const ref = useRef(null);
+  const [ctx, setCtx] = useState(null);
+  const closeCtx = useCallback(() => setCtx(null), []);
   const setRef = useCallback((el) => {
     register(tile.id, el, ref.current);
     ref.current = el;
@@ -65,7 +106,8 @@ export const Tile = memo(function Tile({ tile, register, onAir, inPreview, onLed
   useEffect(() => () => { if (ref.current) register(tile.id, null, ref.current); }, [register, tile.id]);
   const cls = `st-tile is-${size} ${onAir ? "is-program" : ""} ${inPreview ? "is-preview" : ""} ${bad ? "is-bad" : ""} ${onLed ? "is-led" : ""}`;
   return (
-    <div className={cls}>
+    <div className={cls} onContextMenu={menu ? (e) => { e.preventDefault(); e.stopPropagation(); setCtx({ x: e.clientX, y: e.clientY }); } : undefined}>
+      {ctx && menu && <ContextMenu at={ctx} items={menu} onClose={closeCtx} label={`Sahne: ${tile.name}`} />}
       <button type="button" className="st-tile__hit" onClick={() => onPreview(tile.id)} onDoubleClick={() => onProgram(tile.id)}
         title={studioMode ? `${tile.name} — tık: önizlemeye al · çift tık: yayına al` : `${tile.name} — tık: yayına al`}>
         <canvas ref={setRef} width={large ? TILE_W * 2 : size === "row" ? 160 : TILE_W} height={large ? TILE_H * 2 : size === "row" ? 90 : TILE_H} />

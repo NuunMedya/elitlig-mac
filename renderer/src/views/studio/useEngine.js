@@ -15,16 +15,26 @@
 //   - Takılma gözcüsü: görüntü izi bittiyse (readyState "ended") ya da
 //     STALL_MS boyunca hiç parça gelmediyse kaydedici (taze izlerle) yeniden kurulur.
 //   - RTMP kopmaları ana süreçte (RTMP aktarıcısı) ele alınır; kaydedici etkilenmez.
+//
+// Kodlama yolu (Ayarlar › Yayın › Kodlama yolu, stream.pipeline):
+//   "webcodecs": webcodecs.js — görüntü tarayıcıda BİR KEZ (donanım H.264) kodlanır,
+//                ffmpeg kopyalar (videoCopy). Kodlayıcı hatasında kendiliğinden eski
+//                yola geçilir (studio.restartEncoder(…, { videoCopy: false })).
+//   "legacy":    MediaRecorder → ffmpeg yeniden kodlar.
+//   "auto":      donanım VideoEncoder varsa webcodecs.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AUDIO_BITRATE_KBPS, isEncoding, pickMimeType, recorderBitsPerSecond } from "../../lib/studio/broadcast";
+import { choosePipeline } from "../../lib/studio/encodepath";
+import { createWebCodecsPipeline, probeWebCodecs } from "./webcodecs";
 
 const studio = () => window.elitlig?.studio;
 const TIMESLICE_MS = 250;
 export const MAX_QUEUE = 40; // ≈ 10 sn'lik parça
 export const STALL_MS = 4000;
 const RESTART_GAP_MS = 10000;
+const STATS_REPORT_MS = 5000;
 
-export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
+export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subscribeFrames = null, getDrawStats = null, onError }) {
   const [status, setStatus] = useState({ state: "idle" });
   const [since, setSince] = useState(null);
   const [mode, setMode] = useState(null); // "live" | "rehearsal"
@@ -39,6 +49,10 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
   const lastDataRef = useRef(0);
   const lastRestartRef = useRef(0);
   const startRef = useRef(null);
+  const pipelineRef = useRef("legacy"); // bu oturumun kodlama yolu
+  const wcRef = useRef(null); // { pipeline, unsubscribe }
+  const wcConfigRef = useRef(null);
+  const fallbackRef = useRef(null); // { reason, at } — WebCodecs'ten eski yola geçildiyse
   const errRef = useRef(onError);
   errRef.current = onError;
 
@@ -48,12 +62,21 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
     return () => { live = false; };
   }, []);
 
+  const stopWebCodecs = useCallback(() => {
+    const wc = wcRef.current;
+    wcRef.current = null;
+    if (!wc) return;
+    try { wc.unsubscribe?.(); } catch { /* yoksay */ }
+    try { wc.pipeline.stop(); } catch { /* yoksay */ }
+  }, []);
+
   const stopRecorder = useCallback(() => {
     genRef.current += 1;
     const rec = recRef.current;
     recRef.current = null;
     if (rec && rec.state !== "inactive") { try { rec.stop(); } catch { /* yoksay */ } }
-  }, []);
+    stopWebCodecs();
+  }, [stopWebCodecs]);
 
   /**
    * Kodlayıcıdan yeni başlıkla yeniden başlatma iste (deneme sayılmaz); ana süreç
@@ -77,9 +100,56 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
     return true;
   }, []);
 
+  /**
+   * WebCodecs hatası: eski yola geç. Ana süreç ffmpeg'i yeniden kodlama kipinde
+   * yeniden başlatır (aktarıcı RTMP'yi korur) ve onRestartRecorder ile döner.
+   */
+  const fallbackToLegacy = useCallback((reason) => {
+    if (pipelineRef.current !== "webcodecs") return;
+    pipelineRef.current = "legacy";
+    fallbackRef.current = { reason: String(reason || "ERROR"), at: Date.now() };
+    stopWebCodecs();
+    errRef.current?.(`Tek kodlama (WebCodecs) durdu (${reason}); eski kodlama yoluna geçildi.`);
+    const s = studio();
+    lastRestartRef.current = Date.now();
+    Promise.resolve(s?.restartEncoder?.(`WEBCODECS_${reason}`, { videoCopy: false }))
+      .then((ok) => { if (!ok && optsRef.current && !recRef.current) startRef.current?.(); })
+      .catch(() => {});
+  }, [stopWebCodecs]);
+
+  const startWebCodecs = useCallback(() => {
+    const opts = optsRef.current;
+    const canvas = getCanvas?.();
+    if (!opts || !canvas || !subscribeFrames || !wcConfigRef.current) return false;
+    if (wcRef.current?.pipeline.alive()) {
+      // ffmpeg yeniden başladı: aynı kodlayıcı, yeni başlık + anahtar kare.
+      wcRef.current.pipeline.restart();
+      lastDataRef.current = Date.now();
+      return true;
+    }
+    stopWebCodecs();
+    let pipeline;
+    try {
+      pipeline = createWebCodecsPipeline({
+        canvas, audioTrack: getAudioTrack(), fps: opts.fps, width: opts.width, height: opts.height,
+        audioBitrateKbps: opts.audioBitrateKbps, keyframeSec: opts.keyframeSec || 2, videoConfig: wcConfigRef.current,
+        onData: (buf) => { lastDataRef.current = Date.now(); studio()?.pushChunk?.(buf); },
+        onFatal: (reason) => fallbackToLegacy(reason),
+      });
+    } catch {
+      fallbackToLegacy("CONFIGURE");
+      return true;
+    }
+    const unsubscribe = subscribeFrames((now) => pipeline.onFrame(now));
+    wcRef.current = { pipeline, unsubscribe };
+    lastDataRef.current = Date.now();
+    return true;
+  }, [fallbackToLegacy, getAudioTrack, getCanvas, stopWebCodecs, subscribeFrames]);
+
   const startRecorder = useCallback(() => {
     const opts = optsRef.current;
     if (!opts) return false;
+    if (pipelineRef.current === "webcodecs") return startWebCodecs();
     stopRecorder();
     const video = getVideoTrack();
     const audio = getAudioTrack();
@@ -123,7 +193,7 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
     rec.start(TIMESLICE_MS);
     recRef.current = rec;
     return true;
-  }, [getAudioTrack, getVideoTrack, stopRecorder, requestRestart]);
+  }, [getAudioTrack, getVideoTrack, stopRecorder, requestRestart, startWebCodecs]);
   startRef.current = startRecorder;
 
   useEffect(() => {
@@ -139,11 +209,19 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
         if (p.state === "failed") errRef.current?.(p.message ? `Yayın bağlantısı koptu: ${p.message}` : "Yayın bağlantısı kurulamadı.");
       }
     });
-    const offRestart = s?.onRestartRecorder?.(() => { if (optsRef.current) startRecorder(); });
+    const offRestart = s?.onRestartRecorder?.((p) => {
+      // Ana süreç tek kodlama akışını açamadı (ffmpeg reddetti): eski yola geç.
+      if (p?.videoCopy === false && pipelineRef.current === "webcodecs") {
+        pipelineRef.current = "legacy";
+        fallbackRef.current = { reason: `FFMPEG_${p.reason || "COPY"}`, at: Date.now() };
+        stopWebCodecs();
+      }
+      if (optsRef.current) startRecorder();
+    });
     // Yerel kayıt: { state, path, mp4Path, bytes, error }
     const offLocal = s?.onLocalRecord?.((p) => { if (p) setLocalInfo(p); });
     return () => { offStatus?.(); offRestart?.(); offLocal?.(); };
-  }, [startRecorder, stopRecorder]);
+  }, [startRecorder, stopRecorder, stopWebCodecs]);
 
   /**
    * url null → prova (yayınsız kayıt). localRecord: { enabled, dir?, videoBitrateKbps?, height? }
@@ -168,7 +246,20 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
       ...(stream?.keyframeSec ? { keyframeSec: Number(stream.keyframeSec) } : {}),
       ...(stream?.encoder && stream.encoder !== "auto" ? { encoderPreference: stream.encoder } : {}),
     };
-    const opts = { url: url || null, ...(url && backupUrl ? { backupUrl } : {}), keepDisplayAwake: keepDisplayAwake !== false, width: preset.width, height: preset.height, fps: preset.fps, videoBitrateKbps: preset.videoBitrateKbps, audioBitrateKbps: Number(stream?.audioKbps) || AUDIO_BITRATE_KBPS, mimeType, ...extra, ...(matchId ? { matchId, matchName: matchName || null } : {}), ...(lr ? { localRecord: lr } : {}) };
+    // Kodlama yolu: WebCodecs (tek kodlama) destekleniyorsa ve seçildiyse ffmpeg görüntüyü kopyalar.
+    const setting = stream?.pipeline || "auto";
+    let probe = { ok: false };
+    if (setting !== "legacy" && getCanvas && subscribeFrames) {
+      try { probe = await probeWebCodecs({ width: preset.width, height: preset.height, fps: preset.fps, videoBitrateKbps: preset.videoBitrateKbps, allowSoftware: setting === "webcodecs" }); } catch { probe = { ok: false }; }
+    }
+    const pipeline = choosePipeline(setting, { webcodecs: probe.ok, hardware: probe.hardware });
+    pipelineRef.current = pipeline;
+    wcConfigRef.current = pipeline === "webcodecs" ? probe.config : null;
+    fallbackRef.current = null;
+    const wcInfo = pipeline === "webcodecs"
+      ? { videoCopy: true, pipeline: "webcodecs", videoEncoderLabel: `WebCodecs ${probe.hardware ? "donanım" : "yazılım"} · ${probe.config.codec} · ${probe.config.bitrateMode === "constant" ? "CBR" : "VBR"}` }
+      : { pipeline: "legacy" };
+    const opts = { url: url || null, ...(url && backupUrl ? { backupUrl } : {}), keepDisplayAwake: keepDisplayAwake !== false, width: preset.width, height: preset.height, fps: preset.fps, videoBitrateKbps: preset.videoBitrateKbps, audioBitrateKbps: Number(stream?.audioKbps) || AUDIO_BITRATE_KBPS, mimeType, ...extra, ...wcInfo, ...(matchId ? { matchId, matchName: matchName || null } : {}), ...(lr ? { localRecord: lr } : {}) };
     setStatus({ state: "starting" });
     const res = await s.start(opts);
     if (!res?.ok) {
@@ -188,7 +279,15 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
     setStatus((st) => (st.state === "starting" ? { state: url ? "connecting" : "recording" } : st));
     if (!url) setSince((v) => v ?? Date.now());
     return res;
-  }, [startRecorder]);
+  }, [startRecorder, getCanvas, subscribeFrames]);
+
+  /** Tanılama: kodlama yolunun anlık sayaçları (Yayın tanılama penceresi, günlük). */
+  const getEncodeStats = useCallback(() => {
+    const wc = wcRef.current?.pipeline;
+    if (wc) return { ...wc.stats(), fallback: fallbackRef.current };
+    if (!optsRef.current) return null;
+    return { pipeline: "legacy", recorder: recRef.current?.state || null, queue: queueRef.current, mimeType: optsRef.current.mimeType || null, fallback: fallbackRef.current };
+  }, []);
 
   const stop = useCallback(async () => {
     optsRef.current = null;
@@ -205,15 +304,26 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
   useEffect(() => {
     if (!encodingNow) return undefined;
     const t = setInterval(() => {
+      if (!optsRef.current) return;
+      if (wcRef.current) {
+        if (Date.now() - lastDataRef.current > STALL_MS) requestRestart("WEBCODECS_NO_DATA");
+        return;
+      }
       const rec = recRef.current;
-      if (!optsRef.current || !rec) return;
+      if (!rec) return;
       const tracks = rec.stream?.getVideoTracks?.() || [];
       const ended = tracks.some((tr) => tr.readyState === "ended");
       const silent = rec.state === "recording" && Date.now() - lastDataRef.current > STALL_MS;
       if (ended || silent) requestRestart(ended ? "TRACK_ENDED" : "NO_DATA");
     }, 1000);
-    return () => clearInterval(t);
-  }, [encodingNow, requestRestart]);
+    // Tanılama günlüğüne kodlama sayaçları (ana süreç "yayın sağlığı" kaydına ekler).
+    const r = setInterval(() => {
+      const st = getEncodeStats();
+      const d = getDrawStats?.() || null;
+      if (st) { try { studio()?.reportStats?.({ ...st, ...(d ? { drawFps: d.fps, drawMs: d.drawMs, stalls: d.totalStalls } : {}) }); } catch { /* yoksay */ } }
+    }, STATS_REPORT_MS);
+    return () => { clearInterval(t); clearInterval(r); };
+  }, [encodingNow, requestRestart, getEncodeStats, getDrawStats]);
 
   // Görünümden çıkınca kodlayıcıyı kapat.
   const activeRef = useRef(false);
@@ -222,6 +332,8 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
     optsRef.current = null;
     genRef.current += 1;
     try { recRef.current?.stop(); } catch { /* yoksay */ }
+    try { wcRef.current?.unsubscribe?.(); wcRef.current?.pipeline.stop(); } catch { /* yoksay */ }
+    wcRef.current = null;
     if (activeRef.current) studio()?.stop?.();
   }, []);
 
@@ -229,5 +341,5 @@ export function useEngine({ getVideoTrack, getAudioTrack, onError }) {
   const local = localInfo?.path || localInfo?.mp4Path
     ? { path: localInfo.mp4Path || localInfo.path, sizeBytes: localInfo.bytes, state: localInfo.state, error: localInfo.error || null }
     : status.localRecord || (localPath ? { path: localPath } : null);
-  return { status, since, mode, info, active: isEncoding(status.state), start, stop, available: Boolean(studio()?.start), localRecord: local };
+  return { status, since, mode, info, active: isEncoding(status.state), start, stop, available: Boolean(studio()?.start), localRecord: local, getEncodeStats };
 }

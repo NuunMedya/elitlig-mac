@@ -17,8 +17,9 @@ import {
   BITRATE_MAX_KBPS, BITRATE_MIN_KBPS, BITRATE_PRESETS, FPS_CHOICES, PRIVACY_LABELS, RESOLUTION_CHOICES,
   bitrateAdvice, isRtmpUrl, joinRtmp, recommendedBitrate, streamStatusLabel, uploadNeedMbps, validateBitrate,
 } from "../../lib/studio/broadcast";
+import QualityPresets from "./QualityPresets";
 
-function EncodingCard({ encoding, onEncoding, locked }) {
+function EncodingCard({ encoding, onEncoding, locked, network = null }) {
   const [text, setText] = useState(String(encoding.bitrateKbps));
   useEffect(() => setText(String(encoding.bitrateKbps)), [encoding.bitrateKbps]);
   const check = validateBitrate(text);
@@ -33,6 +34,7 @@ function EncodingCard({ encoding, onEncoding, locked }) {
   return (
     <section className="st-card">
       <header className="st-card__head"><Icon name="sliders" size={15} /><strong>Görüntü kalitesi</strong></header>
+      <Field label="Yayın kalitesi"><QualityPresets encoding={encoding} onEncoding={onEncoding} locked={locked} network={network} /></Field>
       <div className="st-row">
         <Field label="Çözünürlük">
           <div className="st-seg">
@@ -305,8 +307,9 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
               )}
               {!encodingNow
                 ? <button type="button" className="btn btn--red btn--block" disabled={busy || !matchId || !engine.available} onClick={onStartYoutube}><Icon name="play" size={13} /> {openStream ? "Yayına devam et" : "YouTube'da canlı yayını başlat"}</button>
-                : <button type="button" className="btn btn--block" disabled={busy} onClick={onStop}><Icon name="pause" size={13} /> Görüntüyü durdur</button>}
-              {openStream && <button type="button" className="btn btn--danger-ghost btn--block" disabled={busy} onClick={onEndYoutube}><Icon name="stop" size={13} /> YouTube yayınını bitir</button>}
+                : <button type="button" className="btn btn--red btn--block" disabled={busy} onClick={onEndYoutube} title="Kodlayıcı durur ve YouTube yayını bitirilir (onay sorulur)"><Icon name="stop" size={13} /> Yayını kapat</button>}
+              {encodingNow && <button type="button" className="btn btn--xs btn--block" disabled={busy} onClick={onStop} title="Yalnız görüntü kesilir; YouTube yayını açık kalır, “Yayına devam et” ile sürer"><Icon name="pause" size={11} /> Görüntüyü durdur (YouTube açık kalır)</button>}
+              {openStream && !encodingNow && <button type="button" className="btn btn--danger-ghost btn--block" disabled={busy} onClick={onEndYoutube}><Icon name="stop" size={13} /> YouTube yayınını bitir</button>}
               {watch && (
                 <div className="st-row">
                   <input readOnly value={watch} onFocus={(e) => e.target.select()} />
@@ -353,7 +356,7 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
       <div className="st-stack">
         <Part id="localrec" label="Maçı bilgisayara kaydet"><LocalRecordCard value={localRec} onChange={onLocalRec} engine={engine} recordInfo={recordInfo} onOpenSettings={onOpenSettings} /></Part>
         {chapters && <Part id="chapters" label="YouTube bölümleri"><ChaptersCard chapters={chapters} onAir={engine.active} toast={toast} hasBroadcast={Boolean(openStream)} /></Part>}
-        <Part id="encoding" label="Görüntü kalitesi"><EncodingCard encoding={encoding} onEncoding={onEncoding} locked={encodingNow} /></Part>
+        <Part id="encoding" label="Görüntü kalitesi"><EncodingCard encoding={encoding} onEncoding={onEncoding} locked={encodingNow} network={engine.status?.network || null} /></Part>
         <Part id="encoder" label="Kodlayıcı bilgisi">
         <p className="st-hint">
           Kodlayıcı: {ff ? (ff.available ? `ffmpeg ${ff.version || ""} · ${encoderText(ff)}` : "ffmpeg yok") : "bilgi yok"}

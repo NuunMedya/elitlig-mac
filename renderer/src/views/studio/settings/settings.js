@@ -14,6 +14,8 @@
 // tercihlerinde (studio.led.v2) kalır; Ayarlar sayfası onları da aynı yerden
 // düzenler (tek doğruluk kaynağı).
 export const SETTINGS_KEY = "studio.settings.v1";
+import { PIPELINES, normalizePipeline } from "../../../lib/studio/encodepath";
+export { PIPELINES };
 
 export const ENCODER_PREFS = [
   { key: "auto", label: "Otomatik (önerilen)", hint: "Donanım kodlayıcı varsa o, yoksa x264" },
@@ -21,7 +23,7 @@ export const ENCODER_PREFS = [
   { key: "software", label: "Yazılım (x264)", hint: "En uyumlu, işlemci kullanır" },
 ];
 export const KEYFRAME_CHOICES = [1, 2, 4];
-export const AUDIO_KBPS_CHOICES = [96, 128, 160, 192, 256];
+export const AUDIO_KBPS_CHOICES = [128, 160, 192, 256]; // 96 kbps AAC stereo cızırtılı; kodlayıcı en az 128 yazar
 
 /** Kayıt kalitesi (yayından ayrı). videoKbps null = yayınla aynı. */
 export const RECORD_QUALITIES = [
@@ -54,6 +56,7 @@ export const HOTKEY_ACTIONS = [
   { key: "interviewBand", label: "Röportaj bandını aç / kapat", default: [] },
   { key: "interview", label: "Röportaj kaydını başlat / bitir", default: [] },
   { key: "fullscreen", label: "Programı tam ekran göster / kapat", default: [] },
+  { key: "closeBroadcast", label: "Yayını kapat (tamamen: YouTube yayını da bitirilir, onaylı)", default: [] },
 ];
 export const DEFAULT_HOTKEYS = Object.fromEntries(HOTKEY_ACTIONS.map((a) => [a.key, a.default]));
 /** Atanamayan tuşlar: sahne tuşları ve gol yanıtları. */
@@ -61,7 +64,8 @@ export const RESERVED_KEYS = new Set(["1", "2", "3", "4", "5", "6", "7", "8", "9
 
 export const DEFAULT_SETTINGS = {
   v: 2,
-  stream: { encoder: "auto", keyframeSec: 2, audioKbps: 128 },
+  // pipeline: kodlama yolu — "auto" | "webcodecs" (tek kodlama) | "legacy" (MediaRecorder + ffmpeg)
+  stream: { encoder: "auto", keyframeSec: 2, audioKbps: 128, pipeline: "auto" },
   record: { enabled: false, dir: null, quality: "stream", customKbps: 10000, customHeight: 1080 },
   // tekrar klibi 15 sn: önizlemede giriş–çıkışla istenen bölüm seçilir. directTake: R kısayolu
   // son tekrarı önizlemeye yükleyip AYNI GEÇİŞ yoluyla hemen yayına alır [önizleme-geçiş]
@@ -115,6 +119,7 @@ export function normalizeSettings(raw) {
       encoder: pick(r.stream?.encoder, ENCODER_PREFS.map((e) => e.key), d.stream.encoder),
       keyframeSec: pick(Number(r.stream?.keyframeSec), KEYFRAME_CHOICES, d.stream.keyframeSec),
       audioKbps: pick(Number(r.stream?.audioKbps), AUDIO_KBPS_CHOICES, d.stream.audioKbps),
+      pipeline: normalizePipeline(r.stream?.pipeline),
     },
     record: {
       enabled: bool(r.record?.enabled, d.record.enabled),

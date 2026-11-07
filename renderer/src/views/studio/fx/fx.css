@@ -1,0 +1,77 @@
+/* Yayın Stüdyosu · Görüntü / Efektler (vfx-: tablo düzenleyicisinin .fx- sınıflarıyla karışmasın) */
+.vfx { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.vfx__prevwrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.vfx-prev { position: relative; width: 100%; max-width: 360px; border-radius: 9px; overflow: hidden; background: #0b0712; border: 1px solid var(--border); line-height: 0; }
+.vfx-prev canvas { width: 100%; height: auto; display: block; }
+.vfx-prev.is-picking canvas { cursor: crosshair; }
+.vfx-prev__tag { position: absolute; top: 6px; padding: 2px 7px; border-radius: 6px; font: 800 10px/1.4 var(--font); letter-spacing: 0.04em; text-transform: uppercase; color: #fff; background: rgba(0, 0, 0, 0.6); }
+.vfx-prev__tag.is-l { left: 6px; }
+.vfx-prev__tag.is-r { right: 6px; background: rgba(139, 92, 246, 0.85); }
+.vfx-prev__hint { position: absolute; left: 6px; right: 6px; bottom: 6px; padding: 3px 7px; border-radius: 6px; font: 700 11px/1.4 var(--font); color: #fff; background: rgba(0, 0, 0, 0.7); text-align: center; }
+
+.vfx-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--border); }
+.vfx-seg button { border: 0; background: none; color: var(--muted); font-size: 12px; font-weight: 700; padding: 3px 11px; border-radius: 7px; cursor: pointer; }
+.vfx-seg button.is-on { background: #8b5cf6; color: #fff; }
+.vfx-seg.is-sm button { font-size: 11px; padding: 2px 8px; }
+
+.vfx__presets { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.vfx__sp { flex: 1; }
+.vfx-chip { display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); font-size: 11.5px; font-weight: 700; overflow: hidden; }
+.vfx-chip > button { border: 0; background: none; color: inherit; font: inherit; padding: 3px 10px; cursor: pointer; }
+.vfx-chip:hover { border-color: #8b5cf6; }
+.vfx-chip.is-on { background: #8b5cf6; border-color: #8b5cf6; color: #fff; }
+.vfx-chip.is-custom > button:first-child { padding-right: 4px; }
+.vfx-chip .vfx-chip__x { padding: 3px 7px 3px 2px; opacity: 0.7; }
+.vfx-chip .vfx-chip__x:hover { opacity: 1; }
+button.vfx-chip.is-add { padding: 3px 10px; gap: 4px; border-style: dashed; cursor: pointer; }
+button.vfx-chip.is-add:disabled { opacity: 0.45; cursor: default; }
+.vfx-name { display: inline-flex; gap: 4px; align-items: center; }
+.vfx-name input { width: 140px; height: 24px; font-size: 12px; padding: 0 7px; }
+
+.vfx__warn { margin: 0; font-size: 11.5px; color: #fbbf24; display: flex; gap: 5px; align-items: center; }
+.vfx__hint { margin: 2px 0 0; font-size: 11px; color: var(--faint, var(--muted)); }
+
+.vfx-grp { border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+.vfx-grp.is-chroma { border-color: rgba(34, 197, 94, 0.5); }
+.vfx-grp__head { width: 100%; display: flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--text); font-size: 12px; font-weight: 800; padding: 6px 8px; cursor: pointer; text-align: left; }
+.vfx-grp__head small { font-weight: 600; color: var(--muted); }
+.vfx-grp__head small.is-on { color: #4ade80; font-weight: 800; }
+.vfx-grp__body { display: flex; flex-direction: column; gap: 4px; padding: 0 8px 8px; }
+.vfx-grp__body.vfx-row { flex-direction: row; }
+
+.vfx-slider { display: grid; grid-template-columns: 92px minmax(0, 1fr) 56px; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); min-width: 0; }
+.vfx.is-compact .vfx-slider { grid-template-columns: 84px minmax(0, 1fr) 52px; }
+.vfx-slider input { width: 100%; min-width: 0; }
+.vfx-slider em { font: 600 11px var(--mono); font-style: normal; color: var(--text); text-align: right; }
+.vfx-slider.is-changed > span { color: #c4b5fd; font-weight: 700; }
+
+.vfx-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.vfx-row__label { font-size: 11.5px; color: var(--muted); min-width: 60px; }
+.vfx-row input[type="color"] { width: 32px; height: 24px; padding: 0; border: 1px solid var(--border-strong); border-radius: 6px; background: none; }
+.vfx-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer; }
+.vfx-swatches { display: inline-flex; gap: 3px; }
+.vfx-swatches button { width: 18px; height: 18px; border-radius: 5px; border: 1px solid rgba(255, 255, 255, 0.35); cursor: pointer; }
+
+/* kaynak penceresi / katman bölümü */
+.vfx-section { border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.vfx-section > summary { list-style: none; display: flex; align-items: center; gap: 7px; padding: 8px 10px; font-size: 12.5px; font-weight: 800; cursor: pointer; }
+.vfx-section > summary::-webkit-details-marker { display: none; }
+.vfx-section > summary small { font-weight: 600; color: var(--muted); }
+.vfx-section > summary .is-on { color: #c4b5fd; }
+.vfx-section > .vfx { padding: 0 10px 10px; }
+.vfx-mode { display: flex; flex-direction: column; gap: 4px; }
+.vfx-mode label { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; cursor: pointer; }
+.vfx-mode small { display: block; color: var(--muted); font-size: 11px; }
+
+/* yüzen canlı panel */
+.vfx-float { position: fixed; z-index: 1200; width: 380px; max-height: calc(100vh - 24px); display: flex; flex-direction: column; border-radius: 12px; background: var(--surface); border: 1px solid var(--border-strong); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55); color: var(--text); font-family: var(--font); animation: stPopIn 0.12s ease-out; }
+.vfx-float.is-live { border-color: rgba(255, 45, 85, 0.55); }
+.vfx-float__head { display: flex; align-items: center; gap: 7px; padding: 8px 10px; border-bottom: 1px solid var(--border); cursor: grab; user-select: none; font-size: 12.5px; }
+.vfx-float__head:active { cursor: grabbing; }
+.vfx-float__head select { max-width: 130px; height: 24px; font-size: 12px; }
+.vfx-float__name { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-weight: 700; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vfx-float__body { padding: 10px; overflow: auto; min-height: 0; }
+.vfx-float__foot { padding: 6px 10px; border-top: 1px solid var(--border); color: var(--muted); }
+
+/* sahne kutusu sağ tık menüsü */
+.vfx-ctx { position: fixed; z-index: 1300; }

@@ -123,6 +123,9 @@ test("uçtan uca: program + 2 açı → 10 sn'lik tekrar, 3 MP4 aynı süre ±1,
     if (lv) assert.equal(lv.level, levelIdc(computeH264Level(x.width, x.height, 30)), `${x.angle} düzey ${lv.level}`);
   }
   assert.match(String((await ff.run(info.path, ["-hide_banner", "-i", r.angles[0].path])).stderr), /Audio: aac/);
+  // Kamera açıları SESSİZ kaydedilir (açı kaydedicisi yalnız görüntü): özet / tekrar o açının
+  // sesini program açısının aynı anından alır (lib/studio/replays clipAudio).
+  for (const x of r.angles.slice(1)) assert.doesNotMatch(String((await ff.run(info.path, ["-hide_banner", "-i", x.path])).stderr), /Audio:/);
   t.diagnostic(`tekrar ${r.id}: ${r.angles.map((x) => `${x.angle} ${x.durationMs} ms ${x.width}x${x.height} ${x.sizeBytes} B`).join(" · ")}`);
   await Promise.all([engine.stop(), angles.stop()]);
   assert.equal(angles.active(), false);
