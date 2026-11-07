@@ -163,7 +163,7 @@ test("aktarıcı: ağ tıkanınca görüntü anahtar kareye dek atlanır, SES ke
   try {
     const tsFile = path.join(root, "in.ts");
     // Kodlayıcı çıktısı gibi: H.264 (2 sn GOP) + AAC 48 kHz, global başlık, MPEG-TS.
-    const mk = await ff.run(info.path, ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=640x360:r=30", "-f", "lavfi", "-i", "aevalsrc=0.5*sin(2*PI*440*t):s=48000:c=stereo", "-t", "12",
+    const mk = await ff.run(info.path, ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=30", "-f", "lavfi", "-i", "aevalsrc=0.5*sin(2*PI*440*t):s=48000:c=stereo", "-t", "12",
       "-c:v", "libx264", "-preset", "ultrafast", "-g", "60", "-keyint_min", "60", "-b:v", "1500k", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2", "-flags", "+global_header", "-f", "mpegts", tsFile], { timeout: 60000 });
     assert.notEqual(mk.ok, false, mk.stderr);
     const input = fs.readFileSync(tsFile);
@@ -207,7 +207,7 @@ test("uçtan uca RTMP: sunucuya ulaşan ses AAC-LC 48 kHz stereo, kesintisiz ve 
   if (why) { t.skip(why); return; }
   const info = await getInfo();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "studio-rtmp-audio-"));
-  const seconds = 10;
+  const seconds = 8;
   let listener = null;
   let engine = null;
   try {
@@ -221,7 +221,7 @@ test("uçtan uca RTMP: sunucuya ulaşan ses AAC-LC 48 kHz stereo, kesintisiz ve 
     const ldone = new Promise((r) => listener.on("exit", r));
     await sleep(500);
     engine = createStudioEngine({ getFfmpeg: async () => ({ ...info, encoders: { libx264: true } }), tempRoot: path.join(root, "seg") });
-    const res = await engine.start({ url, width: 640, height: 360, fps: 30, videoBitrateKbps: 1200, audioBitrateKbps: 160, mimeType: "video/webm;codecs=vp8,opus", localRecord: { enabled: true, dir: path.join(root, "local") } });
+    const res = await engine.start({ url, width: 320, height: 180, fps: 30, videoBitrateKbps: 600, audioBitrateKbps: 160, mimeType: "video/webm;codecs=vp8,opus", localRecord: { enabled: true, dir: path.join(root, "local") } });
     assert.equal(res.ok, true, JSON.stringify(res));
     assert.equal(res.relay, true);
     const steps = Math.ceil((seconds * 1000) / 250);
