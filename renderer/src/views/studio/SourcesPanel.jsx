@@ -20,10 +20,14 @@ import { RESOLUTIONS, deviceName } from "../../lib/studio/layouts";
 import { FONTS, SOURCE_TYPES, persistentUrl, sourceDefaults, sourceKindIcon, sourceKindLabel, sourceUsage } from "../../lib/studio/scenes";
 import { drawSource } from "./draw";
 import { useStable } from "./useStable";
+import { compactFx, fxActive, migrateSourceFx, resolveFx } from "../../lib/studio/videoFx";
+import FxEditor from "./fx/FxEditor";
 
 export const STATUS_TEXT = { waiting: "Açılıyor…", live: "Canlı", missing: "Kaynak yok", denied: "İzin yok", ended: "Bağlantı koptu", busy: "Meşgul", error: "Açılamadı", file: "Dosya seçilmeli", empty: "Tekrar yok" };
 export const BAD = ["missing", "denied", "ended", "busy", "error", "file"];
 const SYNTHETIC = new Set(["color", "text", "clock"]);
+/** Görüntü / efekt ayarı alabilen kaynak türleri (görüntü karesi olanlar). */
+export const FX_KINDS = new Set(["camera", "screen", "window", "image", "video", "slideshow", "replay"]);
 
 /** Kaynağın canlı küçük resmi (yarım saniyede bir; görünmüyorsa çizilmez). */
 export function SourceThumb({ source, runtimeRef, width = 96 }) {
@@ -90,6 +94,7 @@ function SourceLibraryInner({ config, runtimeRef, version, actions }) {
                 ]} />
                 <MenuButton label="Kaynak" size={14} items={[
                   { label: "Ayarlar…", icon: "sliders", onClick: () => onEditSource(src) },
+                  ...(FX_KINDS.has(src.kind) && actions.onFx ? [{ label: "Görüntü ayarları… (canlı)", icon: "palette", onClick: () => actions.onFx(src.id) }] : []),
                   { label: "Bu kaynaktan sahne oluştur", icon: "layers", onClick: () => onSceneFromSource(src.id) },
                   { label: "Yeniden bağlan", icon: "refresh", onClick: () => onReacquire(src) },
                   "-",
@@ -169,12 +174,13 @@ const toLocalInput = (ms) => {
 };
 
 /** Yeni kaynak / kaynak ayarları. initial: { kind } ya da var olan kaynak. */
-function SourceDialogInner({ initial, cameraCount = 0, devices, access, onRequestAccess, onRefreshDevices, onSave, onClose: onCloseProp }) {
+function SourceDialogInner({ initial, cameraCount = 0, devices, access, onRequestAccess, onRefreshDevices, onSave, onClose: onCloseProp, runtimeRef = null }) {
   // Ortak Modal, onClose kimliği her değiştiğinde ilk alana odaklanır; stüdyo
   // saniyede birkaç kez çizildiği için açık <select> menüsü hemen kapanıyordu.
   const onClose = useStable(onCloseProp);
   const editing = Boolean(initial?.id);
-  const [draft, setDraft] = useState(() => ({ ...(initial || {}) }));
+  // Eski "mirror" (ayna) alanı görüntü ayarına (fx.flipH) taşınır.
+  const [draft, setDraft] = useState(() => (initial?.kind ? migrateSourceFx({ ...initial }) : { ...(initial || {}) }));
   const [screens, setScreens] = useState(null);
   const [busy, setBusy] = useState(false);
   const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
@@ -290,7 +296,7 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
                 <Field label="Kare hızı">
                   <select value={draft.fps || 30} onChange={(e) => set({ fps: Number(e.target.value) })}>{[24, 25, 30, 50, 60].map((f) => <option key={f} value={f}>{f} fps</option>)}</select>
                 </Field>
-                <label className="toggle st-toggle-field"><input type="checkbox" checked={Boolean(draft.mirror)} onChange={(e) => set({ mirror: e.target.checked })} /> Ayna görüntü</label>
+                <label className="toggle st-toggle-field"><input type="checkbox" checked={resolveFx(draft.fx).flipH} onChange={(e) => set({ fx: compactFx({ ...resolveFx(draft.fx), flipH: e.target.checked }) })} /> Ayna görüntü</label>
               </div>
             </>
           )}
@@ -404,6 +410,14 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
               </Field>
               <label className="toggle"><input type="checkbox" checked={draft.loop !== false} onChange={(e) => set({ loop: e.target.checked })} /> Döngüde oynat</label>
             </>
+          )}
+
+          {FX_KINDS.has(kind) && (
+            <details className="vfx-section" open={fxActive(draft.fx) || undefined}>
+              <summary><Icon name="sliders" size={13} /> Görüntü / Efektler <small className={fxActive(draft.fx) ? "is-on" : ""}>{fxActive(draft.fx) ? "ayarlı" : "renk, ışık, keskinlik, yön, yeşil perde"}</small></summary>
+              <FxEditor fx={draft.fx || null} onChange={(fx) => set({ fx })} source={draft.id ? draft : null} runtimeRef={runtimeRef} />
+              {!draft.id && <p className="st-hint" style={{ padding: "0 10px 10px", margin: 0 }}>Canlı önizleme kaynak eklendikten sonra görünür (ayarlar şimdiden kaydedilir).</p>}
+            </details>
           )}
 
           {kind === "audio" && (
