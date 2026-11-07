@@ -10,9 +10,9 @@
 // Sürükleme sırasında yapılandırma DEĞİŞMEZ: kutu overrideRef'e yazılır,
 // karıştırıcı onu anında çizer; bırakınca tek seferde kaydedilir (onCommit).
 import React, { memo, useCallback, useEffect, useRef, useState } from "react";
-import { HANDLES, cropLayer, handleCursor, hitTest, moveLayer, nudge, resizeLayer, rotationFromPoint } from "../../../lib/studio/scenesTransform";
+import { HANDLES, cropLayer, handleCursor, hitTest, moveLayer, nudge, resizeLayer, rotationFromPoint, snapLines } from "../../../lib/studio/scenesTransform";
 
-function SceneEditOverlay({ scene, selectedId, onSelect, onCommit, onRemove, overrideRef, sourceName, outW, outH }) {
+function SceneEditOverlay({ scene, selectedId, onSelect, onCommit, onRemove, overrideRef, sourceName, outW, outH, snap = true, layerName = null }) {
   const ref = useRef(null);
   const drag = useRef(null);
   const [draft, setDraft] = useState(null); // { layerId, patch, guides }
@@ -46,6 +46,7 @@ function SceneEditOverlay({ scene, selectedId, onSelect, onCommit, onRemove, ove
       mode: handle === "rot" ? "rotate" : handle ? (e.altKey ? "crop" : "resize") : "move",
       handle,
       size: { w: r.width, h: r.height, left: r.left, top: r.top },
+      lines: snapLines(layers, layer.id),
       moved: false,
     };
   }, [layers, onSelect, scene, selected]);
@@ -60,7 +61,7 @@ function SceneEditOverlay({ scene, selectedId, onSelect, onCommit, onRemove, ove
     let patch;
     let guides = [];
     if (d.mode === "move") {
-      const m = moveLayer(d.base, dx, dy, { snap: !(e.ctrlKey || e.metaKey) });
+      const m = moveLayer(d.base, dx, dy, { snap: snap && !(e.ctrlKey || e.metaKey), ...(snap ? d.lines : {}) });
       patch = { x: m.x, y: m.y };
       guides = m.guides;
     } else if (d.mode === "resize") {
@@ -75,7 +76,7 @@ function SceneEditOverlay({ scene, selectedId, onSelect, onCommit, onRemove, ove
     d.patch = patch;
     if (overrideRef) overrideRef.current = { layerId: d.layerId, patch };
     setDraft({ layerId: d.layerId, patch, guides });
-  }, [overrideRef]);
+  }, [overrideRef, snap]);
 
   const finish = useCallback(() => {
     const d = drag.current;
@@ -111,7 +112,7 @@ function SceneEditOverlay({ scene, selectedId, onSelect, onCommit, onRemove, ove
             style={{ left: pct(l.x), top: pct(l.y), width: pct(l.w), height: pct(l.h), transform: l.rot ? `rotate(${l.rot}deg)` : undefined }}>
             {on && (
               <>
-                <span className="st-edit__label">{sourceName(l.sourceId)}{l.locked ? " · kilitli" : ""} · {Math.round(l.w * outW)}×{Math.round(l.h * outH)}</span>
+                <span className="st-edit__label">{(layerName && layerName(l)) || sourceName(l.sourceId)}{l.locked ? " · kilitli" : ""} · {Math.round(l.w * outW)}×{Math.round(l.h * outH)}</span>
                 {!l.locked && HANDLES.map((h) => <i key={h} data-handle={h} className={`st-edit__h is-${h}`} style={{ cursor: handleCursor(h) }} title="Sürükle: boyutla · Shift: oranı koru · Alt: kırp" />)}
                 {!l.locked && <i data-handle="rot" className="st-edit__rot" title="Döndür (Shift: 15°)" />}
               </>

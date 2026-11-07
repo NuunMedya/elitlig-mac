@@ -7,6 +7,11 @@
 //   İçerik       manşet, rapor, kapak görseli, canlı yayın, röportaj, foto
 //                (PATCH /maclar/:id buildPostPayload)
 //   İstatistik   oyuncu maç istatistikleri (StatsPanel)
+//
+// PARÇALAR (part): "summary" (skor + yayınla) · "ratings" (puanlar) · "awards" (MVP ve
+// oyuncu ödülleri) · "goal" (maçın golü seçici) · "save" (maçın kurtarışı) · "content" ·
+// "stats". Taslaklar (puanlar, enler, içerik) maç başına ORTAK durumdadır (./manageStore):
+// bir parçada seçilen MVP öbür parçadaki "Enleri kaydet" ile birlikte kaydedilir.
 import React, { useEffect, useMemo, useState } from "react";
 import { Icon, Modal, useConfirm, useToast } from "../../../components/ui";
 import {
@@ -20,6 +25,7 @@ import MomentPicker from "./MomentPicker";
 import { PlayerSelect } from "./pickers";
 import RatingsPanel from "./RatingsPanel";
 import StatsPanel from "./StatsPanel";
+import { useSharedDraft } from "./manageStore";
 import { useLoad, useRun } from "./useManage";
 
 const TABS = [
@@ -52,7 +58,9 @@ const MOMENT_AWARDS = [
   { key: "best_save", kind: "save", title: "Maçın kurtarışı", icon: "shield" },
 ];
 
-export default function PostTab({ matchId, match, live, replays = [], onPlayReplay }) {
+export const POST_PARTS = ["summary", "ratings", "awards", "goal", "save", "content", "stats"];
+
+export default function PostTab({ matchId, match, live, replays = [], onPlayReplay, part = null }) {
   const toast = useToast();
   const confirm = useConfirm();
   const { run, busy } = useRun();
@@ -65,8 +73,7 @@ export default function PostTab({ matchId, match, live, replays = [], onPlayRepl
 
   /* ---------------- puanlar ---------------- */
   const savedRatings = useMemo(() => readSavedRatings(live?.lineup), [live?.lineup]);
-  const [ratings, setRatings] = useState(savedRatings);
-  useEffect(() => setRatings(savedRatings), [savedRatings]);
+  const [ratings, setRatings] = useSharedDraft(`macsonu.${matchId}.ratings`, savedRatings);
   const rSummary = ratingsSummary(players, ratings, savedRatings);
   const saveRatings = async () => {
     const body = ratingsPayload(players, ratings);
@@ -79,12 +86,9 @@ export default function PostTab({ matchId, match, live, replays = [], onPlayRepl
   const savedContent = useMemo(() => readPostContent(match), [match]);
   const savedHighlights = useMemo(() => readHighlights(match, players), [match, players]);
   const savedMoments = useMemo(() => readMoments(match), [match]);
-  const [content, setContent] = useState(savedContent);
-  const [highlights, setHighlights] = useState(savedHighlights);
-  const [moments, setMoments] = useState(savedMoments);
-  useEffect(() => setContent(savedContent), [savedContent]);
-  useEffect(() => setHighlights(savedHighlights), [savedHighlights]);
-  useEffect(() => setMoments(savedMoments), [savedMoments]);
+  const [content, setContent] = useSharedDraft(`macsonu.${matchId}.content`, savedContent);
+  const [highlights, setHighlights] = useSharedDraft(`macsonu.${matchId}.highlights`, savedHighlights);
+  const [moments, setMoments] = useSharedDraft(`macsonu.${matchId}.moments`, savedMoments);
   const contentDirty = JSON.stringify(content) !== JSON.stringify(savedContent)
     || POST_HIGHLIGHT_FIELDS.some(({ key }) => (highlights[key] || "") !== (savedHighlights[key] || ""))
     || MOMENT_KEYS.some((k) => JSON.stringify(normalizeMoment(moments[k])) !== JSON.stringify(savedMoments[k]));
@@ -96,7 +100,7 @@ export default function PostTab({ matchId, match, live, replays = [], onPlayRepl
   const revertContent = () => { setContent(savedContent); setHighlights(savedHighlights); setMoments(savedMoments); };
 
   /* ---------------- anlar (maçın golü / kurtarışı) ---------------- */
-  const clipsRes = useLoad(() => api.getGoalClips(matchId), [matchId], { enabled: Boolean(matchId) && tab === "awards", fallback: "" });
+  const clipsRes = useLoad(() => api.getGoalClips(matchId), [matchId], { enabled: Boolean(matchId) && (part ? part === "goal" || part === "save" : tab === "awards"), fallback: "" });
   const clips = Array.isArray(clipsRes.data?.items) ? clipsRes.data.items : Array.isArray(clipsRes.data) ? clipsRes.data : [];
   const candidates = useMemo(() => Object.fromEntries(MOMENT_AWARDS.map((m) => [m.key, momentCandidates(live?.events, { kind: m.kind, homeTeamId: live?.homeTeamId, awayTeamId: live?.awayTeamId, nameOf: live?.nameOf, replays, clips })])), [live?.events, live?.homeTeamId, live?.awayTeamId, live?.nameOf, replays, clips]);
   const [playing, setPlaying] = useState(null); // aday
@@ -129,9 +133,13 @@ export default function PostTab({ matchId, match, live, replays = [], onPlayRepl
     if (ok) { toast("Maç yayınlandı. Puan durumu yeniden hesaplandı.", { tone: "success" }); live?.refresh?.(); }
   };
 
+  // Parça: tek bölüm (sekme şeridi ve özet kartı yok).
+  const cur = part ? (part === "goal" || part === "save" ? "awards" : part) : tab;
+  const onlyMoment = part === "goal" ? "best_goal" : part === "save" ? "best_save" : null;
+  const showSummary = !part || part === "summary";
   return (
-    <div className="mg-stack pt">
-      <section className="mg-card pt-summary">
+    <div className={`mg-stack pt${part ? ` mg-part is-${part}` : ""}`} data-post-part={part || "all"}>
+      {showSummary && <section className="mg-card pt-summary">
         <SideSummary name={live?.homeName} goals={summary.goals.home} cards={summary.cards.home} />
         <div className="pt-score">
           <strong>{live?.score?.home ?? 0} – {live?.score?.away ?? 0}</strong>
@@ -141,10 +149,10 @@ export default function PostTab({ matchId, match, live, replays = [], onPlayRepl
           )}
         </div>
         <SideSummary name={live?.awayName} goals={summary.goals.away} cards={summary.cards.away} right />
-      </section>
-      {!finished && <p className="mg-note">Maç henüz tamamlanmadı. Skorun tescili için maçı Reji'den bitir ya da buradan yayınla.</p>}
+      </section>}
+      {showSummary && !finished && <p className="mg-note">Maç henüz tamamlanmadı. Skorun tescili için maçı Reji'den bitir ya da buradan yayınla.</p>}
 
-      <nav className="mg-subnav" aria-label="Maç sonu">
+      {!part && <nav className="mg-subnav" aria-label="Maç sonu">
         {TABS.map((t) => (
           <button key={t.key} type="button" className={tab === t.key ? "is-on" : ""} onClick={() => setTab(t.key)}>
             <Icon name={t.icon} size={13} /> {t.label}
@@ -152,13 +160,13 @@ export default function PostTab({ matchId, match, live, replays = [], onPlayRepl
             {(t.key === "awards" || t.key === "content") && contentDirty && <span className="gx-dot is-amber" />}
           </button>
         ))}
-      </nav>
+      </nav>}
 
-      {tab === "ratings" && <RatingsPanel live={live} ratings={ratings} setRatings={setRatings} summary={rSummary} saving={busy} onSave={saveRatings} onReset={() => setRatings(savedRatings)} />}
+      {cur === "ratings" && <RatingsPanel live={live} ratings={ratings} setRatings={setRatings} summary={rSummary} saving={busy} onSave={saveRatings} onReset={() => setRatings(savedRatings)} />}
 
-      {tab === "awards" && (
+      {cur === "awards" && (
         <div className="mg-stack">
-          <section className="mg-card">
+          {!onlyMoment && <section className="mg-card">
             <header className="mg-card__head"><h5><Icon name="award" size={13} /> Oyuncu ödülleri</h5><small className="mg-muted">Puanlardan öneri gelir</small></header>
             <div className="pt-awards">
               {PLAYER_AWARDS.map((f) => {
@@ -176,8 +184,8 @@ export default function PostTab({ matchId, match, live, replays = [], onPlayRepl
                 );
               })}
             </div>
-          </section>
-          {MOMENT_AWARDS.map((m) => (
+          </section>}
+          {MOMENT_AWARDS.filter((m) => (onlyMoment ? m.key === onlyMoment : part !== "awards")).map((m) => (
             <MomentPicker key={m.key} title={m.title} icon={m.icon} kind={m.kind} candidates={candidates[m.key]} selectedEventId={moments[m.key]?.event_id ?? null}
               onSelect={(c) => selectMoment(m.key, c)} onPlay={setPlaying} teamName={teamName}
               playerSlot={(
@@ -207,7 +215,7 @@ export default function PostTab({ matchId, match, live, replays = [], onPlayRepl
         </Modal>
       )}
 
-      {tab === "content" && (
+      {cur === "content" && (
         <div className="mg-stack">
           <div className="mg-grid2">
             <div className="mg-stack">
@@ -242,7 +250,7 @@ export default function PostTab({ matchId, match, live, replays = [], onPlayRepl
         </div>
       )}
 
-      {tab === "stats" && <StatsPanel matchId={matchId} live={live} />}
+      {cur === "stats" && <StatsPanel matchId={matchId} live={live} />}
     </div>
   );
 }

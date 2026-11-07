@@ -5,6 +5,10 @@
 //   (il kapsamı SUNUCUDA: il kısıtlı kullanıcı yalnız yetkili olduğu ilin maçlarını alır;
 //   eski sunucuda GET /maclar?includeDraft=1… yedeği). İstemci de kapsam dışı satırları
 //   süzer (scopeRows) ve kapsam anlaşılana kadar liste boş kalır.
+//
+// PARÇALAR (part): "live" (şu an canlı şeridi) · "filters" (gün / tarih / durum / arama / il,
+// yeni maç) · "list" (maç listesi). Süzgeçler ortak durumdadır (./manageStore): ayrı panodaki
+// süzgeç ayrı paneldeki listeyi süzer.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon, Spinner } from "../../../components/ui";
 import { isoDay } from "../../../lib/studio/match";
@@ -12,6 +16,7 @@ import { MATCH_STATUS_OPTIONS, filterMatches, isMissingRoute, liveFirst, liveStr
 import * as api from "./manageApi";
 import { CreateMatchModal, EditMatchModal } from "./MatchForms";
 import { EMPTY_SCOPE, ScopeFields } from "./pickers";
+import { useShared } from "./manageStore";
 import { useLoad } from "./useManage";
 
 const PRESETS = [
@@ -30,18 +35,22 @@ const dayText = (day) => {
 
 const STATUS_TONE = { canli: "red", zamanlanmis: "blue", taslak: "amber", yayinlanmis: "green" };
 
-export default function MatchesTab({ user, currentMatchId, onOpenMatch }) {
-  const [serverScope, setServerScope] = useState(null);
+export const MATCHES_PARTS = ["live", "filters", "list"];
+
+export default function MatchesTab({ user, currentMatchId, onOpenMatch, part = null }) {
+  const show = (p) => !part || part === p;
+  const [serverScope, setServerScope] = useShared("maclar.serverScope", null);
   // Kapsam: sunucunun yanıtı esas; eski sunucuda kullanıcıdan. Kullanıcı ilk
   // çizimde henüz yüklenmemiş olabilir (useAuthUser) — o yüzden useState
   // başlangıcına değil, kullanıcı / kapsam gelince aşağıdaki etkiye bağlıdır.
   const access = useMemo(() => matchScopeOf(user, serverScope), [user, serverScope]);
   const nationwide = Boolean(access?.nationwide);
-  const [preset, setPreset] = useState("today");
-  const [range, setRange] = useState(() => rangePreset("today"));
-  const [scope, setScope] = useState({ ...EMPTY_SCOPE });
-  const [status, setStatus] = useState("");
-  const [q, setQ] = useState("");
+  const [preset, setPreset] = useShared("maclar.preset", "today");
+  const [range, setRange] = useShared("maclar.range", () => rangePreset("today"));
+  const [scope, setScope] = useShared("maclar.scope", () => ({ ...EMPTY_SCOPE }));
+  const [status, setStatus] = useShared("maclar.status", "");
+  const [q, setQ] = useShared("maclar.q", "");
+  const [reloadTick, setReloadTick] = useShared("maclar.reload", 0);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(null);
 
@@ -76,24 +85,28 @@ export default function MatchesTab({ user, currentMatchId, onOpenMatch }) {
 
   const query = matchListQuery({ from: range.from, to: range.to, status, leagueId: scope.leagueId, seasonId: scope.seasonId, city: scope.city });
   if (scope.cityId) query.city_id = scope.cityId;
-  const list = useLoad(() => fetchList(query), [JSON.stringify(query), fetchList], { fallback: "Maçlar alınamadı." });
+  const list = useLoad(() => fetchList(query), [JSON.stringify(query), fetchList, reloadTick], { fallback: "Maçlar alınamadı.", enabled: show("list") || show("filters") });
   // Güvenlik ağı: sunucu ne döndürürse döndürsün yalnız yetkili ilin maçları.
   const rows = useMemo(() => liveFirst(scopeRows(filterMatches(list.data, { from: range.from, to: range.to, q, status }), access)), [list.data, range, q, status, access]);
   const liveQuery = { ...matchListQuery({ status: "canli", city: scope.city }), date_from: undefined, date_to: undefined, limit: 50 };
   if (scope.cityId) liveQuery.city_id = scope.cityId;
-  const liveList = useLoad(() => fetchList(liveQuery), [scope.city, scope.cityId, fetchList], { fallback: "" });
+  const liveList = useLoad(() => fetchList(liveQuery), [scope.city, scope.cityId, fetchList], { fallback: "", enabled: show("live") });
   const liveRows = useMemo(() => (access ? liveStripRows(liveList.data, { city: scope.city, scope: access }) : []), [liveList.data, scope.city, access]);
   // Canlı şerit 30 sn'de bir tazelenir.
   useEffect(() => {
+    if (!show("live")) return undefined;
     const t = setInterval(() => liveList.reload({ quiet: true }), 30_000);
     return () => clearInterval(t);
-  }, [liveList.reload]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [liveList.reload, part]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Yenile / yeni maç: tüm kopyalardaki liste tazelenir (ortak sayaç).
+  const reloadAll = () => setReloadTick((n) => n + 1);
 
   const choosePreset = (key) => { setPreset(key); setRange(rangePreset(key, isoDay())); };
 
   return (
-    <div className="mg-stack">
-      {liveRows.length > 0 && (
+    <div className={`mg-stack${part ? ` mg-part is-${part}` : ""}`} data-matches-part={part || "all"}>
+      {part === "live" && !liveRows.length && <p className="mg-muted">Şu an canlı maç yok.</p>}
+      {show("live") && liveRows.length > 0 && (
         <section className="mg-livestrip" aria-label="Şu an canlı">
           <h6 className="mg-sidehead"><span className="mg-live__dot" /> Şu an canlı</h6>
           <div className="mg-livestrip__list">
@@ -107,6 +120,7 @@ export default function MatchesTab({ user, currentMatchId, onOpenMatch }) {
           </div>
         </section>
       )}
+      {show("filters") && <>
       <div className="mg-toolbar mg-wrap">
         <div className="seg seg--sm">
           {PRESETS.map((p) => <button key={p.key} type="button" className={preset === p.key ? "is-active" : ""} onClick={() => choosePreset(p.key)}>{p.label}</button>)}
@@ -120,13 +134,16 @@ export default function MatchesTab({ user, currentMatchId, onOpenMatch }) {
           </select>
         </label>
         <div className="mg-search mg-grow"><Icon name="search" size={13} /><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Takım, saha ya da maç no…" /></div>
-        <button type="button" className="icon-btn" title="Yenile" onClick={() => list.reload()}><Icon name="refresh" size={14} /></button>
+        <button type="button" className="icon-btn" title="Yenile" onClick={reloadAll}><Icon name="refresh" size={14} /></button>
         <button type="button" className="btn btn--sm btn--primary" onClick={() => setCreating(true)}><Icon name="plus" size={13} /> Yeni maç</button>
       </div>
       <ScopeFields value={scope} onChange={setScope} lockCity={!nationwide} compact />
       {access && !access.nationwide && <p className="mg-muted mg-small">Yalnız yetkili olduğunuz ilin maçları: {access.city || "il tanımsız"}</p>}
       {!access && !list.loading && <p className="mg-muted mg-small">Yetki bilgisi alınıyor…</p>}
+      {part === "filters" && list.data && <p className="mg-muted mg-small">{rows.length} maç bu süzgeçte · liste “Maç yönetimi › Maçlar · liste” parçasında</p>}
+      </>}
 
+      {show("list") && <>
       {list.error && <p className="mg-error">{list.error}</p>}
       {list.loading && !list.data ? <Spinner label="Maçlar yükleniyor…" /> : rows.length ? (
         <ul className="mg-rows mg-rows--scroll mg-matches">
@@ -147,9 +164,10 @@ export default function MatchesTab({ user, currentMatchId, onOpenMatch }) {
         </ul>
       ) : <p className="mg-muted">Bu süzgeçle maç yok. Tarih aralığını genişlet ya da “Yeni maç” ile oluştur.</p>}
       {list.data && <p className="mg-muted mg-small">{rows.length} maç{status ? ` · ${statusLabel(status)}` : ""}</p>}
+      </>}
 
-      {creating && <CreateMatchModal user={user} onClose={() => setCreating(false)} onOpen={onOpenMatch} onCreated={() => { setCreating(false); list.reload({ quiet: true }); }} />}
-      {editing && <EditMatchModal matchId={editing} onClose={() => setEditing(null)} onSaved={() => list.reload({ quiet: true })} onDeleted={() => list.reload({ quiet: true })} />}
+      {creating && <CreateMatchModal user={user} onClose={() => setCreating(false)} onOpen={onOpenMatch} onCreated={() => { setCreating(false); reloadAll(); }} />}
+      {editing && <EditMatchModal matchId={editing} onClose={() => setEditing(null)} onSaved={reloadAll} onDeleted={reloadAll} />}
     </div>
   );
 }

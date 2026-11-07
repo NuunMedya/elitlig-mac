@@ -16,6 +16,11 @@ import { keyText } from "../settings/settings";
 import ReplayPicker from "./ReplayPicker";
 import EventEntry from "./EventEntry";
 import { MORE_WIDGETS } from "./widgetsMore";
+import { REJI_WIDGETS } from "./wReji";
+import { SES_WIDGETS } from "./wSes";
+import { TEKRAR_WIDGETS } from "./wTekrar";
+import { YAYIN_WIDGETS } from "./wYayin";
+import "./widgetsPro.css";
 
 const clock = (ms) => {
   const t = Math.max(0, Math.floor(ms / 1000));
@@ -333,5 +338,7 @@ export const WIDGET_IMPL = {
   ledMode, interview, led, ready, scene,
   // ek çeşitler (./widgetsMore.jsx)
   ...MORE_WIDGETS,
+  // çok işlevli düğmeler (reji, ses, tekrar, grafik / sahne / yayın / VAR / röportaj / müzik)
+  ...REJI_WIDGETS, ...SES_WIDGETS, ...TEKRAR_WIDGETS, ...YAYIN_WIDGETS,
 };
 

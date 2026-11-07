@@ -164,17 +164,9 @@
 .lw-solo[data-solo-panel="ses"] .mx-cards:empty { display: none; }
 .lw-solo .rpe-note { display: none; }
 
-/* reji parçaları: RejiTab'ın yalnız seçilen bölümü */
-.lw-reji .rj3 { display: block; }
-.lw-reji .rj3 > .rj-panel { margin-bottom: 6px; }
-.lw-reji.is-home .rj3 > .rj-panel:not(.rj-team.is-home),
-.lw-reji.is-away .rj3 > .rj-panel:not(.rj-team.is-away),
-.lw-reji:is(.is-center, .is-events, .is-any) .rj3 > .rj-panel:not(.rj-center),
-.lw-reji.is-music .rj3 > .rj-panel:not(.rj-music) { display: none; }
-.lw-reji.is-center .rj-center :is(.rj-any, .rj-head, .rj-filter, .rj-events, .mg-empty) { display: none; }
-.lw-reji.is-events .rj-center :is(.rj-controls, .rj-any) { display: none; }
-.lw-reji.is-any .rj-center > :not(.rj-any) { display: none; }
-.lw-reji .rj-team, .lw-reji .rj-center { height: auto; }
+/* maç yönetimi parçaları (ManagePart: Reji / Maçlar / Kadro / Maç sonu bölümleri) */
+.lw-item .mg-solo, .lw-panel.is-comp .mg-solo { height: 100%; }
+.mg-solo > .mg-body { padding: 6px; }
 
 /* ───────── üst çubuk: Düzenle ───────── */
 .lw-topedit { display: inline-flex; align-items: center; gap: 4px; }

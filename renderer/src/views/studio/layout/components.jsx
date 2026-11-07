@@ -6,21 +6,23 @@
 //                        2×1 (yatay) · 1×2 (dikey) · 2×2 görünümü
 //   part:<panel>:<parça> panelin tek parçası (<PanelScope only>): Tekrar listesi, hız,
 //                        yayına giden ses; Yayın kartları; LED; Ses kartları…
-//   ses.* / reji.* / golmuzik.* / gecis / saat / olcer / olaygir / tekrar.angles
+//   reji.* / mg.<sekme>.<bölüm>  maç yönetimi bölümleri (../manage ManagePart; durum ortak)
+//   ses.* / golmuzik.* / gecis / saat / olcer / olaygir / tekrar.angles
 //                        doğrudan bileşenler (kanal şeridi, ana çıkış, tümünü kapat…)
 //
 // c (Studio'dan): { railCtx, mixer, panelBody(kind), transition(layout), clock, meters,
 //   angles, reji: { matchId, live, ready, onGoalTap, onEventCreated, goalMusic },
+//   manage: ManageDock / ManagePart ortak özellikleri (matchId, match, live, onOpenMatch…),
 //   GoalMusicPanel, GoalMusicButtons, EventEntry }
 import React from "react";
 import { Icon, Kbd } from "../../../components/ui";
 import { PanelScope } from "../dock/parts";
 import { MasterStrip, Strip, stripStatus, useMeterBank } from "../AudioPanel";
-import RejiTab from "../manage/RejiTab";
+import { ManagePart } from "../manage/ManageDock";
 import { AnglesTile, ClockTile, MetersTile } from "../stage/StageTiles";
 import { WIDGET_IMPL } from "../shortcuts/widgets";
-import { RAIL_SIZES, widgetOf } from "../shortcuts/railModel";
-import { componentOf, widgetSizeKey } from "./layoutModel";
+import { RAIL_SIZES, boardWidgetSize, widgetOf } from "../shortcuts/railModel";
+import { componentOf } from "./layoutModel";
 
 /** Öğenin görünen adı (kanal / sahne adıyla). */
 export function itemLabel(item, ctx) {
@@ -41,7 +43,7 @@ export function itemLabel(item, ctx) {
 export function dynamicEntries(ctx) {
   const out = [];
   for (const s of ctx?.mixer?.strips || []) out.push({ t: "ses.strip", o: { strip: s.id }, label: `Ses · ${s.label} şeridi`, icon: "sliders", group: "ses", hint: "Tek kanal: fader, ölçer, SESSİZ / SOLO" });
-  for (const s of ctx?.railCtx?.scenes || []) out.push({ t: "w:scene", o: { sceneId: s.id }, label: `Sahne · ${s.name}`, icon: "layers", group: "w-diger", hint: "Tık: önizleme · çift tık: yayın" });
+  for (const s of ctx?.railCtx?.scenes || []) out.push({ t: "w:scene", o: { sceneId: s.id }, label: `Sahne · ${s.name}`, icon: "layers", group: "w-sahne", hint: "Tık: önizleme · çift tık: yayın" });
   return out;
 }
 
@@ -89,14 +91,12 @@ function BigToggle({ on, onClick, icon, onIcon, label, onLabel, sub, tone = "red
 
 /* ───────────────────────── reji ───────────────────────── */
 
-function RejiPart({ part, reji }) {
-  if (!reji?.matchId) return <Hint icon="board">Reji için önce Maç yönetimi › Maçlar'dan maç aç.</Hint>;
-  if (!reji.ready) return <Hint icon="clock">Maç yükleniyor…</Hint>;
-  return (
-    <div className={`lw-reji is-${part}`}>
-      <RejiTab key={reji.matchId} matchId={Number(reji.matchId)} live={reji.live} onGoalTap={reji.onGoalTap} onEventCreated={reji.onEventCreated} goalMusic={reji.goalMusic || null} />
-    </div>
-  );
+/** Maç yönetimi bölümü (Reji: skor / saat, takım eylemleri, olaylar…; Maçlar; Kadro; Maç sonu). */
+function MgPart({ tab, part, ctx }) {
+  const m = ctx.manage;
+  if (!m) return <Hint icon="board">Maç yönetimi bu sürümde yok.</Hint>;
+  if (tab !== "maclar" && !m.matchId) return <Hint icon="board">Önce Maç yönetimi › Maçlar'dan maç aç.</Hint>;
+  return <ManagePart tab={tab} part={part} {...m} />;
 }
 
 /* ───────────────────────── parçacık ───────────────────────── */
@@ -105,7 +105,7 @@ function WidgetItem({ item, ctx, extra }) {
   const type = componentOf(item.t)?.widget;
   const impl = WIDGET_IMPL[type];
   if (!impl) return <Hint>{widgetOf(type)?.label || type}: bu sürümde yok.</Hint>;
-  const sk = widgetSizeKey(item);
+  const sk = boardWidgetSize(type, item.w, item.h); // 3×2 / 4×2 yalnız izin veren çeşitlerde
   const sz = RAIL_SIZES[sk];
   const big = sk === "2x2";
   let body = null;
@@ -145,6 +145,7 @@ export function renderComponent(item, ctx, extra = {}) {
   if (!m) return <Hint>Bilinmeyen bileşen.</Hint>;
   if (m.widget) return <WidgetItem item={item} ctx={ctx} extra={extra} />;
   if (m.part) return <Solo panel={m.panel} part={m.part} ctx={ctx} />;
+  if (item.t.startsWith("mg.")) { const [, tab, part] = item.t.split("."); return <MgPart tab={tab} part={part} ctx={ctx} />; }
   const audio = ctx.mixer;
   switch (item.t) {
     case "ses.strip": return <SesStrip audio={audio} id={item.o?.strip} />;
@@ -159,7 +160,7 @@ export function renderComponent(item, ctx, extra = {}) {
       return <BigToggle on={Boolean(mic?.muted)} onClick={() => mic?.toggle?.()} icon="mic" onIcon="micOff" tone="amber" label="YALNIZ MİKROFONU KAPAT" onLabel="MİKROFON KAPALI · AÇ" sub="öbür sesler yayında kalır" kbd="M" />;
     }
     case "reji.home": case "reji.away": case "reji.center": case "reji.events": case "reji.any": case "reji.music":
-      return <RejiPart part={item.t.slice(5)} reji={ctx.reji} />;
+      return <MgPart tab="reji" part={item.t.slice(5)} ctx={ctx} />;
     case "golmuzik.panel": return ctx.GoalMusicPanel && ctx.reji?.goalMusic ? <div className="lw-pad"><ctx.GoalMusicPanel gm={ctx.reji.goalMusic} /></div> : <Hint icon="music">Gol müziği için maç aç (takımların müzikleri).</Hint>;
     case "golmuzik.buttons": return ctx.GoalMusicButtons && ctx.reji?.goalMusic ? <div className="lw-pad lw-gm"><ctx.GoalMusicButtons gm={ctx.reji.goalMusic} sides={["home", "away"]} /></div> : <Hint icon="music">Gol müziği için maç aç.</Hint>;
     case "tekrar.angles": return <AnglesTile {...ctx.angles} />;
