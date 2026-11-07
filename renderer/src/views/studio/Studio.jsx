@@ -46,9 +46,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Icon, Kbd, Modal, useConfirm, useToast } from "../../components/ui";
 import { setLeaveGuard } from "../../lib/leaveGuard";
 import {
-  addLayer, addScene, addSource, duplicateScene, loadScenesConfig, moveLayerTo, moveSceneTo, multiviewTiles, readySceneOf,
-  removeLayer, removeScene, removeSource, renameScene, resolveScene, saveScenesConfig, sceneAtHotkey, sceneFromSource, sceneFromTemplate,
-  sourceUsage, startSceneCountdowns, updateLayer, updateSource,
+  addLayer, addScene, addSource, duplicateLayer, duplicateScene, loadScenesConfig, moveLayerTo, moveSceneTo, multiviewTiles, readySceneOf,
+  removeLayer, removeScene, removeSource, renameScene, replaceScene, resolveScene, saveScenesConfig, sceneAtHotkey, sceneFromSource, sceneFromTemplate,
+  sceneTransitionOf, sourceUsage, startSceneCountdowns, updateLayer, updateScene, updateSource,
 } from "../../lib/studio/scenes";
 import { backupIngestUrl, encodingPreset, ingestUrl, keyAction, normalizeEncoding, reusableStream, statusPill } from "../../lib/studio/broadcast";
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../lib/studio/transitions";
@@ -83,7 +83,8 @@ import AudioPanel from "./AudioPanel";
 import PlayerPicker from "./PlayerPicker";
 import { ManageDock } from "./manage";
 import Monitor from "./scenes/Monitor";
-import { SceneEditor, ScenesTab, TemplateDialog, TemplateGallery } from "./scenes/ScenesPanel";
+import { ScenesTab, TemplateDialog, TemplateGallery } from "./scenes/ScenesPanel";
+import SceneEditorModal from "./scenes/SceneEditorModal";
 import { AnglesTile, ClockTile, LedMonitor, MetersTile, SceneCell, SceneCellPicker, ScenesStrip } from "./stage/StageTiles";
 import ReplayPreviewOverlay from "./modes/ReplayPreviewOverlay";
 import TransitionPanel from "./scenes/TransitionPanel";
@@ -155,6 +156,7 @@ const DEFAULT_PREFS = {
   replayRate: 1,
   replayAudio: false,
   previewGraphics: false,
+  sceneInline: false, // "Sahne katmanlarını yanda göster": kalem büyük pencere yerine Sahneler panelinde yanda açar
   tab: "yonetim",
   replayView: "tekrar",
   dockH: 300,
@@ -222,6 +224,8 @@ export default function Studio({ auth, go }) {
 
   const [prefs, setPrefs] = useState(readPrefs);
   const setPref = useCallback((key, value) => setPrefs((p) => ({ ...p, [key]: typeof value === "function" ? value(p[key]) : value })), []);
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
   useEffect(() => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* yoksay */ } }, [prefs]);
   const preset = useMemo(() => encodingPreset(prefs.encoding), [prefs.encoding]);
   const setAnglePref = useCallback((v) => setPref("angles", v), [setPref]);
@@ -297,7 +301,7 @@ export default function Studio({ auth, go }) {
   }), []);
   const setAudio = useCallback((fn) => setPref("audio", fn), [setPref]);
   // Ses: özel kip modülü yeni karıştırıcıyı getiriyorsa o (modül sabiti: kanca sırası değişmez), yoksa eskisi.
-  const programIds = useMemo(() => (config.scenes.find((s) => s.id === config.programSceneId)?.layers || []).map((l) => l.sourceId), [config.scenes, config.programSceneId]);
+  const programIds = useMemo(() => (config.scenes.find((s) => s.id === config.programSceneId)?.layers || []).filter((l) => !l.muted).map((l) => l.sourceId), [config.scenes, config.programSceneId]);
   const mixer = useStudioAudioMod
     ? useStudioAudioMod({ sources: { list: config.sources, runtimeRef: src.runtimeRef, programIds, programSceneId: config.programSceneId, scenes: config.scenes }, settings: { value: prefs.audio, onChange: setAudio } }) // eslint-disable-line react-hooks/rules-of-hooks
     : useAudioMixer({ mic: prefs.audio.mic, inputs: prefs.audio.inputs, replayEls, replayAudio: prefs.replayAudio }); // eslint-disable-line react-hooks/rules-of-hooks
@@ -624,7 +628,11 @@ export default function Studio({ auth, go }) {
     if (vr.active) { vr.exit(); restartVideosIn(target); pushHistory(cfg.programSceneId, target); applyConfig(swap); return true; }
     if (player.playing) { restartVideosIn(target); pushHistory(cfg.programSceneId, target); applyConfig(swap); player.stop(true); return true; }
     restartVideosIn(target);
-    comp.startTransition(cfg.programSceneId, target, tKind.key, tMs);
+    // Sahnenin kendi geçişi (Sahne düzenle › Sahne › "Yayına alınırken geçiş") varsa o kullanılır.
+    const own = sceneTransitionOf(cfg, target);
+    const ownKind = own ? transitionKind(own.kind) : null;
+    if (ownKind && ownKind.key === own.kind) comp.startTransition(cfg.programSceneId, target, ownKind.key, own.ms ?? transitionMs(ownKind.key, prefs.transitionMs));
+    else comp.startTransition(cfg.programSceneId, target, tKind.key, tMs);
     pushHistory(cfg.programSceneId, target);
     applyConfig(swap);
     return true;
@@ -656,8 +664,8 @@ export default function Studio({ auth, go }) {
 
   /* ───────── sahne / katman / kaynak işlemleri (kimliği sabit) ───────── */
   const [selectedLayerId, setSelectedLayerId] = useState(null);
-  const [editSceneId, setEditSceneId] = useState(null); // isteğe bağlı TAM EKRAN düzenleyici
-  const [inlineSceneId, setInlineSceneId] = useState(null); // Sahneler sekmesinde yanda katman paneli
+  const [editSceneId, setEditSceneId] = useState(null); // sahne düzenleyici penceresi (./scenes/SceneEditorModal)
+  const [inlineSceneId, setInlineSceneId] = useState(null); // Sahneler panelinde seçili sahne (isteğe bağlı: katmanlar yanda)
   const [gallery, setGallery] = useState(null); // "Yeni sahne ekle" penceresi { anchor }
   const [tplKey, setTplKey] = useState(null);
   const [dialog, setDialog] = useState(null); // { initial, toScene }
@@ -710,14 +718,14 @@ export default function Studio({ auth, go }) {
   const editSource = useStable((s) => setDialog({ initial: { ...s, angleOptions: recordable } }));
   const placeNewScene = (next, scene, { edit = false } = {}) => {
     if (!scene) return next;
-    // Yeni sahne seçilir: katmanları Sahneler sekmesinde yandaki panelde (açılır pencere yok).
-    setTimeout(() => { setInlineSceneId(scene.id); setSelectedLayerId(null); if (edit) openPanel("sahne"); }, 0);
+    // Yeni sahne seçilir; boş sahne doğrudan düzenleyicide açılır (ayar açıksa Sahneler panelinde yanda).
+    setTimeout(() => { setInlineSceneId(scene.id); setSelectedLayerId(null); if (edit) { if (prefsRef.current.sceneInline) openPanel("sahne"); else setEditSceneId(scene.id); } }, 0);
     return studioMode ? { ...next, previewSceneId: scene.id } : next;
   };
   const createFromTemplate = useStable((key, opts) => {
     setTplKey(null);
     setConfig((c) => { const { config: next, scene } = sceneFromTemplate(c, key, opts); return placeNewScene(next, scene); });
-    toast("Sahne oluşturuldu ve önizlemeye alındı. Katmanları Sahneler sekmesinde yandaki panelden değiştirebilirsin.", { tone: "success", timeout: 4000 });
+    toast("Sahne oluşturuldu ve önizlemeye alındı. Katmanlarını sahne kutusundaki kalemle düzenleyebilirsin.", { tone: "success", timeout: 4000 });
   });
   const onTemplate = useStable((key) => {
     if (key === "empty") { setConfig((c) => { const { config: next, scene } = addScene(c); return placeNewScene(next, scene, { edit: true }); }); return; }
@@ -743,9 +751,16 @@ export default function Studio({ auth, go }) {
     onPreview: toPreview,
     onProgram: toProgram,
     onToLed: (id) => { led.toScene(id); },
-    // Düzenle: Sahneler sekmesinde seç, katmanlar yanda (açılır pencere yok). Tam ekran isteğe bağlı.
-    onEdit: (id) => { setSelectedLayerId(null); setInlineSceneId(id); openPanel("sahne"); },
+    // Düzenle: büyük düzenleyici penceresi. "Sahne katmanlarını yanda göster" açıksa Sahneler panelinde yanda.
+    onEdit: (id) => {
+      setSelectedLayerId(null); setInlineSceneId(id);
+      if (prefsRef.current.sceneInline) openPanel("sahne"); else setEditSceneId(id);
+    },
     onEditFull: (id) => { setInlineSceneId(id); setEditSceneId(id); },
+    onEditInline: (id) => { setSelectedLayerId(null); setInlineSceneId(id); if (!prefsRef.current.sceneInline) setPref("sceneInline", true); openPanel("sahne"); },
+    onUpdateScene: (id, patch) => setConfig((c) => updateScene(c, id, patch)),
+    onReplaceScene: (id, scene) => setConfig((c) => replaceScene(c, id, scene)),
+    onDuplicateLayer: (sceneId, layerId) => setConfig((c) => { const { config: next, layer } = duplicateLayer(c, sceneId, layerId); if (layer) setSelectedLayerId(layer.id); return next; }),
     onTemplate,
     onRenameScene: (id, name) => setConfig((c) => renameScene(c, id, name)),
     onDuplicateScene: (id) => setConfig((c) => { const { config: next, scene } = duplicateScene(c, id); return scene && studioMode ? { ...next, previewSceneId: scene.id } : next; }),
@@ -768,8 +783,8 @@ export default function Studio({ auth, go }) {
     const i = configRef.current.scenes.findIndex((s) => s.id === t.id);
     const n = configRef.current.scenes.length;
     return [
-      { label: "Düzenle (katmanlar yanda)", icon: "pencil", onClick: () => sceneActions.onEdit(t.id) },
-      { label: "Tam ekran düzenle…", icon: "overview", onClick: () => sceneActions.onEditFull(t.id) },
+      { label: "Düzenle…", icon: "pencil", onClick: () => sceneActions.onEditFull(t.id) },
+      { label: "Katmanları yanda göster (Sahneler)", icon: "layers", onClick: () => sceneActions.onEditInline(t.id) },
       { label: "Önizlemeye al", icon: "eye", onClick: () => toPreview(t.id) },
       { label: "Yayına al", icon: "play", onClick: () => toProgram(t.id) },
       { label: "LED'e ver", icon: "overview", onClick: () => sceneActions.onToLed(t.id) },
@@ -1021,7 +1036,7 @@ export default function Studio({ auth, go }) {
         <span className="st-monitor__name">{previewTitle}</span>
         {replayEditing && <span className="st-monitor__hint">tekerlek: yakınlaştır · sürükle: kaydır · I / O: giriş / çıkış</span>}
         <span className="st-top__spacer" />
-        {!modes.previewOverride && previewScene && <button type="button" className="st-monitor__btn" onClick={() => sceneActions.onEdit(previewScene.id)} title="Önizlemedeki sahnenin katmanları (Sahneler sekmesinde, yanda)"><Icon name="pencil" size={11} /> Düzenle</button>}
+        {!modes.previewOverride && previewScene && <button type="button" className="st-monitor__btn" onClick={() => sceneActions.onEdit(previewScene.id)} title="Önizlemedeki sahneyi düzenle: katmanlar, konum, boyut, görünüm"><Icon name="pencil" size={11} /> Düzenle</button>}
       </figcaption>
       <Monitor canvas={comp.preview} className="st-monitor__screen" onBox={setPvwBox}>
         {replayEditing && (
@@ -1208,6 +1223,7 @@ export default function Studio({ auth, go }) {
   defPanel("sahne", () => (
     <ScenesTab config={config} configRef={configRef} runtimeRef={src.runtimeRef} register={registerTile} version={src.version} studioMode={studioMode} ledId={ledId} actions={{ ...sceneActions, tileMenu }} libActions={libActions}
       selectedSceneId={inlineSceneId} onSelectScene={setInlineSceneId} selectedLayerId={selectedLayerId} onSelectLayer={setSelectedLayerId}
+      inline={Boolean(prefs.sceneInline)} onInline={(v) => setPref("sceneInline", v)}
       outW={preset.width} outH={preset.height} overrideRef={overrideRef} matchClockRef={matchClockRef} onAddScene={openGallery} />
   ),
     { count: config.scenes.length || null });
@@ -1328,9 +1344,10 @@ export default function Studio({ auth, go }) {
           <Workspace layout={lay.layout} setLayout={lay.setLayout} edit={lay.edit} ctrlRef={lay.ctrlRef} value={layoutValue} />
 
           {editSceneId && (
-            <SceneEditor config={config} configRef={configRef} runtimeRef={src.runtimeRef} sceneId={editSceneId} selectedLayerId={selectedLayerId} onSelectLayer={setSelectedLayerId}
+            <SceneEditorModal config={config} configRef={configRef} runtimeRef={src.runtimeRef} sceneId={editSceneId} selectedLayerId={selectedLayerId} onSelectLayer={setSelectedLayerId}
               outW={preset.width} outH={preset.height} overrideRef={overrideRef} matchClockRef={matchClockRef}
-              isProgram={editSceneId === config.programSceneId} isPreview={studioMode && editSceneId === config.previewSceneId} actions={sceneActions} libActions={libActions} onClose={closeEditor} />
+              isProgram={editSceneId === config.programSceneId} isPreview={studioMode && editSceneId === config.previewSceneId} actions={sceneActions} libActions={libActions}
+              graphics={hasGraphics && g?.setVisibility ? g : null} audio={mixer?.setScene ? mixer : null} overlayRef={overlayRef} onClose={closeEditor} />
           )}
         </div>
 
@@ -1349,8 +1366,8 @@ export default function Studio({ auth, go }) {
           <span className="st-rmenu__title">{monMenu.target === "program" ? "Program" : "Önizleme"}</span>
           <button type="button" role="menuitem" onClick={() => { setFullscreen(monMenu.target); setMonMenu(null); }}><Icon name="overview" size={13} /> Tam ekran göster</button>
           {monMenu.target === "preview" && <button type="button" role="menuitem" disabled={!canTake} onClick={() => { toProgram(); setMonMenu(null); }}><Icon name="chevronRight" size={13} /> Yayına al (Geçiş)</button>}
-          {monMenu.target === "preview" && !modes.previewOverride && previewScene && <button type="button" role="menuitem" onClick={() => { sceneActions.onEdit(previewScene.id); setMonMenu(null); }}><Icon name="pencil" size={13} /> Sahneyi düzenle (katmanlar)</button>}
-          {monMenu.target === "preview" && !modes.previewOverride && previewScene && <button type="button" role="menuitem" onClick={() => { sceneActions.onEditFull(previewScene.id); setMonMenu(null); }}><Icon name="overview" size={13} /> Tam ekran düzenle</button>}
+          {monMenu.target === "preview" && !modes.previewOverride && previewScene && <button type="button" role="menuitem" onClick={() => { sceneActions.onEditFull(previewScene.id); setMonMenu(null); }}><Icon name="pencil" size={13} /> Sahneyi düzenle…</button>}
+          {monMenu.target === "preview" && !modes.previewOverride && previewScene && <button type="button" role="menuitem" onClick={() => { sceneActions.onEditInline(previewScene.id); setMonMenu(null); }}><Icon name="layers" size={13} /> Katmanları yanda göster</button>}
           {monMenu.target === "program" && lastSceneId && <button type="button" role="menuitem" onClick={() => { backToLastScene(); setMonMenu(null); }}><Icon name="undo" size={13} /> Son sahneye dön</button>}
         </div>
       )}

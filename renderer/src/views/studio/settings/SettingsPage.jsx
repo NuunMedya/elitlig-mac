@@ -311,6 +311,7 @@ function SettingsPage({
           <Toggle checked={settings.view.hints} onChange={(v) => set("view", { hints: v })} title="Kısayol rozetlerini göster" text="Düğmelerdeki tuş ipuçları (B, R, V …)" />
           <Toggle checked={settings.view.tooltips} onChange={(v) => set("view", { tooltips: v })} title="Açıklama balonlarını göster" />
           <Toggle checked={Boolean(prefs.previewGraphics)} onChange={(v) => setPref("previewGraphics", v)} title="Önizlemede grafikleri göster" text="Skorbord ve bantlar önizlemede soluk görünür" />
+          <Toggle checked={Boolean(prefs.sceneInline)} onChange={(v) => setPref("sceneInline", v)} title="Sahne katmanlarını yanda göster" text="Kalem büyük düzenleyici penceresi yerine Sahneler panelinde seçili sahnenin katmanlarını yanda açar" />
         </Section>
       </>
     );
