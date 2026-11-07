@@ -238,8 +238,15 @@ function normalizeStreamOptions(opts = {}) {
     keyframeSec: opts.keyframeSec === undefined || opts.keyframeSec === null || opts.keyframeSec === "" ? null : clampInt(opts.keyframeSec, 1, 4, 2),
     // "hardware" (varsayılan: VideoToolbox / NVENC …) | "software" (libx264).
     encoderPreference: opts.encoderPreference === "software" ? "software" : "hardware",
+    // Tek kodlama (WebCodecs): görüntü arayüzde H.264'e kodlanmış gelir, ffmpeg kopyalar.
+    videoCopy: opts.videoCopy === true,
+    pipeline: opts.videoCopy === true ? "webcodecs" : "legacy",
+    videoEncoderLabel: opts.videoCopy === true && opts.videoEncoderLabel ? String(opts.videoEncoderLabel).slice(0, 120) : null,
   };
 }
+
+/** Kodlayıcı adı + kodlama yolu (durum ve tanılama): "webcodecs" ya da ffmpeg kodlayıcısı. */
+const WEBCODECS_ENCODER = "webcodecs";
 
 /** Kodlayıcı tercihi: "software" → libx264 (varsa); aksi halde pickEncoder sırası. */
 const pickEncoderFor = (encoders, preference, platform) => (preference === "software" && encoders?.libx264 ? ENCODERS.libx264 : pickEncoder(encoders, platform));
@@ -272,10 +279,13 @@ function videoEncoderArgs(encoder, { videoBitrateKbps, fps, width = 1920, height
   const rate = ["-b:v", `${vb}k`, "-minrate", `${vb}k`, "-maxrate", `${vb}k`, "-bufsize", `${vb}k`, "-g", String(gop), "-keyint_min", String(gop)];
   switch (encoder) {
     case ENCODERS.videotoolbox:
-      return ["-c:v", ENCODERS.videotoolbox, "-allow_sw", "1", "-realtime", "1", "-profile:v", "high", "-level", level, ...rate];
+      // allow_sw 0: Apple'ın yazılım H.264'üne sessizce düşmesin (düşük kalite, yüksek işlemci);
+      // donanım yoksa açılış hatası → x264'e geçilir (engine fallbackEncoder, yoklama da aynı seçenekle).
+      return ["-c:v", ENCODERS.videotoolbox, "-allow_sw", "0", "-realtime", "1", "-profile:v", "high", "-level", level, ...rate];
     case ENCODERS.nvenc:
-      // forced-idr: -force_key_frames ile istenen kareler IDR olur (klip parçaları bağımsız açılır).
-      return ["-c:v", ENCODERS.nvenc, "-preset", presetFor(NVENC_PRESETS, speedLevel), "-tune", "ll", "-rc", "cbr", "-profile:v", "high", "-level", level, "-forced-idr", "1", "-no-scenecut", "1", ...rate];
+      // OBS ile aynı: tune hq + 2 B-kare (ll kalitesi düşük); forced-idr: -force_key_frames
+      // ile istenen kareler IDR olur (klip parçaları bağımsız açılır).
+      return ["-c:v", ENCODERS.nvenc, "-preset", presetFor(NVENC_PRESETS, speedLevel), "-tune", "hq", "-rc", "cbr", "-bf", "2", "-profile:v", "high", "-level", level, "-forced-idr", "1", "-no-scenecut", "1", ...rate];
     case ENCODERS.qsv:
       // QSV seviyeyi genel AVCodecContext.level'dan okur: 4.2 → 42. b:v = maxrate → CBR.
       return ["-c:v", ENCODERS.qsv, "-preset", "veryfast", "-look_ahead", "0", "-profile:v", "high", "-level", String(h264level.levelIdc(level)), "-forced_idr", "1", ...rate];
@@ -286,7 +296,7 @@ function videoEncoderArgs(encoder, { videoBitrateKbps, fps, width = 1920, height
       // Profil sayıyla verilir (100 = High; h264_mf'in adlı profil seçeneği yok).
       return ["-c:v", ENCODERS.mf, "-hw_encoding", "1", "-rate_control", "cbr", "-scenario", "live_streaming", "-profile:v", "100", ...rate, "-bsf:v", `h264_metadata=level=${level}`];
     default:
-      return ["-c:v", ENCODERS.libx264, "-preset", presetFor(X264_PRESETS, speedLevel), "-profile:v", "high", "-level", level, "-sc_threshold", "0", ...rate, "-x264-params", "nal-hrd=cbr:force-cfr=1"];
+      return ["-c:v", ENCODERS.libx264, "-preset", presetFor(X264_PRESETS, speedLevel), "-profile:v", "high", "-level", level, "-bf", "2", "-sc_threshold", "0", ...rate, "-x264-params", "nal-hrd=cbr:force-cfr=1"];
   }
 }
 
@@ -395,7 +405,8 @@ const supportsFpsMode = (version) => {
  * İlerleme stdout'a (-progress pipe:1); günlük stderr'e, düzey önekli
  * ("[warning] …"; fifo'nun "Recovery successful" satırı info düzeyindedir).
  */
-function buildStreamArgs({ url = null, relayUrl = null, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec = null, segmentSeconds = 2, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska", fifo = false, localFile = null, localEncode = null, speedLevel = 0, fpsMode = true, platform = process.platform }) {
+function buildStreamArgs({ url = null, relayUrl = null, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec = null, segmentSeconds = 2, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska", fifo = false, localFile = null, localEncode = null, speedLevel = 0, fpsMode = true, platform = process.platform, videoCopy = false }) {
+  if (videoCopy) return buildCopyStreamArgs({ url, relayUrl, audioBitrateKbps, segmentSeconds, segmentStart, listFile, inputFormat, fifo, localFile, platform });
   if (localFile && localEncode) {
     return buildDualEncodeArgs({ url, relayUrl, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec, segmentSeconds, segmentStart, listFile, inputFormat, fifo, localFile, localEncode, speedLevel, fpsMode, platform });
   }
@@ -416,6 +427,36 @@ function buildStreamArgs({ url = null, relayUrl = null, width, height, fps, vide
     ...(fpsMode ? ["-fps_mode", "cfr"] : ["-vsync", "cfr"]), "-r", String(fps),
     ...videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height, keyframeSeconds: forcedKeyframeSec(keyframeSec, segmentSeconds), speedLevel }),
     "-force_key_frames", `expr:gte(t,n_forced*${forcedKeyframeSec(keyframeSec, segmentSeconds)})`,
+    "-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "48000", "-ac", "2", "-af", "aresample=async=1000",
+    "-flags", "+global_header",
+    "-max_muxing_queue_size", "1024",
+    "-f", "tee", outputs.join("|"),
+  ];
+}
+
+/**
+ * Tek kodlama (WebCodecs) yayın komutu: arayüz görüntüyü H.264 olarak (avcC,
+ * Matroska, sabit kare ızgarası, 2 sn'de bir anahtar kare) yollar; ffmpeg
+ * görüntüyü YENİDEN KODLAMADAN tee çıkışlarına kopyalar. Zaman damgaları
+ * kodlayıcınındır (+genpts yalnız eksik olanlar için); fps süzgeci / -fps_mode
+ * yoktur (kopya). h264_mp4toannexb: MPEG-TS (halka, aktarıcı) Annex B ister;
+ * Matroska / FLV çıkışları başlığı kendileri avcC'ye çevirir. Ses buildStreamArgs
+ * ile aynı (Opus → AAC). Parça sınırları anahtar karelerde (2 sn).
+ */
+function buildCopyStreamArgs({ url = null, relayUrl = null, audioBitrateKbps, segmentSeconds = 2, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska", fifo = false, localFile = null, platform = process.platform }) {
+  const outputs = [];
+  const net = networkSlave({ url, relayUrl, fifo });
+  if (net) outputs.push(net);
+  if (localFile) outputs.push(`[f=matroska:onfail=ignore]${teeEscape(localFile, platform)}`);
+  outputs.push(`[f=segment:segment_time=${segmentSeconds}:segment_time_delta=0.05:segment_format=mpegts:reset_timestamps=1:segment_start_number=${segmentStart}:segment_list=${listFile}:segment_list_type=csv:onfail=abort]${SEGMENT_PATTERN}`);
+  return [
+    "-hide_banner", "-nostdin", "-loglevel", streamLogLevel({ url, relayUrl, fifo }), "-nostats",
+    "-progress", "pipe:1", "-stats_period", "1",
+    "-fflags", "+genpts+discardcorrupt", "-thread_queue_size", "1024",
+    "-probesize", "1000000", "-analyzeduration", "1000000",
+    "-f", inputFormat, "-i", "pipe:0",
+    "-map", "0:v:0", "-map", "0:a:0?",
+    "-c:v", "copy", "-bsf:v", "h264_mp4toannexb",
     "-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "48000", "-ac", "2", "-af", "aresample=async=1000",
     "-flags", "+global_header",
     "-max_muxing_queue_size", "1024",
@@ -632,6 +673,8 @@ module.exports = {
   normalizeStreamOptions,
   videoEncoderArgs,
   buildStreamArgs,
+  buildCopyStreamArgs,
+  WEBCODECS_ENCODER,
   buildConcatArgs,
   concatLine,
   normalizeProgress,

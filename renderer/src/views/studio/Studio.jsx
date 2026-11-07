@@ -362,7 +362,7 @@ export default function Studio({ auth, go }) {
 
   /* ───────── kodlayıcı ve YouTube ───────── */
   const onEngineError = useCallback((m) => toast(m, { tone: "error", timeout: 6000 }), [toast]);
-  const engine = useEngine({ getVideoTrack: comp.getVideoTrack, getAudioTrack: mixer.audioTrack, onError: onEngineError });
+  const engine = useEngine({ getVideoTrack: comp.getVideoTrack, getAudioTrack: mixer.audioTrack, getCanvas: comp.getCanvas, subscribeFrames: comp.subscribeFrames, getDrawStats: comp.getStats, onError: onEngineError });
   const yt = useYoutube(matchId, { encodingLive: engine.mode === "live" && engine.active });
   const hl = useHighlights(matchId);
   const [busy, setBusy] = useState(false);
@@ -1439,7 +1439,7 @@ export default function Studio({ auth, go }) {
           ? <button type="button" className="st-top__match" onClick={() => setTab("yonetim")} title={`${matchName} — Maç yönetimi`}><b>{live.score.home}–{live.score.away}</b><span>{matchName}</span>{live.match && <small>{live.minute}'</small>}</button>
           : <button type="button" className="st-top__match is-empty" onClick={() => setTab("yonetim")} title="Maç seçmek için Maç yönetimi">Maç seçilmedi</button>}
         <StatusPill state={st.state} since={engine.since} />
-        <HealthChip status={st} getStats={comp.getStats} targetFps={preset.fps} encoding={onAir} />
+        <HealthChip status={st} getStats={comp.getStats} getEncodeStats={engine.getEncodeStats} targetFps={preset.fps} encoding={onAir} />
         <span className="st-top__spacer" />
         <LayoutToolbar edit={lay.edit} setEdit={lay.setEdit} ctrlRef={lay.ctrlRef} preset={lay.layout.preset} onSettings={() => openSettings("yerlesim")} />
         {!railHasGoLive && (

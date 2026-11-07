@@ -71,8 +71,10 @@ describe("kodlama ayarı", () => {
     expect(validateBitrate(99999)).toMatchObject({ ok: false, value: BITRATE_MAX_KBPS });
   });
   it("önerilen bit hızı, uyarı, gereken yükleme", () => {
-    expect(recommendedBitrate("720p", 30)).toBe(2500);
-    expect(recommendedBitrate("1080p", 60)).toBe(6000);
+    expect(recommendedBitrate("720p", 30)).toBe(3000);
+    expect(recommendedBitrate("720p", 60)).toBe(4500);
+    expect(recommendedBitrate("1080p", 30)).toBe(6000);
+    expect(recommendedBitrate("1080p", 60)).toBe(9000);
     expect(bitrateAdvice({ resolution: "1080p", fps: 60, bitrateKbps: 2000 })).toMatch(/düşük/);
     expect(bitrateAdvice({ resolution: "720p", fps: 30, bitrateKbps: 2500 })).toBeNull();
     expect(bitrateAdvice({ resolution: "1080p", fps: 60, bitrateKbps: 15000 })).toMatch(/gereksiz/);
@@ -81,7 +83,7 @@ describe("kodlama ayarı", () => {
   it("ayrı çözünürlük / fps / bit hızı; eski 'quality' tercihi okunur", () => {
     expect(normalizeEncoding({ resolution: "1080p", fps: 60, bitrateKbps: 7000 })).toEqual({ resolution: "1080p", fps: 60, bitrateKbps: 7000 });
     expect(normalizeEncoding(null, "1080p30")).toEqual({ resolution: "1080p", fps: 30, bitrateKbps: 4500 });
-    expect(normalizeEncoding({ resolution: "4k", fps: 25 })).toEqual({ resolution: "720p", fps: 30, bitrateKbps: 2500 });
+    expect(normalizeEncoding({ resolution: "4k", fps: 25 })).toEqual({ resolution: "720p", fps: 30, bitrateKbps: 3000 });
     expect(normalizeEncoding({ resolution: "720p", fps: 30, bitrateKbps: 50 }).bitrateKbps).toBe(BITRATE_MIN_KBPS);
     expect(encodingPreset({ resolution: "1080p", fps: 60, bitrateKbps: 8000 })).toEqual({ key: "1080p60", width: 1920, height: 1080, fps: 60, videoBitrateKbps: 8000 });
   });

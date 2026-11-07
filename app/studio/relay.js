@@ -20,6 +20,8 @@
 //     (YouTube backup ingest) geçilir; orada da 3 hata olursa ana adrese döner.
 //   - Ağ yetişemezse (aktarıcının stdin'i highWater'ı aşarsa) gerçek zamanı
 //     korumak için sonraki anahtar kareye kadar veri ATILIR (kuyruk büyümez).
+//     Eşik bit hızına göre ~8 sn'lik veridir (4–24 MB; eskiden sabit 4 MB):
+//     kısa ağ dalgalanması kare attırmaz, yalnız süren darlık attırır.
 //   - Bağlantı askıda (stallMs boyunca gönderilen bayt artmıyor) ya da ilk
 //     bağlantı connectTimeoutMs içinde kurulamadıysa aktarıcı öldürülür.
 //   - Kodlayıcı yeniden başlarsa (yeni TCP bağlantısı, zaman damgaları sıfırdan)
@@ -189,8 +191,11 @@ function createRelay({
   stallMs = 15000,
   stableMs = 30000,
   watchMs = 1000,
-  highWaterBytes = 4 * 1024 * 1024,
-  lowWaterBytes = 512 * 1024,
+  // Ağ yetişemezse atlama eşiği. Verilmezse bit hızına göre: ~8 sn'lik veri (en az 4, en çok
+  // 24 MB) — kısa ağ dalgalanmalarında hiç kare atılmaz (atma = izleyicide anahtar kareye kadar donma).
+  highWaterBytes = null,
+  lowWaterBytes = null,
+  highWaterSec = 8,
   stopTimeoutMs = 3000,
   note = () => {},
   log = () => {},
@@ -229,6 +234,11 @@ function createRelay({
     starts: 0,
   };
   let rate = { at: null, bytes: 0 };
+  let inRate = { at: null, bytes: 0, bps: 0 }; // kodlayıcıdan gelen bayt/sn (eşikler için)
+  const MIN_HIGH = 4 * 1024 * 1024;
+  const MAX_HIGH = 24 * 1024 * 1024;
+  const highWater = () => highWaterBytes ?? Math.min(MAX_HIGH, Math.max(MIN_HIGH, Math.round(inRate.bps * highWaterSec)));
+  const lowWater = () => lowWaterBytes ?? Math.min(2 * 1024 * 1024, Math.max(512 * 1024, Math.round(inRate.bps)));
 
   const clear = (name) => {
     const t = { retryTimer, watchTimer, stableTimer }[name];
@@ -255,6 +265,9 @@ function createRelay({
       droppedBytes: st.droppedBytes,
       dropEvents: st.dropEvents,
       dropping: st.dropping,
+      pendingBytes: pusher?.child?.stdin?.writableLength ?? 0,
+      highWaterBytes: highWater(),
+      inKbps: Math.round((inRate.bps * 8) / 1000),
       nextRetryInMs: nextRetryAt === null ? null : Math.max(0, nextRetryAt - now()),
       message: message(),
     };
@@ -326,6 +339,12 @@ function createRelay({
     const { data, keyframe } = gopBuf.feed(chunk);
     if (!data) return;
     st.inBytes += data.length;
+    const t = now();
+    if (inRate.at === null) inRate = { at: t, bytes: st.inBytes, bps: 0 };
+    else if (t - inRate.at >= 2000) {
+      const bps = ((st.inBytes - inRate.bytes) * 1000) / (t - inRate.at);
+      inRate = { at: t, bytes: st.inBytes, bps: inRate.bps ? inRate.bps * 0.7 + bps * 0.3 : bps };
+    }
     if (stopping) return;
     if (!pusher) {
       if (!retryTimer && gopBuf.hasKey()) spawnPusher();
@@ -334,18 +353,18 @@ function createRelay({
     const stdin = pusher.child.stdin;
     if (!stdin || stdin.destroyed || !stdin.writable) return;
     if (feeding) {
-      if (stdin.writableLength > highWaterBytes) {
+      if (stdin.writableLength > highWater()) {
         // Ağ yetişemiyor: kuyruk büyütülmez, sonraki anahtar kareye kadar atlanır.
         feeding = false;
         st.dropEvents += 1;
-        if (!st.dropping) { st.dropping = true; note("ağ yetişemiyor; anahtar kareye kadar veri atlanıyor", { pendingBytes: stdin.writableLength }); emit(); }
+        if (!st.dropping) { st.dropping = true; note("ağ yetişemiyor; anahtar kareye kadar veri atlanıyor", { pendingBytes: stdin.writableLength, highWaterBytes: highWater(), inKbps: Math.round((inRate.bps * 8) / 1000), sentKbps: st.sentKbps }); emit(); }
         st.droppedBytes += data.length;
         return;
       }
       stdin.write(data);
       return;
     }
-    if (keyframe && stdin.writableLength <= lowWaterBytes) {
+    if (keyframe && stdin.writableLength <= lowWater()) {
       stdin.write(gopBuf.snapshot());
       feeding = true;
       return;

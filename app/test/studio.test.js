@@ -25,7 +25,7 @@ test("yayın komutu: tee ile RTMP (onfail=ignore) + 2 sn'lik TS halkası, 2 sn a
   assert.equal(at("-f"), "matroska");
   assert.equal(at("-progress"), "pipe:1");
   assert.equal(at("-c:v"), "h264_videotoolbox");
-  assert.equal(at("-allow_sw"), "1");
+  assert.equal(at("-allow_sw"), "0"); // yazılım H.264'e sessizce düşmez (donanım yoksa x264)
   assert.equal(at("-level"), "4.1");
   assert.equal(at("-g"), "60");
   assert.equal(at("-b:v"), "4500k");

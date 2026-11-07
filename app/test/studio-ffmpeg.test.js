@@ -150,10 +150,11 @@ test("tüm kodlayıcılar: CBR, 2 sn GOP, High profil, açık seviye", () => {
   }
 });
 
-test("NVENC: p4 + ll + cbr, IDR anahtar kareler", () => {
+test("NVENC: p4 + hq + cbr + 2 B-kare (OBS gibi), IDR anahtar kareler", () => {
   const a = ff.videoEncoderArgs("h264_nvenc", opts);
   assert.equal(at(a, "-preset"), "p4");
-  assert.equal(at(a, "-tune"), "ll");
+  assert.equal(at(a, "-tune"), "hq");
+  assert.equal(at(a, "-bf"), "2");
   assert.equal(at(a, "-rc"), "cbr");
   assert.equal(at(a, "-level"), "4.2");
   assert.equal(at(a, "-forced-idr"), "1");
@@ -189,7 +190,8 @@ test("libx264 ve VideoToolbox: önceki ayarlar korunur, seviye eklenir", () => {
   const x = ff.videoEncoderArgs("libx264", opts);
   assert.deepEqual([at(x, "-preset"), at(x, "-sc_threshold"), at(x, "-x264-params"), at(x, "-level")], ["veryfast", "0", "nal-hrd=cbr:force-cfr=1", "4.2"]);
   const v = ff.videoEncoderArgs("h264_videotoolbox", { ...opts, width: 1280, height: 720 });
-  assert.deepEqual([at(v, "-allow_sw"), at(v, "-realtime"), at(v, "-level")], ["1", "1", "4.1"]);
+  assert.deepEqual([at(v, "-allow_sw"), at(v, "-realtime"), at(v, "-level")], ["0", "1", "4.1"]);
+  assert.equal(at(x, "-bf"), "2");
 });
 
 test("yayın komutu: kodlayıcıya göre piksel biçimi ve seviye", () => {

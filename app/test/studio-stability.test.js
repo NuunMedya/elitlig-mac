@@ -311,11 +311,31 @@ test("tee: yerel kayıt çıkışı düşerse yayın sürer (uyarı); RTMP çık
   await engine.stop();
 });
 
-test("hız: speed < 0.95 10 sn sürerse 'slow' uyarısı; sonraki yeniden başlatmada x264 superfast", async () => {
+test("hız: giriş geç geliyorsa (stdin boş) speed < 0.95 ön ayarı DÜŞÜRMEZ (yalnız uyarı)", async () => {
+  const { engine, children, clock, statuses, timers, notes } = setup();
+  await engine.start({ url: null });
+  engine.pushChunk(HEADER);
+  let out = 0;
+  for (let i = 0; i < 20; i += 1) {
+    clock.t += 1000;
+    out += 800;
+    progress(children[0], out, "0.80x");
+  }
+  assert.equal(statuses.at(-1).warning, "slow");
+  assert.ok(notes.some((n) => n.message === "kodlayıcı yetişemiyor" && n.data.inputLimited === true && n.data.nextSpeedLevel === 0));
+  children[0].emit("exit", 1, null);
+  await tick();
+  timers.runNext(2000);
+  assert.equal(at(children[1].args, "-preset"), "veryfast");
+  await engine.stop();
+});
+
+test("hız: speed < 0.95 10 sn sürerse 'slow' uyarısı; stdin birikiyorsa sonraki yeniden başlatmada x264 superfast", async () => {
   const { engine, children, clock, statuses, timers, notes } = setup();
   await engine.start({ url: null });
   assert.equal(at(children[0].args, "-preset"), "veryfast");
   engine.pushChunk(HEADER);
+  children[0].stdin.writableLength = 2 * 1024 * 1024; // ffmpeg okuyamıyor: darboğaz kodlayıcı
   let out = 0;
   for (let i = 0; i < 20; i += 1) {
     clock.t += 1000;

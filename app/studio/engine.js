@@ -76,6 +76,8 @@ const SLOW_SPEED = 0.95;
 const SLOW_SPEED_MS = 10000;
 const SPEED_GRACE_MS = 5000; // sürecin ilk saniyeleri (yoklama / tampon) sayılmaz
 const QUEUE_FULL_RESTART_MS = 30000;
+const SPEED_BACKLOG_BYTES = 1024 * 1024; // hız düşükken stdin'de bu kadar birikme: darboğaz ffmpeg
+const HEALTH_NOTE_MS = 30000;
 const FIFO_AUTH_LIMIT = 3;
 
 const MESSAGES = {
@@ -190,7 +192,9 @@ function createStudioEngine({
       state,
       sessionId: session?.id || null,
       recordOnly: session ? !session.opts.url : undefined,
-      encoder: session?.encoder || undefined,
+      encoder: session ? encoderOf(session) : undefined,
+      pipeline: session ? (session.opts.videoCopy ? "webcodecs" : "legacy") : undefined,
+      ...(session?.opts.videoCopy && session.opts.videoEncoderLabel ? { encoderLabel: session.opts.videoEncoderLabel } : {}),
       bitrateKbps: session ? session.bitrateKbps ?? null : undefined,
       fps: p.fps ?? null,
       speed: p.speed ?? null,
@@ -207,6 +211,8 @@ function createStudioEngine({
   };
 
   const rtmpUp = (s) => (s.relay ? s.relay.status().state === "up" : !s.rtmpDown);
+  /** Görüntüyü kim kodluyor: tek kodlamada arayüz ("webcodecs"), aksi halde ffmpeg kodlayıcısı. */
+  const encoderOf = (s) => (s.opts?.videoCopy ? ff.WEBCODECS_ENCODER : s.encoder || undefined);
 
   /** Aktarıcı ayrıntıları (arayüz: ağ sağlığı). */
   function networkFields(s) {
@@ -369,7 +375,7 @@ function createStudioEngine({
     const s = session;
     if (!s || s.stopping) return;
     s.run += 1;
-    const runInfo = { run: s.run, encoder: s.encoder, listFile: `list-${s.run}.csv`, startIndex: s.nextSegment, lastIndex: -1, lastEnd: null, startedAt: now(), gotProgress: false, failReason: null, origin: null };
+    const runInfo = { run: s.run, encoder: encoderOf(s), videoCopy: Boolean(s.opts.videoCopy), listFile: `list-${s.run}.csv`, startIndex: s.nextSegment, lastIndex: -1, lastEnd: null, startedAt: now(), gotProgress: false, failReason: null, origin: null };
     s.runInfo = runInfo;
     s.runs.set(s.run, runInfo);
     s.totalOutMs += s.progress?.outTimeMs || 0;
@@ -377,6 +383,7 @@ function createStudioEngine({
     s.warning = null;
     s.stderrTail = [];
     s.waitingHeader = true;
+    s.headerCarry = null;
     s.slowWarned = false;
     s.rtmpDown = false;
     s.fifoAuth = 0;
@@ -397,8 +404,8 @@ function createStudioEngine({
     const net = s.relay ? { url: null, relayUrl: s.relay.url() } : {};
     if (s.relay) s.relay.arm();
     const args = buildArgs({ ...s.opts, ...net, encoder: s.encoder, segmentSeconds, segmentStart: s.nextSegment, listFile: runInfo.listFile, fifo: s.fifo, localFile, ...(localEncode ? { localEncode } : {}), speedLevel: s.speedLevel, fpsMode: s.fpsMode, platform });
-    log("studio: ffmpeg başlıyor", { run: s.run, encoder: s.encoder, url: ff.maskUrl(s.opts.url) });
-    note(`ffmpeg başlıyor (çalıştırma ${s.run})`, { encoder: s.encoder, speedLevel: s.speedLevel, fifo: s.fifo, relay: Boolean(s.relay), args: ff.maskSecrets(args.join(" ")) });
+    log("studio: ffmpeg başlıyor", { run: s.run, encoder: encoderOf(s), url: ff.maskUrl(s.opts.url) });
+    note(`ffmpeg başlıyor (çalıştırma ${s.run})`, { encoder: encoderOf(s), pipeline: s.opts.videoCopy ? "webcodecs" : "legacy", speedLevel: s.speedLevel, fifo: s.fifo, relay: Boolean(s.relay), args: ff.maskSecrets(args.join(" ")) });
     let child;
     try {
       child = spawnImpl(s.ffmpegPath, args, { cwd: s.dir, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
@@ -436,7 +443,7 @@ function createStudioEngine({
       note("yeniden başlatma: ilk ilerleme gelmedi", { afterMs: connectTimeoutMs, chunks: s.chunkCount });
       killChild(s);
     }, connectTimeoutMs);
-    if (s.run > 1) events.emit("restartRecorder", { sessionId: s.id, run: s.run, reason: s.lastCode || null });
+    if (s.run > 1) events.emit("restartRecorder", { sessionId: s.id, run: s.run, reason: s.lastCode || null, videoCopy: Boolean(s.opts.videoCopy) });
   }
 
   function killChild(s) {
@@ -550,12 +557,49 @@ function createStudioEngine({
     const extra = s.notice ? { message: s.notice } : s.relay && relayExtra(s).message ? relayExtra(s) : !s.relay && s.rtmpDown ? rtmpDownExtra(s) : s.speedSlow ? { message: MSG.speedSlow } : {};
     sessionStatus(state, extra);
     s.notice = null;
-    // Dakikada bir yayın sağlığı tanılama günlüğüne (uzun yayınlarda kopmaların izi).
-    if (s.opts.url && (s.healthAt === undefined || now() - s.healthAt >= 60000)) {
+    // Yarım dakikada bir yayın sağlığı tanılama günlüğüne (uzun yayınlarda kopma / donmaların izi):
+    // ffmpeg (kodlama / kopya), aktarıcı (ağ) ve arayüzün kodlama sayaçları (reportStats) birlikte.
+    if (s.healthAt === undefined || now() - s.healthAt >= HEALTH_NOTE_MS) {
       s.healthAt = now();
-      const n = s.relay?.status();
-      note("yayın sağlığı", { state, fps: p.fps, speed: p.speed, droppedFrames: p.droppedFrames, dupFrames: p.dupFrames, encodedKbps: s.bitrateKbps ?? null, pendingBytes: s.child?.stdin?.writableLength ?? 0, ...(n ? { rtmp: n.state, sentKbps: n.sentKbps, reconnects: n.reconnects, attempt: n.attempt, ingest: n.target, droppedBytes: n.droppedBytes, lastError: n.lastError?.code || null } : {}) });
+      note("yayın sağlığı", healthSnapshot(s, state));
     }
+  }
+
+  /** Tanılama özeti: ffmpeg + aktarıcı + arayüz (kodlama yolu) sayaçları. */
+  function healthSnapshot(s, state = status.state) {
+    const p = s.progress || {};
+    const n = s.relay?.status();
+    const c = s.clientStats || null;
+    return {
+      state, pipeline: s.opts.videoCopy ? "webcodecs" : "legacy", encoder: encoderOf(s),
+      fps: p.fps ?? null, speed: p.speed ?? null, droppedFrames: p.droppedFrames ?? 0, dupFrames: p.dupFrames ?? 0,
+      encodedKbps: s.bitrateKbps ?? null, pendingBytes: s.child?.stdin?.writableLength ?? 0,
+      ...(n ? { rtmp: n.state, sentKbps: n.sentKbps, reconnects: n.reconnects, attempt: n.attempt, ingest: n.target, droppedBytes: n.droppedBytes, dropEvents: n.dropEvents, relayPendingBytes: n.pendingBytes ?? null, lastError: n.lastError?.code || null } : {}),
+      ...(c ? { client: c } : {}),
+    };
+  }
+
+  /**
+   * Arayüzün kodlama sayaçları (5 sn'de bir): çizilen / kodlanan kare, kodlama
+   * kuyruğu, atlanan kareler. Atlama ya da boşluk artarsa hemen günlüğe yazılır
+   * (en çok 10 sn'de bir) — sahadaki donmanın hangi aşamada olduğu görülsün.
+   */
+  function clientStats(stats) {
+    const s = session;
+    if (!s || !stats || typeof stats !== "object") return false;
+    const pick = {};
+    for (const [k, v] of Object.entries(stats)) {
+      if (typeof v === "number" || typeof v === "boolean" || (typeof v === "string" && v.length <= 120) || v === null) pick[k] = v;
+      else if (v && typeof v === "object" && !Array.isArray(v)) pick[k] = Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === "number" || typeof x === "string").slice(0, 12));
+    }
+    const prev = s.clientStats;
+    s.clientStats = pick;
+    const grew = (k) => prev && Number(pick[k]) > Number(prev[k] || 0);
+    if ((grew("encodeDropped") || grew("gaps") || grew("stalls")) && (!s.clientNoteAt || now() - s.clientNoteAt >= 10000)) {
+      s.clientNoteAt = now();
+      note("arayüz kodlaması kare atladı / takıldı", { ...pick, deltaDropped: (pick.encodeDropped || 0) - (prev.encodeDropped || 0), deltaGaps: (pick.gaps || 0) - (prev.gaps || 0) });
+    }
+    return true;
   }
 
   function rtmpDownExtra(s) {
@@ -605,9 +649,13 @@ function createStudioEngine({
     if (!s.speedSlow && t - s.slowSince >= SLOW_SPEED_MS) {
       s.speedSlow = true;
       s.warning = "slow";
-      const canLower = s.encoder === ff.ENCODERS.libx264 || s.encoder === ff.ENCODERS.nvenc;
+      // Daha hızlı (daha kötü görüntülü) ön ayara yalnız darboğaz gerçekten ffmpeg ise geçilir:
+      // stdin'de veri birikiyor (ffmpeg okuyamıyor). Giriş geç geliyorsa (arayüz takıldı,
+      // kaydedici yavaş) speed yine < 1 görünür ama ön ayarı düşürmek yalnız kaliteyi bozar.
+      const backlog = s.child?.stdin?.writableLength ?? 0;
+      const canLower = !s.opts.videoCopy && (s.encoder === ff.ENCODERS.libx264 || s.encoder === ff.ENCODERS.nvenc) && backlog >= SPEED_BACKLOG_BYTES;
       if (canLower && s.speedLevel < ff.MAX_SPEED_LEVEL) s.pendingSpeedLevel = s.speedLevel + 1;
-      note("kodlayıcı yetişemiyor", { speed: p.speed, forMs: t - s.slowSince, encoder: s.encoder, nextSpeedLevel: s.pendingSpeedLevel ?? s.speedLevel });
+      note("kodlayıcı yetişemiyor", { speed: p.speed, forMs: t - s.slowSince, encoder: encoderOf(s), pendingBytes: backlog, inputLimited: backlog < SPEED_BACKLOG_BYTES, nextSpeedLevel: s.pendingSpeedLevel ?? s.speedLevel });
       events.emit("slow", { sessionId: s.id, speed: p.speed });
     }
   }
@@ -633,6 +681,20 @@ function createStudioEngine({
       s.speedSlow = false;
       note("daha hızlı kodlayıcı ön ayarı", { speedLevel: s.speedLevel });
     }
+    // Tek kodlama (WebCodecs) akışı ffmpeg'de açılamadı: iki kez üst üste ilerlemesiz biterse eski
+    // yola (yeniden kodlama) geçilir; arayüz restartRecorder { videoCopy: false } ile MediaRecorder'a döner.
+    if (s.opts.videoCopy && !runInfo.gotProgress && !["SPAWN", "TIMEOUT", "STALLED", "SLOW", "RECORDER"].includes(reason.code)) {
+      s.copyFailures = (s.copyFailures || 0) + 1;
+      if (s.copyFailures >= 2) {
+        s.opts = { ...s.opts, videoCopy: false, pipeline: "legacy" };
+        s.notice = "Tek kodlama akışı açılamadı; eski kodlama yoluna geçildi.";
+        s.lastCode = reason.code;
+        note("tek kodlama akışı açılamadı; yeniden kodlamaya geçiliyor", { reason: reason.code });
+        spawnRun();
+        return;
+      }
+    }
+    if (runInfo.gotProgress) s.copyFailures = 0;
     // Çağıranın geri düşüşü (açılar: H.264 kopyası açılamadı → yeniden kodlama). Deneme sayılmaz.
     // Zaman aşımı / takılma / birikme kaydedici kaynaklıdır, biçim sorunu değil: geri düşüş yok.
     if (!runInfo.gotProgress && typeof adjustAfterFailure === "function" && !["SPAWN", "TIMEOUT", "STALLED", "SLOW", "RECORDER"].includes(reason.code)) {
@@ -716,6 +778,12 @@ function createStudioEngine({
   function localEncodeFor(s) {
     const q = s.local?.quality;
     if (!q) return null;
+    if (s.opts.videoCopy) {
+      // Tek kodlama: ffmpeg görüntüyü kodlamıyor; ayrı kalite ikinci (yazılım) kodlama ister → yayın kalitesinde yazılır.
+      if (!s.local.qualityState || s.local.qualityState.separate !== false) note("yerel kayıt yayın kalitesinde (tek kodlama yolu)", { wanted: q });
+      s.local.qualityState = { separate: false, reason: "VIDEO_COPY", message: "Tek kodlama (WebCodecs) yolunda yerel kayıt yayınla aynı kalitede yazılır.", wanted: q };
+      return null;
+    }
     if (ff.isHardwareEncoder(s.encoder) || s.local.allowSoftware) {
       s.local.qualityState = { separate: true, ...q, encoder: s.encoder };
       return q;
@@ -792,9 +860,14 @@ function createStudioEngine({
    * Arayüz kaydediciyi yeniden kurmak istiyor (görüntü izi takıldı / kuyruk
    * şişti): kodlayıcı yeni başlıkla yeniden başlar, deneme sayılmaz.
    */
-  function restartEncoder(reason = "RECORDER") {
+  function restartEncoder(reason = "RECORDER", options = null) {
     const s = session;
     if (!s || !s.child || s.stopping || s.failed) return false;
+    // Arayüz kodlama yolunu değiştiriyor (WebCodecs hatası → eski yol): sonraki çalıştırma yeniden kodlar.
+    if (options && typeof options.videoCopy === "boolean" && options.videoCopy !== Boolean(s.opts.videoCopy)) {
+      s.opts = { ...s.opts, videoCopy: options.videoCopy, pipeline: options.videoCopy ? "webcodecs" : "legacy", videoEncoderLabel: options.videoCopy ? s.opts.videoEncoderLabel : null };
+      note("kodlama yolu değişti", { pipeline: s.opts.pipeline, reason: String(reason).slice(0, 60) });
+    }
     if (s.runInfo?.failReason) return true;
     s.runInfo.failReason = { code: "RECORDER", message: MSG.recorderRestart };
     note("yeniden başlatma: arayüz istedi", { reason: String(reason).slice(0, 60) });
@@ -806,11 +879,21 @@ function createStudioEngine({
   function pushChunk(data) {
     const s = session;
     if (!s || !s.child || s.stopping) return false;
-    const buf = Buffer.isBuffer(data) ? data : ArrayBuffer.isView(data) ? Buffer.from(data.buffer, data.byteOffset, data.byteLength) : data instanceof ArrayBuffer ? Buffer.from(data) : null;
+    let buf = Buffer.isBuffer(data) ? data : ArrayBuffer.isView(data) ? Buffer.from(data.buffer, data.byteOffset, data.byteLength) : data instanceof ArrayBuffer ? Buffer.from(data) : null;
     if (!buf || !buf.length) return false;
     if (s.waitingHeader) {
-      if (!isContainerHeader(buf)) return false; // eski kaydedicinin kalan parçası
+      // Chromium MediaRecorder ilk parçayı bazen 1 baytlık (0x1A) verir: başlık
+      // birkaç parçaya bölünmüşse birleştirilir (yoksa kaydedici hiç kabul edilmez,
+      // 25 sn'de bir yeniden başlatma döngüsü).
+      const head = s.headerCarry ? Buffer.concat([s.headerCarry, buf]) : buf;
+      if (head.length < EBML_MAGIC.length) {
+        s.headerCarry = EBML_MAGIC.slice(0, head.length).every((b, i) => head[i] === b) ? Buffer.from(head) : null;
+        return Boolean(s.headerCarry);
+      }
+      s.headerCarry = null;
+      if (!isContainerHeader(head)) return false; // eski kaydedicinin kalan parçası
       s.waitingHeader = false;
+      buf = head;
     }
     const stdin = s.child.stdin;
     if (!stdin || stdin.destroyed || !stdin.writable) return false;
@@ -923,6 +1006,9 @@ function createStudioEngine({
     unpin,
     pinnedSources,
     restartEncoder,
+    clientStats,
+    /** Tanılama özeti (Yayın tanılama penceresi). */
+    health: () => (session ? healthSnapshot(session) : null),
     /** RTMP aktarıcısının durumu (yoksa null). */
     network: () => session?.relay?.status() || null,
     /** Son ffmpeg uyarı / hata satırları (anahtar gizli). */

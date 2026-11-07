@@ -27,12 +27,54 @@ export const BITRATE_PRESETS = [
   { kbps: 9000, label: "9 Mbps", hint: "Fiber, en net görüntü" },
 ];
 
-/** Çözünürlük + fps için önerilen bit hızı (kbps). */
+/**
+ * Çözünürlük + fps için önerilen bit hızı (kbps). YouTube önerisi (H.264):
+ * 720p30 1,5–4, 720p60 2,25–6, 1080p30 4,5–9, 1080p60 6–9+ Mbps; hareketli
+ * (futbol) görüntüde aralığın üst yarısı: blok blok görüntü olmasın.
+ */
 export function recommendedBitrate(resolution, fps) {
   const hd = resolution === "1080p";
   const hi = Number(fps) >= 60;
-  if (hd) return hi ? 6000 : 4500;
-  return hi ? 4000 : 2500;
+  if (hd) return hi ? 9000 : 6000;
+  return hi ? 4500 : 3000;
+}
+
+/** "Yayın kalitesi" hızlı ayarları (Yayın sekmesi ve Ayarlar › Yayın). */
+export const STREAM_QUALITY_PRESETS = [
+  { key: "smooth", label: "Akıcı", detail: "720p · 60 fps · 4,5 Mbps", hint: "Hızlı hareket akıcı; ≥ 7 Mbps yükleme", resolution: "720p", fps: 60, bitrateKbps: 4500 },
+  { key: "balanced", label: "Dengeli", detail: "1080p · 30 fps · 6 Mbps", hint: "Önerilen; ≥ 9 Mbps yükleme", resolution: "1080p", fps: 30, bitrateKbps: 6000 },
+  { key: "high", label: "Yüksek", detail: "1080p · 60 fps · 9 Mbps", hint: "Fiber / kablolu; ≥ 14 Mbps yükleme", resolution: "1080p", fps: 60, bitrateKbps: 9000 },
+];
+/** Kodlama ayarı bir hızlı ayara denk geliyorsa anahtarı, değilse null. */
+export const qualityPresetKey = (enc) => STREAM_QUALITY_PRESETS.find((p) => p.resolution === enc?.resolution && p.fps === Number(enc?.fps) && p.bitrateKbps === Number(enc?.bitrateKbps))?.key || null;
+
+/**
+ * Ağa göre kalite önerisi (yayın sürerken RTMP aktarıcısının sayaçlarından):
+ * aktarıcı kare atlıyorsa (dropEvents) ya da gönderim hedefin %85'inin altında
+ * kalıyorsa bağlantının taşıyabildiği (gönderilen bit hızı) %30 payla hesaplanır
+ * ve ona sığan en yüksek hızlı ayar önerilir. Sorun yoksa null (bağlantının daha
+ * fazlasını taşıyıp taşımadığı yayın sırasında ölçülemez).
+ * → { key, label, reason, capacityKbps } | null
+ */
+export function recommendQuality({ network = null, targetKbps = 0, audioKbps = AUDIO_BITRATE_KBPS } = {}) {
+  if (!network || network.state !== "up") return null;
+  const sent = Number(network.sentKbps) || 0;
+  const target = (Number(targetKbps) || 0) + (Number(audioKbps) || 0);
+  const dropping = Boolean(network.dropping) || Number(network.dropEvents) > 0;
+  const behind = sent > 0 && target > 0 && sent < target * 0.85;
+  if (!dropping && !behind) return null;
+  const capacityKbps = sent || target * 0.6;
+  const fits = [...STREAM_QUALITY_PRESETS].reverse().find((p) => (p.bitrateKbps + audioKbps) * 1.3 <= capacityKbps);
+  const pick = fits || STREAM_QUALITY_PRESETS[0];
+  const lower = fits ? null : Math.max(BITRATE_MIN_KBPS, Math.floor((capacityKbps / 1.3 - audioKbps) / 100) * 100);
+  const why = dropping ? "Bağlantı yayına yetişemiyor (kareler atlandı)" : `Gönderim ${Math.round(sent / 100) / 10} Mbps, hedefin altında`;
+  return {
+    key: pick.key,
+    label: fits ? `${pick.label} (${pick.detail})` : `${pick.label}, bit hızı ≈ ${lower} kbps`,
+    bitrateKbps: fits ? pick.bitrateKbps : lower,
+    reason: `${why}; bir sonraki yayında “${fits ? pick.label : `${pick.label} · ${lower} kbps`}” önerilir.`,
+    capacityKbps: Math.round(capacityKbps),
+  };
 }
 
 /**
