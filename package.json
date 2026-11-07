@@ -1,7 +1,7 @@
 {
   "name": "elitlig-araclar",
   "productName": "Elitlig Araclar",
-  "version": "2.16.1",
+  "version": "2.16.2",
   "description": "Elitlig Araçlar — Mac ve Windows için bağımsız masaüstü uygulaması: Yayın Stüdyosu (kamera, ekran ve skorbordla YouTube/RTMP canlı yayın, gol klipleri), Mesajlar (üye mesajları dahil), Talepler, Yapılacaklar, Ajanda, Not Defteri, Projeler, Saha ve maç planlama, Ön Muhasebe, Tablolar, Rehber, Hesap Araçları ve Odak Sayacı.",
   "main": "app/main.js",
   "author": "Nuun Medya <nuunmedya@gmail.com>",
