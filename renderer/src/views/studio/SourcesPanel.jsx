@@ -7,27 +7,35 @@
 //   SourceDialog   yeni kaynak / kaynak ayarları: Kamera (çözünürlük, fps, ayna),
 //                  Ekran, Pencere, Görsel, Video / medya (döngü, görününce baştan),
 //                  Görüntü dizisi (slayt), Renk / gradyan, Metin, Saat / geri sayım,
-//                  Tekrar (son tekrar açısı), Ses girişi (Ses sekmesine eklenir).
-//
-// Web sayfası kaynağı yok: Electron'da <webview> / iframe içeriği tuvale
-// çizilemez (yakalanamaz). LED / skor sayfası için "LED ekran" sekmesi kullanılır.
+//                  Tekrar (son tekrar açısı), Ses girişi (Ses sekmesine eklenir),
+//                  Telefon kamerası (QR, WebRTC), RTMP / SRT girişi (drone, GoPro, OBS),
+//                  IP kamera / ağ akışı (RTSP, HLS, FLV), Web sayfası (ekran dışı pencere),
+//                  Kayan yazı, Medya oynatma listesi, Ekran bölgesi (live/LiveSourceFields.jsx).
+//                  Her görüntü kaynağında: görüntü gecikmesi (senkron) ve göster / gizle kısayolu.
 //
 // Açılır menüler kapanmasın diye: seçenek listeleri memo'lu, panel memo'lu ve
 // pencerenin onClose'u kimliği değişmeyen bir işlevdir (useStable).
 import React, { memo, useEffect, useRef, useState } from "react";
 import { Field, Icon, MenuButton, Modal } from "../../components/ui";
 import { RESOLUTIONS, deviceName } from "../../lib/studio/layouts";
-import { FONTS, SOURCE_TYPES, persistentUrl, sourceDefaults, sourceKindIcon, sourceKindLabel, sourceUsage } from "../../lib/studio/scenes";
+import { FONTS, SOURCE_GROUPS, SOURCE_TYPES, persistentUrl, sourceDefaults, sourceKindIcon, sourceKindLabel, sourceUsage } from "../../lib/studio/scenes";
+import { AV_KINDS, isLiveKind } from "../../lib/studio/liveSources";
+import { hotkeyOwner } from "../../lib/studio/hotkeys";
+import { ConnectGuide, GUIDE_KIND, HotkeyField, LiveConnect, LiveFields, SyncFields } from "./live/LiveSourceFields";
 import { drawSource } from "./draw";
 import { useStable } from "./useStable";
 import { compactFx, fxActive, migrateSourceFx, resolveFx } from "../../lib/studio/videoFx";
 import FxEditor from "./fx/FxEditor";
 
-export const STATUS_TEXT = { waiting: "Açılıyor…", live: "Canlı", missing: "Kaynak yok", denied: "İzin yok", ended: "Bağlantı koptu", busy: "Meşgul", error: "Açılamadı", file: "Dosya seçilmeli", empty: "Tekrar yok" };
+export const STATUS_TEXT = { waiting: "Açılıyor…", live: "Canlı", missing: "Kaynak yok", denied: "İzin yok", ended: "Bağlantı koptu", busy: "Meşgul", error: "Açılamadı", file: "Dosya seçilmeli", empty: "Tekrar yok", standby: "Cihaz bekleniyor" };
 export const BAD = ["missing", "denied", "ended", "busy", "error", "file"];
-const SYNTHETIC = new Set(["color", "text", "clock"]);
+const SYNTHETIC = new Set(["color", "text", "clock", "ticker"]);
 /** Görüntü / efekt ayarı alabilen kaynak türleri (görüntü karesi olanlar). */
-export const FX_KINDS = new Set(["camera", "screen", "window", "image", "video", "slideshow", "replay"]);
+export const FX_KINDS = new Set(["camera", "screen", "window", "image", "video", "slideshow", "replay", "phone", "ingest", "stream", "web", "playlist", "region"]);
+/** Görüntü gecikmesi (senkron) alabilen canlı türler. */
+const DELAY_KINDS = new Set(["camera", "screen", "window", "region", "phone", "ingest", "stream", "video", "playlist"]);
+/** Eklendikten sonra bağlantı bilgisi (QR / adres) gösterilen türler. */
+export const CONNECT_KINDS = new Set(["phone", "ingest"]);
 
 /** Kaynağın canlı küçük resmi (yarım saniyede bir; görünmüyorsa çizilmez). */
 export function SourceThumb({ source, runtimeRef, width = 96 }) {
@@ -85,7 +93,8 @@ function SourceLibraryInner({ config, runtimeRef, version, actions }) {
                 {bad && rt?.message && <small className="st-src__msg">{rt.message}</small>}
               </div>
               <div className="st-srcard__tools">
-                {st === "denied" && (src.kind === "camera" || src.kind === "screen" || src.kind === "window") && <button type="button" className="btn btn--xs" onClick={() => onRequestAccess(src.kind === "camera" ? "camera" : "screen")}>İzin iste</button>}
+                {CONNECT_KINDS.has(src.kind) && st !== "live" && <button type="button" className="btn btn--xs btn--primary" onClick={() => onEditSource(src)} title="QR kod / bağlantı adresi"><Icon name={src.kind === "phone" ? "phone" : "broadcast"} size={11} /> Bağlan</button>}
+                {st === "denied" && (src.kind === "camera" || src.kind === "screen" || src.kind === "window" || src.kind === "region") && <button type="button" className="btn btn--xs" onClick={() => onRequestAccess(src.kind === "camera" ? "camera" : "screen")}>İzin iste</button>}
                 {st === "file" ? <button type="button" className="btn btn--xs btn--primary" onClick={() => onEditSource(src)}>{src.fileMissing || src.fileName ? "Yeniden seç" : "Dosya seç"}</button>
                   : bad && <button type="button" className="btn btn--xs" onClick={() => onReacquire(src)}>Yeniden dene</button>}
                 <button type="button" className="btn btn--xs btn--soft" onClick={() => onSceneFromSource(src.id)} title="Bu kaynağı tam ekran gösteren yeni sahne"><Icon name="layers" size={11} /> Sahne oluştur</button>
@@ -96,6 +105,7 @@ function SourceLibraryInner({ config, runtimeRef, version, actions }) {
                   { label: "Ayarlar…", icon: "sliders", onClick: () => onEditSource(src) },
                   ...(FX_KINDS.has(src.kind) && actions.onFx ? [{ label: "Görüntü ayarları… (canlı)", icon: "palette", onClick: () => actions.onFx(src.id) }] : []),
                   { label: "Bu kaynaktan sahne oluştur", icon: "layers", onClick: () => onSceneFromSource(src.id) },
+                  ...(actions.onDuplicateSource ? [{ label: "Kaynağı çoğalt (bağımsız kopya)", icon: "copy", onClick: () => actions.onDuplicateSource(src.id) }] : []),
                   { label: "Yeniden bağlan", icon: "refresh", onClick: () => onReacquire(src) },
                   "-",
                   { label: "Kaynağı sil", icon: "trash", danger: true, onClick: () => onRemoveSource(src) },
@@ -105,7 +115,7 @@ function SourceLibraryInner({ config, runtimeRef, version, actions }) {
           );
         })}
         <li className="st-srcard is-add">
-          <button type="button" onClick={onNewSource}><Icon name="plus" size={20} /><strong>Kaynak ekle</strong><small>Kamera, ekran, pencere, görsel, video, metin, saat…</small></button>
+          <button type="button" onClick={onNewSource}><Icon name="plus" size={20} /><strong>Kaynak ekle</strong><small>Kamera, telefon, drone / RTMP, IP kamera, ekran, web sayfası, video, metin…</small></button>
         </li>
       </ul>
     </section>
@@ -174,7 +184,7 @@ const toLocalInput = (ms) => {
 };
 
 /** Yeni kaynak / kaynak ayarları. initial: { kind } ya da var olan kaynak. */
-function SourceDialogInner({ initial, cameraCount = 0, devices, access, onRequestAccess, onRefreshDevices, onSave, onClose: onCloseProp, runtimeRef = null }) {
+function SourceDialogInner({ initial, cameraCount = 0, devices, access, onRequestAccess, onRefreshDevices, onSave, onClose: onCloseProp, runtimeRef = null, config = null, onPatchSource = null }) {
   // Ortak Modal, onClose kimliği her değiştiğinde ilk alana odaklanır; stüdyo
   // saniyede birkaç kez çizildiği için açık <select> menüsü hemen kapanıyordu.
   const onClose = useStable(onCloseProp);
@@ -187,10 +197,18 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
   const kind = draft.kind;
   const studio = window.elitlig?.studio;
   const isCapture = kind === "screen" || kind === "window";
+  const needsScreens = isCapture || kind === "region";
+  const [liveInfo, setLiveInfo] = useState(null);
+  useEffect(() => {
+    if (kind !== "ingest" && kind !== "phone") return undefined;
+    let ok = true;
+    Promise.resolve(studio?.live?.info?.()).then((i) => { if (ok && i) setLiveInfo(i); }).catch(() => {});
+    return () => { ok = false; };
+  }, [kind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (kind === "camera" || kind === "audio") onRefreshDevices?.();
-    if (!isCapture) return undefined;
+    if (!needsScreens) return undefined;
     let live = true;
     setScreens(null);
     Promise.resolve(studio?.listScreens?.()).then((list) => { if (live) setScreens(Array.isArray(list) ? list : []); }).catch(() => { if (live) setScreens([]); });
@@ -228,6 +246,18 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
       set({ images: [...(draft.images || []), ...urls].slice(0, 40), missingImages: 0 });
     } finally { setBusy(false); }
   };
+  const pickPlaylist = async (files) => {
+    if (!files?.length) return;
+    setBusy(true);
+    try {
+      const add = [];
+      for (const f of [...files].slice(0, 100)) {
+        const kept = await persistFile(f);
+        if (kept) add.push({ url: kept.url, name: baseName(f), filePath: kept.filePath || undefined });
+      }
+      set({ items: [...(draft.items || []), ...add].slice(0, 100), missingItems: 0 });
+    } finally { setBusy(false); }
+  };
   const persistent = Boolean(window.elitlig?.studio?.media?.allowFile);
 
   const cams = devices.video;
@@ -243,28 +273,41 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
     : isCapture ? Boolean(draft.screenId)
       : kind === "image" || kind === "video" ? Boolean(draft.url) && !draft.fileMissing
         : kind === "slideshow" ? (draft.images || []).length > 0
-          : kind === "text" ? Boolean(String(draft.text || "").trim())
+          : kind === "text" || kind === "ticker" ? Boolean(String(draft.text || "").trim())
+          : kind === "stream" ? /^(rtsps?|rtmps?|srt|udp|rtp|https?):\/\/./i.test(String(draft.url || ""))
+          : kind === "web" ? /^https?:\/\/./i.test(String(draft.url || ""))
+          : kind === "playlist" ? (draft.items || []).length > 0
+          : kind === "region" ? Boolean(draft.screenId)
+          : kind === "ingest" ? (draft.protocol === "srt" ? !draft.key || String(draft.key).length >= 10 : /^[A-Za-z0-9_-]{1,64}$/.test(String(draft.key || "")))
             : kind === "audio" && draft.audioMode === "file" ? Boolean(draft.url && persistentUrl(draft.url))
             : Boolean(kind);
   const visibleScreens = (screens || []).filter((sc) => (kind === "window" ? sc.kind === "window" || String(sc.id).startsWith("window:") : sc.kind !== "window" && !String(sc.id).startsWith("window:")));
 
   return (
-    <Modal title={editing ? `${sourceKindLabel(kind)} ayarları` : kind ? `${sourceKindLabel(kind)} ekle` : "Kaynak ekle"} onClose={onClose} width={isCapture ? 680 : kind ? 560 : 640} className="st-modal"
+    <Modal title={editing ? `${sourceKindLabel(kind)} ayarları` : kind ? `${sourceKindLabel(kind)} ekle` : "Kaynak ekle"} onClose={onClose} width={needsScreens || CONNECT_KINDS.has(kind) || kind === "web" ? 680 : kind ? 560 : 720} className="st-modal"
       footer={kind ? <>
         {!editing && <button type="button" className="btn btn--ghost" onClick={() => setDraft({})}>Geri</button>}
         <span style={{ flex: 1 }} />
         <button type="button" className="btn" onClick={onClose}>Vazgeç</button>
-        <button type="button" className="btn btn--primary" disabled={!valid || busy} onClick={() => onSave({ ...draft, name: String(draft.name || sourceKindLabel(kind)).trim() || sourceKindLabel(kind) })}>{editing ? "Kaydet" : kind === "audio" ? "Ses sekmesine ekle" : "Ekle"}</button>
+        <button type="button" className="btn btn--primary" disabled={!valid || busy} onClick={() => onSave({ ...draft, name: String(draft.name || sourceKindLabel(kind)).trim() || sourceKindLabel(kind) })}>{editing ? "Kaydet" : kind === "audio" ? "Ses sekmesine ekle" : CONNECT_KINDS.has(kind) ? "Ekle ve bağlan" : "Ekle"}</button>
       </> : null}>
       {!kind ? (
+        <>
         <div className="st-kinds">
-          {SOURCE_TYPES.map((k) => (
-            <button key={k.kind} type="button" className="st-kind" onClick={() => setDraft(sourceDefaults(k.kind, { cameraCount }))}>
-              <span className="st-kind__icon"><Icon name={k.icon} size={18} /></span>
-              <span><strong>{k.label}</strong><small>{k.hint}</small></span>
-            </button>
+          {SOURCE_GROUPS.map((g) => (
+            <React.Fragment key={g.key}>
+              <div className="st-kinds__group">{g.label}</div>
+              {g.kinds.map((kk) => SOURCE_TYPES.find((t) => t.kind === kk)).filter(Boolean).map((k) => (
+                <button key={k.kind} type="button" className="st-kind" onClick={() => setDraft(sourceDefaults(k.kind, { cameraCount, count: (config?.sources || []).filter((x) => x.kind === k.kind).length }))}>
+                  <span className="st-kind__icon"><Icon name={k.icon} size={18} /></span>
+                  <span><strong>{k.label}{isLiveKind(k.kind) && <em className="st-kind__new">YENİ</em>}</strong><small>{k.hint}</small></span>
+                </button>
+              ))}
+            </React.Fragment>
           ))}
         </div>
+        <ConnectGuide onPick={(key) => { const kk = GUIDE_KIND[key]; if (kk) setDraft(sourceDefaults(kk, { cameraCount, count: (config?.sources || []).filter((x) => x.kind === kk).length })); }} />
+        </>
       ) : (
         <div className="st-stack">
           <Field label="Ad"><input value={draft.name || ""} onChange={(e) => set({ name: e.target.value })} maxLength={60} /></Field>
@@ -410,6 +453,20 @@ function SourceDialogInner({ initial, cameraCount = 0, devices, access, onReques
               </Field>
               <label className="toggle"><input type="checkbox" checked={draft.loop !== false} onChange={(e) => set({ loop: e.target.checked })} /> Döngüde oynat</label>
             </>
+          )}
+
+          {isLiveKind(kind) && <LiveFields kind={kind} draft={draft} set={set} keepName={keepName} pickPlaylist={pickPlaylist} busy={busy} screens={screens} liveInfo={liveInfo} />}
+          {(CONNECT_KINDS.has(kind) || (editing && isLiveKind(kind) && kind !== "ticker" && kind !== "region")) && <LiveConnect source={editing ? { ...initial, ...draft } : null} runtimeRef={runtimeRef} onPatch={onPatchSource && draft.id ? (patch) => { set(patch); onPatchSource(draft.id, patch); } : null} />}
+
+          {kind !== "audio" && (DELAY_KINDS.has(kind) || AV_KINDS.has(kind)) && (
+            <details className="vfx-section" open={Boolean(draft.videoDelayMs || draft.audioAlways) || undefined}>
+              <summary><Icon name="clock" size={13} /> Senkron ve ses <small className={draft.videoDelayMs || draft.audioAlways ? "is-on" : ""}>{draft.videoDelayMs ? `görüntü +${draft.videoDelayMs} ms` : "görüntü gecikmesi"}{AV_KINDS.has(kind) ? " · ses yönlendirme" : ""}</small></summary>
+              <div style={{ padding: "4px 10px 10px" }}><SyncFields draft={draft} set={set} video={DELAY_KINDS.has(kind)} audio={AV_KINDS.has(kind)} /></div>
+            </details>
+          )}
+          {kind !== "audio" && (
+            <HotkeyField value={draft.hotkey || ""} onChange={(hotkey) => set({ hotkey })} label="Göster / gizle kısayolu" hint="Programdaki sahnede bu kaynağı açıp kapatır (F1–F12 ya da ⌥ / ⌃ / ⌘ ile)."
+              conflict={config && draft.hotkey ? hotkeyOwner(config, draft.hotkey, draft.id)?.name || null : null} />
           )}
 
           {FX_KINDS.has(kind) && (

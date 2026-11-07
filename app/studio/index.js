@@ -29,7 +29,8 @@
 //           studio:displays, studio:led:open, studio:led:close, studio:led:status,
 //           studio:led:getState,
 //           studio:media:allow (preload: webUtils yolu), studio:media:pick (dosya penceresi),
-//           studio:media:check, studio:media:forget  (media.js — kalıcı yerel dosya kaynakları)
+//           studio:media:check, studio:media:forget  (media.js — kalıcı yerel dosya kaynakları),
+//           studio:live:* (live/index.js — telefon kamerası, RTMP / SRT girişi, ağ akışı, web sayfası)
 //   send:   studio:chunk (program parçası), studio:reportStats (arayüz kodlama sayaçları), studio:angleChunk { id, data },
 //           studio:renderChunk { id, data }, studio:led:sendState (yanıt yok)
 //   olay:   studio:status, studio:restartRecorder, studio:angles:status,
@@ -61,6 +62,7 @@ const { createInterviews } = require("./interview");
 const { createLedManager } = require("./led");
 const { createMediaLibrary, dialogFilters } = require("./media");
 const ff = require("./ffmpeg");
+const { registerLive } = require("./live");
 
 const DAY_MS = 24 * 3600 * 1000;
 
@@ -640,8 +642,12 @@ function registerStudio({
     led.sendState(state, event.sender);
   });
 
+  // Canlı giriş kaynakları: telefon kamerası, RTMP / SRT girişi, ağ akışı, web sayfası (live/).
+  const live = registerLive({ ipcMain, app, BrowserWindow, electronSession, getFfmpeg, ownContents, log });
+
   return {
     engine,
+    live,
     angles,
     clips,
     replays,
@@ -653,6 +659,7 @@ function registerStudio({
     /** Uygulama kapanırken: ffmpeg süreçlerini öldür, parça klasörlerini sil. */
     dispose() {
       engine.dispose();
+      live.dispose();
       angles.dispose();
       renderer.dispose();
       interviews.dispose();

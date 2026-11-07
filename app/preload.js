@@ -82,6 +82,33 @@ contextBridge.exposeInMainWorld("elitlig", {
       check: (ids) => ipcRenderer.invoke("studio:media:check", Array.isArray(ids) ? ids : []),
       forget: (id) => ipcRenderer.invoke("studio:media:forget", id),
     },
+    // Canlı giriş kaynakları (app/studio/live): telefon kamerası (WebRTC sinyalleşme),
+    // RTMP / SRT girişi ve ağ akışları (ffmpeg → fMP4 → MSE), web sayfası (ekran dışı pencere).
+    live: {
+      info: () => ipcRenderer.invoke("studio:live:info"),
+      phone: {
+        pair: (id, token, name) => ipcRenderer.invoke("studio:live:phone:pair", String(id), token ? String(token) : null, name ? String(name) : ""),
+        unpair: (id) => ipcRenderer.invoke("studio:live:phone:unpair", String(id)),
+        send: (id, msg) => { if (msg && typeof msg === "object") ipcRenderer.send("studio:live:phone:send", { id: String(id), msg }); },
+        onSignal: on("studio:live:phone:signal"),
+        onPresence: on("studio:live:phone:presence"),
+      },
+      feed: {
+        start: (id, spec) => ipcRenderer.invoke("studio:live:feed:start", String(id), spec && typeof spec === "object" ? spec : {}),
+        stop: (id) => ipcRenderer.invoke("studio:live:feed:stop", String(id)),
+        transcode: (id) => ipcRenderer.invoke("studio:live:feed:transcode", String(id)),
+        onData: on("studio:live:feed:data"),
+        onStatus: on("studio:live:feed:status"),
+      },
+      web: {
+        open: (id, spec) => ipcRenderer.invoke("studio:live:web:open", String(id), spec && typeof spec === "object" ? spec : {}),
+        close: (id) => ipcRenderer.invoke("studio:live:web:close", String(id)),
+        reload: (id) => ipcRenderer.invoke("studio:live:web:reload", String(id)),
+        refresh: (id) => ipcRenderer.invoke("studio:live:web:refresh", String(id)),
+        onFrame: on("studio:live:web:frame"),
+        onStatus: on("studio:live:web:status"),
+      },
+    },
     start: (opts) => ipcRenderer.invoke("studio:start", opts),
     // Yanıtsız, sık çağrılır: ArrayBuffer ya da Uint8Array (Blob değil: önce blob.arrayBuffer()).
     pushChunk: (data) => {
