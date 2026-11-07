@@ -18,7 +18,7 @@
 // Hoparlöre yalnız dinleme (solo / program dinle) verilir; varsayılan kapalı.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  LIMITER, busGains, dbToGain, inputGroup, liveInScene, normalizeAudio, patchStrip, playbackContext, programAudioChannels, resetRoute, routingFor,
+  MASTER_CLIP_DB, STRIP_CLIP_DB, busGains, createProgramChain, dbToGain, inputGroup, liveInScene, normalizeAudio, patchStrip, playbackContext, programAudioChannels, resetRoute, routingFor,
   sceneGain, setStripAllScenes, setStripScene, stripAirState, stripGain, stripList, stripScenes, toggleRoute,
 } from "../../lib/studio/audio";
 
@@ -86,21 +86,25 @@ export function useStudioAudio({ sources, settings } = {}) {
   // Grafik bir kez kurulur.
   if (!g.current && typeof window !== "undefined" && window.AudioContext) {
     try {
-      const ctx = new AudioContext({ latencyHint: "interactive", sampleRate: 48000 });
+      // latencyHint "playback": büyük işleme tamponu → tuval / kodlayıcı yükünde ses iş
+      // parçacığı aç kalmaz (küçük "interactive" tamponda yetişemeyen blok = çıtırtı / patlama).
+      // Örnekleme hızı zorlanmaz: aygıt 44,1 kHz iken 48 kHz zorlamak işleme döngüsüne
+      // yeniden örnekleyici + FIFO ekler (taşma / boşalma = tık). MediaRecorder (Opus) kendi
+      // 48 kHz dönüşümünü tamponlu yapar; ffmpeg zaten -ar 48000 yazar.
+      const ctx = new AudioContext({ latencyHint: "playback" });
       const dest = ctx.createMediaStreamDestination();
       const master = ctx.createGain();
-      const limiter = ctx.createDynamicsCompressor();
-      for (const [k, v] of Object.entries(LIMITER)) { try { limiter[k].value = v; } catch { /* yoksay */ } }
-      const wet = ctx.createGain();
-      const dry = ctx.createGain();
-      const post = ctx.createGain();
-      master.connect(limiter); limiter.connect(wet); wet.connect(post);
-      master.connect(dry); dry.connect(post);
+      // Pay (−3 dB) → sınırlayıcı (ıslak / kuru) → GÜVENLİK KIRPICISI (−1 dBFS, her zaman).
+      const chain = createProgramChain(ctx, { limiter: true });
+      master.connect(chain.input);
+      const { limiter, wet, dry, post } = chain;
       // "Tüm sesleri kapat": yayına (ve program dinlemeye) giden toplam.
       const kill = ctx.createGain();
-      post.connect(kill);
+      chain.output.connect(kill);
       kill.connect(dest);
-      const masterTap = stereoTap(ctx, kill);
+      // CLIP göstergesi için güvenlik kırpıcısından ÖNCEKİ toplam.
+      const clipTap = stereoTap(ctx, post);
+      const masterTap = { ...stereoTap(ctx, kill), clip: clipTap, clipDb: MASTER_CLIP_DB };
       const monitor = ctx.createGain();
       monitor.gain.value = 0.8;
       monitor.connect(ctx.destination);
@@ -113,7 +117,9 @@ export function useStudioAudio({ sources, settings } = {}) {
       const music = new Audio();
       music.preload = "auto";
       music.loop = true;
-      g.current = { ctx, dest, master, limiter, wet, dry, post, kill, masterTap, monitor, programMon, buses, strips, music, musicSrc: null };
+      // Aygıt değişimi / uyku sonrası askıya alınan bağlam kendiliğinden sürdürülür.
+      ctx.onstatechange = () => { if (ctx.state === "suspended" || ctx.state === "interrupted") ctx.resume().catch(() => {}); };
+      g.current = { ctx, dest, master, chain, limiter, wet, dry, post, kill, masterTap, monitor, programMon, buses, strips, music, musicSrc: null };
     } catch {
       g.current = null;
     }
@@ -138,7 +144,7 @@ export function useStudioAudio({ sources, settings } = {}) {
     mute.connect(solo); solo.connect(G.monitor);
     const pre = makeAnalyser(ctx);
     input.connect(pre);
-    const tap = stereoTap(ctx, mute);
+    const tap = { ...stereoTap(ctx, mute), clipDb: STRIP_CLIP_DB };
     s = { id, group, input, trim, fader, mute, air, solo, pre, tap };
     G.strips.set(id, s);
     return s;

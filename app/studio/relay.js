@@ -19,9 +19,13 @@
 //   - failoverAfter (3) ardışık hatadan sonra yedek giriş adresine
 //     (YouTube backup ingest) geçilir; orada da 3 hata olursa ana adrese döner.
 //   - Ağ yetişemezse (aktarıcının stdin'i highWater'ı aşarsa) gerçek zamanı
-//     korumak için sonraki anahtar kareye kadar veri ATILIR (kuyruk büyümez).
-//     Eşik bit hızına göre ~8 sn'lik veridir (4–24 MB; eskiden sabit 4 MB):
-//     kısa ağ dalgalanması kare attırmaz, yalnız süren darlık attırır.
+//     korumak için sonraki anahtar kareye kadar GÖRÜNTÜ paketleri ATILIR (kuyruk
+//     büyümez); SES (görüntü dışı PID'ler: ses, PAT/PMT) kesilmeden gitmeye devam eder.
+//     Eskiden ses de birlikte atılıyordu: her atlamada YouTube'a 1–2 sn'lik ses boşluğu
+//     gidiyor, boşluğun iki ucu izleyicide "patlama / cızırtı" olarak duyuluyordu (yerel
+//     kayıtta aktarıcı olmadığından sorun yoktu). Kuyruk hardWater'ı da aşarsa (ağ tamamen
+//     tıkalı) ses de atılır. Eşik bit hızına göre ~8 sn'lik veridir (4–24 MB; eskiden
+//     sabit 4 MB): kısa ağ dalgalanması kare attırmaz, yalnız süren darlık attırır.
 //   - Bağlantı askıda (stallMs boyunca gönderilen bayt artmıyor) ya da ilk
 //     bağlantı connectTimeoutMs içinde kurulamadıysa aktarıcı öldürülür.
 //   - Kodlayıcı yeniden başlarsa (yeni TCP bağlantısı, zaman damgaları sıfırdan)
@@ -46,7 +50,7 @@ const RELAY_MESSAGES = {
   backup: "yedek sunucu",
   connectTimeout: "Yayın sunucusuna bağlanılamadı (zaman aşımı).",
   stalled: "Yayın sunucusuna veri gitmiyor (bağlantı askıda).",
-  dropping: "Bağlantı yayına yetişemiyor; gerçek zamanda kalmak için bazı kareler atlandı. Bit hızını düşürmeyi deneyin.",
+  dropping: "Bağlantı yayına yetişemiyor; gerçek zamanda kalmak için bazı kareler atlandı (ses sürüyor). Bit hızını düşürmeyi deneyin.",
   unknown: "Yayın bağlantısı koptu.",
 };
 
@@ -160,11 +164,26 @@ function createTsGopBuffer({ maxBytes = MAX_GOP_BYTES } = {}) {
       sincePatBytes += data.length;
       if (sincePatBytes > 2 * 1024 * 1024) { sincePat = []; sincePatBytes = 0; }
     }
-    return { data, keyframe: lastKey >= 0 };
+    // resumeAt: anahtar karenin önündeki PAT (yoksa anahtar kare paketinin kendisi).
+    return { data, keyframe: lastKey >= 0, resumeAt: lastKey >= 0 ? (keyPat >= 0 ? keyPat : lastKey) : -1 };
+  }
+
+  /** Görüntü PID'i dışındaki paketler (ses, PAT/PMT, SDT): atlama sırasında ses sürsün. */
+  function nonVideo(data) {
+    if (videoPid < 0) return data;
+    const keep = [];
+    let runStart = -1;
+    for (let off = 0; off < data.length; off += TS_PACKET) {
+      const pid = ((data[off + 1] & 0x1f) << 8) | data[off + 2];
+      if (pid !== videoPid) { if (runStart < 0) runStart = off; } else if (runStart >= 0) { keep.push(data.subarray(runStart, off)); runStart = -1; }
+    }
+    if (runStart >= 0) keep.push(data.subarray(runStart));
+    return keep.length === 1 ? keep[0] : keep.length ? Buffer.concat(keep) : null;
   }
 
   return {
     feed,
+    nonVideo,
     hasKey: () => hasKey,
     snapshot: () => (hasKey ? Buffer.concat(gop) : null),
     gopBytes: () => gopBytes,
@@ -196,6 +215,7 @@ function createRelay({
   highWaterBytes = null,
   lowWaterBytes = null,
   highWaterSec = 8,
+  hardWaterBytes = null, // bunu da aşarsa ses de atılır (varsayılan 4 × highWater)
   stopTimeoutMs = 3000,
   note = () => {},
   log = () => {},
@@ -210,6 +230,7 @@ function createRelay({
   let streams = 0;
   let pusher = null; // { child, target, startedAt, connected, lastSize, lastSizeAt, stderrTail, failReason, restartNow, stopping }
   let feeding = false;
+  let audioOnly = false; // atlama: yalnız ses (görüntü dışı paketler) gider
   let stopping = false;
   let stopped = false;
   let retryTimer = null;
@@ -325,6 +346,7 @@ function createRelay({
     streams += 1;
     gopBuf.reset();
     feeding = false;
+    audioOnly = false;
     if (streams > 1 && pusher && !pusher.stopping) {
       // Zaman damgaları sıfırlandı: aktarıcı geri çekilmeden yeniden kurulur.
       note("aktarıcı yeniden kuruluyor (kodlayıcı yeniden başladı)");
@@ -336,7 +358,7 @@ function createRelay({
   /** Kodlayıcıdan gelen TS verisi (testler doğrudan da çağırır). */
   function write(chunk) {
     if (stopped) return;
-    const { data, keyframe } = gopBuf.feed(chunk);
+    const { data, keyframe, resumeAt } = gopBuf.feed(chunk);
     if (!data) return;
     st.inBytes += data.length;
     const t = now();
@@ -354,14 +376,27 @@ function createRelay({
     if (!stdin || stdin.destroyed || !stdin.writable) return;
     if (feeding) {
       if (stdin.writableLength > highWater()) {
-        // Ağ yetişemiyor: kuyruk büyütülmez, sonraki anahtar kareye kadar atlanır.
+        // Ağ yetişemiyor: kuyruk büyütülmez, sonraki anahtar kareye kadar GÖRÜNTÜ atlanır; ses sürer.
         feeding = false;
+        audioOnly = true;
         st.dropEvents += 1;
-        if (!st.dropping) { st.dropping = true; note("ağ yetişemiyor; anahtar kareye kadar veri atlanıyor", { pendingBytes: stdin.writableLength, highWaterBytes: highWater(), inKbps: Math.round((inRate.bps * 8) / 1000), sentKbps: st.sentKbps }); emit(); }
-        st.droppedBytes += data.length;
+        if (!st.dropping) { st.dropping = true; note("ağ yetişemiyor; anahtar kareye kadar görüntü atlanıyor (ses sürüyor)", { pendingBytes: stdin.writableLength, highWaterBytes: highWater(), inKbps: Math.round((inRate.bps * 8) / 1000), sentKbps: st.sentKbps }); emit(); }
+        writeAudioOnly(stdin, data);
         return;
       }
       stdin.write(data);
+      return;
+    }
+    if (audioOnly) {
+      if (keyframe && resumeAt >= 0 && stdin.writableLength <= lowWater()) {
+        // Aynı aktarıcı sürüyor (başlık zaten gitti): anahtar kareye dek yalnız ses, sonra hepsi.
+        if (resumeAt > 0) writeAudioOnly(stdin, data.subarray(0, resumeAt));
+        stdin.write(data.subarray(resumeAt));
+        audioOnly = false;
+        feeding = true;
+        return;
+      }
+      writeAudioOnly(stdin, data);
       return;
     }
     if (keyframe && stdin.writableLength <= lowWater()) {
@@ -370,6 +405,13 @@ function createRelay({
       return;
     }
     st.droppedBytes += data.length;
+  }
+
+  /** Atlama sırasında: görüntü paketleri atılır, ses (görüntü dışı PID) yazılır; ağ tamamen tıkalıysa o da atılır. */
+  function writeAudioOnly(stdin, data) {
+    const keep = stdin.writableLength > (hardWaterBytes ?? highWater() * 4) ? null : gopBuf.nonVideo(data);
+    st.droppedBytes += data.length - (keep ? keep.length : 0);
+    if (keep && keep.length) stdin.write(keep);
   }
 
   /* -------------------------------- aktarıcı -------------------------------- */
@@ -394,6 +436,7 @@ function createRelay({
     const p = { child, target, startedAt: now(), connected: false, lastSize: 0, lastSizeAt: now(), stderrTail: [], failReason: null, restartNow: false, stopping: false };
     pusher = p;
     feeding = false;
+    audioOnly = false;
     const parser = ff.createProgressParser((prog) => onPusherProgress(p, prog));
     child.stdout?.setEncoding?.("utf8");
     child.stdout?.on("data", (d) => parser.feed(d));
@@ -494,6 +537,7 @@ function createRelay({
     if (pusher !== p) return;
     pusher = null;
     feeding = false;
+    audioOnly = false;
     clear("watchTimer");
     clear("stableTimer");
     if (p.connected) st.upSince = null;

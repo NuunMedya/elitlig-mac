@@ -231,7 +231,7 @@ function normalizeStreamOptions(opts = {}) {
     height: even(clampInt(opts.height, 180, 2160, 1080)),
     fps: clampInt(opts.fps, 15, 60, 30),
     videoBitrateKbps: clampInt(opts.videoBitrateKbps, 300, 20000, 4500),
-    audioBitrateKbps: clampInt(opts.audioBitrateKbps, 64, 320, 160),
+    audioBitrateKbps: clampInt(opts.audioBitrateKbps, 128, 320, 160),
     mimeType: String(opts.mimeType || ""),
     // Anahtar kare aralığı (sn, 1–4; YouTube ≤ 4 ister). Parça halkası 2 sn'lik olduğundan
     // 2 sn'den uzun aralıkta yine 2 sn'de bir anahtar kare zorlanır (klip / tekrar sınırları).
@@ -375,6 +375,9 @@ function buildRelayArgs({ url, rwTimeoutMs = 10000 } = {}) {
     "-f", "mpegts", "-i", "pipe:0",
     "-map", "0:v:0", "-map", "0:a:0?",
     "-c", "copy",
+    // TS'teki ADTS AAC → FLV'nin istediği ham AAC + AudioSpecificConfig (flv kendiliğinden de
+    // ekler; açıkça yazılır ki eski / farklı ffmpeg sürümünde de ses bozuk gitmesin).
+    "-bsf:a", "aac_adtstoasc",
     "-max_muxing_queue_size", "1024",
     "-f", "flv", "-flvflags", "no_duration_filesize",
     ...(rtmp ? ["-rw_timeout", String(Math.round(rwTimeoutMs * 1000)), "-tcp_nodelay", "1"] : []),
@@ -389,6 +392,22 @@ const supportsFpsMode = (version) => {
   const major = Number(m[1]);
   return major > 5 || (major === 5 && Number(m[2]) >= 1);
 };
+
+/**
+ * Yayın sesi süzgeci (gerçek ffmpeg ile denendi, app/test/studio-audio-ffmpeg.test.js):
+ *   aresample=async=1000  zaman damgası titreşimini / küçük boşlukları örnek esneterek emer
+ *                         (±5 ms titreşimde tık yok). async=1 / first_pts=0 denendi: async=1
+ *                         boşlukları sessizlik ekleyerek kapatır (daha çok tık); first_pts=0
+ *                         sesi uzatıp esnetti — kullanılmaz.
+ *   alimiter −1 dBFS      son emniyet: arayüzden 0 dBFS üstü gelen örnekler (eski sürüm,
+ *                         Opus taşması) AAC'ye girmeden yumuşakça sınırlanır; level=0: otomatik
+ *                         seviye YOK (sessiz sesi yükseltmez). Altındaki seste şeffaf.
+ *   afade (50 ms)         kodlayıcı / kaydedici yeniden başlayınca ses sıfırdan sert bir
+ *                         basamakla değil, yumuşak açılır (yeniden başlatma "tık"ı olmaz).
+ */
+const STREAM_AUDIO_FILTER = "aresample=async=1000,alimiter=limit=0.891:attack=5:release=50:level=0,afade=t=in:st=0:d=0.05";
+/** AAC-LC, 48 kHz stereo; bit hızı 128–320 kbps (YouTube: ≥ 128 kbps stereo). */
+const streamAudioArgs = (kbps) => ["-c:a", "aac", "-profile:a", "aac_low", "-b:a", `${clampInt(kbps, 128, 320, 160)}k`, "-ar", "48000", "-ac", "2", "-af", STREAM_AUDIO_FILTER];
 
 /**
  * Yayın komutu. ffmpeg, MediaRecorder çıktısını (Matroska/WebM) stdin'den okur,
@@ -427,7 +446,7 @@ function buildStreamArgs({ url = null, relayUrl = null, width, height, fps, vide
     ...(fpsMode ? ["-fps_mode", "cfr"] : ["-vsync", "cfr"]), "-r", String(fps),
     ...videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height, keyframeSeconds: forcedKeyframeSec(keyframeSec, segmentSeconds), speedLevel }),
     "-force_key_frames", `expr:gte(t,n_forced*${forcedKeyframeSec(keyframeSec, segmentSeconds)})`,
-    "-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "48000", "-ac", "2", "-af", "aresample=async=1000",
+    ...streamAudioArgs(audioBitrateKbps),
     "-flags", "+global_header",
     "-max_muxing_queue_size", "1024",
     "-f", "tee", outputs.join("|"),
@@ -441,7 +460,7 @@ function buildStreamArgs({ url = null, relayUrl = null, width, height, fps, vide
  * kodlayıcınındır (+genpts yalnız eksik olanlar için); fps süzgeci / -fps_mode
  * yoktur (kopya). h264_mp4toannexb: MPEG-TS (halka, aktarıcı) Annex B ister;
  * Matroska / FLV çıkışları başlığı kendileri avcC'ye çevirir. Ses buildStreamArgs
- * ile aynı (Opus → AAC). Parça sınırları anahtar karelerde (2 sn).
+ * ile aynı (streamAudioArgs: Opus → AAC, aresample + alimiter + afade). Parça sınırları anahtar karelerde (2 sn).
  */
 function buildCopyStreamArgs({ url = null, relayUrl = null, audioBitrateKbps, segmentSeconds = 2, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska", fifo = false, localFile = null, platform = process.platform }) {
   const outputs = [];
@@ -457,7 +476,7 @@ function buildCopyStreamArgs({ url = null, relayUrl = null, audioBitrateKbps, se
     "-f", inputFormat, "-i", "pipe:0",
     "-map", "0:v:0", "-map", "0:a:0?",
     "-c:v", "copy", "-bsf:v", "h264_mp4toannexb",
-    "-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "48000", "-ac", "2", "-af", "aresample=async=1000",
+    ...streamAudioArgs(audioBitrateKbps),
     "-flags", "+global_header",
     "-max_muxing_queue_size", "1024",
     "-f", "tee", outputs.join("|"),
@@ -518,7 +537,7 @@ function buildDualEncodeArgs({ url, relayUrl = null, width, height, fps, videoBi
     "-force_key_frames:v:0", `expr:gte(t,n_forced*${forcedKeyframeSec(keyframeSec, segmentSeconds)})`,
     ...cfr("v:1", L.fps),
     ...specifyStream(videoEncoderArgs(encoder, { videoBitrateKbps: L.videoBitrateKbps, fps: L.fps, width: L.width, height: L.height, keyframeSeconds: 2, speedLevel }), "v:1"),
-    "-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "48000", "-ac", "2", "-af", "aresample=async=1000",
+    ...streamAudioArgs(audioBitrateKbps),
     "-flags", "+global_header",
     "-max_muxing_queue_size", "1024",
     "-f", "tee", outputs.join("|"),
@@ -642,6 +661,7 @@ const parseSlaveFailure = (line) => {
 };
 
 module.exports = {
+  STREAM_AUDIO_FILTER, streamAudioArgs,
   ENCODERS,
   ENCODER_ORDER,
   encoderOrder,

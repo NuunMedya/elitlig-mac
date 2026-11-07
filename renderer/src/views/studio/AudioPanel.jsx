@@ -13,11 +13,11 @@
 //   Genel      "Tüm sesleri kapat" (yayına hiç ses gitmez) · "Yalnız mikrofonu kapat";
 //              her şeritte YAYINDA / neden kapalı rozeti
 // Ölçerler tek rAF döngüsünde DOM'u doğrudan günceller (React çizimi yok).
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Field, Icon, Kbd } from "../../components/ui";
 import { levelFromSamples } from "../../lib/studio/compose";
 import {
-  FADER_TICKS, METER_TICKS, PLAYBACK_CONTEXTS, ROUTE_GROUPS, dbText, dbToFader, faderToDb, meterBallistics, meterFraction, peakHold, routingFor, samplesLevel,
+  FADER_TICKS, METER_TICKS, PLAYBACK_CONTEXTS, STRIP_CLIP_DB, duplicateAudioInputs, safeAudioLevels, ROUTE_GROUPS, dbText, dbToFader, faderToDb, meterBallistics, meterFraction, peakHold, routingFor, samplesLevel,
 } from "../../lib/studio/audio";
 import { uid } from "../../lib/studio/layouts";
 import { audioInputFromDraft, scenesText } from "../../lib/studio/audio";
@@ -72,12 +72,25 @@ export function useMeterBank() {
         const el = it.el;
         if (!el) continue;
         const chans = tap ? [tap.L, tap.R] : [null, null];
+        // CLIP mandalı: eşik aşılınca kırmızı yanar, operatör tıklayana dek sönmez.
+        // Program için ölçüm güvenlik kırpıcısından ÖNCE yapılır (tap.clip).
+        const clipDb = Number.isFinite(tap?.clipDb) ? tap.clipDb : STRIP_CLIP_DB;
+        const clipChans = tap?.clip ? [tap.clip.L, tap.clip.R] : null;
+        if (clipChans) {
+          for (const a of clipChans) {
+            if (!a) continue;
+            if (!buf || buf.length !== a.fftSize) buf = new Float32Array(a.fftSize);
+            a.getFloatTimeDomainData(buf);
+            if (samplesLevel(buf).peakDb >= clipDb) it.clip = true;
+          }
+        }
         chans.forEach((a, i) => {
           let db = -Infinity;
           if (a) {
             if (!buf || buf.length !== a.fftSize) buf = new Float32Array(a.fftSize);
             a.getFloatTimeDomainData(buf);
             db = samplesLevel(buf).peakDb;
+            if (!clipChans && db >= clipDb) it.clip = true;
           }
           const st = it.state[i];
           st.db = meterBallistics(st.db, db, dt, 26);
@@ -91,6 +104,10 @@ export function useMeterBank() {
             it.readout.classList.toggle("is-clip", pk > -1);
           }
         });
+        if (Boolean(it.clip) !== Boolean(it.clipShown)) {
+          it.clipShown = Boolean(it.clip);
+          el.classList.toggle("is-clipped", it.clipShown);
+        }
       }
       raf = requestAnimationFrame(loop);
     };
@@ -100,7 +117,10 @@ export function useMeterBank() {
   return useCallback((key, get) => (el) => {
     if (!el) { const it = items.current.get(key); if (it) it.el = null; return; }
     const prev = items.current.get(key);
-    items.current.set(key, { get, el, readout: el.querySelector(".mx-meter__pk"), state: prev?.state || [{ db: -Infinity, peak: null }, { db: -Infinity, peak: null }] });
+    const it = { get, el, readout: el.querySelector(".mx-meter__pk"), clip: prev?.clip || false, clipShown: false, state: prev?.state || [{ db: -Infinity, peak: null }, { db: -Infinity, peak: null }] };
+    items.current.set(key, it);
+    const btn = el.querySelector(".mx-clip");
+    if (btn) btn.onclick = () => { const cur = items.current.get(key); if (cur) cur.clip = false; };
   }, []);
 }
 
@@ -108,6 +128,7 @@ function Meter({ bind, id, get, tall = false }) {
   return (
     <div className={`mx-meter ${tall ? "is-tall" : ""}`} ref={bind(id, get)}>
       <span className="mx-meter__pk">−∞</span>
+      <button type="button" className="mx-clip" title="CLIP: ses tavana dayandı (bozulma). Seviyeyi düşürün ya da “Sesi düzelt”. Tıkla: sıfırla">CLIP</button>
       <div className="mx-meter__bars">
         <i className="mx-bar" style={{ "--lv": "var(--l0)", "--pk": "var(--p0)" }}><b /><s /></i>
         <i className="mx-bar" style={{ "--lv": "var(--l1)", "--pk": "var(--p1)" }}><b /><s /></i>
@@ -183,7 +204,7 @@ export function MasterStrip({ audio, bind }) {
         <Meter bind={bind} id="__master" get={() => audio.masterAnalyser()} tall />
       </div>
       <div className="mx-strip__db">{dbText(m.fader)} dB</div>
-      <button type="button" className={`mx-btn is-wide ${m.limiter ? "is-on is-lim" : ""}`} onClick={() => audio.setMaster({ limiter: !m.limiter })} title="Sınırlayıcı: −1,5 dBFS üstünü keser (bozulmayı önler)">SINIRLAYICI</button>
+      <button type="button" className={`mx-btn is-wide ${m.limiter ? "is-on is-lim" : ""}`} onClick={() => audio.setMaster({ limiter: !m.limiter })} title="Sınırlayıcı: −6 dB üstünü sıkıştırır (20:1). Kapalıyken bile −1 dBFS güvenlik kırpıcısı açıktır.">SINIRLAYICI</button>
       <button type="button" className={`mx-btn is-wide ${mon.program ? "is-on" : ""}`} onClick={() => audio.setMonitor({ program: !mon.program })} title="Programı kulaklıktan dinle (solo yoksa)"><Phones /> DİNLE</button>
       <label className="mx-mon" title="Kulaklık düzeyi"><Phones /><input type="range" min={0} max={100} value={mon.volume} onChange={(e) => audio.setMonitor({ volume: Number(e.target.value) })} /></label>
     </div>
@@ -340,13 +361,17 @@ export default function AudioPanel({ audio: audioProp, mixer, devices = { audio:
   const parts = usePanelParts();
   const fileRef = useRef(null);
   const repickRef = useRef(null);
+  const [fixNote, setFixNote] = useState("");
+  useEffect(() => { if (!fixNote) return undefined; const t = setTimeout(() => setFixNote(""), 6000); return () => clearTimeout(t); }, [fixNote]);
   if (!audio?.settings) return <p className="st-hint st-pad">Ses karıştırıcı hazır değil.</p>;
   const a = audio.settings;
   const mic = a.mic;
   const setMicCfg = (patch) => audio.update((x) => ({ ...x, mic: { ...x.mic, ...patch } }));
   const addInput = () => {
     const used = new Set([mic.deviceId, ...a.inputs.map((i) => i.deviceId)]);
-    const dev = devices.audio.find((d) => d.deviceId && !used.has(d.deviceId)) || devices.audio[0];
+    // Kullanılmayan aygıt yoksa eklenmez: aynı aygıtı ikinci kez açmak sesi ikiye katlar (patlama).
+    const dev = devices.audio.find((d) => d.deviceId && d.deviceId !== "default" && !used.has(d.deviceId));
+    if (!dev) { setFixNote("Boşta ses aygıtı yok: aynı aygıt ikinci kez eklenmez (ses iki kat yükselip bozulur)."); return; }
     audio.update((x) => ({ ...x, inputs: [...x.inputs, { id: uid("ain"), deviceId: dev?.deviceId || "", name: dev?.label || "Ses girişi", volume: 100, muted: false }] }));
   };
   const setInput = (id, patch) => audio.update((x) => ({ ...x, inputs: x.inputs.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
@@ -377,6 +402,12 @@ export default function AudioPanel({ audio: audioProp, mixer, devices = { audio:
     const d = file ? await fileDraft(file) : null;
     if (d) setInput(id, { url: d.url, filePath: d.filePath, fileName: d.fileName, fileMissing: false });
   };
+  const dups = duplicateAudioInputs(a, devices.audio);
+  const fixAudio = () => {
+    const { removed } = safeAudioLevels(a, devices.audio);
+    audio.update((x) => safeAudioLevels(x, devices.audio).audio);
+    setFixNote(`Ses düzeltildi: kazanç / fader 0 dB, program −3 dB, sınırlayıcı açık${removed.length ? `; kaldırılan çift giriş: ${removed.map((r) => r.name).join(", ")}` : ""}.`);
+  };
   const status = audio.micStatus.status;
   const ctxLabel = PLAYBACK_CONTEXTS.find((c) => c.key === audio.playback)?.label || "Canlı yayın";
   const now = audio.routeNow || {};
@@ -390,6 +421,7 @@ export default function AudioPanel({ audio: audioProp, mixer, devices = { audio:
         <span className="mx-status__route">Yayına giden: {ROUTE_GROUPS.filter((g) => now[g.key]).map((g) => <em key={g.key}>{g.label}</em>)}{!ROUTE_GROUPS.some((g) => now[g.key]) && <em className="is-none">hiçbiri</em>}</span>
         <span className="st-top__spacer" />
         <button type="button" className={`btn btn--sm st-mic-mini ${mic.muted ? "is-off" : ""}`} onClick={audio.toggleMic} title={mic.muted ? "Mikrofonu aç (M)" : "Yalnız mikrofonu kapat: öbür sesler yayında kalır (M)"}>{mic.muted ? "MİKROFON KAPALI · AÇ" : "YALNIZ MİKROFONU KAPAT"} <Kbd>M</Kbd></button>
+        <button type="button" className="btn btn--sm au-fix" onClick={fixAudio} title="Güvenli seviyeler: tüm kazanç / fader 0 dB, program −3 dB, sınırlayıcı açık, program dinleme kapalı, aynı aygıtı ikinci kez açan girişler kaldırılır"><Icon name="check" size={13} /> SESİ DÜZELT</button>
         {audio.setKillAll && (
           <button type="button" className={`btn btn--sm au-kill ${audio.killAll ? "is-on" : ""}`} onClick={() => audio.setKillAll(!audio.killAll)} title={audio.killAll ? "Yayına giden sesi yeniden aç" : "Tüm sesleri kapat: yayına hiç ses gitmez (şerit ayarları korunur)"}>
             <Icon name={audio.killAll ? "micOff" : "mic"} size={13} /> {audio.killAll ? "TÜM SESLER KAPALI · AÇ" : "TÜM SESLERİ KAPAT"}
@@ -397,6 +429,10 @@ export default function AudioPanel({ audio: audioProp, mixer, devices = { audio:
         )}
       </div>
       </Part>
+      {dups.length > 0 && (
+        <div className="au-dupwarn" role="alert"><Icon name="alert" size={14} /> Aynı ses aygıtı iki kez açık ({dups.map((d) => `${d.name}: ${d.reason}`).join(", ")}) — ses iki kat yükselir ve bozulur. <button type="button" className="btn btn--xs" onClick={fixAudio}>Sesi düzelt</button></div>
+      )}
+      {fixNote && <div className="st-note">{fixNote}</div>}
       {audio.killAll && <div className="au-killbar" role="alert"><Icon name="micOff" size={15} /> TÜM SESLER KAPALI — yayına hiç ses gitmiyor. <button type="button" onClick={() => audio.setKillAll(false)}>Sesi aç</button></div>}
       {Array.isArray(audio.channels) && parts.visible("onair") && (
         <div className="au-onair">

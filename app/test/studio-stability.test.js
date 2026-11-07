@@ -40,7 +40,9 @@ test("yayın komutu (fifo): RTMP ayrı iş parçacığında, süreç içinde yen
   assert.equal(at(args, "-fps_mode"), "cfr");
   assert.equal(at(args, "-r"), "30");
   assert.equal(at(args, "-ar"), "48000");
-  assert.equal(at(args, "-af"), "aresample=async=1000");
+  assert.equal(at(args, "-af"), ff.STREAM_AUDIO_FILTER);
+  assert.match(at(args, "-af"), /^aresample=async=1000,alimiter=limit=0\.891:.*level=0/);
+  assert.equal(at(args, "-profile:a"), "aac_low");
   assert.equal(at(args, "-fflags"), "+genpts+discardcorrupt");
   assert.equal(args.includes("-use_wallclock_as_timestamps"), false);
   assert.equal(at(args, "-x264-params"), "nal-hrd=cbr:force-cfr=1");

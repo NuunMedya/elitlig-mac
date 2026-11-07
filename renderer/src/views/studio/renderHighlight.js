@@ -4,7 +4,9 @@
 // sinematik giriş kartı (logo, MAÇ ÖZETİ, armalar, son skor, lig · saha · tarih;
 // marka renkleriyle, canlandırmalı) → klipler (orta-alt büyük skorbord o anın
 // skoruyla, GOL · OYUNCU bandı) → kapanış kartı; her sınırda logo geçişi.
-// Tuval + kliplerin KENDİ SESİ MediaRecorder'a verilir, parçalar sırayla
+// Tuval + kliplerin KENDİ SESİ (o anın program sesi: yorum mikrofonu dahil; kamera
+// açısında program açısının aynı anından) + isteğe bağlı arka plan müziği (kliplerde
+// kısılır) güvenlik zincirinden (pay, sınırlayıcı, −1 dBFS) MediaRecorder'a verilir, parçalar sırayla
 // studio.render.pushChunk(renderId, …) ile ana sürece gider; finish(renderId)
 // MP4 dosyasını döndürür.
 //
@@ -29,7 +31,8 @@
 // verirse / ana süreç EMPTY derse oturum iptal edilip sıradaki MIME türüyle
 // BİR KEZ kendiliğinden yeniden denenir; kirli klip önbellek atlatılarak
 // CORS'lu yeniden yüklenir, yine kirliyse atlanır (tuval kirlenmez).
-import { HIGHLIGHT_SIZE, cardTimeline, planAt } from "../../lib/studio/highlights";
+import { HIGHLIGHT_SIZE, cardTimeline, musicBedDb, normalizeHighlightMusic, planAt } from "../../lib/studio/highlights";
+import { createProgramChain, dbToGain } from "../../lib/studio/audio";
 import { drawBottomBoard, bugFont } from "../../lib/studio/scorebug";
 import { drawStingerKind, stingerPalette, darken } from "../../lib/studio/stinger";
 import { MIME_PREFERENCE, pickMimeType, recorderBitsPerSecond } from "../../lib/studio/broadcast";
@@ -76,6 +79,22 @@ export async function loadClip(url) {
   el = await loadOnce(bust(url, Date.now()), true);
   if (el && canvasSafe(el)) return el;
   return null;
+}
+
+/** Yalnız sesi kullanılacak öğe (program açısının sesi / müzik): CORS'lu (WebAudio sessiz kalmasın). */
+function loadSound(url) {
+  return new Promise((resolve) => {
+    const el = document.createElement("video");
+    el.preload = "auto";
+    if (!/^(blob|data):/i.test(url)) el.crossOrigin = "anonymous";
+    let done = false;
+    const finish = (ok) => { if (done) return; done = true; resolve(ok ? el : null); };
+    el.addEventListener("loadeddata", () => finish(true), { once: true });
+    el.addEventListener("error", () => finish(false), { once: true });
+    setTimeout(() => finish(el.readyState >= 2), 15000);
+    el.src = url;
+    el.load();
+  });
 }
 
 const ready = (img) => Boolean(img && (img.naturalWidth || img.width));
@@ -314,9 +333,17 @@ async function openAudio() {
     // Sessiz de olsa sürekli örnek üretsin (askıdaki / boş iz kaydediciyi bekletmesin).
     const keep = ctx.createConstantSource ? ctx.createConstantSource() : null;
     if (keep) { keep.offset.value = 0; keep.connect(dest); keep.start(); }
+    // Klip sesi + müzik yatağı → güvenlik zinciri (pay −3 dB, sınırlayıcı, −1 dBFS) → kayıt.
+    const chain = createProgramChain(ctx, { limiter: true });
+    chain.output.connect(dest);
+    const clips = ctx.createGain();
+    clips.connect(chain.input);
+    const bed = ctx.createGain();
+    bed.gain.value = 0;
+    bed.connect(chain.input);
     if (ctx.state !== "running") await Promise.race([ctx.resume().catch(() => {}), sleep(1200)]);
-    return { ctx, dest, keep, running: ctx.state === "running" };
-  } catch { return { ctx: null, dest: null, keep: null, running: false }; }
+    return { ctx, dest, keep, clips, bed, running: ctx.state === "running" };
+  } catch { return { ctx: null, dest: null, keep: null, clips: null, bed: null, running: false }; }
 }
 
 const transient = (err) => !err || ["NO_FFMPEG", "BUSY", "NO_ENCODER"].includes(err.code) || /bulunamadı|başlatılamadı/i.test(err.message || "");
@@ -364,28 +391,49 @@ export async function renderHighlight(opts) {
     if (el) videos.set(seg, el);
   }
   if (!videos.size && clipSegs.length) { audio.ctx?.close().catch(() => {}); return { ok: false, error: { message: "Kliplerin hiçbiri açılamadı." } }; }
-  // Kliplerin KENDİ SESİ özete (her öğe bir kez bağlanır).
+  // Program dışı açıların sesi: program açısının aynı anı (ayrı, görünmeyen öğe).
+  const sounds = new Map(); // seg → { el, offsetSec }
+  const soundByUrl = new Map();
+  for (const seg of clipSegs) {
+    if (!seg.audioUrl || !videos.has(seg)) continue;
+    let el = soundByUrl.get(seg.audioUrl);
+    if (el === undefined) { el = await loadSound(seg.audioUrl); soundByUrl.set(seg.audioUrl, el); }
+    if (el) sounds.set(seg, { el, offsetSec: (Number(seg.audioOffsetMs) || 0) / 1000 });
+  }
+  // Arka plan müziği (isteğe bağlı, döngüde).
+  const music = normalizeHighlightMusic(opts.music);
+  const bedEl = music.url ? await loadSound(music.url) : null;
+  if (bedEl) bedEl.loop = true;
+  // Kliplerin KENDİ SESİ özete (her öğe bir kez bağlanır). Yalnız ayrı sesle oynayan
+  // (sessiz kamera açısı) öğe bağlanmaz: ses iki kez girmesin.
   if (audio.ctx) {
+    const ownSound = new Set([...videos.entries()].filter(([seg]) => !sounds.has(seg)).map(([, el]) => el));
     for (const el of new Set(videos.values())) {
-      try { audio.ctx.createMediaElementSource(el).connect(audio.dest); el.muted = false; } catch { el.muted = true; }
+      if (!ownSound.has(el)) { el.muted = true; continue; }
+      try { audio.ctx.createMediaElementSource(el).connect(audio.clips); el.muted = false; } catch { el.muted = true; }
     }
+    for (const el of new Set(soundByUrl.values())) {
+      if (!el) continue;
+      try { audio.ctx.createMediaElementSource(el).connect(audio.clips); el.muted = false; } catch { el.muted = true; }
+    }
+    if (bedEl) { try { audio.ctx.createMediaElementSource(bedEl).connect(audio.bed); bedEl.muted = false; } catch { bedEl.muted = true; } }
   }
   const mimes = MIME_PREFERENCE.filter((t) => { try { return MediaRecorder.isTypeSupported(t); } catch { return false; } });
   let result = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const mimeType = mimes[attempt] ?? mimes[0] ?? pickMimeType(() => false);
-    result = await renderOnce({ ...opts, s, videos, audio, mimeType });
+    result = await renderOnce({ ...opts, s, videos, sounds, bedEl, music, audio, mimeType });
     if (result.ok || result.cancelled || !result.retryable || signal.cancelled) break;
     onPhase?.("preparing");
   }
-  for (const el of new Set(videos.values())) { try { el.pause(); el.removeAttribute("src"); el.load(); } catch { /* yoksay */ } }
+  for (const el of [...new Set(videos.values()), ...soundByUrl.values(), bedEl]) { if (!el) continue; try { el.pause(); el.removeAttribute("src"); el.load(); } catch { /* yoksay */ } }
   try { audio.keep?.stop(); } catch { /* yoksay */ }
   audio.ctx?.close().catch(() => {});
   if (result && !result.ok && !result.cancelled) delete result.retryable;
   return result;
 }
 
-async function renderOnce({ plan, info, images, boardOf, signal, onProgress, onPhase, stingerKind = "stinger", s, videos, audio, mimeType }) {
+async function renderOnce({ plan, info, images, boardOf, signal, onProgress, onPhase, stingerKind = "stinger", s, videos, sounds = new Map(), bedEl = null, music = null, audio, mimeType }) {
   const { width: W, height: H, fps, videoBitrateKbps } = HIGHLIGHT_SIZE;
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
@@ -452,9 +500,17 @@ async function renderOnce({ plan, info, images, boardOf, signal, onProgress, onP
       const at = planAt(plan, t);
       if (at.segment !== current) {
         if (current && videos.get(current) && videos.get(current) !== videos.get(at.segment)) { try { videos.get(current).pause(); } catch { /* yoksay */ } }
+        if (current && sounds.get(current) && sounds.get(current).el !== sounds.get(at.segment)?.el) { try { sounds.get(current).el.pause(); } catch { /* yoksay */ } }
         current = at.segment;
         const el = videos.get(current);
         if (el) { try { el.currentTime = 0; } catch { /* yoksay */ } el.play().catch(() => {}); }
+        const snd = sounds.get(current);
+        if (snd) { try { snd.el.currentTime = snd.offsetSec; } catch { /* yoksay */ } snd.el.play().catch(() => {}); }
+        // Müzik yatağı: kartlarda tam, kliplerde kısık (orijinal ses öne çıkar); yumuşak geçiş.
+        if (bedEl && audio.bed && audio.ctx) {
+          try { audio.bed.gain.setTargetAtTime(dbToGain(musicBedDb(music, current?.type)), audio.ctx.currentTime, 0.13); } catch { /* yoksay */ }
+          if (bedEl.paused) bedEl.play().catch(() => {});
+        }
       }
       const seg = at.segment;
       if (seg?.type === "clip") {
@@ -472,7 +528,8 @@ async function renderOnce({ plan, info, images, boardOf, signal, onProgress, onP
     };
     tick();
   });
-  for (const el of new Set(videos.values())) { try { el.pause(); } catch { /* yoksay */ } }
+  for (const el of [...new Set(videos.values()), ...[...sounds.values()].map((x) => x.el), bedEl]) { if (!el) continue; try { el.pause(); } catch { /* yoksay */ } }
+  if (audio.bed) { try { audio.bed.gain.value = 0; } catch { /* yoksay */ } }
   try { rec.stop(); } catch { /* yoksay */ }
   await Promise.race([stopped, sleep(3000)]);
   flushHead();

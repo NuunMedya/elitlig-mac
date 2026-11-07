@@ -23,7 +23,7 @@ export const ENCODER_PREFS = [
   { key: "software", label: "Yazılım (x264)", hint: "En uyumlu, işlemci kullanır" },
 ];
 export const KEYFRAME_CHOICES = [1, 2, 4];
-export const AUDIO_KBPS_CHOICES = [96, 128, 160, 192, 256];
+export const AUDIO_KBPS_CHOICES = [128, 160, 192, 256]; // 96 kbps AAC stereo cızırtılı; kodlayıcı en az 128 yazar
 
 /** Kayıt kalitesi (yayından ayrı). videoKbps null = yayınla aynı. */
 export const RECORD_QUALITIES = [
@@ -56,6 +56,7 @@ export const HOTKEY_ACTIONS = [
   { key: "interviewBand", label: "Röportaj bandını aç / kapat", default: [] },
   { key: "interview", label: "Röportaj kaydını başlat / bitir", default: [] },
   { key: "fullscreen", label: "Programı tam ekran göster / kapat", default: [] },
+  { key: "closeBroadcast", label: "Yayını kapat (tamamen: YouTube yayını da bitirilir, onaylı)", default: [] },
 ];
 export const DEFAULT_HOTKEYS = Object.fromEntries(HOTKEY_ACTIONS.map((a) => [a.key, a.default]));
 /** Atanamayan tuşlar: sahne tuşları ve gol yanıtları. */

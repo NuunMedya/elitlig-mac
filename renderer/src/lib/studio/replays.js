@@ -100,6 +100,22 @@ export function defaultAngles(replay, preferred = [PROGRAM_ANGLE]) {
 export const latestReplay = (replays) => (replays || []).filter((r) => anglesOf(r).length).sort((a, b) => b.createdAt - a.createdAt)[0] || null;
 
 /**
+ * Klibin SESİ. Kamera / kaynak açıları sessiz kaydedilir (açı kaydedicisi yalnız görüntü
+ * izi alır); o anın sesi (yorum mikrofonu dahil program sesi) program açısındadır. Program
+ * dışı açıda ses program açısının aynı anından alınır: iki kayıt da aynı anda (yakalama
+ * anında) BİTER → program klibinde başlangıç = süre farkı.
+ * → {} (açının kendi sesi) | { audioUrl, audioOffsetMs }
+ */
+export function clipAudio(replay, angle) {
+  if (!angle || angle.angle === PROGRAM_ANGLE) return {};
+  const p = (replay?.angles || []).find((x) => x.angle === PROGRAM_ANGLE && x.url);
+  if (!p) return {};
+  const pd = Number(p.durationMs || replay.durationMs) || 0;
+  const ad = Number(angle.durationMs || replay.durationMs) || 0;
+  return { audioUrl: p.url, audioOffsetMs: Math.max(0, Math.round(pd - ad)) };
+}
+
+/**
  * Yayın kuyruğu: seçilen her tekrar için seçilen açılar sırayla.
  *   selection: { [replayId]: [açı, …] } (boş dizi → o tekrar atlanır)
  *   order: tekrar kimlikleri sırası (verilmezse eskiden yeniye)
@@ -115,7 +131,7 @@ export function buildReplayQueue(replays, selection, { order = null } = {}) {
     const r = byId.get(id);
     for (const a of r.angles) {
       if (!a.url || !want.includes(a.angle)) continue;
-      out.push({ key: `${id}/${a.angle}`, replayId: id, angle: a.angle, url: a.url, durationMs: a.durationMs || r.durationMs, replay: r });
+      out.push({ key: `${id}/${a.angle}`, replayId: id, angle: a.angle, url: a.url, durationMs: a.durationMs || r.durationMs, replay: r, ...clipAudio(r, a) });
     }
   }
   return out;

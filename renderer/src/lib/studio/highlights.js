@@ -11,7 +11,9 @@
 // Tuval MediaRecorder ile kaydedilir, parçalar studio.render'a gider.
 import { STINGER_MS } from "./stinger";
 import { isGoalCode, sortEvents } from "./match";
-import { PROGRAM_ANGLE, REPLAY_SECONDS, defaultAngles } from "./replays";
+import { PROGRAM_ANGLE, REPLAY_SECONDS, clipAudio, defaultAngles } from "./replays";
+
+export { clipAudio };
 
 export const HIGHLIGHT_SIZE = Object.freeze({ width: 1920, height: 1080, fps: 30, videoBitrateKbps: 8000 });
 export const INTRO_MS = 5000;
@@ -100,6 +102,20 @@ export function moveItem(list, from, to) {
   return next;
 }
 
+/** Arka plan müziği (özet): seviye ve kliplerde kısma (dB). */
+export const HIGHLIGHT_MUSIC_DEFAULT = Object.freeze({ url: null, name: "", volumeDb: -12, duckDb: -14 });
+export function normalizeHighlightMusic(m) {
+  const x = m && typeof m === "object" ? m : {};
+  const n = (v, lo, hi, fb) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fb);
+  const url = typeof x.url === "string" && /^(https?|elitlig-studio|elitlig-media|blob|data):/i.test(x.url) ? x.url : null;
+  return { url, name: String(x.name || "").slice(0, 80), volumeDb: n(x.volumeDb, -40, 0, HIGHLIGHT_MUSIC_DEFAULT.volumeDb), duckDb: n(x.duckDb, -40, 0, HIGHLIGHT_MUSIC_DEFAULT.duckDb) };
+}
+/** Müzik yatağı kazancı (dB): kartlarda tam seviye, kliplerde (orijinal ses varken) kısılır. */
+export const musicBedDb = (music, segType) => {
+  const m = normalizeHighlightMusic(music);
+  return segType === "clip" ? m.volumeDb + m.duckDb : m.volumeDb;
+};
+
 /**
  * Oynatma planı. Her (tekrar, açı) bir klip parçasıdır; parçalar arka arkaya,
  * logo geçişi her sınırın ortasına denk gelir (yarısı önceki, yarısı sonraki
@@ -123,7 +139,7 @@ export function buildHighlightPlan({ items, replays, introMs = INTRO_MS, outroMs
     for (const angle of item.angles || []) {
       const a = r.angles.find((x) => x.angle === angle && x.url);
       if (!a) continue;
-      push({ type: "clip", replayId: r.id, angle, url: a.url, ms: a.durationMs || r.durationMs || REPLAY_SECONDS * 1000, replay: r, score: scoreOf(r) });
+      push({ type: "clip", replayId: r.id, angle, url: a.url, ms: a.durationMs || r.durationMs || REPLAY_SECONDS * 1000, replay: r, score: scoreOf(r), ...clipAudio(r, a) });
     }
   }
   push({ type: "outro", ms: outroMs });
