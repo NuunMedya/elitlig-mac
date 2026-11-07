@@ -376,7 +376,7 @@ test("açılar: eşitleme (ekle / koru / durdur), parça yönlendirme, durum ve 
   assert.deepEqual(a, { ok: true, started: ["cam-1", "cam-2"] });
   assert.equal(made.length, 2);
   assert.equal(made[0].opts.segmentSeconds, 1);
-  assert.equal(made[0].opts.keepSegments, 40);
+  assert.equal(made[0].opts.keepSegments, 64);
   assert.equal(made[0].opts.buildArgs, ffargs.buildAngleArgs);
   assert.equal(made[0].opts.normalizeOptions({ url: "rtmp://x", width: 5 }).url, null);
   assert.deepEqual([made[0].startedWith.width, made[0].startedWith.height], [1920, 1080]);
