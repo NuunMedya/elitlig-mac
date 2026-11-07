@@ -167,7 +167,7 @@ export const LAYOUT_COMPONENTS = [
 /** Şerit boyutu ("2x1") → pano birimi (1 hücre ≈ 1 sütun × 2 satır). */
 export function widgetSize(key) {
   const [w, h] = String(key || "1x1").split("x").map((n) => Number(n) || 1);
-  return [w >= 2 ? 2 : 1, (h >= 2 ? 2 : 1) * 2];
+  return [Math.min(4, Math.max(1, w)), (h >= 2 ? 2 : 1) * 2];
 }
 export const componentOf = (key) => LAYOUT_COMPONENTS.find((c) => c.key === key) || null;
 /** Pano öğesinin parçacık şerit boyutu sınıfı ("2x1"…), en / boy birimine göre. */

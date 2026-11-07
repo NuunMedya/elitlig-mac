@@ -58,6 +58,8 @@ import { FIXED_SHORTCUTS, workspaceOf } from "../../lib/studio/scenesWorkspace";
 import { loadStage, presetForWorkspace, presetTiles, saveStage } from "../../lib/studio/stageGrid";
 import { scorerLines } from "../../lib/studio/scorebug";
 import { eventLabel, isGoalCode, timerNowMs } from "../../lib/studio/match";
+import { manageEventLabel } from "../../lib/studio/manage"; // [düğmeler] akış bildirimi
+import { normalizeVarV2 } from "../../lib/studio/var"; // [düğmeler] VAR durum / karar
 import { PROGRAM_ANGLE, angleLabel, anglesOf, anglesToRecord, buildReplayQueue, defaultAngles, metaFor, recordableSources, replayBanner, replayTitle } from "../../lib/studio/replays";
 import { payloadSummary, planTake, previewStateOf, programStateOf, samePayload, takeAfterLoad, takeLabel } from "../../lib/studio/previewTake"; // [önizleme-geçiş]
 import { useLiveMatch } from "./useLiveMatch";
@@ -441,6 +443,13 @@ export default function Studio({ auth, go }) {
     if (!engine.active) { toast("Tekrar için yayın ya da prova açık olmalı (Yayın sekmesi).", { tone: "warn", timeout: 4000 }); return; }
     replays.capture({ kind: "moment", angles: liveAngles, label: "Önemli an", seconds: settings.replay.seconds, meta: { minute: live.match ? live.minute : null, period: live.period } });
     toast(`Önemli an kaydedildi (son ${settings.replay.seconds} sn).`, { tone: "success", timeout: 2500 });
+  });
+  /** [düğmeler] Önemli an, seçilen saniyeyle (Önemli an · saniye düğmesi). */
+  const captureMomentFor = useStable((sec) => {
+    if (!engine.active) { toast("Tekrar için yayın ya da prova açık olmalı (Yayın sekmesi).", { tone: "warn", timeout: 4000 }); return; }
+    const seconds = Math.round(Math.min(120, Math.max(5, Number(sec) || settings.replay.seconds)));
+    replays.capture({ kind: "moment", angles: liveAngles, label: "Önemli an", seconds, meta: { minute: live.match ? live.minute : null, period: live.period } });
+    toast(`Önemli an kaydedildi (son ${seconds} sn).`, { tone: "success", timeout: 2500 });
   });
   const playLatest = useStable(() => {
     const r = replays.latest;
@@ -1098,12 +1107,12 @@ export default function Studio({ auth, go }) {
     if (hasModes) setPref("modes", (m) => ({ ...normalizeModeSettings(m), rate: r })); else setReplayRate(r);
   });
   /** Seçilen tekrarlar sırayla (her biri varsayılan açılarıyla) ÖNİZLEME'ye; yayına GEÇİŞ ile [önizleme-geçiş]. */
-  const playReplayQueue = useStable(async (list) => {
+  const playReplayQueue = useStable(async (list, { take: andTake = false } = {}) => {
     const ids = (list || []).map((r) => r.id);
     const items = ids.map((id) => replays.replays.find((r) => r.id === id)).filter(Boolean);
     if (hasModes && modes.loadQueue) {
       if (!modes.loadQueue(items)) return false;
-      if (takeAfterLoad({ studioMode })) takeRef.current?.();
+      if (andTake || takeAfterLoad({ studioMode })) takeRef.current?.();
       return true;
     }
     const q = buildReplayQueue(items, Object.fromEntries(items.map((r) => [r.id, defaultAngles(r, liveAngles)])), { order: ids });
@@ -1125,17 +1134,101 @@ export default function Studio({ auth, go }) {
     if (!(await ask({ title: "Golü geri al", message: `${name} golü (${last.dakika ?? 0}') silinsin mi? Skor olaylardan yeniden hesaplanır.`, confirmLabel: "Sil", danger: true }))) return;
     try { await live.removeEvent(Number(last.id)); toast("Gol silindi.", { tone: "success" }); } catch (e) { toast(errorText(e, "Gol silinemedi."), { tone: "error" }); }
   });
+  /* ───────── [düğmeler] çok işlevli düğmelerin akış eylemleri (./shortcuts/wReji vb.) ─────────
+     GOL'e basıldığı AN: basış kaydı (bölüm), tekrar klibi, gol müziği (otomatik açıksa).
+     Kayıt: live.addFullEvent (Reji ile aynı yol) → klip olaya bağlanır, gol bölümü, "Geri al"lı bildirim. */
+  const flowBegin = useStable((side) => {
+    if (live.status !== "canli") return null;
+    const s = side === "away" ? "away" : "home";
+    goalTapsRef.current.tap(s); // [bölüm]
+    try { goalMusic?.onGoal?.(s); } catch { /* yoksay */ }
+    return engine.active ? replays.capture({ kind: "goal", angles: liveAngles, seconds: settings.replay.seconds, meta: { side: s, code: "GOAL_RIGHT_FOOT", minute: live.minute, period: live.period } }) || null : null;
+  });
+  const flowCancel = useStable((clipKey, side) => {
+    if (side) goalTapsRef.current.drop(side); // [bölüm]
+    if (clipKey) replays.attach(clipKey, { eventId: null });
+  });
+  const flowSubmit = useStable(async (forms, { clipKey = null } = {}) => {
+    const list = (forms || []).filter(Boolean);
+    if (!list.length) return [];
+    const created = [];
+    try {
+      for (const f of list) created.push(await live.addFullEvent(f));
+    } catch (e) {
+      toast(errorText(e, "Olay kaydedilemedi."), { tone: "error", timeout: 5000 });
+      if (!created.length) { if (clipKey) replays.attach(clipKey, { eventId: null }); throw e; }
+    }
+    const gi = list.findIndex((f) => isGoalCode(f.code));
+    if (gi >= 0 && created[gi]) {
+      const f = list[gi];
+      if (clipKey) replays.attach(clipKey, { eventId: Number(created[gi]?.id) || null, scorer: live.nameOf(f.playerId) || null, side: f.side, code: f.code });
+      addGoalChapter({ side: f.side, code: f.code, playerId: f.playerId, created: created[gi] }); // [bölüm]
+    } else if (clipKey) replays.attach(clipKey, { eventId: null });
+    const f0 = list[0];
+    const who = f0.code === "SUBSTITUTION" ? `${live.nameOf(f0.outId) || "?"} → ${live.nameOf(f0.inId) || "?"}` : live.nameOf(f0.playerId);
+    const more = created.length > 1 ? ` + ${manageEventLabel(list[1].code).toLocaleLowerCase("tr-TR")} (${live.nameOf(list[1].playerId) || "?"})` : "";
+    const undo = async () => {
+      try { for (const c of [...created].reverse()) if (c?.id) await live.removeEvent(Number(c.id)); toast("Geri alındı.", { tone: "info", timeout: 2200 }); } catch (e) { toast(errorText(e, "Geri alınamadı."), { tone: "error" }); }
+    };
+    toast(`${manageEventLabel(f0.code)}${who ? ` · ${who}` : ""}${more} kaydedildi (${created[0]?.dakika ?? live.minute}').`, { tone: "success", timeout: 7000, action: { label: "Geri al", run: undo } });
+    return created;
+  });
+  // VAR durum / karar (İNCELEME · KONTROL · KARAR + GOL / İPTAL…): kip ayarına yazılır, yayında anında değişir.
+  const varNow = normalizeVarV2(hasModes ? normalizeModeSettings(prefs.modes).var : prefs.var);
+  const setVarAny = useStable((patch) => {
+    if (hasModes) setPref("modes", (m) => ({ ...(m || {}), var: normalizeVarV2({ ...normalizeVarV2(normalizeModeSettings(m).var), ...patch }) }));
+    else vr.set?.(patch);
+  });
+  /** Son tekrarı VAR penceresine koy ve VAR'ı önizlemeye al (yayına GEÇİŞ ile). */
+  const varWithReplay = useStable((r) => {
+    if (!r) return;
+    const angle = defaultAngles(r, liveAngles)[0] || PROGRAM_ANGLE;
+    setVarAny({ slots: [{ kind: "replay", replayId: r.id, angle }, ...varNow.slots.slice(1)], state: "review" });
+    if (V?.preview) { V.preview(); if (takeAfterLoad({ studioMode })) takeRef.current?.(); } else if (!vr.active) vr.toggle();
+  });
+  // Hazır ekranların geri sayım dakikası (sahnedeki geri sayım saati kaynağı).
+  const readyClockOf = (cfg, key) => {
+    const sc = readySceneOf(cfg, key);
+    if (!sc) return null;
+    const ids = new Set(sc.layers.map((l) => l.sourceId));
+    return cfg.sources.find((x) => ids.has(x.id) && x.kind === "clock" && x.mode === "countdown") || null;
+  };
+  const setReadyMinutes = useStable((key, minutes) => {
+    const c = readyClockOf(configRef.current, key);
+    if (!c) { toast("Bu hazır ekranda geri sayım yok: önce ekranı bir kez aç (şablondan oluşur).", { tone: "info", timeout: 3500 }); return; }
+    applyConfig((cfg) => updateSource(cfg, c.id, { durationMs: Math.max(1, Number(minutes) || 1) * 60_000, targetAt: null }));
+  });
+  /** Pano öğesinin seçeneklerini (kanal, süre…) kaydet: item.i ile tüm panolarda aranır. */
+  const setItemOpts = useStable((id, patch) => {
+    lay.setLayout((l) => {
+      let hit = false;
+      const boards = Object.fromEntries(Object.entries(l.boards || {}).map(([bid, b]) => [bid, b.items.some((x) => x.i === id) ? (hit = true, { ...b, items: b.items.map((x) => (x.i === id ? { ...x, o: { ...(x.o || {}), ...patch } } : x)) }) : b]));
+      return hit ? { ...l, boards } : l;
+    });
+  });
   const latestReplay = replays.latest;
   const railCtx = {
     hints, hotkeys: settings.hotkeys, railPopRef, scenes: sceneList, score: live.match ? live.score : null, momentSeconds: settings.replay.seconds,
-    live: { onAir, mode: engine.mode, since: engine.since, busy, start: topStart, stop: () => stopEncoder(), openTab: () => setTab("yayin") },
+    live: {
+      onAir, mode: engine.mode, since: engine.since, busy, start: topStart, stop: () => stopEncoder(), openTab: () => setTab("yayin"),
+      status: engine.status, rehearsal: startRehearsal, localRec: { enabled: Boolean(settings.record.enabled), set: (on) => setLocalRec({ ...localRec, enabled: Boolean(on) }) },
+    },
+    // [düğmeler] çok işlevli düğmeler: maç (olaylar, saat, kadro), akış kaydı, onay, öğe seçenekleri
+    match: live.match ? live : null, ask, setItemOpts,
+    flow: { begin: flowBegin, cancel: flowCancel, submit: flowSubmit, remove: (id) => live.removeEvent(id), update: (id, form) => live.updateEvent(id, form) },
     mic: { muted, toggle: toggleMic, analyser: () => mixer.micAnalyser(true) },
     mixer: mixer?.setStrip ? mixer : null, // çok kanallı karıştırıcı parçacığı
     clock: { live },                        // maç saati parçacığı
     toast,
     goalUndo: live.match ? goalUndo : null,
-    transition: { canTake, take: () => toProgram(), label: takeLabel(pvState), kind: tKind, onKind: (k) => setPref("transition", k), lastSceneName: lastSceneId ? resolveScene(config, lastSceneId)?.name : null, lastScene: backToLastScene },
-    chapter: { add: addChapter, count: chapters.chapters.length, items: chapters.chapters, startAt: chapters.startAt },
+    transition: {
+      canTake, take: () => toProgram(), label: takeLabel(pvState), kind: tKind, onKind: (k) => setPref("transition", k), lastSceneName: lastSceneId ? resolveScene(config, lastSceneId)?.name : null, lastScene: backToLastScene,
+      ms: tMs, onMs: (ms) => setPref("transitionMs", (m) => ({ ...(m || {}), [tKind.key]: ms })),
+    },
+    chapter: {
+      add: addChapter, count: chapters.chapters.length, items: chapters.chapters, startAt: chapters.startAt,
+      addLabel: (label) => { if (!engine.active) { toast("Bölüm işareti için yayın ya da prova açık olmalı.", { tone: "warn" }); return; } chapters.add(String(label || "Bölüm").slice(0, 60)); toast(`Bölüm: “${label}”.`, { tone: "success", timeout: 2000 }); },
+    },
     fullscreen: (target) => setFullscreen(target),
     replay: {
       list: replays.replays, meta: replays.meta, sources: config.sources, recordAngles: liveAngles, playing: replayPlaying,
@@ -1147,17 +1240,25 @@ export default function Studio({ auth, go }) {
       take: async (r, angles) => { loadReplayAny(r, { angles, take: true }); },
       direct: Boolean(settings.replay.directTake) || !studioMode,
       stop: stopReplay, playLatest: playLatestAny, loadLatest: playLatestAny, openTab: () => setTab(replayTabKey),
-      rate: replayRateNow, setRate: setReplayRateAny, playQueue: playReplayQueue,
+      rate: replayRateNow, setRate: setReplayRateAny, playQueue: playReplayQueue, momentFor: captureMomentFor,
+      // önizlemedeki tekrarın düzenleyicisi (giriş / çıkış, kare kare)
+      editor: RE ? {
+        previewing: Boolean(RE.previewing), transport: RE.rm.transport, cursorKey: RE.rm.cursorKey, cursorAngle: RE.rm.cursor?.angle || null,
+        inOf: RE.rm.inPointOf, outOf: RE.rm.outPointOf, setIn: RE.rm.setInPoint, setOut: RE.rm.setOutPoint,
+      } : null,
     },
     moment: captureMoment,
-    var: { active: varActive, previewing: hasModes && modes.previewMode === "var", toggle: toggleVar },
+    var: { active: varActive, previewing: hasModes && modes.previewMode === "var", toggle: toggleVar, state: varNow, set: setVarAny, withReplay: varWithReplay },
     event: { live: live.status === "canli", minute: live.match ? live.minute : null, homeName: live.homeName, awayName: live.awayName, squads: live.squads, begin: beginEvent, submit: submitEvent, cancel: cancelEvent },
     goal: (side) => askGoal(side),
     goalMusic, GoalMusicButtons,
     g, variant, setVariant,
     interview,
     led, openLedTab: () => setTab("led"),
-    ready: { ids: readyIds, go: onReady },
+    ready: {
+      ids: readyIds, go: onReady, setMinutes: setReadyMinutes,
+      minutesOf: (key) => { const c = readyClockOf(config, key); return c ? Math.round((Number(c.durationMs) || 0) / 60_000) : null; },
+    },
     // Ayarlar › Kısayollar panosu kataloğu: düğmeyi panoya ekle.
     addToRail: (type, size, opts) => {
       const sz = String(size || "1x1").split("x").map((n) => Number(n) || 1);
@@ -1173,7 +1274,7 @@ export default function Studio({ auth, go }) {
     sceneTile: { register: registerTile, programId: programIdForTally, previewId: studioMode && !modes.previewOverride ? config.previewSceneId : null, onPreview: toPreview, onProgram: toProgram },
   };
   // Ekrandaki panolarda "Yayın" parçacığı varsa üst çubuktaki düğme gizlenir.
-  const railHasGoLive = Object.entries(lay.layout.boards).some(([id, b]) => lay.has(boardPanelId(id)) && b.items.some((x) => x.t === "w:golive"));
+  const railHasGoLive = Object.entries(lay.layout.boards).some(([id, b]) => lay.has(boardPanelId(id)) && b.items.some((x) => x.t === "w:golive" || x.t === "w:goLivePro"));
 
   /* ───────── alt panel panelleri (yalnız işletim; yapılandırma Ayarlar'da) ─────────
      render({ passive }): passive = çok sütunlu kip (özel kip sütunu önizlemeyi kendiliğinden almaz). */

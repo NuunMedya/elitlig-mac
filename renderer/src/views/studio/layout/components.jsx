@@ -19,8 +19,8 @@ import { MasterStrip, Strip, stripStatus, useMeterBank } from "../AudioPanel";
 import RejiTab from "../manage/RejiTab";
 import { AnglesTile, ClockTile, MetersTile } from "../stage/StageTiles";
 import { WIDGET_IMPL } from "../shortcuts/widgets";
-import { RAIL_SIZES, widgetOf } from "../shortcuts/railModel";
-import { componentOf, widgetSizeKey } from "./layoutModel";
+import { RAIL_SIZES, boardWidgetSize, widgetOf } from "../shortcuts/railModel";
+import { componentOf } from "./layoutModel";
 
 /** Öğenin görünen adı (kanal / sahne adıyla). */
 export function itemLabel(item, ctx) {
@@ -41,7 +41,7 @@ export function itemLabel(item, ctx) {
 export function dynamicEntries(ctx) {
   const out = [];
   for (const s of ctx?.mixer?.strips || []) out.push({ t: "ses.strip", o: { strip: s.id }, label: `Ses · ${s.label} şeridi`, icon: "sliders", group: "ses", hint: "Tek kanal: fader, ölçer, SESSİZ / SOLO" });
-  for (const s of ctx?.railCtx?.scenes || []) out.push({ t: "w:scene", o: { sceneId: s.id }, label: `Sahne · ${s.name}`, icon: "layers", group: "w-diger", hint: "Tık: önizleme · çift tık: yayın" });
+  for (const s of ctx?.railCtx?.scenes || []) out.push({ t: "w:scene", o: { sceneId: s.id }, label: `Sahne · ${s.name}`, icon: "layers", group: "w-sahne", hint: "Tık: önizleme · çift tık: yayın" });
   return out;
 }
 
@@ -105,7 +105,7 @@ function WidgetItem({ item, ctx, extra }) {
   const type = componentOf(item.t)?.widget;
   const impl = WIDGET_IMPL[type];
   if (!impl) return <Hint>{widgetOf(type)?.label || type}: bu sürümde yok.</Hint>;
-  const sk = widgetSizeKey(item);
+  const sk = boardWidgetSize(type, item.w, item.h); // 3×2 / 4×2 yalnız izin veren çeşitlerde
   const sz = RAIL_SIZES[sk];
   const big = sk === "2x2";
   let body = null;

@@ -11,7 +11,7 @@
 // durum ve eylemler — sözleşme Studio.jsx'teki railCtx), zoom (arayüz ölçeği).
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, Modal } from "../../../components/ui";
-import { RAIL_GROUPS, RAIL_SIZES, RAIL_WIDGETS, SIZE_KEYS, addWidget, canAdd, cycleWidgetSize, loadRail, moveWidget, normalizeRail, removeWidget, resizeWidget, saveRail, sizeKey, sizesOf, widgetOf } from "./railModel";
+import { RAIL_FIT_KEYS, RAIL_GROUPS, RAIL_SIZES, RAIL_WIDGETS, SIZE_KEYS, addWidget, canAdd, cycleWidgetSize, loadRail, moveWidget, normalizeRail, removeWidget, resizeWidget, saveRail, sizeKey, sizesOf, widgetOf } from "./railModel";
 import { WIDGET_IMPL } from "./widgets";
 import RailPopover from "./RailPopover";
 import "./shortcuts.css";
@@ -65,7 +65,7 @@ export function RailCatalog({ items, onAdd, scenes = [], compact = false, ctx = 
                   <span className="st-cat__text"><strong>{w.label}</strong><small>{w.hint}</small></span>
                   {ok ? (
                     <span className="st-cat__add">
-                      {SIZE_KEYS.filter((k) => w.sizes.includes(k)).map((k) => (
+                      {RAIL_FIT_KEYS.filter((k) => w.sizes.includes(k)).map((k) => (
                         <button key={k} type="button" className={`btn btn--xs ${cur === k ? "is-on" : ""}`} onMouseEnter={() => setPvSize((p) => ({ ...p, [w.type]: k }))} onFocus={() => setPvSize((p) => ({ ...p, [w.type]: k }))}
                           onClick={() => onAdd(w.type, k)} title={`${RAIL_SIZES[k].label} (${RAIL_SIZES[k].hint}) olarak ekle`}>+ {RAIL_SIZES[k].label}</button>
                       ))}
@@ -75,7 +75,7 @@ export function RailCatalog({ items, onAdd, scenes = [], compact = false, ctx = 
               );
             })}
           </div>
-          {grp.key === "diger" && (
+          {grp.key === "sahne" && (
             <div className="st-cat__scenes">
               <small>Sahne kısayolu (canlı küçük resim, tık: önizleme, çift tık: yayın)</small>
               <div className="st-chips">

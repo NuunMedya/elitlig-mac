@@ -22,6 +22,7 @@ import { PanelScope } from "../dock/parts";
 import {
   boardPanelId, defaultRailBoard, defaultTitle, addItem, dockPanelIds, dropRemoved, newId, normalizeBoard, panelMeta, paramsOfId, parseId, presetOf, pushRemoved, specToDock, tilesToSpec,
 } from "./layoutModel";
+import { PRESET_RAILS } from "../shortcuts/railModel";
 import Board from "./Board";
 import Catalog from "./Catalog";
 import { renderComponent, widgetPopover } from "./components";
@@ -391,9 +392,10 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
       applyPreset(key) {
         const p = presetOf(key);
         if (!p) return;
-        if (!layoutRef.current.boards?.rail) {
-          // Kısayol panosu silinmişse varsayılanıyla geri gelir.
-          const rail = defaultRailBoard();
+        if (PRESET_RAILS[key] || !layoutRef.current.boards?.rail) {
+          // Kısayol panosu silinmişse varsayılanıyla geri gelir; Reji / Ses / Tekrar düzenleri
+          // kendi çok işlevli düğmeleriyle gelir (öncekiler "Kaldırılanlar"a düşmez, Varsayılana dön geri getirir).
+          const rail = defaultRailBoard(PRESET_RAILS[key] || undefined);
           layoutRef.current = { ...layoutRef.current, boards: { ...layoutRef.current.boards, rail } };
           setLayout((l) => ({ ...l, boards: { ...l.boards, rail } }));
         }

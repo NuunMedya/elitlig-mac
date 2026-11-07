@@ -10,10 +10,10 @@
 // ekleneceğini belirler.
 import React, { useMemo, useState } from "react";
 import { Icon } from "../../../components/ui";
-import { RAIL_SIZES } from "../shortcuts/railModel";
+import { RAIL_SIZES, boardWidgetSize, sizesOf } from "../shortcuts/railModel";
 import { WIDGET_IMPL } from "../shortcuts/widgets";
 import {
-  COMPONENT_GROUPS, LAYOUT_COMPONENTS, addItem, LAYOUT_PANELS, PANEL_GROUPS, boardPanelId, componentOf, dockPanelIds, panelMeta, parseId, widgetSizeKey,
+  COMPONENT_GROUPS, LAYOUT_COMPONENTS, addItem, LAYOUT_PANELS, PANEL_GROUPS, boardPanelId, componentOf, dockPanelIds, panelMeta, parseId, widgetSize,
 } from "./layoutModel";
 import { dynamicEntries } from "./components";
 import { endDrag, startDrag } from "./Board";
@@ -24,16 +24,19 @@ const matches = (q, ...xs) => !q || xs.some((x) => norm(x).includes(q));
 function WidgetThumb({ comp, ctx }) {
   const impl = WIDGET_IMPL[comp.widget];
   const [w, h] = comp.size;
-  const sk = widgetSizeKey({ w, h });
+  const sk = boardWidgetSize(comp.widget, w, h);
   const sz = RAIL_SIZES[sk];
   let body = null;
   if (impl && !impl.noPreview && ctx?.railCtx) {
     try { body = impl.render({ ctx: ctx.railCtx, item: { id: `pv_${comp.widget}`, type: comp.widget, w: sz.w, h: sz.h, opts: {} }, big: sk === "2x2", w: sz.w, h: sz.h, togglePop: () => {}, popOpen: false, preview: true }); } catch { body = null; }
   }
   if (!body) body = <div className="st-w is-plain"><span className="st-w__icon"><Icon name={comp.icon || "zap"} size={18} /></span><span className="st-w__label">{comp.label}</span></div>;
+  // Gerçek hücre boyunda çizilir, karta sığacak kadar küçültülür (canlı önizleme).
+  const W = 84 * sz.w + 6 * (sz.w - 1), H = 86 * sz.h + 6 * (sz.h - 1);
+  const pv = Math.min(1, 124 / W, 84 / H);
   return (
     <div className={`lw-thumb is-w is-s${sk}`} aria-hidden="true" inert="">
-      <div className={`st-ri is-s${sk} is-preview`} style={{ "--w": sz.w, "--h": sz.h }}>{body}</div>
+      <div className={`st-ri lw-ri is-s${sk} is-preview`} style={{ "--w": sz.w, "--h": sz.h, width: W, height: H, transform: `translate(-50%, -50%) scale(${pv})` }}>{body}</div>
     </div>
   );
 }
@@ -211,7 +214,7 @@ export default function Catalog({ ctx, target = {}, onClose }) {
 
         {show("dugme") && COMPONENT_GROUPS.filter((g) => g.key.startsWith("w-")).map((g) => {
           const list = widgets.filter((m) => m.group === g.key);
-          const scenes = g.key === "w-diger" ? dyn.filter((d) => d.t === "w:scene") : [];
+          const scenes = g.key === "w-sahne" ? dyn.filter((d) => d.t === "w:scene") : [];
           if (!list.length && !scenes.length) return null;
           return (
             <section key={g.key} className="lw-cat__sec">
@@ -219,7 +222,7 @@ export default function Catalog({ ctx, target = {}, onClose }) {
               <div className="lw-cat__grid is-widgets">
                 {list.map((m) => (
                   <Card key={m.key} thumb={<WidgetThumb comp={m} ctx={ctx} />} title={m.label} hint={m.hint} drag={{ t: m.key }}
-                    extra={<span className="lw-card__chips">{[["1×1", [1, 2]], ["2×1", [2, 2]], ["1×2", [1, 4]], ["2×2", [2, 4]]].map(([l, sz]) => <button key={l} type="button" className="st-chip" onClick={() => addComp(m.key, null, sz)} title={`${l} olarak ekle`}>{l}</button>)}</span>}
+                    extra={<span className="lw-card__chips">{sizesOf(m.widget).map((k) => [RAIL_SIZES[k].label, widgetSize(k)]).map(([l, sz]) => <button key={l} type="button" className="st-chip" onClick={() => addComp(m.key, null, sz)} title={`${l} olarak ekle`}>{l}</button>)}</span>}
                     onAdd={() => addComp(m.key)} />
                 ))}
                 {scenes.map((d) => <Card key={d.o.sceneId} icon="layers" title={d.label} hint={d.hint} drag={{ t: d.t, o: d.o }} onAdd={() => addComp(d.t, d.o)} />)}

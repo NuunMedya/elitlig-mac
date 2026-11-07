@@ -78,7 +78,7 @@ describe("alt panel düzeni", () => {
 
 describe("kısayol şeridi boyutları ve çeşitleri", () => {
   it("1×1 · 1×2 · 2×1 · 2×2; eski kayıt göç eder, izinsiz boyut en yakına", () => {
-    expect(Object.keys(RAIL_SIZES)).toEqual(["1x1", "1x2", "2x1", "2x2"]);
+    expect(Object.keys(RAIL_SIZES)).toEqual(["1x1", "1x2", "2x1", "2x2", "3x2", "4x2"]);
     const n = normalizeRail([{ id: "a", type: "replayGo", size: 2 }, { id: "b", type: "goalBoth", size: 1 }, { id: "c", type: "mic", w: 1, h: 2 }]);
     expect(n.map(sizeKey)).toEqual(["2x2", "2x1", "1x2"]);
     expect(fitSize("goalBoth", "1x1")).toMatchObject({ w: 2, h: 1 });
@@ -95,7 +95,7 @@ describe("kısayol şeridi boyutları ve çeşitleri", () => {
       expect(w.sizes.includes(w.size), w.type).toBe(true);
     }
     expect(RAIL_WIDGETS.filter((w) => w.family === "replay").length).toBeGreaterThanOrEqual(5);
-    expect(RAIL_WIDGETS.filter((w) => w.family === "mic").length).toBe(3);
+    expect(RAIL_WIDGETS.filter((w) => w.family === "mic").length).toBe(4); // + kısmalı mikrofon
   });
 });
 
