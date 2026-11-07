@@ -1,11 +1,12 @@
 // Yayın Stüdyosu · SAHNELER (basit mantık):
 //
-//   Sahneler sekmesi   sahne kartları: tık → SEÇ (katmanları yanda) + önizleme, çift tık → yayın,
-//                      "Yayına al", "LED'e ver". Şablonlar YALNIZ "Yeni sahne ekle" ile açılan
-//                      pencerede (TemplateGallery: kategoriler + önizlemeli şablonlar).
-//   Yandaki panel      SceneInlineEditor — açılır pencere YOK: katmanlar (göz, kilit, sürükleyerek
-//                      sırala, çıkar, + kaynak), küçük tuvalde taşı / boyutla, dönüşüm alanları.
-//   Sahne düzenleyici  isteğe bağlı TAM EKRAN (hassas konumlama, kırp, döndür): paneldeki "Tam ekran".
+//   Sahneler sekmesi   sahne kartları: tık → SEÇ + önizleme, çift tık → yayın, kalem → DÜZENLE
+//                      (büyük açılır pencere: ./SceneEditorModal), "Yayına al", "LED'e ver".
+//                      Şablonlar YALNIZ "Yeni sahne ekle" ile açılan pencerede (TemplateGallery).
+//   Yandaki panel      SceneInlineEditor — İSTEĞE BAĞLI ("Sahne katmanlarını yanda göster" ayarı):
+//                      seçili sahnenin katmanları kartların yanında, küçük tuvalde taşı / boyutla.
+//   Sahne düzenleyici  ./SceneEditorModal: büyük tuval, katmanlar, özellikler, sahne ayarları,
+//                      geri al / yinele (bu dosya parçalarını ve tuval kancasını verir).
 //                      Her sahne kartında "Kaynak ekle ▾": var olan kaynak ya da yeni kaynak
 //                      (SourceDialog) doğrudan o sahneye katman olur. Sağda KAYNAKLAR listesi
 //                      (durum, ayarlar, yeniden bağlan, sil) — ayrı Kaynaklar sekmesi yok.
@@ -274,7 +275,7 @@ export function TemplateDialog({ tplKey, config, onCreate, onClose }) {
               <input type="number" min={0} max={180} value={minutes} onChange={(e) => setMinutes(e.target.value)} />
             </Field>
           )}
-          <p className="st-hint">{tpl.hint}. Sonra Sahneler sekmesinde sahneyi seçip katmanlarını yandaki panelden düzenleyebilirsin.</p>
+          <p className="st-hint">{tpl.hint}. Sonra sahne kutusundaki kalemle katmanlarını düzenleyebilirsin.</p>
         </div>
       </div>
     </Modal>
@@ -367,7 +368,7 @@ function SceneInlineEditorInner({ config, configRef, runtimeRef, scene, selected
         <span className="st-top__spacer" />
         {!isPreview && !isProgram && <button type="button" className="btn btn--xs" onClick={() => actions.onPreview(scene.id)} title="Önizlemeye al"><Icon name="eye" size={11} /> Önizle</button>}
         {!isProgram && <button type="button" className="btn btn--xs btn--red" onClick={() => actions.onProgram(scene.id)} title="Yayına al (geçişle)"><Icon name="play" size={11} /> Yayına al</button>}
-        {actions.onEditFull && <button type="button" className="btn btn--xs" onClick={() => actions.onEditFull(scene.id)} title="Hassas konumlama: büyük tuval, kırpma, döndürme"><Icon name="overview" size={11} /> Tam ekran</button>}
+        {actions.onEditFull && <button type="button" className="btn btn--xs" onClick={() => actions.onEditFull(scene.id)} title="Büyük düzenleyici: tuval, katmanlar, görünüm, sahne ayarları, geri al"><Icon name="overview" size={11} /> Büyük düzenleyici</button>}
         <button type="button" className="icon-btn icon-btn--xs" onClick={onClose} title="Paneli kapat" aria-label="Paneli kapat"><Icon name="x" size={13} /></button>
       </header>
       <div className="sie__body">
@@ -387,20 +388,28 @@ function SceneInlineEditorInner({ config, configRef, runtimeRef, scene, selected
 }
 export const SceneInlineEditor = memo(SceneInlineEditorInner);
 
-function ScenesTabInner({ config, configRef, runtimeRef, register, version, studioMode, ledId, actions, libActions, selectedSceneId, onSelectScene, selectedLayerId, onSelectLayer, outW = 1920, outH = 1080, overrideRef, matchClockRef, onAddScene }) {
+function ScenesTabInner({ config, configRef, runtimeRef, register, version, studioMode, ledId, actions, libActions, selectedSceneId, onSelectScene, selectedLayerId, onSelectLayer, outW = 1920, outH = 1080, overrideRef, matchClockRef, onAddScene, inline = false, onInline = null }) {
   const { onPreview, onProgram, onToLed, tileMenu } = actions;
   const byId = new Map(config.sources.map((s) => [s.id, s]));
   const scene = config.scenes.find((s) => s.id === selectedSceneId) || null;
-  // Kart tıklaması: seç (katmanlar yanda) + önizlemeye al; kalem: yalnız seç.
+  const showInline = Boolean(inline && scene);
+  // Kart tıklaması: seç + önizlemeye al; kalem / katman satırı: düzenleyici (büyük pencere,
+  // "Sahne katmanlarını yanda göster" açıksa yandaki panel).
   const select = useCallback((id) => { onSelectScene(id); }, [onSelectScene]);
+  const edit = useCallback((id) => { onSelectScene(id); actions.onEdit?.(id); }, [actions, onSelectScene]);
   const pick = useCallback((id) => { onSelectScene(id); onPreview(id); }, [onPreview, onSelectScene]);
   return (
-    <div className={`st-scenetab is-v2 ${scene ? "has-edit" : ""} ${libActions ? "has-lib" : ""}`}>
+    <div className={`st-scenetab is-v2 ${showInline ? "has-edit" : ""} ${libActions ? "has-lib" : ""}`}>
       <div className="st-scenetab__main">
         <header className="st-scenetab__bar">
           <h4>Sahneler</h4><span className="st-col__count">{config.scenes.length}</span>
-          <span className="st-hint">tıkla: seç + önizleme · çift tık: yayına al</span>
+          <span className="st-hint">tıkla: seç + önizleme · çift tık: yayına al · kalem: düzenle</span>
           <span className="st-top__spacer" />
+          {onInline && (
+            <label className="st-scenetab__inline" title="Seçili sahnenin katmanlarını kartların yanında küçük bir panelde göster (kapalıyken kalem büyük düzenleyiciyi açar)">
+              <input type="checkbox" checked={Boolean(inline)} onChange={(e) => onInline(e.target.checked)} /> Katmanlar yanda
+            </label>
+          )}
           <button type="button" className="btn btn--sm btn--primary" onClick={(e) => onAddScene(e.currentTarget)} title="Şablondan yeni sahne: kamera düzenleri, çoklu görüntü, başlıyor / ara / bitti, bilgi ekranları, maç anları, LED">
             <Icon name="plus" size={13} /> Yeni sahne ekle
           </button>
@@ -413,9 +422,9 @@ function ScenesTabInner({ config, configRef, runtimeRef, register, version, stud
               <div key={sc.id} className={`st-scard ${sc.id === selectedSceneId ? "is-selected" : ""}`}>
                 <Tile tile={t} size="grid" register={register} studioMode={studioMode}
                   onAir={sc.id === config.programSceneId} inPreview={studioMode && sc.id === config.previewSceneId && sc.id !== config.programSceneId} onLed={sc.id === ledId}
-                  bad={tileWarning(config, runtimeRef.current, t)} onPreview={pick} onProgram={onProgram} onToLed={onToLed} onEdit={select} menu={tileMenu(t)} />
+                  bad={tileWarning(config, runtimeRef.current, t)} onPreview={pick} onProgram={onProgram} onToLed={onToLed} onEdit={edit} menu={tileMenu(t)} />
                 <div className="st-scard__foot">
-                  <button type="button" className="st-scard__layers" onClick={() => select(sc.id)} title={names.join(", ") || "Boş sahne"}><Icon name="layers" size={11} /> {names.length ? `${names.length} katman · ${names.join(" · ")}` : "boş — katman ekle"}</button>
+                  <button type="button" className="st-scard__layers" onClick={() => (inline ? select(sc.id) : edit(sc.id))} title={`${names.join(", ") || "Boş sahne"} — tıkla: katmanları düzenle`}><Icon name="layers" size={11} /> {names.length ? `${names.length} katman · ${names.join(" · ")}` : "boş — katman ekle"}</button>
                   <MenuButton label="Kaynak ekle" icon="plus" text="Kaynak" size={12} className="st-menu-sm" align="end" items={sourceMenu(config, sc.id, actions)} />
                 </div>
               </div>
@@ -424,7 +433,7 @@ function ScenesTabInner({ config, configRef, runtimeRef, register, version, stud
           <button type="button" className="st-scard is-add" onClick={(e) => onAddScene(e.currentTarget)}><Icon name="plus" size={18} /><span>Yeni sahne ekle</span><small>şablonlar ve hazır ekranlar</small></button>
         </section>
       </div>
-      {scene && (
+      {showInline && (
         <SceneInlineEditor config={config} configRef={configRef} runtimeRef={runtimeRef} scene={scene} selectedLayerId={selectedLayerId} onSelectLayer={onSelectLayer}
           outW={outW} outH={outH} overrideRef={overrideRef} matchClockRef={matchClockRef}
           isProgram={scene.id === config.programSceneId} isPreview={studioMode && scene.id === config.previewSceneId} actions={actions} onClose={() => onSelectScene(null)} />
@@ -461,8 +470,8 @@ export const SceneRail = memo(SceneRailInner);
 
 /* ------------------------------ sahne düzenleyici ------------------------------ */
 
-/** Düzenleyicinin kendi tuvali (önizleme çözünürlüğünde, ~30 fps). */
-function useEditorCanvas(configRef, runtimeRef, sceneId, overrideRef, matchClockRef, W, H, maxW = 1280) {
+/** Düzenleyicinin kendi tuvali (önizleme çözünürlüğünde, ~30 fps). extraRef.current?.(ctx, w, h, now): üst çizim (grafikler). */
+export function useEditorCanvas(configRef, runtimeRef, sceneId, overrideRef, matchClockRef, W, H, maxW = 1280, extraRef = null) {
   const canvas = useMemo(() => document.createElement("canvas"), []);
   useEffect(() => {
     const w = Math.min(maxW, W);
@@ -480,67 +489,17 @@ function useEditorCanvas(configRef, runtimeRef, sceneId, overrideRef, matchClock
       const sc = cfg?.scenes.find((x) => x.id === sceneId) || null;
       const ctx = canvas.getContext("2d", { alpha: false });
       drawScene(ctx, sc, cfg?.sources || [], runtimeRef.current, canvas.width, canvas.height, { now, placeholders: true, override: overrideRef.current, matchClockMs: matchClockRef?.current?.() ?? null });
+      if (extraRef?.current) { ctx.save(); try { extraRef.current(ctx, canvas.width, canvas.height, now); } catch { /* yoksay */ } ctx.restore(); }
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [canvas, configRef, matchClockRef, overrideRef, runtimeRef, sceneId]);
+  }, [canvas, configRef, extraRef, matchClockRef, overrideRef, runtimeRef, sceneId]);
   return canvas;
 }
 
-function SceneNameEdit({ scene, onRename }) {
+export function SceneNameEdit({ scene, onRename }) {
   const [name, setName] = useState(scene.name);
   useEffect(() => setName(scene.name), [scene.name]);
   const done = () => { if (name.trim() && name !== scene.name) onRename(scene.id, name); else setName(scene.name); };
   return <input className="st-editor__name" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} onBlur={done} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); e.stopPropagation(); }} aria-label="Sahne adı" />;
-}
-
-/**
- * Sahne düzenleyici (tam sayfa katman): yalnız "Düzenle" ile açılır.
- * Yayındaki sahne düzenlenirse değişiklik canlı görünür (uyarı gösterilir).
- */
-export function SceneEditor({ config, configRef, runtimeRef, sceneId, selectedLayerId, onSelectLayer, outW, outH, overrideRef, matchClockRef, isProgram, isPreview, actions, libActions = null, onClose }) {
-  const scene = config.scenes.find((s) => s.id === sceneId) || null;
-  const canvas = useEditorCanvas(configRef, runtimeRef, sceneId, overrideRef, matchClockRef, outW, outH);
-  const layer = scene?.layers.find((l) => l.id === selectedLayerId) || null;
-  const sourceName = useCallback((id) => configRef.current.sources.find((s) => s.id === id)?.name || "?", [configRef]);
-  const commit = useCallback((layerId, patch) => actions.onUpdateLayer(sceneId, layerId, patch), [actions, sceneId]);
-  const remove = useCallback((layerId) => actions.onRemoveLayer(sceneId, layerId), [actions, sceneId]);
-  const ref = useRef(null);
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape" && !document.querySelector(".modal-backdrop, .menu__list") && !e.target?.closest?.(".st-edit")) { e.stopPropagation(); onClose(); } };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  if (!scene) return null;
-  return (
-    <div className="st-editor" ref={ref} role="dialog" aria-label={`Sahne düzenle: ${scene.name}`}>
-      <header className="st-editor__head">
-        <Icon name="pencil" size={15} />
-        <span className="st-editor__kicker">Sahne düzenle</span>
-        <SceneNameEdit scene={scene} onRename={actions.onRenameScene} />
-        {isProgram && <span className="st-tag is-live">YAYINDA · değişiklikler canlı görünür</span>}
-        {isPreview && !isProgram && <span className="st-tag is-pvw">ÖNİZLEMEDE</span>}
-        <span className="st-top__spacer" />
-        {!isPreview && !isProgram && <button type="button" className="btn btn--sm" onClick={() => actions.onPreview(scene.id)}><Icon name="eye" size={13} /> Önizlemeye al</button>}
-        {!isProgram && <button type="button" className="btn btn--sm btn--red" onClick={() => actions.onProgram(scene.id)}><Icon name="play" size={13} /> Yayına al</button>}
-        <button type="button" className="btn btn--sm btn--primary" onClick={onClose}><Icon name="check" size={13} /> Düzenlemeyi bitir</button>
-      </header>
-      <div className="st-editor__body">
-        <aside className="st-editor__side">
-          <LayersList config={config} scene={scene} selectedId={selectedLayerId} actions={{ ...actions, onSelectLayer }} />
-          {libActions && <SourceRows config={config} runtimeRef={runtimeRef} actions={{ ...libActions, onSceneFromSource: actions.onSceneFromSource }} sceneId={scene.id} title="Kaynak kitaplığı" />}
-          <p className="st-hint st-pad-sm">Tuvalde tıkla: seç · sürükle: taşı · köşe: boyutla (Shift oranı korur) · Alt + köşe: kırp · üstteki nokta: döndür · ok tuşları: kaydır · Delete: çıkar</p>
-        </aside>
-        <div className="st-editor__stage">
-          <Monitor canvas={canvas} className={`st-editor__screen ${isProgram ? "is-program" : ""}`}>
-            <SceneEditOverlay scene={scene} selectedId={selectedLayerId} onSelect={onSelectLayer} onCommit={commit} onRemove={remove}
-              overrideRef={overrideRef} sourceName={sourceName} outW={outW} outH={outH} />
-          </Monitor>
-        </div>
-        <aside className="st-editor__side is-right">
-          <LayerProps config={config} scene={scene} layer={layer} runtimeRef={runtimeRef} outW={outW} outH={outH} actions={actions} />
-        </aside>
-      </div>
-    </div>
-  );
 }

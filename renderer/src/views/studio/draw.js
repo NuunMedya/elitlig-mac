@@ -135,6 +135,23 @@ export function drawLayer(ctx, layer, source, rt, W, H, opts = {}) {
   ctx.translate(L.x * W + bw / 2, L.y * H + bh / 2);
   if (L.rot) ctx.rotate((L.rot * Math.PI) / 180);
   ctx.translate(-bw / 2, -bh / 2);
+  // İsteğe bağlı görünüm: saydamlık, gölge, köşe yuvarlama (kırpma), çerçeve. Ölçüler
+  // çıkış pikseli (1920 genişlik) üzerinden; küçük tuvallerde orantılı.
+  const k = W / 1920;
+  if (L.opacity != null && L.opacity < 1) ctx.globalAlpha *= Math.max(0, L.opacity);
+  const rad = L.radius > 0 ? Math.min(bw, bh) * Math.min(0.5, L.radius) : 0;
+  const shape = () => { ctx.beginPath(); if (rad && ctx.roundRect) ctx.roundRect(0, 0, bw, bh, rad); else ctx.rect(0, 0, bw, bh); };
+  if (L.shadow?.blur > 0) {
+    ctx.save();
+    ctx.shadowColor = L.shadow.color || "#000";
+    ctx.shadowBlur = L.shadow.blur * k;
+    ctx.shadowOffsetY = L.shadow.blur * k * 0.25;
+    ctx.fillStyle = "#000";
+    shape();
+    ctx.fill();
+    ctx.restore();
+  }
+  if (rad) { shape(); ctx.clip(); }
   try {
     const kind = source.kind;
     if (kind === "color") drawColor(ctx, bw, bh, source, H);
@@ -156,12 +173,18 @@ export function drawLayer(ctx, layer, source, rt, W, H, opts = {}) {
       }
     }
   } catch { /* kare hazır değil */ }
+  if (L.border?.width > 0) {
+    const lw = Math.max(1, L.border.width * k);
+    ctx.lineWidth = rad ? lw * 2 : lw; // kırpılmış şekilde çizginin yarısı dışarıda kalır
+    ctx.strokeStyle = L.border.color || "#fff";
+    if (rad) { shape(); ctx.stroke(); } else ctx.strokeRect(lw / 2, lw / 2, bw - lw, bh - lw);
+  }
   ctx.restore();
 }
 
 /** Sahneyi (katmanlar alttan üste) çizer. opts.transparent: zemini boyama. */
 export function drawScene(ctx, scene, sources, runtime, W, H, opts = {}) {
-  if (!opts.transparent) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
+  if (!opts.transparent) { ctx.fillStyle = scene?.bg || "#000"; ctx.fillRect(0, 0, W, H); }
   if (!scene) return;
   const byId = sourcesById(sources);
   for (const layer of scene.layers) {

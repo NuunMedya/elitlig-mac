@@ -63,26 +63,42 @@ export function handleAt(box, px, py, tol = 8, rotDeg = 0) {
  * Taşıma: kenar ve merkez çizgilerine yapışır (SNAP). Dönüş { x, y, guides }:
  * guides yapışılan çizgiler ({ axis: "x"|"y", at }) — kılavuz olarak çizilir.
  */
-export function moveLayer(t, dx, dy, { snap = true, snapAt = SNAP } = {}) {
+export function moveLayer(t, dx, dy, { snap = true, snapAt = SNAP, xs = [], ys = [] } = {}) {
   let x = t.x + dx;
   let y = t.y + dy;
   const guides = [];
   if (snap) {
-    const sx = snapAxis(x, t.w, snapAt);
-    const sy = snapAxis(y, t.h, snapAt);
+    const sx = snapAxis(x, t.w, snapAt, xs);
+    const sy = snapAxis(y, t.h, snapAt, ys);
     if (sx) { x = sx.value; guides.push({ axis: "x", at: sx.at }); }
     if (sy) { y = sy.value; guides.push({ axis: "y", at: sy.at }); }
   }
   return { x, y, guides };
 }
 
-function snapAxis(start, size, tol) {
+/** Öbür katmanların kenar / orta çizgileri (yapışma hedefleri). */
+export function snapLines(layers, exceptId) {
+  const xs = [];
+  const ys = [];
+  for (const l of layers || []) {
+    if (!l || l.id === exceptId || l.visible === false || l.rot) continue;
+    xs.push(l.x, l.x + l.w, l.x + l.w / 2);
+    ys.push(l.y, l.y + l.h, l.y + l.h / 2);
+  }
+  return { xs, ys };
+}
+
+function snapAxis(start, size, tol, lines = []) {
   const end = start + size;
   const mid = start + size / 2;
   const cands = [
     [start, 0, 0], [end, 1, 1 - size], [mid, 0.5, 0.5 - size / 2],
     [start, 0.5, 0.5], [end, 0.5, 0.5 - size],
   ];
+  for (const at of lines) {
+    if (!Number.isFinite(at)) continue;
+    cands.push([start, at, at], [end, at, at - size], [mid, at, at - size / 2]);
+  }
   let best = null;
   for (const [edge, at, value] of cands) {
     const d = Math.abs(edge - at);
@@ -209,3 +225,19 @@ export function nudge(t, key, shift, W, H) {
 
 /** Tutamağın imleci. */
 export const handleCursor = (h) => ({ nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize", n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize" }[h] || "move");
+
+/**
+ * Hizala: "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom" (ekrana göre).
+ * Dönüş: { x } ya da { y } yaması.
+ */
+export function alignLayer(t, how) {
+  switch (how) {
+    case "left": return { x: 0 };
+    case "hcenter": return { x: (1 - t.w) / 2 };
+    case "right": return { x: 1 - t.w };
+    case "top": return { y: 0 };
+    case "vcenter": return { y: (1 - t.h) / 2 };
+    case "bottom": return { y: 1 - t.h };
+    default: return null;
+  }
+}
