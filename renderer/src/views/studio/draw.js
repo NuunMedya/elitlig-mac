@@ -6,6 +6,8 @@
 // Yapay kaynaklar (renk / gradyan, metin, saat, slayt) burada boyanır.
 import { fitRect } from "../../lib/studio/layouts";
 import { clockText, slideIndex } from "../../lib/studio/scenes";
+import { effectiveFx, fxActive, fxOrientOnly } from "../../lib/studio/videoFx";
+import { processFrame } from "./fx/fxProcessor";
 
 const PLACEHOLDER = {
   waiting: "Açılıyor…",
@@ -44,8 +46,9 @@ export function drawableOf(rt, now = 0) {
 /** Kaynağın doğal boyutu (oranı korumak için); bilinmiyorsa null. */
 export function naturalSize(source, rt) {
   const d = drawableOf(rt, Date.now());
-  if (d) return { w: d.w, h: d.h };
-  return null;
+  if (!d) return null;
+  const r = effectiveFx(source, null)?.rotate;
+  return r === 90 || r === 270 ? { w: d.h, h: d.w } : { w: d.w, h: d.h };
 }
 
 const byIdCache = new WeakMap();
@@ -158,7 +161,22 @@ export function drawLayer(ctx, layer, source, rt, W, H, opts = {}) {
     else if (kind === "text") drawText(ctx, bw, bh, source, source.text, H);
     else if (kind === "clock") drawText(ctx, bw, bh, source, clockText(source, Date.now(), { matchClockMs: opts.matchClockMs }), H);
     else {
-      const d = drawableOf(rt, opts.now ?? performance.now());
+      let d = drawableOf(rt, opts.now ?? performance.now());
+      // Görüntü ayarı (kaynağın ya da katmana özel): yalnız çevirme ise 2D dönüşüm,
+      // değilse paylaşılan WebGL işlemcisi (aynı kare tüm çıkışlarda bir kez işlenir).
+      // opts.fx: önizleme penceresi için açık ayar (false = ayarsız "önce" görüntüsü).
+      let flip = null;
+      if (d) {
+        const fx = opts.fx !== undefined ? (opts.fx && fxActive(opts.fx) ? opts.fx : null) : effectiveFx(source, L);
+        if (fx) {
+          flip = fxOrientOnly(fx);
+          if (!flip) {
+            const key = opts.fx !== undefined ? `${source.id}|ui` : layer.fx ? `${source.id}|${layer.id}` : source.id;
+            const p = processFrame(key, d, fx, { now: performance.now(), maxAge: opts.fxMaxAge ?? 12 });
+            if (p) d = p;
+          }
+        }
+      }
       if (!d) { if (opts.placeholders) drawPlaceholder(ctx, bw, bh, source, rt || (kind === "replay" ? { status: "empty" } : null)); }
       else {
         const c = L.crop || { l: 0, t: 0, r: 0, b: 0 };
@@ -167,7 +185,8 @@ export function drawLayer(ctx, layer, source, rt, W, H, opts = {}) {
         const f = fitRect(cw, ch, { x: 0, y: 0, w: bw, h: bh }, L.fit || "cover");
         if (f) {
           if (L.fit === "cover") { ctx.beginPath(); ctx.rect(0, 0, bw, bh); ctx.clip(); }
-          if (source.mirror) { ctx.translate(f.dx * 2 + f.dw, 0); ctx.scale(-1, 1); }
+          if (flip?.flipH) { ctx.translate(f.dx * 2 + f.dw, 0); ctx.scale(-1, 1); }
+          if (flip?.flipV) { ctx.translate(0, f.dy * 2 + f.dh); ctx.scale(1, -1); }
           ctx.drawImage(d.el, d.w * c.l + f.sx, d.h * c.t + f.sy, f.sw, f.sh, f.dx, f.dy, f.dw, f.dh);
         }
       }
@@ -193,12 +212,12 @@ export function drawScene(ctx, scene, sources, runtime, W, H, opts = {}) {
   }
 }
 
-/** Tek kaynağı kutuya çizer (küçük resim). */
+/** Tek kaynağı kutuya çizer (küçük resim). Görüntü ayarı sonucu daha toleranslı paylaşılır. */
 export function drawSource(ctx, source, rt, box, fit = "cover", opts = {}) {
   if (!source) return;
   ctx.save();
   ctx.translate(box.x, box.y);
-  drawLayer(ctx, { id: "_thumb", visible: true, x: 0, y: 0, w: 1, h: 1, rot: 0, crop: null, fit }, source, rt, box.w, box.h, { ...opts, placeholders: opts.placeholders ?? true });
+  drawLayer(ctx, { id: "_thumb", visible: true, x: 0, y: 0, w: 1, h: 1, rot: 0, crop: null, fit }, source, rt, box.w, box.h, { fxMaxAge: 60, ...opts, placeholders: opts.placeholders ?? true });
   ctx.restore();
 }
 

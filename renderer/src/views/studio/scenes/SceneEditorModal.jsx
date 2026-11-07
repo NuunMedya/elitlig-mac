@@ -10,7 +10,7 @@
 //            kılavuz çizgileri), köşe → boyutla (Shift oranı korur), Alt + köşe → kırp, üstteki
 //            nokta → döndür; araç çubuğu: hizala, yapışma, grafikleri göster (canlı sonuç)
 //   Sağ      KATMAN: konum / boyut (px), açı, kırpma, kutu içinde (sığdırma), saydamlık, köşe,
-//            çerçeve, gölge, katman sesi · SAHNE: ad, zemin, bu sahnenin geçişi, yayın
+//            çerçeve, gölge, katman sesi, görüntü / efektler (kaynağın ya da katmana özel) · SAHNE: ad, zemin, bu sahnenin geçişi, yayın
 //            grafiklerinin bu sahnede görünürlüğü, sahne başına ses
 //   Üst      geri al / yinele (Ctrl/⌘+Z, Shift+Ctrl/⌘+Z), "Önizlemeye al", "Yayına al",
 //            büyüt / eski boyut, Kapat (Esc)
@@ -25,6 +25,9 @@ import { VISIBILITY_KEYS, VISIBILITY_LABELS, toggleSceneVisibility } from "../..
 import { LayerProps, SceneNameEdit, SourceRows, sourceMenu, useEditorCanvas } from "./ScenesPanel";
 import SceneEditOverlay from "./SceneEditOverlay";
 import Monitor from "./Monitor";
+import { FX_KINDS } from "../SourcesPanel";
+import FxEditor from "../fx/FxEditor";
+import { compactFx, fxActive } from "../../../lib/studio/videoFx";
 import "./sceneEditor.css";
 
 const WIN_KEY = "studio.sceneEditor.win";
@@ -170,6 +173,36 @@ function StyleProps({ layer, source, set }) {
           <span><b>Bu katmanın sesi yayına gitsin</b><small>{source.kind === "video" ? "Video dosyasının sesi (sahne yayındayken)" : "Kaynağın kendi sesi varsa"} · kapalıyken görüntü kalır, ses gitmez</small></span>
         </label>
       )}
+    </section>
+  );
+}
+
+/* ───────────────────────── görüntü / efektler ───────────────────────── */
+
+/**
+ * Katmanın görüntü ayarı: kaynağın ayarı (kaynağın kullanıldığı TÜM sahnelerde) ya da
+ * yalnız bu katmana özel (ör. aynı kamera PiP'te siyah-beyaz). Değişiklik canlıdır.
+ */
+function LayerFxProps({ layer, source, runtimeRef, set, actions }) {
+  if (!source || !FX_KINDS.has(source.kind)) return null;
+  const own = Boolean(layer.fx);
+  const fx = own ? layer.fx : source.fx || null;
+  const onSource = actions.onSourceFx;
+  return (
+    <section className="sem-card" aria-label="Görüntü / Efektler">
+      <header className="sem-card__head"><h4><Icon name="sliders" size={13} /> Görüntü / Efektler</h4>
+        <span className="st-top__spacer" />
+        {fxActive(fx) && <span className="st-tag is-pvw" title="Bu katmanda görüntü ayarı var">ayarlı</span>}
+        {actions.onFx && <button type="button" className="btn btn--xs" onClick={() => actions.onFx(source.id)} title="Kaynağın ayarlarını yüzen canlı panelde aç">Panel</button>}
+      </header>
+      <div className="vfx-mode" role="radiogroup" aria-label="Ayarın kapsamı">
+        <label><input type="radio" checked={!own} onChange={() => set({ fx: null })} />
+          <span>Kaynağın ayarı<small>“{source.name}” kullanılan tüm sahnelerde aynı</small></span></label>
+        <label><input type="radio" checked={own} onChange={() => set({ fx: compactFx(source.fx) || {} })} />
+          <span>Yalnız bu katmana özel<small>kaynağın ayarı yerine (ör. bu sahnede siyah-beyaz)</small></span></label>
+      </div>
+      <FxEditor key={own ? "own" : "src"} fx={fx} compact previewWidth={260} source={source} runtimeRef={runtimeRef}
+        onChange={own ? (f) => set({ fx: f || {} }) : (f) => onSource?.(source.id, f)} />
     </section>
   );
 }
@@ -359,6 +392,7 @@ export default function SceneEditorModal({
               <div className="sem-stack">
                 <LayerProps config={config} scene={scene} layer={layer} runtimeRef={runtimeRef} outW={outW} outH={outH} actions={actions} />
                 {layer && <StyleProps layer={layer} source={source} set={(patch) => commit(layer.id, patch)} />}
+                {layer && <LayerFxProps layer={layer} source={source} runtimeRef={runtimeRef} set={(patch) => commit(layer.id, patch)} actions={actions} />}
               </div>
             ) : <SceneSettings config={config} scene={scene} actions={actions} graphics={graphics} audio={audio} />}
           </aside>
