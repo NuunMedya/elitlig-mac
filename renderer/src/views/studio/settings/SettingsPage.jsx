@@ -29,6 +29,7 @@ import ProfilesSection from "./ProfilesSection";
 import "./settings.css";
 import "../dock/dock.css";
 import VarThemeSection, { VAR_THEME_SECTION } from "./VarThemeSection"; // [var-tema]
+import CoverSection, { COVER_SECTION } from "../youtube/cover/CoverSection"; // [kapak]
 
 export const SETTINGS_GROUPS = [
   { key: "genel", label: "Genel" },
@@ -40,6 +41,7 @@ export const SETTINGS_GROUPS = [
 export const SETTINGS_SECTIONS = [
   { key: "yayin", label: "Yayın", icon: "broadcast", group: "genel" },
   { key: "kayit", label: "Kayıt", icon: "download", group: "genel" },
+  { ...COVER_SECTION, group: "genel" }, // [kapak] Ayarlar › Genel › YouTube kapağı
   { key: "tekrar", label: "Tekrar", icon: "repeat", group: "genel" },
   { ...VAR_THEME_SECTION, group: "grafik" }, // [var-tema] Ayarlar › Grafikler › VAR teması
   { key: "gecis", label: "Geçiş", icon: "swap", group: "genel" },
@@ -277,6 +279,8 @@ function SettingsPage({
         <p className="st-hint st-set__wide">Panelin her ayrıntısı (katmanlar, kuyruk, düzenleyici…) için: Ayarlar › Alt panel › Tekrar › Parçalar › “Paneli burada aç”.</p>
       </>
     );
+  } else if (section === COVER_SECTION.key) { // [kapak]
+    body = <CoverSection toast={toast} />;
   } else if (section === VAR_THEME_SECTION.key) { // [var-tema]
     body = <VarThemeSection prefs={prefs} setPref={setPref} />;
   } else if (section === "gecis") {
