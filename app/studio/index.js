@@ -65,6 +65,7 @@ const ff = require("./ffmpeg");
 const { registerLive } = require("./live");
 
 const DAY_MS = 24 * 3600 * 1000;
+const LIVE_UPLOAD_BYTES_PER_SEC = 250 * 1024; // ≈ 2 Mbit/sn: yayın sürerken gol klibi yüklemesi
 
 /** Tekrarın program açısı → eski klip nesnesi (saveClip / listClips geriye uyumluluğu). */
 function replayAsClip(replay) {
@@ -468,8 +469,12 @@ function registerStudio({
       // { matchId, eventId, replayId, angle = "program" } ya da eski { matchId, eventId, name }.
       // Ön imzalı yükleme (dosya doğrudan Spaces'e; Heroku'nun 30 sn sınırına takılmaz);
       // eski sunucuda çok parçalı yola düşer. Her adım yükleme günlüğüne yazılır.
+      // [gol-klip] Canlı yayın sürerken klip ~2 Mbit/sn ile gönderilir: tam hızda PUT, yayınla
+      // aynı yükleme hattını doldurup RTMP kuyruğunu taşırıyordu (gol anlarında kare atlama / kopma).
+      const onAirNow = engine.active() && engine.status()?.recordOnly === false;
+      const putImpl = onAirNow ? (url, o = {}) => loggedPut(url, { ...o, maxBytesPerSec: LIVE_UPLOAD_BYTES_PER_SEC }) : loggedPut;
       return uploadGoalClip(uploadApi, p, {
-        replays, clips, putImpl: loggedPut, isReplayId: (v) => REPLAY_ID.test(String(v || "")),
+        replays, clips, putImpl, isReplayId: (v) => REPLAY_ID.test(String(v || "")),
         emitProgress: (pr) => broadcast("studio:uploadProgress", pr),
       });
     });

@@ -4,6 +4,8 @@
 //             fps / görüntü bit hızı Yayın sekmesiyle ortak: prefs.encoding)
 //   record    yerel kayıt: açık mı, klasör, KAYIT KALİTESİ (yayından ayrı)
 //   replay    gol öncesi kaç saniye tekrar yazılsın (varsayılan 15; v1 kayıtlarındaki eski
+//             varsayılan 10 → 15), butondan SONRA kaç saniye (postSeconds, 4), gol klibinin
+//             yükleme gecikmesi (uploadDelaySec, 60 — bu sürede seçilen açılar yüklenir); eski
 //             varsayılan 10, kullanıcı değiştirmemiş sayılıp 15'e taşınır — migrateReplaySeconds)
 //   view      ipuçları ve kısayol rozetleri, arayüz ölçeği
 //   hotkeys   ana eylemlerin tuşları (yeniden atanabilir)
@@ -69,7 +71,7 @@ export const DEFAULT_SETTINGS = {
   record: { enabled: false, dir: null, quality: "stream", customKbps: 10000, customHeight: 1080 },
   // tekrar klibi 15 sn: önizlemede giriş–çıkışla istenen bölüm seçilir. directTake: R kısayolu
   // son tekrarı önizlemeye yükleyip AYNI GEÇİŞ yoluyla hemen yayına alır [önizleme-geçiş]
-  replay: { seconds: 15, directTake: false },
+  replay: { seconds: 15, directTake: false, postSeconds: 4, uploadDelaySec: 60 },
   view: { hints: true, tooltips: true, scale: 100 },
   hotkeys: DEFAULT_HOTKEYS,
   notify: { micOpen: true, lowBitrate: true, silence: true, silenceSec: 30 },
@@ -128,7 +130,13 @@ export function normalizeSettings(raw) {
       customKbps: clamp(Math.round(num(r.record?.customKbps, d.record.customKbps)), 1000, 50000),
       customHeight: pick(Number(r.record?.customHeight), [720, 1080], d.record.customHeight),
     },
-    replay: { seconds: clamp(Math.round(num(migrateReplaySeconds(r), d.replay.seconds)), 5, 30), directTake: bool(r.replay?.directTake, d.replay.directTake) },
+    replay: {
+      seconds: clamp(Math.round(num(migrateReplaySeconds(r), d.replay.seconds)), 5, 30),
+      directTake: bool(r.replay?.directTake, d.replay.directTake),
+      // [gol-klip] butondan SONRA kaydedilen süre (0–15 sn) ve gol klibi yükleme gecikmesi (0–600 sn)
+      postSeconds: clamp(Math.round(num(r.replay?.postSeconds, d.replay.postSeconds)), 0, 15),
+      uploadDelaySec: clamp(Math.round(num(r.replay?.uploadDelaySec, d.replay.uploadDelaySec)), 0, 600),
+    },
     view: {
       hints: bool(r.view?.hints, d.view.hints),
       tooltips: bool(r.view?.tooltips, d.view.tooltips),

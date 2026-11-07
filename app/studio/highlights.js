@@ -89,7 +89,32 @@ function s3Error(body) {
  * imzaladığı başlıklar (Content-Type, Cache-Control, x-amz-acl, Content-Length)
  * aynen gönderilir. Dosya boyutu imzadaki boyuttan farklıysa gönderilmez.
  */
-function putFile(url, { file, size, headers = {}, contentType = "application/octet-stream", onProgress = () => {}, idleTimeoutMs = PUT_IDLE_TIMEOUT_MS } = {}) {
+/**
+ * Hız sınırı (bayt/sn): canlı yayın sürerken gol klibi yüklemesi yayının yükleme hattını
+ * doldurmasın (aynı bağlantıda RTMP kuyruğu dolup kare atlanıyor / yayın kopabiliyordu).
+ * 64 KB'lık dilimler; her dilimden sonra hedef hıza göre beklenir.
+ */
+function throttle(bytesPerSec, { sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = () => Date.now() } = {}) {
+  const { Transform } = require("node:stream");
+  const t0 = now();
+  let sent = 0;
+  const SLICE = 64 * 1024;
+  return new Transform({
+    transform(chunk, _enc, cb) {
+      (async () => {
+        for (let i = 0; i < chunk.length; i += SLICE) {
+          const part = chunk.subarray(i, i + SLICE);
+          sent += part.length;
+          const wait = t0 + (sent / bytesPerSec) * 1000 - now();
+          if (wait > 0) await sleep(wait);
+          this.push(part);
+        }
+      })().then(() => cb(), cb);
+    },
+  });
+}
+
+function putFile(url, { file, size, headers = {}, contentType = "application/octet-stream", onProgress = () => {}, idleTimeoutMs = PUT_IDLE_TIMEOUT_MS, maxBytesPerSec = 0 } = {}) {
   return new Promise((resolve) => {
     let u;
     try { u = new URL(url); } catch { resolve({ ok: false, status: 0, body: "geçersiz adres" }); return; }
@@ -120,7 +145,8 @@ function putFile(url, { file, size, headers = {}, contentType = "application/oct
       onProgress(loaded, size);
     });
     stream.on("error", () => { req.destroy(); done({ ok: false, status: 0, body: "dosya okunamadı" }); });
-    stream.pipe(req);
+    if (Number(maxBytesPerSec) > 0) stream.pipe(throttle(Number(maxBytesPerSec))).pipe(req);
+    else stream.pipe(req);
   });
 }
 
@@ -229,4 +255,4 @@ async function deleteHighlight(api, { matchId } = {}) {
   return { ok: true, data: res.data ?? null };
 }
 
-module.exports = { putFile, s3Error, describeS3Error, serverMessage, isMissingRoute, uploadPresigned, uploadHighlight, deleteHighlight, unwrap, validMatch, ERR };
+module.exports = { putFile, throttle, s3Error, describeS3Error, serverMessage, isMissingRoute, uploadPresigned, uploadHighlight, deleteHighlight, unwrap, validMatch, ERR };
