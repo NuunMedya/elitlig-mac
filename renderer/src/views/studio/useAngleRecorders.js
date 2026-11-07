@@ -8,9 +8,14 @@
 // ({ sourceId }) gelir: yalnız o kaynağın kaydedicisi yeniden kurulur.
 // Kaynağın akışı değişirse (kamera yeniden bağlandı) kaydedici de yenilenir.
 //
+// Kaynağın görüntü ayarı (fx) varsa açı da AYARLI kaydedilir (./fx/fxFeed: işlenmiş
+// kare tuvalden captureStream); ayar açılıp kapanınca kaydedici yenilenir.
+//
 // API yoksa (eski motor) hiçbir şey yapmaz: tekrarlar yalnız program açısıyla.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { VIDEO_ONLY_MIME_PREFERENCE, pickMimeType } from "../../lib/studio/broadcast";
+import { effectiveFx } from "../../lib/studio/videoFx";
+import { createFxFeed } from "./fx/fxFeed";
 
 const studio = () => window.elitlig?.studio;
 export const ANGLE_BITRATE_KBPS = 6000;
@@ -40,6 +45,11 @@ export function useAngleRecorders({ active, sourceIds, sources, runtimeRef, vers
   errRef.current = onError;
   const namesRef = useRef(new Map());
   namesRef.current = new Map((sources || []).map((s) => [s.id, s.name]));
+  const sourcesRef = useRef(new Map());
+  sourcesRef.current = new Map((sources || []).map((s) => [s.id, s]));
+  const feeds = useRef(new Map()); // sourceId → { feed, base } görüntü ayarlı akış
+  // Görüntü ayarı açık kaynaklar (değişince ilgili kaydedici yenilenir).
+  const fxSig = (sources || []).filter((s) => effectiveFx(s, null)).map((s) => s.id).sort().join(",");
   const key = active && available ? [...sourceIds].sort().join(",") : "";
 
   const stopOne = useCallback((id) => {
@@ -48,12 +58,28 @@ export function useAngleRecorders({ active, sourceIds, sources, runtimeRef, vers
     r.gen.value += 1;
     try { if (r.rec && r.rec.state !== "inactive") r.rec.stop(); } catch { /* yoksay */ }
     recs.current.delete(id);
+    const f = feeds.current.get(id);
+    if (f) { f.feed.stop(); feeds.current.delete(id); }
   }, []);
+
+  /** Kaydedilecek iz: görüntü ayarı varsa işlenmiş akış, yoksa kaynağın kendi izi. */
+  const trackFor = useCallback((id) => {
+    const rt = runtimeRef.current.get(id);
+    const base = videoTrackOf(rt);
+    if (!base) return null;
+    const src = sourcesRef.current.get(id);
+    if (!src || !effectiveFx(src, null)) return base;
+    const fps = Number(base.getSettings?.().frameRate) || Number(src.fps) || 30;
+    const feed = createFxFeed(() => sourcesRef.current.get(id), () => runtimeRef.current.get(id), Math.min(60, Math.max(15, Math.round(fps))));
+    if (!feed) return base;
+    feeds.current.set(id, { feed, base: base.id });
+    return feed.track;
+  }, [runtimeRef]);
 
   const startOne = useCallback((id) => {
     if (!startedRef.current) return false;
     stopOne(id);
-    const track = videoTrackOf(runtimeRef.current.get(id));
+    const track = trackFor(id);
     if (!track) { recs.current.set(id, { rec: null, gen: { value: 0 }, trackId: null }); return false; }
     const mimeType = pickMimeType((t) => MediaRecorder.isTypeSupported(t), VIDEO_ONLY_MIME_PREFERENCE);
     let rec;
@@ -69,9 +95,10 @@ export function useAngleRecorders({ active, sourceIds, sources, runtimeRef, vers
       errRef.current?.(`Açı kaydı açılamadı (${namesRef.current.get(id) || id}): ${e?.message || e}`);
       return false;
     }
+    const baseId = feeds.current.get(id)?.base || track.id;
     const gen = { value: 0 };
     const mine = 0;
-    const entry = { rec, gen, trackId: track.id, chain: Promise.resolve() };
+    const entry = { rec, gen, trackId: baseId, fx: feeds.current.has(id), chain: Promise.resolve() };
     // İlk parça ≥ 4 KB olana dek biriktirilir: soğuk kodlayıcıda Chromium 1 baytlık
     // ilk parça verebiliyor; ana süreç tam kapsayıcı başlığı bekler.
     let head = [];
@@ -96,7 +123,7 @@ export function useAngleRecorders({ active, sourceIds, sources, runtimeRef, vers
     rec.start(250);
     recs.current.set(id, entry);
     return true;
-  }, [runtimeRef, stopOne]);
+  }, [stopOne, trackFor]);
 
   const stopAll = useCallback(() => { for (const id of [...recs.current.keys()]) stopOne(id); }, [stopOne]);
 
@@ -128,11 +155,12 @@ export function useAngleRecorders({ active, sourceIds, sources, runtimeRef, vers
   // Kaynağın akışı değişti / ilk açılışta hazır değildi → kaydediciyi yenile.
   useEffect(() => {
     if (!startedRef.current) return;
+    const fxOn = new Set(fxSig.split(",").filter(Boolean));
     for (const [id, r] of recs.current) {
       const track = videoTrackOf(runtimeRef.current.get(id));
-      if ((track?.id || null) !== r.trackId) startOne(id);
+      if ((track?.id || null) !== r.trackId || Boolean(r.fx) !== fxOn.has(id)) startOne(id);
     }
-  }, [version, startOne, runtimeRef]);
+  }, [version, fxSig, startOne, runtimeRef]);
 
   useEffect(() => studio()?.angles?.onRestartRecorder?.((p) => {
     const id = p?.sourceId;

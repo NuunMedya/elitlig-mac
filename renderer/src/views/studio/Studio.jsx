@@ -48,8 +48,9 @@ import { setLeaveGuard } from "../../lib/leaveGuard";
 import {
   addLayer, addScene, addSource, duplicateLayer, duplicateScene, loadScenesConfig, moveLayerTo, moveSceneTo, multiviewTiles, readySceneOf,
   removeLayer, removeScene, removeSource, renameScene, replaceScene, resolveScene, saveScenesConfig, sceneAtHotkey, sceneFromSource, sceneFromTemplate,
-  sceneTransitionOf, sourceUsage, startSceneCountdowns, updateLayer, updateScene, updateSource,
+  sceneTransitionOf, sourceUsage, startSceneCountdowns, updateLayer, updateScene, updateSource, updateSourceFx,
 } from "../../lib/studio/scenes";
+import FxFloat from "./fx/FxFloat";
 import { backupIngestUrl, encodingPreset, ingestUrl, keyAction, normalizeEncoding, reusableStream, statusPill } from "../../lib/studio/broadcast";
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../lib/studio/transitions";
 import { DEFAULT_BRANDING } from "../../lib/studio/stinger";
@@ -77,7 +78,7 @@ import { useStable } from "./useStable";
 import { errorText } from "./studioApi";
 import { tileWarning, useTileRenderer } from "./Multiview";
 import { clampDock } from "./Dock";
-import { SourceDialog } from "./SourcesPanel";
+import { FX_KINDS, SourceDialog } from "./SourcesPanel";
 import ReplayPanel from "./ReplayPanel";
 import HighlightsPanel from "./HighlightsPanel";
 import BroadcastPanel from "./BroadcastPanel";
@@ -698,6 +699,10 @@ export default function Studio({ auth, go }) {
   const [dialog, setDialog] = useState(null); // { initial, toScene }
   const [settingsSection, setSettingsSection] = useState(null); // açıkken bölüm anahtarı
   const closeDialog = useCallback(() => setDialog(null), []);
+  // [görüntü] canlı "Görüntü ayarları" paneli: { sourceId, sceneId? } (./fx/FxFloat)
+  const [fxPanel, setFxPanel] = useState(null);
+  const closeFx = useCallback(() => setFxPanel(null), []);
+  const setSourceFx = useCallback((id, fx) => setConfig((c) => updateSourceFx(c, id, fx)), []);
   const closeEditor = useCallback(() => { setEditSceneId(null); setSelectedLayerId(null); overrideRef.current = null; }, []);
 
   const saveSource = useStable((draft) => {
@@ -775,6 +780,8 @@ export default function Studio({ auth, go }) {
   const readyIds = useMemo(() => ({ start: readySceneOf(config, "start")?.id, break: readySceneOf(config, "break")?.id, end: readySceneOf(config, "end")?.id }), [config]);
 
   const sceneActions = useMemo(() => ({
+    onFx: (sourceId, sceneId = null) => setFxPanel({ sourceId, sceneId }),
+    onSourceFx: setSourceFx,
     onPreview: toPreview,
     onProgram: toProgram,
     onToLed: (id) => { led.toScene(id); },
@@ -809,8 +816,14 @@ export default function Studio({ auth, go }) {
   const tileMenu = useCallback((t) => {
     const i = configRef.current.scenes.findIndex((s) => s.id === t.id);
     const n = configRef.current.scenes.length;
+    // [görüntü] sahnedeki görüntü kaynakları (kamera, ekran, video…): canlı görüntü ayarı.
+    const sc = configRef.current.scenes.find((s) => s.id === t.id);
+    const fxSrcs = [...new Set((sc?.layers || []).map((l) => l.sourceId))].map((id) => configRef.current.sources.find((s) => s.id === id)).filter((s) => s && FX_KINDS.has(s.kind));
+    const fxItems = fxSrcs.length === 1 ? [{ label: "Görüntü ayarları…", icon: "sliders", onClick: () => setFxPanel({ sourceId: fxSrcs[0].id, sceneId: t.id }) }]
+      : fxSrcs.slice(0, 6).map((s) => ({ label: `Görüntü ayarları · ${s.name}…`, icon: "sliders", onClick: () => setFxPanel({ sourceId: s.id, sceneId: t.id }) }));
     return [
       { label: "Düzenle…", icon: "pencil", onClick: () => sceneActions.onEditFull(t.id) },
+      ...fxItems,
       { label: "Katmanları yanda göster (Sahneler)", icon: "layers", onClick: () => sceneActions.onEditInline(t.id) },
       { label: "Önizlemeye al", icon: "eye", onClick: () => toPreview(t.id) },
       { label: "Yayına al", icon: "play", onClick: () => toProgram(t.id) },
@@ -825,6 +838,7 @@ export default function Studio({ auth, go }) {
   }, [deleteScene, sceneActions, toPreview, toProgram]);
 
   const libActions = useMemo(() => ({
+    onFx: (sourceId) => setFxPanel({ sourceId }),
     onNewSource: () => newSource(),
     onEditSource: editSource,
     onRemoveSource: deleteSource,
@@ -1513,8 +1527,17 @@ export default function Studio({ auth, go }) {
       )}
       {dialog && (
         <SourceDialog initial={dialog.initial} cameraCount={config.sources.filter((s) => s.kind === "camera").length} devices={src.devices} access={src.access}
-          onRequestAccess={src.requestAccess} onRefreshDevices={src.refreshDevices} onSave={saveSource} onClose={closeDialog} />
+          onRequestAccess={src.requestAccess} onRefreshDevices={src.refreshDevices} onSave={saveSource} onClose={closeDialog} runtimeRef={src.runtimeRef} />
       )}
+      {fxPanel && (() => {
+        const fxSource = config.sources.find((s) => s.id === fxPanel.sourceId);
+        if (!fxSource) return null;
+        const scFx = fxPanel.sceneId ? config.scenes.find((s) => s.id === fxPanel.sceneId) : null;
+        const choices = scFx ? [...new Set(scFx.layers.map((l) => l.sourceId))].map((id) => config.sources.find((s) => s.id === id)).filter((s) => s && FX_KINDS.has(s.kind)) : [];
+        return <FxFloat source={fxSource} runtimeRef={src.runtimeRef} onChange={(fx) => setSourceFx(fxSource.id, fx)} onClose={closeFx}
+          onAir={programIds.includes(fxSource.id) || (config.scenes.find((s) => s.id === config.programSceneId)?.layers || []).some((l) => l.sourceId === fxSource.id)}
+          sources={choices} onSwitch={(id) => setFxPanel((p) => ({ ...p, sourceId: id }))} />;
+      })()}
       {gallery && <TemplateGallery anchor={gallery.anchor} onTemplate={onTemplate} onClose={() => setGallery(null)} />}
       {tplKey && <TemplateDialog tplKey={tplKey} config={config} onCreate={createFromTemplate} onClose={() => setTplKey(null)} />}
       {help && <HelpModal hotkeys={settings.hotkeys} onClose={() => setHelp(false)} />}

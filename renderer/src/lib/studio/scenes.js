@@ -25,6 +25,7 @@
 // sahnesi olur ("Kamera 1"), hazır düzenler (Resim içinde resim / Yan yana)
 // serbest katmanlara çevrilir; önizleme / program aynı görüntüde kalır.
 import { STORAGE_KEY as V2_KEY, layerRect, normalizeConfig as normalizeV2 } from "./layouts";
+import { migrateSourceFx, normalizeLayerFx } from "./videoFx";
 
 export const SCENES_KEY = "studio.v3";
 export const SCENES_VERSION = 3;
@@ -78,7 +79,7 @@ export const defaultFit = (kind) => (kind === "image" || kind === "slideshow" ? 
 export function sourceDefaults(kind, { cameraCount = 0 } = {}) {
   const base = { kind, name: kind === "camera" ? `Kamera ${cameraCount + 1}` : sourceKindLabel(kind) };
   switch (kind) {
-    case "camera": return { ...base, deviceId: null, deviceIndex: cameraCount, resolution: "1080p", fps: 30, mirror: false };
+    case "camera": return { ...base, deviceId: null, deviceIndex: cameraCount, resolution: "1080p", fps: 30 };
     case "video": return { ...base, url: null, loop: true, restartOnShow: true };
     case "slideshow": return { ...base, images: [], intervalMs: 5000 };
     case "color": return { ...base, name: "Renk plakası", color: "#54009c", color2: "#c026d3", gradient: false, gradientAngle: 135, text: "", textColor: "#ffffff" };
@@ -157,6 +158,7 @@ export function normalizeLayer(l, sourceKind) {
 //   border   { width (çıkış px, 0…40), color }
 //   shadow   { blur (çıkış px, 0…80), color }
 //   muted    true: katmanın sesi (video) yayına gitmez
+//   fx       görüntü ayarı: kaynağın ayarı yerine BU katmana özel (videoFx.js); yoksa kaynağınki
 const HEX = /^#[0-9a-f]{3,8}$/i;
 const color = (v, d) => (typeof v === "string" && HEX.test(v) ? v : d);
 export const LAYER_STYLE_DEFAULTS = Object.freeze({ opacity: 1, radius: 0, border: { width: 0, color: "#ffffff" }, shadow: { blur: 0, color: "#000000" }, muted: false, name: "" });
@@ -173,6 +175,8 @@ export function layerStyle(l) {
   const sb = clamp(num(l?.shadow?.blur, 0), 0, 80);
   if (sb > 0) out.shadow = { blur: sb, color: color(l.shadow.color, "#000000") };
   if (l?.muted === true) out.muted = true;
+  const fx = normalizeLayerFx(l?.fx);
+  if (fx) out.fx = fx;
   return out;
 }
 
@@ -197,7 +201,8 @@ export const persistentUrl = (url) => typeof url === "string" && /^(https?|data|
 export const sourceNeedsFile = (s) => Boolean(s && (s.kind === "image" || s.kind === "video") && (!s.url || s.fileMissing));
 
 function normalizeSource(s) {
-  const out = { ...s, name: str(s.name || sourceKindLabel(s.kind)) };
+  // Görüntü ayarı: eski "mirror" (ayna) → fx.flipH; fx yalnız varsayılandan farklı alanlar.
+  const out = { ...migrateSourceFx(s), name: str(s.name || sourceKindLabel(s.kind)) };
   // Eski kayıtlar: nesne adresleri (blob:) oturum sonunda geçersizleşir → "dosya bulunamadı, yeniden seç".
   // Yeni kayıtlar dosyanın tam yolunu (filePath) ve kalıcı elitlig-studio://media adresini tutar.
   if (typeof out.url === "string" && out.url && !persistentUrl(out.url)) {
@@ -387,7 +392,7 @@ export function addLayer(config, sceneId, sourceId, patch = {}) {
   return { config: mapScene(config, sceneId, (s) => ({ ...s, layers: [...s.layers, layer] })), layer };
 }
 
-const STYLE_KEYS = ["name", "opacity", "radius", "border", "shadow", "muted"];
+const STYLE_KEYS = ["name", "opacity", "radius", "border", "shadow", "muted", "fx"];
 export const updateLayer = (config, sceneId, layerId, patch) => {
   const next = mapScene(config, sceneId, (s) => ({ ...s, layers: s.layers.map((l) => (l.id === layerId ? { ...l, ...patch, ...(patch.crop ? { crop: normCrop({ ...l.crop, ...patch.crop }) } : {}) } : l)) }));
   return STYLE_KEYS.some((k) => k in (patch || {})) ? updateLayerStyle(next, sceneId, layerId, {}) : next;
@@ -400,7 +405,7 @@ export const updateLayerStyle = (config, sceneId, layerId, patch) =>
   mapScene(config, sceneId, (s) => ({ ...s, layers: s.layers.map((l) => {
     if (l.id !== layerId) return l;
     const merged = { ...l, ...patch };
-    const { name, opacity, radius, border, shadow, muted, ...rest } = merged; // eslint-disable-line no-unused-vars
+    const { name, opacity, radius, border, shadow, muted, fx, ...rest } = merged; // eslint-disable-line no-unused-vars
     return { ...rest, ...layerStyle(merged) };
   }) }));
 
@@ -450,6 +455,12 @@ export function addSource(config, source) {
 }
 
 export const updateSource = (config, sourceId, patch) => ({ ...config, sources: config.sources.map((s) => (s.id === sourceId ? { ...s, ...patch } : s)) });
+
+/** Kaynağın görüntü ayarını yazar (canlı panel): fx yalnız farklı alanlar, eski mirror kalkar. */
+export const updateSourceFx = (config, sourceId, fx) => ({
+  ...config,
+  sources: config.sources.map((s) => (s.id === sourceId ? migrateSourceFx({ ...s, mirror: undefined, fx }) : s)),
+});
 
 export function removeSource(config, sourceId) {
   const next = {

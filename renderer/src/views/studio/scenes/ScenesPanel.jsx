@@ -19,7 +19,7 @@ import { FITS, TEMPLATE_CATEGORIES, layersTopFirst, sourceKindIcon, sourceKindLa
 import { centerLayer, fitToScreen, fromPixels, normAspect, stretchToScreen, toPixels } from "../../../lib/studio/scenesTransform";
 import { drawScene, naturalSize } from "../draw";
 import { Tile, tileWarning } from "../Multiview";
-import { BAD, STATUS_TEXT, SourceThumb } from "../SourcesPanel";
+import { BAD, FX_KINDS, STATUS_TEXT, SourceThumb } from "../SourcesPanel";
 import SceneEditOverlay from "./SceneEditOverlay";
 import Monitor from "./Monitor";
 import "./scenes.css";
@@ -328,6 +328,7 @@ function SourceRowsInner({ config, runtimeRef, version, actions, sceneId = null,
                 {sceneId && !inScene && <button type="button" className="btn btn--xs btn--soft" onClick={() => onAddToScene(src, sceneId)} title="Bu sahneye katman olarak ekle"><Icon name="plus" size={11} /> Ekle</button>}
                 <MenuButton label="Kaynak" size={13} items={[
                   { label: "Ayarlar…", icon: "sliders", onClick: () => onEditSource(src) },
+                  ...(FX_KINDS.has(src.kind) && actions.onFx ? [{ label: "Görüntü ayarları… (canlı)", icon: "palette", onClick: () => actions.onFx(src.id) }] : []),
                   ...config.scenes.map((sc) => ({ label: `“${sc.name}” sahnesine ekle`, icon: "layers", onClick: () => onAddToScene(src, sc.id) })),
                   { label: "Bu kaynaktan sahne oluştur", icon: "layers", onClick: () => actions.onSceneFromSource(src.id) },
                   { label: "Yeniden bağlan", icon: "refresh", onClick: () => onReacquire(src) },
