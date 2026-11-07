@@ -1023,3 +1023,10 @@ svg.st-wspic rect.is-pvw { fill: #4ade80; opacity: 1; }
 .st-fs__screen { flex: 1; outline: none !important; background: #000; }
 .st-fs.is-pgm .st-fs__screen .st-screen-box { box-shadow: 0 0 0 2px rgba(255, 45, 85, 0.6); }
 .st-rmenu.is-monitor { z-index: 70; }
+
+/* [gol-klip] tekrar listesi: butondan sonrası geri sayımı, planlanmış yükleme; özet kırpma */
+.st-rrow__wait { color: var(--amber, #f59e0b); font-variant-numeric: tabular-nums; }
+.st-rrow__upl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.st-hl__trim { gap: 4px; align-items: center; }
+.st-hl__trim .input-xs { width: 56px; font-size: 11px; padding: 2px 4px; height: 22px; border-radius: 6px; background: var(--surface-3); color: inherit; border: 1px solid var(--border-strong); }
+.st-hl__segs .st-chip { display: inline-flex; align-items: center; gap: 3px; }

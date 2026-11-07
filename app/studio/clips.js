@@ -336,22 +336,30 @@ async function uploadGoalClip(api, payload = {}, { replays, clips, putImpl, emit
     const legacy = () => replays.upload(api, { ...p, replayId });
     // Dosya / açı yoksa eski yol aynı Türkçe hatayı (NOT_FOUND / BAD_ANGLE) verir.
     if (!replay || !a?.path) return legacy();
+    // Operatörün seçtiği / yayına verdiği açı bölümleri (segments) varsa onların kurgusu
+    // (replays.composeSelection: sırayla birleştirilir, ses programın aynı anından);
+    // kurgu olmazsa program açısının web kopyasına düşülür.
+    const wanted = Array.isArray(p.segments) && p.segments.length && typeof replays.composeSelection === "function";
+    let composed = wanted ? await replays.composeSelection(replay.id, p.segments).catch(() => null) : null;
+    if (composed && !(composed.sizeBytes <= UPLOAD_LIMIT)) composed = null; // çok uzun kurgu: program açısı
     // Tarayıcı dostu kopya (H.264 yuv420p + AAC + faststart, ~1 sn kapağı); olmazsa özgün dosya.
-    const web = typeof replays.webCopy === "function" ? await replays.webCopy(replay.id, a.angle).catch(() => null) : null;
+    const web = composed || (typeof replays.webCopy === "function" ? await replays.webCopy(replay.id, a.angle).catch(() => null) : null);
     const res = await uploadClipPresigned(api, {
       matchId: mid, eventId: eid,
       file: web ? { path: web.path, sizeBytes: web.sizeBytes, posterPath: web.posterPath || a.posterPath || null } : { path: a.path, sizeBytes: a.sizeBytes, posterPath: a.posterPath || null },
-      durationMs: p.durationMs ?? web?.durationMs ?? a.durationMs, width: p.width ?? web?.width ?? a.width, height: p.height ?? web?.height ?? a.height,
+      durationMs: composed ? composed.durationMs : p.durationMs ?? web?.durationMs ?? a.durationMs,
+      width: composed ? composed.width : p.width ?? web?.width ?? a.width,
+      height: composed ? composed.height : p.height ?? web?.height ?? a.height,
     }, { putImpl, emitProgress, sleep, legacy });
     if (res.ok && res.via === "presigned") {
       try {
         replays.update(replay.id, {
           ...(replay.eventId ? {} : { eventId: eid }),
-          uploaded: { matchId: mid, eventId: eid, angle: a.angle, clipId: res.data?.id ?? null, url: res.data?.url ?? null, at: new Date(now()).toISOString(), via: "presigned" },
+          uploaded: { matchId: mid, eventId: eid, angle: a.angle, clipId: res.data?.id ?? null, url: res.data?.url ?? null, at: new Date(now()).toISOString(), via: "presigned", ...(composed ? { segments: composed.segments } : {}) },
         });
       } catch { /* bilgi dosyası isteğe bağlı */ }
     }
-    return res;
+    return composed ? { ...res, composed: composed.segments } : res;
   }
   const clip = clips?.describe?.(p.name);
   const legacy = () => clips.upload(api, p);

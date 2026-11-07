@@ -38,6 +38,8 @@ export function normalizeReplay(r) {
     minute: r.minute != null && Number.isFinite(Number(r.minute)) ? Number(r.minute) : null,
     uploaded: Boolean(r.uploaded),
     matchId: r.matchId != null && Number(r.matchId) > 0 ? Number(r.matchId) : null,
+    // [gol-klip] operatörün seçtiği / yayına verdiği açılar ve bölümler (replay.json)
+    selection: r.selection && typeof r.selection === "object" ? r.selection : null,
     angles,
   };
 }

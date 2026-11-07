@@ -71,7 +71,7 @@ const isContainerHeader = (buf) => Boolean(buf) && buf.length >= 4 && EBML_MAGIC
 const SLOW_BYTES = 8 * 1024 * 1024;
 const MAX_BYTES = 32 * 1024 * 1024;
 const BACKOFF_MS = [2000, 4000, 8000, 16000, 16000];
-const KEEP_SEGMENTS = 20; // ≈ 40 sn
+const KEEP_SEGMENTS = 32; // ≈ 64 sn (gol tekrarı: 30 sn öncesi + 15 sn sonrası + kayıt payı)
 const SLOW_SPEED = 0.95;
 const SLOW_SPEED_MS = 10000;
 const SPEED_GRACE_MS = 5000; // sürecin ilk saniyeleri (yoklama / tampon) sayılmaz

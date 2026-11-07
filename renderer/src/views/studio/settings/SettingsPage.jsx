@@ -244,6 +244,13 @@ function SettingsPage({
           <Field label={`Golden önce kaydedilen süre · ${settings.replay.seconds} sn`} hint="Gol / önemli ana basıldığı andan geriye doğru yazılan süre.">
             <input type="range" min={5} max={30} step={1} value={settings.replay.seconds} onChange={(e) => set("replay", { seconds: Number(e.target.value) })} />
           </Field>
+          {/* [gol-klip] butondan sonrası + gecikmeli yükleme */}
+          <Field label={`Butondan sonra kaydedilecek süre · ${settings.replay.postSeconds ?? 4} sn`} hint="GOL / ÖNEMLİ AN'a basıldıktan sonra da bu kadar kaydedilir (kayıt süre dolunca yazılır; listede geri sayım). 0: yalnız öncesi.">
+            <input type="range" min={0} max={15} step={1} value={settings.replay.postSeconds ?? 4} onChange={(e) => set("replay", { postSeconds: Number(e.target.value) })} />
+          </Field>
+          <Field label={`Yükleme gecikmesi · ${settings.replay.uploadDelaySec ?? 60} sn`} hint="Gol klibi olaya bağlandıktan sonra bu kadar beklenir; bu sürede tekrar için seçtiğin / yayına verdiğin açılar (giriş–çıkış noktalarıyla) sırayla birleştirilip yüklenir. Seçim yoksa program açısı. 0: hemen yükle.">
+            <input type="range" min={0} max={300} step={10} value={settings.replay.uploadDelaySec ?? 60} onChange={(e) => set("replay", { uploadDelaySec: Number(e.target.value) })} />
+          </Field>
           <Field label={`Oynatma hızı · ${String(rate).replace(".", ",")}×`}>
             <div className="st-seg">{[0.25, 0.5, 0.75, 1].map((r) => <button key={r} type="button" className={Number(rate) === r ? "is-on" : ""} onClick={() => setRate(r)}>{String(r).replace(".", ",")}×</button>)}</div>
           </Field>

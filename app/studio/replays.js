@@ -27,7 +27,7 @@ const crypto = require("node:crypto");
 const ff = require("./ffmpeg");
 const ffargs = require("./ffargs");
 const { computeH264Level } = require("./h264level");
-const { buildClipMultipart, prepareWebClip } = require("./clips");
+const { buildClipMultipart, prepareWebClip, buildWebPosterArgs, webClipSize } = require("./clips");
 const { REPLAY_ID, safeJoin, safeReplayPath, replayUrl } = require("./scheme");
 
 const MAX_AGE_MS = 7 * 24 * 3600 * 1000;
@@ -37,6 +37,9 @@ const RETRY_STATUS = new Set([502, 503, 504]);
 const STALE_EDGE_MS = 3000; // canlı ucu bundan çok gerideki açı pencereyi geri çekmez
 const MIN_ANGLE_MS = 1000;
 const KINDS = new Set(["goal", "moment"]);
+const MAX_SECONDS = 60; // öncesi (≤ 30 sn) + butondan sonrası (≤ 15 sn) + pay; halka ≈ 64 sn
+const clampSeconds = (v) => Math.min(MAX_SECONDS, Math.max(1, Number(v) || 15));
+const BG_NICE = 10; // arka plan ffmpeg işleri canlı yayın kodlayıcısının önüne geçmesin
 
 const ERR = {
   NOT_STREAMING: "Tekrar için yayın, kayıt ya da açı kaydı sürüyor olmalı.",
@@ -77,7 +80,7 @@ const granularity = (items) => {
  * → { endWall, startWall, plans: [{ angle, name, items, startWall, endWall, durationMs }], skipped: [{ angle, reason }] }
  */
 function planReplay({ sources = [], seconds = 15, minAngleMs = MIN_ANGLE_MS, staleEdgeMs = STALE_EDGE_MS }) {
-  const want = Math.min(30, Math.max(1, Number(seconds) || 15)) * 1000;
+  const want = clampSeconds(seconds) * 1000;
   const prepared = sources.map((s) => ({ ...s, items: usableItems(s) }));
   const skipped = [];
   const withData = prepared.filter((s) => {
@@ -131,6 +134,85 @@ const isUnexpectedFieldError = (err) => {
   return /unexpected[\s_-]*field|LIMIT_UNEXPECTED_FILE/i.test(`${err.message || ""} ${err.code || ""}`);
 };
 
+/* ------------------------- seçilen açılar (kurgu) ------------------------- */
+
+const round3 = (v) => Math.round(Number(v) * 1000) / 1000;
+
+/**
+ * Bölüm listesini tekrarın açılarına göre doğrular: bilinmeyen açı atlanır, giriş / çıkış
+ * açının süresine sığdırılır, 0,3 sn'den kısa bölüm atlanır. En çok 12 bölüm.
+ */
+function normalizeSegments(segments, meta) {
+  const angles = new Map((meta?.angles || []).map((a) => [String(a.angle), a]));
+  const out = [];
+  for (const s of Array.isArray(segments) ? segments : []) {
+    const a = angles.get(String(s?.angle ?? ""));
+    if (!a) continue;
+    const dur = Math.max(0, Number(a.durationMs) || 0) / 1000;
+    if (!(dur > 0)) continue;
+    const inSec = Math.min(Math.max(0, Number(s.inSec) || 0), dur);
+    const rawOut = Number(s.outSec);
+    const outSec = Number.isFinite(rawOut) && rawOut > inSec + 0.2 ? Math.min(rawOut, dur) : dur;
+    if (outSec - inSec < 0.3) continue;
+    out.push({ angle: String(a.angle), inSec: round3(inSec), outSec: round3(outSec) });
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+/** replay.json "selection": { angles, segments, aired, at } | null. */
+function normalizeSelection(sel, meta) {
+  if (!sel || typeof sel !== "object") return null;
+  const have = new Set((meta?.angles || []).map((a) => String(a.angle)));
+  const angles = (Array.isArray(sel.angles) ? sel.angles : []).map(String).filter((a, i, l) => have.has(a) && l.indexOf(a) === i);
+  const segments = normalizeSegments(sel.segments, meta);
+  if (!angles.length && !segments.length) return null;
+  return { angles, segments, aired: Boolean(sel.aired), at: typeof sel.at === "string" ? sel.at : new Date().toISOString() };
+}
+
+/**
+ * Kurgu komutu: her bölüm ayrı giriş (-ss / -t), aynı boyuta ölçeklenip (siyah kenarla)
+ * sırayla birleştirilir; ses programın aynı anından (yoksa sessizlik). Web kopyasıyla
+ * aynı kodlama: libx264 High yuv420p, AAC 128k 48 kHz stereo, +faststart.
+ *   segments: [{ path, inSec, durationSec, audio: { path, startSec, leadSec } | null }]
+ */
+function buildSelectionArgs({ out, segments, size, fps = 30 }) {
+  const { width: W, height: H } = size;
+  const n = segments.length;
+  const inputs = [];
+  segments.forEach((s) => inputs.push("-ss", s.inSec.toFixed(3), "-t", s.durationSec.toFixed(3), "-i", s.path));
+  const audioIndex = new Map();
+  segments.forEach((s, i) => {
+    if (!s.audio) return;
+    audioIndex.set(i, n + audioIndex.size);
+    inputs.push("-ss", s.audio.startSec.toFixed(3), "-t", (s.durationSec + 1).toFixed(3), "-i", s.audio.path);
+  });
+  const parts = [];
+  segments.forEach((s, i) => {
+    const d = s.durationSec.toFixed(3);
+    parts.push(`[${i}:v:0]scale=${W}:${H}:force_original_aspect_ratio=decrease:flags=bicubic,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=yuv420p,trim=duration=${d},setpts=PTS-STARTPTS[v${i}]`);
+    if (audioIndex.has(i)) {
+      const lead = Math.round((s.audio.leadSec || 0) * 1000);
+      parts.push(`[${audioIndex.get(i)}:a:0]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asetpts=PTS-STARTPTS${lead > 0 ? `,adelay=${lead}|${lead}` : ""},apad,atrim=end=${d},asetpts=PTS-STARTPTS[a${i}]`);
+    } else {
+      parts.push(`anullsrc=r=48000:cl=stereo,atrim=end=${d},asetpts=PTS-STARTPTS[a${i}]`);
+    }
+  });
+  parts.push(`${segments.map((_, i) => `[v${i}][a${i}]`).join("")}concat=n=${n}:v=1:a=1[v][a]`);
+  return [
+    "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+    ...inputs,
+    "-filter_complex", parts.join(";"),
+    "-map", "[v]", "-map", "[a]",
+    "-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high", "-level", computeH264Level(W, H, fps),
+    "-pix_fmt", "yuv420p", "-crf", "21", "-maxrate", "8M", "-bufsize", "16M",
+    "-g", String(fps * 2), "-bf", "2", "-threads", "2",
+    "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+    "-movflags", "+faststart", "-f", "mp4",
+    out,
+  ];
+}
+
 /* --------------------------------- depo --------------------------------- */
 
 const newId = (t) => `r${new Date(t).toISOString().replace(/[-:T]/g, "").slice(0, 14)}-${crypto.randomBytes(3).toString("hex")}`;
@@ -148,6 +230,8 @@ function createReplayStore({
   replaysDir, getFfmpegPath, runImpl = ff.run, now = () => Date.now(), maxAgeMs = MAX_AGE_MS,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
 } = {}) {
+  // Yükleme kopyası / kurgu: düşük öncelik (canlı yayın kodlayıcısı işlemciyi önce alır).
+  const bgRun = (file, args, opts = {}) => runImpl(file, args, { ...opts, niceness: BG_NICE });
   const ensureDir = () => fs.mkdirSync(replaysDir, { recursive: true });
   const dirOf = (id) => (REPLAY_ID.test(String(id || "")) ? safeJoin(replaysDir, String(id)) : null);
   const metaFile = (id) => {
@@ -204,6 +288,7 @@ function createReplayStore({
       durationMs: meta.durationMs ?? null,
       sessionId: meta.sessionId ?? null,
       window: meta.window ?? null,
+      selection: meta.selection ?? null,
       angles,
     };
   }
@@ -222,14 +307,23 @@ function createReplayStore({
     return ffargs.parseVideoInfo(res.stderr);
   }
 
-  /** Bir açının planını MP4'e (ve kapağa) yazar. */
-  async function writeAngle(plan, dir, fileBase, work) {
-    const files = plan.items.map((item, i) => {
-      // Kopyala: parça halkası yazılırken silinebilir / büyümeye devam eder.
+  /**
+   * Bir açının parçalarını iş klasörüne kopyalar (parça halkası yazılırken silinebilir /
+   * büyümeye devam eder). EŞZAMANSIZ: ana süreç (yayın parçalarını ffmpeg'e yazan döngü)
+   * onlarca MB'lık kopya boyunca donmaz. Tüm açılar birleştirmeden ÖNCE kopyalanır
+   * (eskiden açılar sırayla, programın birleştirmesi bittikten sonra kopyalanıyordu).
+   */
+  async function copyItems(plan, fileBase, work) {
+    return Promise.all(plan.items.map(async (item, i) => {
       const copy = path.join(work, `${fileBase}-${String(i).padStart(3, "0")}.ts`);
-      fs.copyFileSync(item.path, copy);
+      await fs.promises.copyFile(item.path, copy);
       return copy;
-    });
+    }));
+  }
+
+  /** Bir açının planını MP4'e (ve kapağa) yazar. */
+  async function writeAngle(plan, dir, fileBase, work, copied = null) {
+    const files = copied || await copyItems(plan, fileBase, work);
     const listFile = path.join(work, `${fileBase}.txt`);
     fs.writeFileSync(listFile, `${files.map(ff.concatLine).join("\n")}\n`);
     const src = await probe(files[0]);
@@ -280,10 +374,14 @@ function createReplayStore({
       const angles = [];
       const failed = [];
       let n = 0;
-      for (const p of plan.plans) {
-        const base = p.angle === "program" ? "program" : `angle-${(n += 1)}`;
+      const jobs = plan.plans.map((p) => ({ p, base: p.angle === "program" ? "program" : `angle-${(n += 1)}` }));
+      // Önce hepsinin parçaları (halkadan düşmeden), sonra sırayla birleştirme.
+      const copies = await Promise.all(jobs.map(({ p, base }) => copyItems(p, base, work).catch((e) => e)));
+      for (let i = 0; i < jobs.length; i += 1) {
+        const { p, base } = jobs[i];
         try {
-          angles.push(await writeAngle(p, dir, base, work));
+          if (copies[i] instanceof Error) throw copies[i];
+          angles.push(await writeAngle(p, dir, base, work, copies[i]));
         } catch (e) {
           failed.push({ angle: p.angle, reason: "WRITE_FAILED", message: e.message });
         }
@@ -306,7 +404,7 @@ function createReplayStore({
         uploaded: null,
         durationMs: Math.max(...angles.map((a) => a.durationMs || 0)),
         sessionId,
-        window: { start: new Date(plan.startWall).toISOString(), end: new Date(plan.endWall).toISOString(), seconds: Math.min(30, Math.max(1, Number(seconds) || 15)) },
+        window: { start: new Date(plan.startWall).toISOString(), end: new Date(plan.endWall).toISOString(), seconds: clampSeconds(seconds) },
         angles,
       };
       writeMeta(meta);
@@ -330,6 +428,7 @@ function createReplayStore({
     if ("eventId" in p) meta.eventId = intOrNull(p.eventId);
     if ("playerName" in p) meta.playerName = strOrNull(p.playerName, 120);
     if ("minute" in p) meta.minute = intOrNull(p.minute);
+    if ("selection" in p) meta.selection = normalizeSelection(p.selection, meta);
     if ("uploaded" in p) meta.uploaded = p.uploaded && typeof p.uploaded === "object" ? JSON.parse(JSON.stringify(p.uploaded)) : p.uploaded ? true : null;
     writeMeta(meta);
     return { ok: true, replay: describe(meta) };
@@ -416,10 +515,73 @@ function createReplayStore({
   async function webCopy(id, angle = "program") {
     const a = get(id)?.angles?.find((x) => x.angle === String(angle));
     if (!a?.path || !fs.existsSync(a.path)) return null;
-    return prepareWebClip({ input: a.path, ffmpegPath: getFfmpegPath(), runImpl });
+    return prepareWebClip({ input: a.path, ffmpegPath: getFfmpegPath(), runImpl: bgRun });
   }
 
-  return { save, list, get, update, remove, prune, upload, webCopy, dir: replaysDir };
+  /**
+   * SEÇİLEN AÇILARIN KURGUSU: operatörün seçtiği / yayına verdiği açı bölümleri sırayla tek
+   * web klibine (H.264 High yuv420p + AAC 48 kHz stereo + faststart; web kopyasıyla aynı
+   * ayarlar) birleştirilir. Ses her bölümde PROGRAM açısının AYNI duvar saati aralığından
+   * alınır (açılar sessiz kaydedilir); program sesi yoksa sessizlik.
+   *   segments: [{ angle, inSec, outSec }] (outSec yok / ≤ inSec → açının sonuna kadar)
+   * → { path, sizeBytes, posterPath, durationMs, width, height, segments } | null
+   */
+  async function composeSelection(id, segments) {
+    const meta = readMeta(id);
+    const replay = describe(meta);
+    if (!replay) return null;
+    const segs = normalizeSegments(segments, meta);
+    if (!segs.length) return null;
+    const ffmpegPath = getFfmpegPath();
+    const dir = dirOf(id);
+    const out = path.join(dir, "selection.web.mp4");
+    const poster = path.join(dir, "selection.web.jpg");
+    const sigFile = path.join(dir, "selection.json");
+    const sig = JSON.stringify(segs);
+    try {
+      if (fs.existsSync(out) && fs.statSync(out).size > 0 && fs.readFileSync(sigFile, "utf8") === sig) {
+        const info = await probe(out);
+        return { path: out, sizeBytes: fs.statSync(out).size, posterPath: fs.existsSync(poster) ? poster : null, durationMs: info.durationMs ?? null, width: info.width ?? null, height: info.height ?? null, segments: segs };
+      }
+    } catch { /* yeniden üret */ }
+    const byAngle = new Map((meta.angles || []).map((a) => [a.angle, a]));
+    const pathOf = (a) => safeReplayPath(replaysDir, id, a.file);
+    const prog = byAngle.get("program") || null;
+    let progAudio = false;
+    if (prog && fs.existsSync(pathOf(prog))) {
+      try { progAudio = Boolean((await probe(pathOf(prog))).hasAudio); } catch { progAudio = false; }
+    }
+    const first = byAngle.get(segs[0].angle);
+    const size = webClipSize(prog?.width || first?.width, prog?.height || first?.height);
+    const fps = Math.min(60, Math.max(15, Math.round(Number(prog?.fps || first?.fps) || 30)));
+    const args = buildSelectionArgs({
+      out, size, fps,
+      segments: segs.map((s) => {
+        const a = byAngle.get(s.angle);
+        const dur = s.outSec - s.inSec;
+        let audio = null;
+        if (progAudio) {
+          // Açının bölümü duvar saatinde nerede → program dosyasında aynı an.
+          const off = s.angle === "program" || !Number.isFinite(a.startWall) || !Number.isFinite(prog.startWall)
+            ? s.inSec : s.inSec + (a.startWall - prog.startWall) / 1000;
+          audio = { path: pathOf(prog), startSec: Math.max(0, off), leadSec: Math.max(0, -off) };
+        }
+        return { path: pathOf(a), inSec: s.inSec, durationSec: dur, audio };
+      }),
+    });
+    try { fs.unlinkSync(out); } catch { /* yok */ }
+    const res = await bgRun(ffmpegPath, args, { timeout: 180000 });
+    if (!res.ok || !fs.existsSync(out) || fs.statSync(out).size === 0) {
+      try { fs.unlinkSync(out); } catch { /* yok */ }
+      return null;
+    }
+    const info = await probe(out);
+    await bgRun(ffmpegPath, buildWebPosterArgs(out, poster, { durationMs: info.durationMs }), { timeout: 20000 });
+    try { fs.writeFileSync(sigFile, sig); } catch { /* önbellek isteğe bağlı */ }
+    return { path: out, sizeBytes: fs.statSync(out).size, posterPath: fs.existsSync(poster) && fs.statSync(poster).size > 0 ? poster : null, durationMs: info.durationMs ?? null, width: info.width ?? size.width, height: info.height ?? size.height, segments: segs };
+  }
+
+  return { save, list, get, update, remove, prune, upload, webCopy, composeSelection, dir: replaysDir };
 }
 
-module.exports = { createReplayStore, planReplay, usableItems, isUnexpectedFieldError, MAX_AGE_MS, ERR };
+module.exports = { createReplayStore, planReplay, usableItems, isUnexpectedFieldError, normalizeSegments, normalizeSelection, buildSelectionArgs, MAX_SECONDS, MAX_AGE_MS, ERR };
