@@ -8,12 +8,13 @@
 //          "Özeti sil" / "Yeniden oluştur" (onaylı — yanlışlık geri alınabilsin).
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, MenuButton } from "../../components/ui";
-import { buildHighlightPlan, defaultHighlightItems, eventsUntil, mmss, moveItem, scoreForReplay } from "../../lib/studio/highlights";
+import { buildHighlightPlan, defaultHighlightItems, eventsUntil, mmss, moveItem, normalizeHighlightMusic, scoreForReplay } from "../../lib/studio/highlights";
 import { PROGRAM_ANGLE, angleLabel, anglesOf, defaultAngles, metaFor, replayBanner, replayOfMatch, replayTitle } from "../../lib/studio/replays";
 import { scorerLines } from "../../lib/studio/scorebug";
 import { cardInfo } from "./modes/useHighlightMode";
 import UploadLog from "./modes/UploadLog";
 
+const MUSIC_KEY = "elitlig.studio.highlightMusic";
 const PHASE = { preparing: "Klipler hazırlanıyor…", rendering: "Özet oluşturuluyor (gerçek zamanlı)…", finishing: "Dosya yazılıyor…", uploading: "Maç sayfasına yükleniyor…" };
 
 function HighlightsPanel(props) {
@@ -42,6 +43,17 @@ function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, 
   const plan = useMemo(() => buildHighlightPlan({ items, replays: mine, scoreOf }), [items, mine, live.events]); // eslint-disable-line react-hooks/exhaustive-deps
   const notIn = mine.filter((r) => !items.some((i) => i.replayId === r.id));
 
+  // Arka plan müziği (isteğe bağlı): kliplerde orijinal sesin altında kısılır.
+  const [music, setMusicState] = useState(() => { try { return normalizeHighlightMusic(JSON.parse(localStorage.getItem(MUSIC_KEY) || "null")); } catch { return normalizeHighlightMusic(null); } });
+  const setMusic = (patch) => setMusicState((m) => { const n = normalizeHighlightMusic({ ...m, ...patch }); try { localStorage.setItem(MUSIC_KEY, JSON.stringify(n)); } catch { /* yoksay */ } return n; });
+  const pickMusic = async () => {
+    const r = await window.elitlig?.studio?.media?.pick?.({ kind: "audio" });
+    const f = r?.files?.[0];
+    if (f?.url) setMusic({ url: f.url, name: f.name || "Müzik" });
+    else if (!window.elitlig?.studio?.media?.pick) toast("Müzik seçimi bu uygulama sürümünde yok.", { tone: "warn" });
+  };
+  const sameAudio = plan.segments.filter((x) => x.type === "clip" && x.audioUrl).length;
+
   const job = hl.job;
   const busy = ["preparing", "rendering", "finishing", "uploading"].includes(job.phase);
   const existing = hl.server.item;
@@ -66,7 +78,7 @@ function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, 
         event: replayBanner(r, mm),
       };
     };
-    await hl.build({ plan, info, images: imagesRef?.current || {}, boardOf, stingerKind });
+    await hl.build({ plan, info, images: imagesRef?.current || {}, boardOf, stingerKind, music: music.url ? music : null });
   };
 
   const upload = async () => {
@@ -125,6 +137,23 @@ function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, 
       <section className="st-hl__build">
         <h5 className="st-group">Plan</h5>
         <p className="st-hint">Sinematik giriş kartı (logo, armalar, son skor {finalScore.home}–{finalScore.away}, lig · saha · tarih) · {plan.clipCount} klip (kendi sesiyle) · kapanış kartı · aralarda logo geçişi. Klipte orta-alt büyük skorbord o anın skorunu gösterir.{inModes ? " Giriş kartı şu an önizlemede." : ""}</p>
+        {sameAudio > 0 && <p className="st-hint">{sameAudio} kamera açısında ses, o anın program sesinden (yorum mikrofonu dahil) alınır.</p>}
+        <div className="st-hl__music">
+          <div className="st-row">
+            <Icon name="music" size={13} /><strong>Arka plan müziği</strong>
+            <span className="st-top__spacer" />
+            {music.url
+              ? <><small className="muted" title={music.name}>{music.name || "Müzik"}</small><button type="button" className="icon-btn icon-btn--xs" title="Müziği kaldır" disabled={busy} onClick={() => setMusic({ url: null, name: "" })}><Icon name="x" size={12} /></button></>
+              : <button type="button" className="btn btn--xs" disabled={busy} onClick={pickMusic}><Icon name="folder" size={11} /> Müzik seç</button>}
+          </div>
+          {music.url && (
+            <>
+              <label className="st-row" title="Giriş / kapanış kartlarındaki müzik seviyesi"><small>Seviye</small><input type="range" min={-40} max={0} step={1} value={music.volumeDb} onChange={(e) => setMusic({ volumeDb: Number(e.target.value) })} /><small>{music.volumeDb} dB</small></label>
+              <label className="st-row" title="Klip oynarken müzik bu kadar kısılır (orijinal ses öne çıkar)"><small>Kliplerde kıs</small><input type="range" min={-40} max={0} step={1} value={music.duckDb} onChange={(e) => setMusic({ duckDb: Number(e.target.value) })} /><small>{music.duckDb} dB</small></label>
+            </>
+          )}
+          {!music.url && <small className="muted">İsteğe bağlı: kartlarda tam, kliplerde orijinal sesin altında kısık çalar.</small>}
+        </div>
         <p className="st-hl__total">Toplam ≈ <strong>{mmss(plan.durationMs)}</strong> · 1920×1080 · 30 fps</p>
         {busy ? (
           <>

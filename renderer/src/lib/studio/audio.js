@@ -15,7 +15,8 @@
 //   video      programda video kaynağı   → yalnız video sesi
 //   highlight  özet yayında              → yalnız özetin kendi sesi
 // Operatör her bağlamı istediği an değiştirebilir (birden çok ya da hiç).
-// Program: baralar → master fader → sınırlayıcı (isteğe bağlı) → TÜMÜNÜ KAPAT → yayın.
+// Program: baralar → master fader → pay (−3 dB) → sınırlayıcı (isteğe bağlı) → güvenlik
+// kırpıcısı (−1 dBFS, her zaman) → TÜMÜNÜ KAPAT → yayın.
 //
 // Ek ses kaynakları (inputs): kind "device" (ikinci mikrofon, yakalama kartı, kamera
 // sesi; Canlı mikrofon barası) ya da kind "file" (ses / video dosyasının sesi; kalıcı
@@ -297,8 +298,165 @@ export const monitorSet = (audio) => {
   return { program: solos.length === 0, strips: solos };
 };
 
-/** Sınırlayıcı ayarları (DynamicsCompressor). */
-export const LIMITER = Object.freeze({ threshold: -1.5, knee: 0, ratio: 20, attack: 0.002, release: 0.08 });
+/* ───────────── program çıkışı: pay, sınırlayıcı, güvenlik kırpıcısı ───────────── */
+//
+//   master fader ─▶ PAY (−3 dB, her zaman) ─┬─▶ sınırlayıcı (−6 dB, 20:1) ─▶ makyaj telafisi ─▶ ıslak ─┐
+//                                           └────────────────────────────────────────────────▶ kuru ──┴─▶ GÜVENLİK (−1 dBFS yumuşak kırpıcı, HER ZAMAN) ─▶ yayın
+// Neden: WebAudio kayan noktalıdır, toplam 1,0'ı (0 dBFS) rahatça aşar (kazanç +18, fader +10,
+// master +10, aynı aygıt iki şeritte …). 0 dBFS üstü örnekler Opus → AAC zincirinden olduğu
+// gibi geçer (ffmpeg ile ölçüldü: +3 dB'lik sinüs 10 sn'de 5583 örnek 0 dBFS üstü) ve
+// izleyicide sert kırpılır → "patlama". Sınırlayıcı düğmesi kapalı olsa bile güvenlik
+// kırpıcısı çıkışı −1 dBFS altında tutar.
+
+/** Sınırlayıcı ayarları (DynamicsCompressor): gerçek tavan, makyaj kazancı telafi edilir. */
+export const LIMITER = Object.freeze({ threshold: -6, knee: 0, ratio: 20, attack: 0.002, release: 0.15 });
+/** Toplama payı (dB): master'dan sonra her zaman. */
+export const HEADROOM_DB = -3;
+/** Güvenlik kırpıcısının tavanı (dBFS): sınırlayıcı açık / kapalı fark etmez. */
+export const SAFETY_CEILING_DB = -1;
+/** Şerit CLIP eşiği (dBFS, fader sonrası): tek başına 0 dBFS'e dayanıyor. */
+export const STRIP_CLIP_DB = -0.1;
+/** Program CLIP eşiği (dBFS, güvenlik kırpıcısından ÖNCE): kırpıcı devreye girdi. */
+export const MASTER_CLIP_DB = SAFETY_CEILING_DB;
+
+/**
+ * DynamicsCompressor'ın kendiliğinden eklediği makyaj kazancı (Web Audio şartnamesi /
+ * Chromium DynamicsCompressorKernel): (1 / eğri(1,0)) ^ 0,6. Diz 0 iken eğri(1,0) =
+ * eşik + (0 − eşik) / oran (dB). Sınırlayıcıdan sonra 1 / makyaj ile çarpılır ("makyaj yok").
+ */
+export function compressorMakeupGain({ threshold = LIMITER.threshold, ratio = LIMITER.ratio } = {}) {
+  const t = Math.min(0, Number(threshold) || 0);
+  const r = Math.max(1, Number(ratio) || 1);
+  const yDb = t - t / r; // 0 dBFS girişin çıkışı
+  return (1 / dbToGain(yDb)) ** 0.6;
+}
+
+/**
+ * Yumuşak kırpıcı eğrisi (WaveShaperNode.curve): |x| ≤ diz doğrusal (1:1, şeffaf), üstü
+ * tanh ile tavana yaklaşır (asla aşmaz); eğri dışı girişler (|x| > 1) uç değere (tavan
+ * altında) sabitlenir. Tek sayıda nokta: 0 → tam 0.
+ */
+export function softClipCurve({ ceilingDb = SAFETY_CEILING_DB, kneeRatio = 0.6, points = 4097 } = {}) {
+  const c = dbToGain(ceilingDb);
+  const k = c * kneeRatio;
+  const n = Math.max(3, points | 1);
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i += 1) {
+    const x = (i * 2) / (n - 1) - 1;
+    const a = Math.abs(x);
+    const y = a <= k ? a : k + (c - k) * Math.tanh((a - k) / (c - k));
+    curve[i] = x < 0 ? -y : y;
+  }
+  return curve;
+}
+
+/** Eğriyi bir örneğe uygular (WaveShaper'ın doğrusal aradeğerlemesi; testler / ölçüm için). */
+export function applyCurve(curve, x) {
+  const n = curve.length;
+  const v = Math.max(-1, Math.min(1, x));
+  const f = ((v + 1) / 2) * (n - 1);
+  const i = Math.floor(f);
+  if (i >= n - 1) return curve[n - 1];
+  return curve[i] + (curve[i + 1] - curve[i]) * (f - i);
+}
+
+/**
+ * Program çıkış zinciri (WebAudio). ctx: AudioContext (testlerde sahte). → { input, output,
+ * headroom, limiter, makeup, wet, dry, post, safety, setLimiter(on) }. input'a baralar
+ * (master fader) bağlanır; output güvenlik kırpıcısıdır (her zaman yolda).
+ */
+export function createProgramChain(ctx, { limiter: on = true } = {}) {
+  const input = ctx.createGain();
+  const headroom = ctx.createGain();
+  headroom.gain.value = dbToGain(HEADROOM_DB);
+  const limiter = ctx.createDynamicsCompressor();
+  for (const [k, v] of Object.entries(LIMITER)) { try { limiter[k].value = v; } catch { /* yoksay */ } }
+  const makeup = ctx.createGain();
+  makeup.gain.value = 1 / compressorMakeupGain(LIMITER);
+  const wet = ctx.createGain();
+  const dry = ctx.createGain();
+  wet.gain.value = on ? 1 : 0;
+  dry.gain.value = on ? 0 : 1;
+  const post = ctx.createGain();
+  const safety = ctx.createWaveShaper();
+  safety.curve = softClipCurve();
+  try { safety.oversample = "4x"; } catch { /* yoksay */ }
+  input.connect(headroom);
+  headroom.connect(limiter); limiter.connect(makeup); makeup.connect(wet); wet.connect(post);
+  headroom.connect(dry); dry.connect(post);
+  post.connect(safety);
+  return { input, output: safety, headroom, limiter, makeup, wet, dry, post, safety };
+}
+
+/* ───────────── "Sesi düzelt" ve çift aygıt ───────────── */
+
+/** Mikrofonun gerçek aygıtı: deviceId yoksa / "default" ise sistem varsayılanı (listede "default"). */
+function resolveDevice(deviceId, devices) {
+  const list = devices || [];
+  if (!deviceId || deviceId === "default") return list.find((d) => d.deviceId === "default") || list[0] || null;
+  return list.find((d) => d.deviceId === deviceId) || null;
+}
+
+/** İki aygıt aynı fiziksel giriş mi (aynı deviceId ya da aynı groupId). */
+function sameDevice(a, b) {
+  if (!a || !b) return false;
+  if (a.deviceId && a.deviceId === b.deviceId) return true;
+  return Boolean(a.groupId) && a.groupId === b.groupId;
+}
+
+/**
+ * Aynı aygıtı İKİNCİ kez açan ek girişler (mikrofonla ya da birbirleriyle). Aynı ses iki
+ * şeritten toplanınca +6 dB yükselir (kırpılma) ve faz farkıyla "tüneldeymiş" gibi bozulur.
+ * devices: enumerateDevices audioinput listesi ({ deviceId, groupId, label }).
+ * → [{ id, name, reason }]
+ */
+export function duplicateAudioInputs(audio, devices = []) {
+  const a = normalizeAudio(audio);
+  const out = [];
+  const seen = [];
+  if (a.mic.enabled !== false) {
+    const m = resolveDevice(a.mic.deviceId, devices) || (a.mic.deviceId ? { deviceId: a.mic.deviceId } : null);
+    if (m) seen.push({ dev: m, label: "Mikrofon" });
+  }
+  for (const i of a.inputs) {
+    if (i.kind === "file") continue;
+    const dev = resolveDevice(i.deviceId, devices) || (i.deviceId ? { deviceId: i.deviceId } : null);
+    if (!dev) continue;
+    const hit = seen.find((x) => sameDevice(x.dev, dev));
+    if (hit) out.push({ id: i.id, name: i.name, reason: `${hit.label} ile aynı aygıt` });
+    else seen.push({ dev, label: i.name });
+  }
+  return out;
+}
+
+/**
+ * "SESİ DÜZELT" (tek tık, saf): tüm kazanç / fader 0 dB, solo kapalı, master −3 dB,
+ * sınırlayıcı açık, program dinleme kapalı (hoparlörden mikrofona geri besleme olmasın),
+ * aynı aygıtı ikinci kez açan girişler kaldırılır. Sessiz (M) ve "tüm sesleri kapat"
+ * operatörün kararıdır: dokunulmaz.
+ * → { audio, removed: [{ id, name, reason }], changed: bool }
+ */
+export function safeAudioLevels(audio, devices = []) {
+  const a = normalizeAudio(audio);
+  const removed = duplicateAudioInputs(a, devices);
+  const drop = new Set(removed.map((r) => r.id));
+  const inputs = a.inputs.filter((i) => !drop.has(i.id)).map((i) => ({ ...i, volume: 100 }));
+  const strips = {};
+  for (const [id, st] of Object.entries(a.strips)) {
+    if (drop.has(id)) continue;
+    strips[id] = { ...st, trim: 0, fader: 0, solo: false };
+  }
+  const next = {
+    ...a,
+    mic: { ...a.mic, volume: 100 },
+    inputs,
+    strips,
+    master: { ...a.master, fader: -3, limiter: true },
+    monitor: { ...a.monitor, program: false },
+  };
+  const changed = JSON.stringify(normalizeAudio(next)) !== JSON.stringify(a);
+  return { audio: next, removed, changed };
+}
 
 /* ───────────── ek ses kaynakları ───────────── */
 

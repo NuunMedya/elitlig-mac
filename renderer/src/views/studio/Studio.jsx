@@ -405,18 +405,31 @@ export default function Studio({ auth, go }) {
     setBusy(true);
     try { await chapters.sync.flush?.(); /* [bölüm] son durum YouTube'a */ await engine.stop(); } finally { setBusy(false); }
   };
-  const endYoutube = async () => {
-    if (!(await ask({ title: "Yayını bitir", message: "Görüntü kesilir ve YouTube yayını kapatılır. Kayıt kanalda kalır.", confirmLabel: "Bitir", danger: true }))) return;
+  // YouTube'a (OAuth ile açılan yayın) mı gidiyor: elle RTMP / prova değil ve açık yayın var.
+  const youtubeOpen = startedVia !== "manual" && startedVia !== "rehearsal" && engine.mode !== "rehearsal" && Boolean(yt.stream?.broadcast_id);
+  /**
+   * "YAYINI KAPAT" (üst çubuk, kısayol şeridi parçacıkları, kısayol tuşu): yayını TAMAMEN
+   * kapatır — bölümler gönderilir, kodlayıcı durur, YouTube yayını bitirilir (tek onay).
+   * Elle RTMP'de yalnız görüntü kesilir (onaylı), provada doğrudan biter. "Görüntüyü
+   * durdur (YouTube açık kalır)" yalnız Yayın panelinde (stopEncoder).
+   */
+  const closeBroadcast = async ({ askFirst = true } = {}) => {
+    const yt0 = youtubeOpen;
+    if (!engine.active && !yt0) return;
+    if (askFirst) {
+      if (yt0 && !(await ask({ title: "Yayını kapat", message: "Yayın tamamen kapatılsın mı? YouTube yayını bitirilir.", confirmLabel: "Yayını kapat", danger: true }))) return;
+      if (!yt0 && engine.mode === "live" && !(await ask({ title: "Yayını kapat", message: "Yayın kapatılsın mı? Sunucuya görüntü gitmesi kesilir.", confirmLabel: "Yayını kapat", danger: true }))) return;
+    }
     setBusy(true);
     try {
       await chapters.sync.flush?.(); // [bölüm] son bölümler YouTube yayını kapanmadan gider
-      await engine.stop();
-      if (yt.stream?.broadcast_id) await yt.end();
-      toast("Yayın bitti.", { tone: "success" });
+      if (engine.active) await engine.stop();
+      if (yt0) { await yt.end(); toast("Yayın bitti: YouTube yayını kapatıldı.", { tone: "success" }); }
     } catch (e) { toast(errorText(e, "Yayın kapatılamadı."), { tone: "error" }); } finally { setBusy(false); }
   };
+  const endYoutube = () => closeBroadcast();
   const topStart = () => {
-    if (engine.active) { stopEncoder(); return; }
+    if (engine.active) { closeBroadcast(); return; }
     if (yt.config.configured && matchId) { startYoutube(); return; }
     openPanel("yayin");
     toast(yt.config.configured ? "Önce Maç yönetimi sekmesinden maç aç." : "YouTube kanalı bağlı değil: Yayın sekmesinden kanalı bağla, RTMP anahtarı gir ya da prova başlat.", { tone: "warn", timeout: 5000 });
@@ -951,6 +964,7 @@ export default function Studio({ auth, go }) {
     else if (act.type === "interviewBand") { if (g?.matchId) g.setInterviewOnAir?.(!g.interview?.onAir); }
     else if (act.type === "interview") { if (interview?.recording) interview.stop(); else if (interview?.available && engine.active) interview.start(); }
     else if (act.type === "fullscreen") setFullscreen((f) => (f ? null : "program"));
+    else if (act.type === "closeBroadcast") { if (engine.active || youtubeOpen) closeBroadcast(); }
   };
   useEffect(() => {
     const onKey = (e) => keyRef.current?.(e);
@@ -1230,7 +1244,7 @@ export default function Studio({ auth, go }) {
   const railCtx = {
     hints, hotkeys: settings.hotkeys, railPopRef, scenes: sceneList, score: live.match ? live.score : null, momentSeconds: settings.replay.seconds,
     live: {
-      onAir, mode: engine.mode, since: engine.since, busy, start: topStart, stop: () => stopEncoder(), openTab: () => setTab("yayin"),
+      onAir, mode: engine.mode, since: engine.since, busy, start: topStart, stop: () => closeBroadcast(), youtube: youtubeOpen, openTab: () => setTab("yayin"),
       status: engine.status, rehearsal: startRehearsal, localRec: { enabled: Boolean(settings.record.enabled), set: (on) => setLocalRec({ ...localRec, enabled: Boolean(on) }) },
     },
     // [düğmeler] çok işlevli düğmeler: maç (olaylar, saat, kadro), akış kaydı, onay, öğe seçenekleri
@@ -1444,7 +1458,7 @@ export default function Studio({ auth, go }) {
         <LayoutToolbar edit={lay.edit} setEdit={lay.setEdit} ctrlRef={lay.ctrlRef} preset={lay.layout.preset} onSettings={() => openSettings("yerlesim")} />
         {!railHasGoLive && (
           <button type="button" className={`btn ${onAir ? "" : "btn--red"} st-golive`} disabled={busy} onClick={topStart}>
-            <Icon name={onAir ? "stop" : "broadcast"} size={14} /> {onAir ? (engine.mode === "rehearsal" ? "Provayı bitir" : "Yayını durdur") : "Yayını başlat"}
+            <Icon name={onAir ? "stop" : "broadcast"} size={14} /> {onAir ? (engine.mode === "rehearsal" ? "Provayı bitir" : "Yayını kapat") : "Yayını başlat"}
           </button>
         )}
         <span className="st-top__sep" />

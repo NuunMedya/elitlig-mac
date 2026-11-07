@@ -59,6 +59,8 @@ export function useReplayMode({ replays, rate, audio, between, onFinished, onErr
   rateRef.current = rate;
   const previewEl = useMemo(mkVideo, []);
   const els = useMemo(() => [mkVideo(), mkVideo()], []);
+  // Kamera açısının sesi: program açısının aynı anı (görünmez öğe, "media" şeridi).
+  const soundEl = useMemo(mkVideo, []);
   const replayRef = useRef({ active: false });
   const innerRef = useRef(null); // öğeler arası geçiş { startedAt, ms, kind, onMid, fired }
   const errRef = useRef(onError);
@@ -95,7 +97,7 @@ export function useReplayMode({ replays, rate, audio, between, onFinished, onErr
 
   // Ses: program öğeleri bir kez bağlanır, kapı açık (yalnız yayında oynarlar).
   const attach = audio?.attachMedia;
-  useEffect(() => { if (attach) els.forEach((el) => attach(el, { strip: "media", on: true })); }, [attach, els]);
+  useEffect(() => { if (attach) [...els, soundEl].forEach((el) => attach(el, { strip: "media", on: true })); }, [attach, els, soundEl]);
 
   const queue = useMemo(() => buildReplayQueue(list, selection, order ? { order: [...order, ...list.map((r) => r.id).filter((id) => !order.includes(id))] } : undefined), [list, selection, order]);
   const cursorItem = useMemo(() => {
@@ -160,7 +162,7 @@ export function useReplayMode({ replays, rate, audio, between, onFinished, onErr
     innerRef.current = sg;
     setTimeout(() => { if (!sg.fired) { sg.fired = true; try { sg.onMid(); } catch { /* yoksay */ } } }, sg.ms * 0.5 + 250);
   }, []);
-  const player = useReplayPlayer({ els, replayRef, switchVia, firstImmediate: true, onFinished, bannerOf, rate, onError });
+  const player = useReplayPlayer({ els, soundEl, replayRef, switchVia, firstImmediate: true, onFinished, bannerOf, rate, onError });
 
   /**
    * ÖNİZLEMENİN YÜKÜ (eşzamanlı, ref'lerden): yayına aynen giden içerik [önizleme-geçiş].

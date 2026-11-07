@@ -305,8 +305,9 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
               )}
               {!encodingNow
                 ? <button type="button" className="btn btn--red btn--block" disabled={busy || !matchId || !engine.available} onClick={onStartYoutube}><Icon name="play" size={13} /> {openStream ? "Yayına devam et" : "YouTube'da canlı yayını başlat"}</button>
-                : <button type="button" className="btn btn--block" disabled={busy} onClick={onStop}><Icon name="pause" size={13} /> Görüntüyü durdur</button>}
-              {openStream && <button type="button" className="btn btn--danger-ghost btn--block" disabled={busy} onClick={onEndYoutube}><Icon name="stop" size={13} /> YouTube yayınını bitir</button>}
+                : <button type="button" className="btn btn--red btn--block" disabled={busy} onClick={onEndYoutube} title="Kodlayıcı durur ve YouTube yayını bitirilir (onay sorulur)"><Icon name="stop" size={13} /> Yayını kapat</button>}
+              {encodingNow && <button type="button" className="btn btn--xs btn--block" disabled={busy} onClick={onStop} title="Yalnız görüntü kesilir; YouTube yayını açık kalır, “Yayına devam et” ile sürer"><Icon name="pause" size={11} /> Görüntüyü durdur (YouTube açık kalır)</button>}
+              {openStream && !encodingNow && <button type="button" className="btn btn--danger-ghost btn--block" disabled={busy} onClick={onEndYoutube}><Icon name="stop" size={13} /> YouTube yayınını bitir</button>}
               {watch && (
                 <div className="st-row">
                   <input readOnly value={watch} onFocus={(e) => e.target.select()} />

@@ -390,8 +390,8 @@ function GoLivePro({ ctx, w, h }) {
           {w >= 3 && <span><small>hız</small><b>{L.onAir && s.speed ? `${s.speed.toFixed(2)}×` : "–"}</b></span>}
         </div>
       )}
-      <button type="button" className={`wx-primary ${L.onAir ? "is-stop" : "is-live"}`} disabled={L.busy} onClick={L.onAir ? L.stop : L.start}>
-        <Icon name={L.onAir ? "stop" : "broadcast"} size={13} /> {L.onAir ? "Durdur" : "Yayını başlat"}
+      <button type="button" className={`wx-primary ${L.onAir ? "is-stop" : "is-live"}`} disabled={L.busy} onClick={L.onAir ? L.stop : L.start} title={L.onAir && L.mode !== "rehearsal" ? "Yayını kapat: kodlayıcı durur, YouTube yayını bitirilir (onay sorulur)" : undefined}>
+        <Icon name={L.onAir ? "stop" : "broadcast"} size={13} /> {L.onAir ? (L.mode === "rehearsal" ? "Provayı bitir" : "Yayını kapat") : "Yayını başlat"}
       </button>
     </Shell>
   );
