@@ -142,7 +142,7 @@ export const LAYOUT_COMPONENTS = [
   // ── tekrar ──
   { ...P("tekrar", "list", "Tekrar · olay listesi", [6, 9], [3, 3]), group: "tekrar", icon: "list", hint: "Goller / anlar: küçük resim, dakika, golcü, ★; tık: önizle" },
   { ...P("tekrar", "grid", "Tekrar · açı ızgarası", [7, 7], [3, 3]), group: "tekrar", icon: "video", hint: "Seçili tekrarın tüm açıları canlı; tık: önizle · ⌘ tık: listeye" },
-  { ...P("tekrar", "queue", "Tekrar · oynatma listesi + YAYINA AL", [5, 8], [3, 3]), group: "tekrar", icon: "play", hint: "Sürükle bırak sıra, öğe başına açı / giriş–çıkış / hız; YAYINA AL, CANLIYA DÖN" },
+  { ...P("tekrar", "queue", "Tekrar · seçili gol + YAYINA AL", [5, 8], [3, 3]), group: "tekrar", icon: "play", hint: "Önizlenen golün seçili açıları; YAYINA AL, CANLIYA DÖN" },
   { ...P("tekrar", "timeline", "Tekrar · süre çubuğu", [12, 3], [4, 2]), group: "tekrar", icon: "clock", hint: "Büyük süre çubuğu: tıkla / sürükle → sar; giriş / çıkış, işaretler (yayındaysa yayındaki tekrar)" },
   { ...P("tekrar", "transport", "Tekrar · taşıma (J K L)", [8, 2], [3, 2]), group: "tekrar", icon: "play", hint: "Oynat / duraklat, kare kare, ±1 sn, J K L, döngü" },
   { ...P("tekrar", "zoom", "Tekrar · yakınlaştırma", [6, 2], [3, 1]), group: "tekrar", icon: "search", hint: "1 / 1,5 / 2 / 3× ve kaydırıcı (yayındaysa yayına anında)" },
