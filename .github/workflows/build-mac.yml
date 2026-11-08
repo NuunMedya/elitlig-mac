@@ -48,7 +48,9 @@ jobs:
           key: ffmpeg-mac-${{ hashFiles('build/fetch-ffmpeg.js') }}
 
       - name: Derle (.dmg + .zip, universal)
-        run: npm run dist
+        # Electron / araç indirmeleri ara sıra 5xx veriyor: geçici ağ hatasında 3 kez dene.
+        shell: bash
+        run: for i in 1 2 3; do npm run dist && exit 0; echo "Derleme $i. denemede başarısız; 30 sn sonra yeniden"; sleep 30; done; exit 1
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
@@ -143,7 +145,9 @@ jobs:
           key: ffmpeg-win-${{ hashFiles('build/fetch-ffmpeg.js') }}
 
       - name: Derle (NSIS kurulum .exe + .zip, x64)
-        run: npm run dist:win
+        # Electron / araç indirmeleri ara sıra 5xx veriyor: geçici ağ hatasında 3 kez dene.
+        shell: bash
+        run: for i in 1 2 3; do npm run dist:win && exit 0; echo "Derleme $i. denemede başarısız; 30 sn sonra yeniden"; sleep 30; done; exit 1
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
