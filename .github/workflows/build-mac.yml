@@ -47,6 +47,15 @@ jobs:
             build/ffmpeg/x64
           key: ffmpeg-mac-${{ hashFiles('build/fetch-ffmpeg.js') }}
 
+      - name: Electron / electron-builder indirme önbelleği
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: eb-mac-${{ hashFiles('package-lock.json') }}
+          restore-keys: eb-mac-
+
       - name: Derle (.dmg + .zip, universal)
         # Electron / araç indirmeleri ara sıra 5xx veriyor: geçici ağ hatasında 3 kez dene.
         shell: bash
@@ -143,6 +152,15 @@ jobs:
         with:
           path: build/ffmpeg/win-x64
           key: ffmpeg-win-${{ hashFiles('build/fetch-ffmpeg.js') }}
+
+      - name: Electron / electron-builder indirme önbelleği
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: eb-win-${{ hashFiles('package-lock.json') }}
+          restore-keys: eb-win-
 
       - name: Derle (NSIS kurulum .exe + .zip, x64)
         # Electron / araç indirmeleri ara sıra 5xx veriyor: geçici ağ hatasında 3 kez dene.
