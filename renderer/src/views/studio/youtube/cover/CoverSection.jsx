@@ -1,4 +1,4 @@
-// Yayın Stüdyosu · Ayarlar › YouTube kapağı: altı şablon (canlı önizlemeler),
+// Yayın Stüdyosu · Ayarlar › YouTube kapağı: dokuz şablon (canlı önizlemeler),
 // renk / alan / zemin fotoğrafı seçenekleri ve "Yayın başlarken kapağı otomatik
 // ayarla". Önizlemeler son açılan maçın verisiyle (yoksa örnek maçla) çizilir.
 // Kendi içinde bağımsız: Ayarlar sayfasına yalnız bölüm anahtarı + bu bileşen eklenir.

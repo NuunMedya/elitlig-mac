@@ -326,7 +326,56 @@ export function setBoardCols(board, cols) {
 
 /* ───────────────────────── yerleşim durumu ───────────────────────── */
 
-export const EMPTY_LAYOUT = Object.freeze({ v: 1, rev: 2, dock: null, boards: {}, removed: [], mins: {}, preset: null, autoHide: true });
+/* ───────── sekme şeridi biçimi (grup başına; "Yan sekmeler") ─────────
+ * pos     "top" | "left" | "right" | "hidden"   sekme şeridinin yeri (gizli: düzenle kipinde görünür)
+ * size    "s" | "m" | "l"                        sekme boyu / yazı / yan şerit eni
+ * weight  500 | 650 | 750 | 850                  yazı kalınlığı
+ * accent  vurgu (etkin sekme çizgisi, simge) · bg  şerit zemini · active  etkin sekme zemini ("" = tema)
+ * icons   simgeler açık / kapalı
+ */
+export const TAB_POSITIONS = [["top", "Üstte"], ["left", "Solda"], ["right", "Sağda"], ["hidden", "Gizli"]];
+export const TAB_SIZES = [["s", "Küçük"], ["m", "Orta"], ["l", "Büyük"]];
+export const TAB_WEIGHTS = [[500, "İnce"], [650, "Normal"], [750, "Kalın"], [850, "Çok kalın"]];
+export const DEFAULT_TAB_STYLE = Object.freeze({ pos: "top", size: "m", weight: 750, accent: "", bg: "", active: "", icons: true });
+const COLOR_RE = /^#[0-9a-f]{6}$/i;
+/** Biçimi temizle; yalnız varsayılandan FARKLI alanları döndürür (partial) ya da tam (full). */
+export function normalizeTabStyle(raw, { full = false } = {}) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const d = DEFAULT_TAB_STYLE;
+  const v = {
+    pos: TAB_POSITIONS.some(([k]) => k === r.pos) ? r.pos : d.pos,
+    size: TAB_SIZES.some(([k]) => k === r.size) ? r.size : d.size,
+    weight: TAB_WEIGHTS.some(([k]) => k === Number(r.weight)) ? Number(r.weight) : d.weight,
+    accent: COLOR_RE.test(r.accent || "") ? r.accent.toLowerCase() : "",
+    bg: COLOR_RE.test(r.bg || "") ? r.bg.toLowerCase() : "",
+    active: COLOR_RE.test(r.active || "") ? r.active.toLowerCase() : "",
+    icons: r.icons !== false,
+  };
+  if (full) return v;
+  const out = {};
+  // verilmiş ve geçerli alanlar (renkte boş = tema)
+  for (const k of Object.keys(v)) if (k in r && (k === "icons" ? typeof r.icons === "boolean" : ["accent", "bg", "active"].includes(k) ? v[k] || r[k] === "" : String(v[k]) === String(r[k]))) out[k] = v[k];
+  return out;
+}
+/** Grubun etkin biçimi: genel varsayılan + grup ayarı. */
+export const tabStyleOf = (layout, gid) => normalizeTabStyle({ ...(layout?.tabDefault || {}), ...(layout?.tabs?.[gid] || {}) }, { full: true });
+/** Grup biçimini değiştir (patch); varsayılana dönen alanlar silinir. gid null → genel varsayılan. */
+export function setTabStyle(layout, gid, patch) {
+  if (!gid) return { ...layout, tabDefault: normalizeTabStyle({ ...(layout.tabDefault || {}), ...patch }) };
+  const base = layout.tabDefault || {};
+  const merged = { ...(layout.tabs?.[gid] || {}), ...patch };
+  for (const k of Object.keys(merged)) if (merged[k] == null) delete merged[k]; // null: alanı varsayılana bırak
+  // genel varsayılanla aynı olan alanlar grupta tutulmaz
+  const clean = {};
+  const full = normalizeTabStyle(merged, { full: true });
+  const def = normalizeTabStyle(base, { full: true });
+  for (const k of Object.keys(merged)) if (k in full && full[k] !== def[k]) clean[k] = full[k];
+  const tabs = { ...(layout.tabs || {}) };
+  if (Object.keys(clean).length) tabs[gid] = clean; else delete tabs[gid];
+  return { ...layout, tabs };
+}
+
+export const EMPTY_LAYOUT = Object.freeze({ v: 1, rev: 2, dock: null, boards: {}, removed: [], mins: {}, preset: null, autoHide: true, tabs: {}, tabDefault: {} });
 
 export function normalizeLayout(raw) {
   const r = raw && typeof raw === "object" ? raw : {};
@@ -339,7 +388,12 @@ export function normalizeLayout(raw) {
   const removed = (Array.isArray(r.removed) ? r.removed : []).filter((x) => x && (x.kind === "panel" || x.kind === "item") && typeof x.id === "string").slice(0, MAX_REMOVED);
   const mins = {};
   for (const [g, v] of Object.entries(r.mins && typeof r.mins === "object" ? r.mins : {})) if (v === "h" || v === "w") mins[g] = v;
-  return { v: 1, rev: Number(r.rev) || 0, dock, boards, removed, mins, preset: typeof r.preset === "string" ? r.preset : null, autoHide: r.autoHide !== false };
+  const tabs = {};
+  for (const [g, v] of Object.entries(r.tabs && typeof r.tabs === "object" ? r.tabs : {})) {
+    const s = normalizeTabStyle(v);
+    if (Object.keys(s).length && String(g).length <= 40) tabs[g] = s;
+  }
+  return { v: 1, rev: Number(r.rev) || 0, dock, boards, removed, mins, preset: typeof r.preset === "string" ? r.preset : null, autoHide: r.autoHide !== false, tabs, tabDefault: normalizeTabStyle(r.tabDefault) };
 }
 
 export function loadLayout(storage) {
@@ -479,6 +533,68 @@ export function dockTree(dock) {
   };
   const floating = (dock.floatingGroups || []).map((f) => ({ type: "group", id: f.data?.id, floating: true, views: (f.data?.views || []).map(view), active: f.data?.activeView || null }));
   return { root: walk(dock.grid.root, dock.grid.orientation), floating };
+}
+
+/**
+ * Panelin ızgaradaki komşusu (kaldırılınca "son yerine" geri koymak için):
+ *   { panel, direction } — panel: komşu bölmenin ilk paneli; direction: geri eklenecek panelin
+ *   o komşuya göre yönü ("right" | "left" | "below" | "above"). Aynı bölmede başka sekme varsa
+ *   { panel: o sekme, direction: "within" }. Bulunamazsa null.
+ */
+export function neighborOf(dock, id) {
+  const root = dock?.grid?.root;
+  if (!root) return null;
+  const first = (n) => (n.type === "leaf" ? n.data?.views?.[0] || null : (n.data || []).map(first).find(Boolean) || null);
+  const walk = (n, orientation) => {
+    if (n.type === "leaf") return null;
+    const kids = n.data || [];
+    const horiz = orientation === "HORIZONTAL";
+    for (let i = 0; i < kids.length; i += 1) {
+      const k = kids[i];
+      if (k.type === "leaf" && (k.data?.views || []).includes(id)) {
+        const mate = (k.data.views || []).find((v) => v !== id);
+        if (mate) return { panel: mate, direction: "within" };
+        const prev = kids.slice(0, i).reverse().map(first).find(Boolean);
+        if (prev) return { panel: prev, direction: horiz ? "right" : "below" };
+        const next = kids.slice(i + 1).map(first).find(Boolean);
+        if (next) return { panel: next, direction: horiz ? "left" : "above" };
+        return null;
+      }
+      if (k.type !== "leaf") {
+        const r = walk(k, horiz ? "VERTICAL" : "HORIZONTAL");
+        if (r) return r;
+      }
+    }
+    return null;
+  };
+  if (root.type === "leaf") {
+    const mate = (root.data?.views || []).find((v) => v !== id);
+    return mate ? { panel: mate, direction: "within" } : null;
+  }
+  return walk(root, dock.grid.orientation);
+}
+
+/**
+ * Panelin hazır düzendeki yeri (kaldırılmış / hiç eklenmemiş paneli "varsayılan yerine" koymak
+ * için): have(id) ekranda olan paneller için true. Dönüş { panel, direction } | null.
+ */
+export function presetTarget(presetKey, id, have) {
+  const spec = presetOf(presetKey || "klasik")?.spec || presetOf("klasik").spec;
+  const json = specToDock(spec);
+  if (!json || !dockPanelIds(json).includes(id)) return null;
+  // önce aynı sekme grubundaki ekrandaki paneller, sonra ızgara komşuları (yakından uzağa)
+  const leafOf = (n) => (n.type === "leaf" ? ((n.data?.views || []).includes(id) ? n : null) : (n.data || []).map(leafOf).find(Boolean) || null);
+  const leaf = leafOf(json.grid.root);
+  const mate = (leaf?.data?.views || []).find((v) => v !== id && have(v));
+  if (mate) return { panel: mate, direction: "within" };
+  // komşu: yalnız ekranda olan panellerle sadeleştirilmiş ağaçta ara
+  const prune = (n) => {
+    if (n.type === "leaf") { const views = (n.data?.views || []).filter((v) => v === id || have(v)); return views.length ? { ...n, data: { ...n.data, views } } : null; }
+    const data = (n.data || []).map(prune).filter(Boolean);
+    return data.length ? { ...n, data } : null;
+  };
+  const root = prune(json.grid.root);
+  return root ? neighborOf({ grid: { ...json.grid, root } }, id) : null;
 }
 
 /** Düzende olmayan paneller (katalogda "kaldırılanlar" / "eklenebilir"). */

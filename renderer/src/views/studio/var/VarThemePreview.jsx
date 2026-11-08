@@ -4,6 +4,7 @@
 import React, { useEffect, useRef } from "react";
 import logoInline from "../../../assets/elitlig-beyaz.png?inline";
 import { drawVarPreview } from "./drawVar";
+import { onStudioFontsReady } from "../../../lib/studio/fonts";
 
 let logoImg = null;
 const logo = () => {
@@ -42,7 +43,9 @@ export default function VarThemePreview({ theme, layout = "two", state = "review
       paint(STILL_NOW, true);
       const onLoad = () => paint(STILL_NOW, true);
       im?.addEventListener?.("load", onLoad);
-      return () => im?.removeEventListener?.("load", onLoad);
+      // Yazı tipleri yüklenince yeniden çiz (ilk kare yedek yazı tipiyle çizilmiş olabilir).
+      const offFonts = onStudioFontsReady(onLoad);
+      return () => { im?.removeEventListener?.("load", onLoad); offFonts(); };
     }
     let raf = 0;
     let last = 0;

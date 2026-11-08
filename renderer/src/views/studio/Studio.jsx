@@ -89,6 +89,7 @@ import BroadcastPanel from "./BroadcastPanel";
 import AudioPanel from "./AudioPanel";
 import PlayerPicker from "./PlayerPicker";
 import { ManageDock } from "./manage";
+import { setShared } from "./manage/manageStore";
 import Monitor from "./scenes/Monitor";
 import { ScenesTab, TemplateDialog, TemplateGallery } from "./scenes/ScenesPanel";
 import SceneEditorModal from "./scenes/SceneEditorModal";
@@ -114,9 +115,13 @@ import { InterviewReviewHost } from "./modes/InterviewPanel";
 import { useLed } from "./led/useLed";
 import LedPanel from "./led/LedPanel";
 import SettingsPage from "./settings/SettingsPage";
+import ControlCenter, { controlLastSection, controlPinned } from "./control/ControlCenter";
+import { SourceLibrary } from "./SourcesPanel";
+import { COVER_SECTION } from "./youtube/cover/CoverSection";
+import { VAR_THEME_SECTION } from "./settings/VarThemeSection";
 import { useStudioSettings } from "./settings/useStudioSettings";
 import { patchOps } from "./settings/opsDefaults";
-import { HOTKEY_ACTIONS, keyText, localRecordOptions, recordEstimate, recordQualityOf } from "./settings/settings";
+import { HOTKEY_ACTIONS, keyText, localRecordOptions, recordEstimate, recordQualityOf, stepScale } from "./settings/settings";
 // ── alt panel çalışma alanı (sütunlar, parçalar) + ayar şablonları ──
 import { useDock } from "./dock/useDock";
 import { panelOf } from "./dock/dockModel";
@@ -251,17 +256,24 @@ export default function Studio({ auth, go }) {
   /* ───────── ekran yerleşimi (./layout): bölmeler, sekme grupları, panolar ───────── */
   const lay = useLayout({ dockH: prefs.dockH });
   /** Panele git (üst çubuk, kısayollar, bağlantılar): ekrandaysa öne gelir, değilse eklenir. Yapılandırma sekmeleri Ayarlar'da açılır. */
-  const openPanel = useStable((t) => {
+  // where: "layout" (varsayılan: yerleşimde yerine koy / öne getir) · "kontrol" (Kontrol merkezinde aç)
+  const openPanel = useStable((t, { where = "layout" } = {}) => {
     const key = String(t || "").replace(/^mode:/, "");
+    if (key === "kontrol") { controlRef.current?.open?.(null); return; }
     if (SETTINGS_TABS[key]) { setSettingsSection(SETTINGS_TABS[key]); return; }
     if (!panelMeta(key)) return;
+    if (where === "kontrol") { controlRef.current?.open?.(key); return; }
     const c = lay.ctrlRef.current;
     if (!c) return;
+    const flash = (k) => { setDockFlash(k); setTimeout(() => setDockFlash((f) => (f === k ? null : f)), 1200); };
     // Maç yönetimi sekmelerine ayrılmışsa birleşik panel geri eklenmez: ayrılmış sekme öne gelir.
     if (key === "yonetim" && !c.has(key)) {
       const part = ["yonetimReji", "yonetimMaclar", "yonetimKadro", "yonetimMacsonu", "yonetimTakimlar"].find((k) => c.has(k));
-      if (part) { c.activate(part); setDockFlash(part); setTimeout(() => setDockFlash((f) => (f === part ? null : f)), 1200); return; }
+      if (part) { c.activate(part); flash(part); return; }
     }
+    // Ayrı sekme (ör. Reji) ekranda yok ama birleşik Maç yönetimi var: onun o sekmesi öne gelir.
+    const subTab = panelMeta(key)?.tab;
+    if (subTab && !c.has(key) && c.has("yonetim")) { setShared("manage.tab", subTab); c.activate("yonetim"); flash("yonetim"); return; }
     const had = c.has(key);
     c.add(key);
     setDockFlash(key);
@@ -737,6 +749,10 @@ export default function Studio({ auth, go }) {
   const [tplKey, setTplKey] = useState(null);
   const [dialog, setDialog] = useState(null); // { initial, toScene }
   const [settingsSection, setSettingsSection] = useState(null); // açıkken bölüm anahtarı
+  // Kontrol merkezi: açıkken bölüm anahtarı; iğneliyse yerleşimin sağında çekmece (yeniden açılışta da iğneli açılır).
+  const [ccSection, setCcSection] = useState(() => (controlPinned() ? controlLastSection() || "yayin" : null));
+  const [ccPinned, setCcPinned] = useState(() => controlPinned());
+  const controlRef = useRef(null);
   const closeDialog = useCallback(() => setDialog(null), []);
   // [görüntü] canlı "Görüntü ayarları" paneli: { sourceId, sceneId? } (./fx/FxFloat)
   const [fxPanel, setFxPanel] = useState(null);
@@ -1096,6 +1112,29 @@ export default function Studio({ auth, go }) {
   const programIdForTally = player.playing || vr.active || modes.programOverride ? null : config.programSceneId;
   const canTake = planTake({ preview: pvState, program: programStateNow(), studioMode }).type !== "none" || player.playing || vr.active;  const hints = settings.view.hints;
   const zoom = settings.view.scale / 100;
+  // Renk teması (Ayarlar › Görünüm): <html data-st-theme> — gövdeye taşınan pencereler de alır.
+  useEffect(() => {
+    const el = document.documentElement;
+    if (settings.view.theme && settings.view.theme !== "gece") el.dataset.stTheme = settings.view.theme; else delete el.dataset.stTheme;
+    return () => { delete el.dataset.stTheme; };
+  }, [settings.view.theme]);
+  // ⌘ + / ⌘ − / ⌘ 0 (Windows'ta Ctrl): arayüz ölçeği %70…%125 (uygulama menüsünün yakınlaştırması yerine).
+  const scaleRef = useRef(settings.view.scale);
+  scaleRef.current = settings.view.scale;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const dir = e.key === "+" || e.key === "=" || e.code === "NumpadAdd" ? 1 : e.key === "-" || e.code === "NumpadSubtract" ? -1 : (e.key === "0" || e.code === "Numpad0") && !e.shiftKey ? 0 : null;
+      if (dir == null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const next = stepScale(scaleRef.current, dir);
+      if (next !== scaleRef.current) setSetting("view", { scale: next });
+      toast(`Arayüz ölçeği %${next}`, { timeout: 1200 });
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [setSetting, toast]);
 
   /* ───────── monitör sağ tık menüsü ve tam ekran ───────── */
   const onMonitorMenu = (target) => (e) => {
@@ -1429,6 +1468,8 @@ export default function Studio({ auth, go }) {
     g, variant, setVariant,
     interview,
     led, openLedTab: () => setTab("led"),
+    // Panel açma düğmeleri (wPanels): yerleşimde yerine koy ya da Kontrol merkezinde aç; hasPanel: ekranda mı
+    openPanel: (key, where) => openPanel(key, { where }), hasPanel: (key) => lay.has(key), controlOpen: Boolean(ccSection),
     ready: {
       ids: readyIds, go: onReady, setMinutes: setReadyMinutes,
       minutesOf: (key) => { const c = readyClockOf(config, key); return c ? Math.round((Number(c.durationMs) || 0) / 60_000) : null; },
@@ -1593,6 +1634,69 @@ export default function Studio({ auth, go }) {
     return groups.some((k) => !["prefs", "settings", "rail", "dock", "led", "layout"].includes(k));
   });
 
+  /* ───────── Ayarlar sayfası özellikleri (Ayarlar ve Kontrol merkezi gömülü bölümleri ortak) ───────── */
+  const settingsProps = {
+    settings, set: setSetting, prefs, setPref, led, scenes: sceneList, engine, toast, rail, railCtx, hasModes, brandRef,
+    extraSections: settingsExtra, dock, setDock, resetDock, dockDefs, renderRail: railBoardEditor,
+    onProfileApplied, canReload: !onAir, RoutePicker, audio: mixer,
+    onReset: async () => { if (await ask({ title: "Stüdyo ayarlarını sıfırla", message: "Kodlayıcı, kayıt kalitesi, kısayollar, uyarılar ve görünüm ayarları varsayılana döner. Sahneler ve kaynaklar silinmez.", confirmLabel: "Sıfırla", danger: true })) { resetSettings(); toast("Stüdyo ayarları sıfırlandı.", { tone: "success" }); } },
+  };
+
+  /* ───────── KONTROL MERKEZİ: tüm paneller tam hâlleriyle (yerleşimden bağımsız telafi menüsü) ───────── */
+  const ccPanel = (key, group, extra = {}) => {
+    const d = dockDefs[key];
+    if (!d) return null;
+    const m = panelMeta(key);
+    return { key, panel: key, layoutId: key, group, label: extra.label || d.label || m?.label || key, icon: d.icon || m?.icon, hint: m?.hint, count: d.count || null, kw: extra.kw, render: () => d.render({ passive: true, column: true }) };
+  };
+  const ccSettings = (sec, group, label, icon, kw) => ({ key: `ayar:${sec}`, group, label, icon, kw: ["ayar", ...(kw || [])], hint: "Ayarlar sayfasındaki bölümün aynısı", render: () => <SettingsPage {...settingsProps} embedded section={sec} onSection={() => {}} onClose={() => {}} /> });
+  const ccExtra = (key, group, kw) => {
+    const x = settingsExtra.find((e) => e.key === key);
+    return x ? { key: `ayar:${key}`, group, label: x.label, icon: x.icon, kw, render: () => <div className="st-set__embed">{x.render()}</div> } : null;
+  };
+  const ccSections = [
+    ccPanel("yayin", "yayin", { kw: ["youtube", "rtmp", "prova", "kayıt", "kalite", "bit hızı", "kodlayıcı", "başlat"] }),
+    ccPanel("bolumler", "yayin", { kw: ["youtube", "bölüm", "işaret"] }),
+    ccSettings("yayin", "yayin", "Yayın ayarları · kodlama", "sliders", ["çözünürlük", "fps", "kodlayıcı", "anahtar kare"]),
+    ccSettings("kayit", "yayin", "Kayıt ayarları", "download", ["yerel kayıt", "kalite", "klasör"]),
+    ccSettings(COVER_SECTION.key, "yayin", COVER_SECTION.label, COVER_SECTION.icon, ["kapak", "küçük resim"]),
+    ccPanel("sahne", "sahne", { kw: ["sahne", "katman", "şablon", "kaynak"] }),
+    { key: "kaynaklar", group: "sahne", label: "Kaynaklar", icon: "camera", kw: ["kamera", "ekran", "telefon", "rtmp", "görsel", "video", "kaynak ekle"], hint: "Kamera, ekran, telefon, görsel, video, metin…",
+      render: () => <SourceLibrary config={config} runtimeRef={src.runtimeRef} version={src.version} actions={libActions} /> },
+    ccSettings("gecis", "sahne", "Geçişler", "swap", ["geçiş", "stinger", "süre"]),
+    ccPanel("tekrar", "tekrar", { kw: ["tekrar", "açı", "kuyruk", "ağır çekim", "önemli an", "yükleme"] }),
+    ccSettings("tekrar", "tekrar", "Tekrar ayarları", "repeat", ["süre", "saniye", "doğrudan"]),
+    ccPanel("yonetim", "mac", { label: "Maç yönetimi (tümü)", kw: ["reji", "maç", "gol", "kart", "değişiklik"] }),
+    ccPanel("yonetimMaclar", "mac", { label: "Maçlar", kw: ["maç seç", "canlı", "yeni maç"] }),
+    ccPanel("yonetimReji", "mac", { label: "Reji", kw: ["gol", "kart", "değişiklik", "skor", "saat", "devre"] }),
+    ccPanel("yonetimKadro", "mac", { label: "Kadro", kw: ["oyuncu", "kadro", "forma"] }),
+    ccPanel("yonetimMacsonu", "mac", { label: "Maç sonu", kw: ["mvp", "puan", "maçın golü", "yayınla"] }),
+    ccPanel("yonetimTakimlar", "mac", { label: "Takımlar & oyuncular", kw: ["takım", "oyuncu"] }),
+    ccPanel("olaylar", "mac", { kw: ["olay", "gol", "kart"] }),
+    ccSettings("mac", "mac", "Reji / Maç ayarları", "board", ["reji"]),
+    ccPanel("ses", "ses", { kw: ["mikrofon", "karıştırıcı", "kanal", "fader", "müzik", "yönlendirme"] }),
+    ccPanel("golMuzigi", "ses", { kw: ["müzik", "gol"] }),
+    ccExtra("skorbord", "grafik", ["skor", "skorbord", "çeşit"]),
+    ccExtra("altyazi", "grafik", ["altyazı", "metin", "bant"]),
+    ccExtra("marka", "grafik", ["marka", "logo", "ön ayar", "renk"]),
+    ccExtra("sponsor", "grafik", ["sponsor", "link", "bağlantı"]),
+    ccSettings(VAR_THEME_SECTION.key, "grafik", VAR_THEME_SECTION.label, VAR_THEME_SECTION.icon, ["var", "tema"]),
+    ccPanel("var", "kip", { kw: ["var", "inceleme", "karar"] }),
+    ccPanel("roportaj", "kip", { kw: ["röportaj", "konuk", "bant", "kayıt"] }),
+    ccSettings("roportaj", "kip", "Röportaj ayarları", "users"),
+    ccPanel("ozet", "kip", { kw: ["özet", "highlight", "oluştur", "yükle"] }),
+    ccSettings("ozet", "kip", "Özet ayarları", "sparkles"),
+    ccPanel("led", "led", { kw: ["led", "ekran", "çıkış", "kayan yazı"] }),
+    ccSettings("led", "led", "LED ayarları", "overview"),
+    ccPanel("yukleme", "arac", { kw: ["yükleme", "gol klibi", "bağlantı"] }),
+    ccSettings("makro", "arac", "Makrolar", "zap", ["makro", "otomasyon"]),
+    ccSettings("serit", "arac", "Kısayollar panosu", "zap", ["düğme", "parçacık", "kısayol"]),
+    ccSettings("kisayol", "arac", "Klavye kısayolları", "command", ["tuş", "kısayol"]),
+  ].filter(Boolean);
+  const openControl = useCallback((key) => setCcSection((cur) => key || cur || controlLastSection() || "yayin"), []);
+  const ccSectionOf = (panelKey) => (ccSections.some((s) => s.key === panelKey) ? panelKey : "yayin");
+  controlRef.current = { open: (panelKey) => openControl(panelKey ? ccSectionOf(panelKey) : null) };
+
   return (
     <PartsProvider dock={dock} setDock={setDock}>
     <div ref={rootRef} className={`studio ws-${ws.key} ${hints ? "" : "no-hints"} ${showMicWarning ? "is-micwarn" : ""}`} style={settings.view.scale !== 100 ? { zoom } : undefined} onPointerDown={mixer.resume}>
@@ -1612,6 +1716,7 @@ export default function Studio({ auth, go }) {
         )}
         <span className="st-top__sep" />
         <button type="button" className="icon-btn st-help" onClick={() => setHelp(true)} title="Klavye kısayolları (?)"><Icon name="help" size={16} /></button>
+        <button type="button" className={`st-ccbtn ${ccSection ? "is-on" : ""}`} onClick={() => (ccSection ? (setCcSection(null), setCcPinned(false)) : openControl())} title="Kontrol merkezi: tüm paneller ve yayın düzenlemeleri tek yerde (paneller ekrandan kaldırılsa da)" aria-pressed={Boolean(ccSection)}><Icon name="command" size={14} /> <span>Kontrol merkezi</span></button>
         <button type="button" className={`icon-btn st-gear ${settingsSection ? "is-on" : ""}`} onClick={() => (settingsSection ? setSettingsSection(null) : openSettings())} title="Stüdyo ayarları"><Icon name="sliders" size={16} /></button>
         <button type="button" className="st-exit" onClick={exitStudio} title="Yayın Stüdyosu'ndan çık (yayın sürüyorsa onay sorulur)"><Icon name="logout" size={14} /> Programdan çık</button>
       </header>
@@ -1629,13 +1734,13 @@ export default function Studio({ auth, go }) {
           )}
         </div>
 
+        {ccSection && (
+          <ControlCenter sections={ccSections} section={ccSection} onSection={setCcSection} pinned={ccPinned} onPin={setCcPinned}
+            onClose={() => { setCcSection(null); setCcPinned(false); }}
+            onOpenInLayout={(id) => { if (!ccPinned) setCcSection(null); openPanel(id); }} />
+        )}
         {settingsSection && (
-          <SettingsPage section={settingsSection} onSection={setSettingsSection} settings={settings} set={setSetting} prefs={prefs} setPref={setPref} led={led} scenes={sceneList} engine={engine} toast={toast}
-            rail={rail} railCtx={railCtx} hasModes={hasModes} brandRef={brandRef}
-            extraSections={settingsExtra} dock={dock} setDock={setDock} resetDock={resetDock} dockDefs={dockDefs} renderRail={railBoardEditor}
-            onProfileApplied={onProfileApplied} canReload={!onAir} RoutePicker={RoutePicker} audio={mixer}
-            onClose={() => setSettingsSection(null)}
-            onReset={async () => { if (await ask({ title: "Stüdyo ayarlarını sıfırla", message: "Kodlayıcı, kayıt kalitesi, kısayollar, uyarılar ve görünüm ayarları varsayılana döner. Sahneler ve kaynaklar silinmez.", confirmLabel: "Sıfırla", danger: true })) { resetSettings(); toast("Stüdyo ayarları sıfırlandı.", { tone: "success" }); } }} />
+          <SettingsPage {...settingsProps} section={settingsSection} onSection={setSettingsSection} onClose={() => setSettingsSection(null)} />
         )}
       </div>
 

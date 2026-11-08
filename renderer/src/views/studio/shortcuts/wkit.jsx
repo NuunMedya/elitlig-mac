@@ -56,13 +56,42 @@ export function useNow(active, ms = 500) {
   return now;
 }
 
+/* ───────── yön (hücrenin GERÇEK en / boy oranı) ───────── */
+// Pano hücresi parçacığın boyut sınıfından (1×1, 2×1…) farklı oranda olabilir (1×3, 4×1, 2×4 …):
+// kap ölçülür, "tall" (boy ≥ 1,35 × en) · "wide" (en ≥ 1,6 × boy) · "square". Kabuk (Shell) bunu
+// wo-<yön> sınıfı olarak taşır: dikey hücrede öğeler yukarıdan aşağı, yatayda soldan sağa dizilir.
+export const OrientCtx = React.createContext(null);
+export const orientOf = (w, h) => (!w || !h ? null : h >= w * 1.35 ? "tall" : w >= h * 1.6 ? "wide" : "square");
+/** Dar (en < 130 px: tek sütun, wn) · orta (< 220 px, wm) · alçak (boy < 100 px: tek sıra, ws) hücre bayrakları. */
+export const cellFlags = (w, h) => `${w && w < 130 ? " wn" : w && w < 220 ? " wm" : ""}${h && h < 100 ? " ws" : ""}`;
+/** Kabın yönünü izler: [ref, "yön[ wn][ ws]"]. */
+export function useOrient() {
+  const [orient, setOrient] = useState(null);
+  const obs = useRef(null);
+  const ref = useCallback((el) => {
+    obs.current?.disconnect();
+    obs.current = null;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth, h = el.clientHeight;
+      const o = orientOf(w, h) ? `${orientOf(w, h)}${cellFlags(w, h)}` : null;
+      setOrient((c) => (c === o ? c : o));
+    });
+    ro.observe(el);
+    obs.current = ro;
+  }, []);
+  useEffect(() => () => obs.current?.disconnect(), []);
+  return [ref, orient];
+}
+
 /**
  * Kart kabuğu. tone: renk ailesi (danger, green, amber, violet, blue, home, away, plain);
  * state: "air" (yayında kırmızı) · "pvw" (önizlemede yeşil) · "armed" (hazır sarı) · null.
  */
 export function Shell({ tone = "plain", w = 1, h = 1, state = null, className = "", title, children, as = "div", ...rest }) {
   const T = as;
-  const cls = `st-w is-${tone} is-panel wx wx--${w}x${h} is-${shapeOf(w, h)} ${state ? `wx-is-${state}` : ""} ${className}`;
+  const orient = React.useContext(OrientCtx);
+  const cls = `st-w is-${tone} is-panel wx wx--${w}x${h} is-${shapeOf(w, h)} ${orient ? `wo-${orient.split(" ")[0]}` : ""} ${state ? `wx-is-${state}` : ""} ${className}`;
   return <T className={cls} title={title} {...(as === "button" ? { type: "button" } : {})} {...rest}>{children}</T>;
 }
 /** Kart başlığı: simge, etiket, sağda rozet / tuş. */

@@ -1,9 +1,14 @@
 // Yayın Stüdyosu — VAR çizim takımı: temaların ortak tuval yardımcıları.
 //
-// Renk (rgba), yuvarlak / eğik dikdörtgen, köşe ayraçları, sekme, ✓ / ✕ simgesi,
+// Yazı tipleri, renk (rgba), yuvarlak / eğik dikdörtgen, köşe ayraçları, sekme, ✓ / ✕ simgesi,
 // harf aralığı, yumuşatma eğrileri ve önbellekli doku desenleri (karbon, dama).
 
-export const FONT = "\"Archivo\", -apple-system, \"Helvetica Neue\", Arial, sans-serif";
+import { COND as COND_FONT, SANS as SANS_FONT } from "../../../lib/studio/fonts";
+
+// Gömülü yazı tipleri (lib/studio/fonts.js): Inter metin, Barlow Condensed manşet.
+export const SANS = SANS_FONT;
+export const COND = COND_FONT;
+export const FONT = SANS_FONT;
 export const MONO = "\"SF Mono\", \"JetBrains Mono\", Menlo, Consolas, monospace";
 
 export const rgba = (hex, a) => {
@@ -190,7 +195,7 @@ export function varMonitorBadge(ctx, x, y, h, { fill = "#ff3552", fill2 = "#b000
   ctx.fillStyle = ink;
   ctx.fillRect(x + w / 2 - h * 0.05, sy + sh, h * 0.1, h * 0.09);
   ctx.fillRect(x + w / 2 - h * 0.22, sy + sh + h * 0.08, h * 0.44, h * 0.055);
-  ctx.font = `900 ${h * 0.4}px ${FONT}`;
+  ctx.font = `800 ${h * 0.46}px ${COND}`;
   spaced(ctx, h * 0.03);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";

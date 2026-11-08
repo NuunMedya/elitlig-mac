@@ -40,6 +40,7 @@ export const RAIL_GROUPS = [
   { key: "ozet", label: "Özet", icon: "sparkles" },
   { key: "mac", label: "Maç yönetimi", icon: "board" },
   { key: "genel", label: "Araçlar · makro", icon: "zap" },
+  { key: "panel", label: "Panel aç", icon: "board" },
 ];
 
 /** family: aynı işlevin çeşitleri (katalogda yan yana, önizlemede gruplanır). */
@@ -212,6 +213,20 @@ export const RAIL_WIDGETS = [
   { type: "stopwatch", family: "genel", label: "Kronometre / geri sayım", icon: "timer", group: "genel", size: "2x1", sizes: ["1x1", "2x1", "2x2", "3x2"], hint: "Başlat / dur / tur / sıfır ya da hazır geri sayım" },
   { type: "cueCards", family: "genel", label: "Notlar / istem kartları", icon: "note", group: "genel", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2", "4x2"], hint: "Spiker kartları ‹ ›, düzenle, altyazıya ver" },
   { type: "macro", family: "macro", label: "Makro düğmesi", icon: "zap", group: "genel", size: "1x1", sizes: ALL, hint: "Adım dizisi (sahne + altyazı + müzik…) tek dokunuşta · sağ tık: makro seç" },
+  // ── panel açma (./wPanels): ekrandaysa öne getir, kaldırıldıysa son yerine koy; seçenek: Kontrol merkezinde aç ──
+  { type: "openReji", family: "openPanel", label: "REJİ PANELİ aç", icon: "zap", group: "panel", size: "1x1", sizes: ALL, hint: "Reji panelini ekranda aç / öne getir (kaldırıldıysa son yerine)" },
+  { type: "openYonetim", family: "openPanel", label: "MAÇ YÖNETİMİ aç", icon: "board", group: "panel", size: "1x1", sizes: ALL, hint: "Maç yönetimi panelini aç / öne getir" },
+  { type: "openTekrar", family: "openPanel", label: "TEKRAR PANELİ aç", icon: "repeat", group: "panel", size: "1x1", sizes: ALL, hint: "Tekrar panelini aç / öne getir" },
+  { type: "openSahne", family: "openPanel", label: "SAHNELER aç", icon: "layers", group: "panel", size: "1x1", sizes: ALL, hint: "Sahneler panelini aç / öne getir" },
+  { type: "openSes", family: "openPanel", label: "SES aç", icon: "sliders", group: "panel", size: "1x1", sizes: ALL, hint: "Ses karıştırıcı panelini aç / öne getir" },
+  { type: "openYayin", family: "openPanel", label: "YAYIN aç", icon: "broadcast", group: "panel", size: "1x1", sizes: ALL, hint: "Yayın panelini aç / öne getir" },
+  { type: "openLed", family: "openPanel", label: "LED aç", icon: "overview", group: "panel", size: "1x1", sizes: ALL, hint: "LED ekran panelini aç / öne getir" },
+  { type: "openVar", family: "openPanel", label: "VAR aç", icon: "target", group: "panel", size: "1x1", sizes: ALL, hint: "VAR panelini aç / öne getir" },
+  { type: "openRoportaj", family: "openPanel", label: "RÖPORTAJ aç", icon: "users", group: "panel", size: "1x1", sizes: ALL, hint: "Röportaj panelini aç / öne getir" },
+  { type: "openOzet", family: "openPanel", label: "ÖZET aç", icon: "sparkles", group: "panel", size: "1x1", sizes: ALL, hint: "Özet panelini aç / öne getir" },
+  { type: "openOlay", family: "openPanel", label: "OLAY GİR paneli aç", icon: "pencil", group: "panel", size: "1x1", sizes: ALL, hint: "Olay gir panelini aç / öne getir" },
+  { type: "openKontrol", family: "openPanel", label: "KONTROL MERKEZİ", icon: "command", group: "panel", size: "2x1", sizes: ALL, hint: "Tüm paneller ve yayın düzenlemeleri tek yerde (paneller ekrandan kaldırılsa da)" },
+  { type: "openPanel", family: "openPanel", label: "Panel aç (seçmeli)", icon: "board", group: "panel", size: "1x1", sizes: ALL, multi: true, hint: "Seçenekten panel seç; ekranda ya da Kontrol merkezinde açar" },
   { type: "macroBank", family: "macro", label: "Makro bankası + düzenleyici", icon: "zap", group: "genel", size: "2x2", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Tüm makrolar; kalem: makro düzenleyici" },
 ];
 
