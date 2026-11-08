@@ -8,7 +8,7 @@ import { defaultSummaryItems } from "../../../lib/studio/goalClips";
 import { PROGRAM_ANGLE, anglesOf, metaFor, replayBanner, replayOfMatch } from "../../../lib/studio/replays";
 import { scorerLines } from "../../../lib/studio/scorebug";
 import { cardInfo } from "../modes/useHighlightMode";
-import { cardLengthOf, normalizeOps } from "../settings/opsSettings";
+import { cardLengthOf, normalizeOps } from "../settings/opsDefaults";
 import { SETTINGS_KEY } from "../settings/settings";
 import { getLocal, setLocal, useLocal } from "./localStore";
 

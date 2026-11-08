@@ -12,7 +12,7 @@ import { isoDay } from "../../../lib/studio/match";
 import { normalizeRating } from "../../../lib/studio/manage";
 import * as manageApi from "../manage/manageApi";
 import * as studioApi from "../studioApi";
-import { STAT_COUNTERS } from "../settings/opsSettings";
+import { STAT_COUNTERS } from "../settings/opsDefaults";
 import { Chip, FlowNote, Head, PlayerGrid, Pill, Shell, openPop, useNow, usePress } from "./wkit";
 import { useLocal } from "./localStore";
 import {

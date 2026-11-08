@@ -13,7 +13,7 @@ import { Icon, MenuButton } from "../../components/ui";
 import { mmss, moveItem } from "../../lib/studio/highlights";
 import { PROGRAM_ANGLE, angleLabel, defaultAngles, metaFor, replayTitle } from "../../lib/studio/replays";
 import UploadLog from "./modes/UploadLog";
-import { CARD_LENGTHS } from "./settings/opsSettings";
+import { CARD_LENGTHS } from "./settings/opsDefaults";
 import { buildHighlight, highlightPlan, mineOf, useHlCards, useHlMusic, useHlSelection } from "./shortcuts/hlStore";
 
 const PHASE = { preparing: "Klipler hazırlanıyor…", rendering: "Özet oluşturuluyor (gerçek zamanlı)…", finishing: "Dosya yazılıyor…", uploading: "Maç sayfasına yükleniyor…" };

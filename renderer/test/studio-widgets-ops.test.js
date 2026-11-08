@@ -8,7 +8,7 @@ import {
   shortCode, stoppageLabel, swElapsed, swLap, swText, swToggle, swapLineup, toggleHighlight,
 } from "../src/views/studio/shortcuts/opsLogic";
 import { DEFAULT_MACROS, MACRO_STEPS, describeStep, normalizeMacro, normalizeMacros, normalizeStep, runMacro } from "../src/views/studio/shortcuts/macros";
-import { DEFAULT_OPS, cardLengthOf, normalizeOps, patchOps } from "../src/views/studio/settings/opsSettings";
+import { DEFAULT_OPS, cardLengthOf, normalizeOps, patchOps } from "../src/views/studio/settings/opsDefaults";
 import { normalizeSettings } from "../src/views/studio/settings/settings";
 import { BOARD_TEMPLATES, boardFromTemplate, templateOf } from "../src/views/studio/layout/boardTemplates";
 import { LAYOUT_PRESETS, componentOf, specIds, specToDock } from "../src/views/studio/layout/layoutModel";

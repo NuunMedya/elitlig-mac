@@ -9,7 +9,7 @@ import { mmss } from "../../../lib/studio/highlights";
 import { highlightsPayload, momentCandidates, momentFromCandidate, readHighlights, readMoments } from "../../../lib/studio/manageBroadcast";
 import { defaultAngles, metaFor, replayTitle } from "../../../lib/studio/replays";
 import * as manageApi from "../manage/manageApi";
-import { CARD_LENGTHS } from "../settings/opsSettings";
+import { CARD_LENGTHS } from "../settings/opsDefaults";
 import { Chip, FlowNote, Head, Pill, Ring, Shell, openPop, usePress } from "./wkit";
 import { HL_BUSY, HL_PHASE, addToHighlight, buildHighlight, highlightPlan, mineOf, useHlCards, useHlMusic, useHlSelection } from "./hlStore";
 import { toggleHighlight } from "./opsLogic";

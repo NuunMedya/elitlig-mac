@@ -1,13 +1,13 @@
 // Yayın Stüdyosu · Ayarlar › İŞLETİM sayfaları: LED ekran (içerik / görüntü / kayan yazı /
 // ayna / geri sayım varsayılanları), Röportaj, Özet, Reji / Maç, Makrolar. Değerler
-// studio.settings.v1 › ops'ta (./opsSettings); düğmeler ve paneller buradan okur.
+// studio.settings.v1 › ops'ta (./opsDefaults); düğmeler ve paneller buradan okur.
 import React from "react";
 import { Field } from "../../../components/ui";
 import { INTERVIEW_STYLES } from "../../../lib/studio/graphics";
 import { INTERVIEW_TITLES } from "../../../lib/studio/manageBroadcast";
 import { LED_CONTENTS, TICKER_SPEEDS } from "../led/ledFx";
 import { MacroEditor } from "../shortcuts/wGenel";
-import { CARD_LENGTHS, HALF_PRESETS, STAT_COUNTERS } from "./opsSettings";
+import { CARD_LENGTHS, HALF_PRESETS, STAT_COUNTERS } from "./opsDefaults";
 
 const Seg = ({ value, choices, onChange }) => (
   <div className="st-seg">{choices.map(([k, l]) => <button key={String(k)} type="button" className={value === k ? "is-on" : ""} onClick={() => onChange(k)}>{l}</button>)}</div>

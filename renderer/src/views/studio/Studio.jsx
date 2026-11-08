@@ -115,7 +115,7 @@ import { useLed } from "./led/useLed";
 import LedPanel from "./led/LedPanel";
 import SettingsPage from "./settings/SettingsPage";
 import { useStudioSettings } from "./settings/useStudioSettings";
-import { patchOps } from "./settings/opsSettings";
+import { patchOps } from "./settings/opsDefaults";
 import { HOTKEY_ACTIONS, keyText, localRecordOptions, recordEstimate, recordQualityOf } from "./settings/settings";
 // ── alt panel çalışma alanı (sütunlar, parçalar) + ayar şablonları ──
 import { useDock } from "./dock/useDock";
