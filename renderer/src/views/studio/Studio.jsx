@@ -111,6 +111,7 @@ import { useLed } from "./led/useLed";
 import LedPanel from "./led/LedPanel";
 import SettingsPage from "./settings/SettingsPage";
 import { useStudioSettings } from "./settings/useStudioSettings";
+import { patchOps } from "./settings/opsSettings";
 import { HOTKEY_ACTIONS, keyText, localRecordOptions, recordEstimate, recordQualityOf } from "./settings/settings";
 // ── alt panel çalışma alanı (sütunlar, parçalar) + ayar şablonları ──
 import { useDock } from "./dock/useDock";
@@ -359,7 +360,23 @@ export default function Studio({ auth, go }) {
   };
 
   const modesRef = useRef({ previewOverride: null, programOverride: null });
-  const comp = useCompositor({ width: preset.width, height: preset.height, fps: preset.fps, configRef, runtimeRef: src.runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef, modesRef });
+  // [işletim] programın anlık durumu: siyah / dondur / bekleme kartı (Sahne düğmeleri, makrolar).
+  const [pgmFx, setPgmFxState] = useState(null);
+  const pgmFxRef = useRef(null);
+  const setPgmFx = useCallback((kind, opts = {}) => {
+    const v = kind ? { kind, text: opts.text || "", at: Date.now() } : null;
+    pgmFxRef.current = v;
+    setPgmFxState(v);
+  }, []);
+  const comp = useCompositor({ width: preset.width, height: preset.height, fps: preset.fps, configRef, runtimeRef: src.runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef, modesRef, pgmFxRef });
+  /** LED aynası için programın küçük JPEG karesi. */
+  const ledFrameRef = useRef(null);
+  ledFrameRef.current = () => {
+    const c = ledFrameRef.canvas || (ledFrameRef.canvas = document.createElement("canvas"));
+    if (c.width !== 960) { c.width = 960; c.height = 540; }
+    c.getContext("2d", { alpha: false }).drawImage(comp.program, 0, 0, 960, 540);
+    return c.toDataURL("image/jpeg", 0.72);
+  };
 
   /* ───────── kodlayıcı ve YouTube ───────── */
   const onEngineError = useCallback((m) => toast(m, { tone: "error", timeout: 6000 }), [toast]);
@@ -494,7 +511,7 @@ export default function Studio({ auth, go }) {
   graphicsSnapRef.current = g?.snapshot ?? null;
   const previewIdRef = useRef(config.previewSceneId);
   previewIdRef.current = config.previewSceneId;
-  const led = useLed({ configRef, programIdRef, previewIdRef, graphicsRef: graphicsSnapRef, brandingRef, matchId, ledMode: g?.ledMode, programId: config.programSceneId, previewId: config.previewSceneId });
+  const led = useLed({ configRef, programIdRef, previewIdRef, graphicsRef: graphicsSnapRef, brandingRef, matchId, ledMode: g?.ledMode, programId: config.programSceneId, previewId: config.previewSceneId, frameRef: ledFrameRef });
   const ledId = led.status.open && led.studioMode ? led.targetId : null;
 
   const removeReplay = useStable(async (r) => {
@@ -1255,6 +1272,41 @@ export default function Studio({ auth, go }) {
     });
   });
   const latestReplay = replays.latest;
+  /* ───────── [işletim] LED, röportaj, özet, maç, sahne, araçlar düğmelerinin eylemleri ───────── */
+  const setOps = useStable((sub, patch) => setSetting("ops", (o) => patchOps(o, sub, patch)));
+  const markMoment = useStable((label, sec) => {
+    if (!engine.active) { toast("An için yayın ya da prova açık olmalı.", { tone: "warn", timeout: 3500 }); return; }
+    const seconds = Math.round(Math.min(120, Math.max(5, Number(sec) || settings.replay.seconds)));
+    replays.capture({ kind: "moment", angles: liveAngles, label: String(label || "Önemli an").slice(0, 40), seconds, meta: { minute: live.match ? live.minute : null, period: live.period } });
+    toast(`${label || "Önemli an"} kaydedildi (son ${seconds} sn).`, { tone: "success", timeout: 2200 });
+  });
+  /** Programın / önizlemenin ekran görüntüsü (PNG, Kaydet penceresi). Dönüş: dosya adı | null. */
+  const screenshot = useStable(async (target = "program") => {
+    const c = target === "preview" ? comp.preview : comp.program;
+    const blob = await new Promise((r) => { try { c.toBlob(r, "image/png"); } catch { r(null); } });
+    if (!blob) { toast("Ekran görüntüsü alınamadı.", { tone: "error" }); return null; }
+    const d = new Date();
+    const p2 = (n) => String(n).padStart(2, "0");
+    const name = `elitlig-${target === "preview" ? "onizleme" : "program"}-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}.png`;
+    const data = new Uint8Array(await blob.arrayBuffer());
+    const res = await window.elitlig?.files?.save?.(name, data, [{ name: "PNG", extensions: ["png"] }]);
+    if (res && res.ok === false) return null;
+    toast(`Ekran görüntüsü: ${name}`, { tone: "success", timeout: 2500 });
+    return name;
+  });
+  // [işletim] Ayarlar › LED: tekrar / VAR yayındayken LED kendiliğinden program aynasına geçer, bitince döner.
+  const autoMirrorRef = useRef(null);
+  const replayAiring = Boolean(replayPlaying || varActive);
+  useEffect(() => {
+    if (!settings.ops.led.mirrorOnReplay || !led.status.open) return;
+    if (replayAiring && led.fx.content !== "mirror") { autoMirrorRef.current = led.fx.content; led.setFx({ content: "mirror" }); }
+    else if (!replayAiring && autoMirrorRef.current != null) { led.setFx({ content: autoMirrorRef.current }); autoMirrorRef.current = null; }
+  }, [replayAiring, settings.ops.led.mirrorOnReplay, led.status.open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const takeModeAny = useStable((mode) => {
+    if (!hasModes) return;
+    if (modes.previewMode !== mode) { modes.setPreview?.(mode); return; }
+    takeRef.current?.();
+  });
   const railCtx = {
     hints, hotkeys: settings.hotkeys, railPopRef, scenes: sceneList, score: live.match ? live.score : null, momentSeconds: settings.replay.seconds,
     live: {
@@ -1320,6 +1372,15 @@ export default function Studio({ auth, go }) {
       });
     },
     sceneTile: { register: registerTile, programId: programIdForTally, previewId: studioMode && !modes.previewOverride ? config.previewSceneId : null, onPreview: toPreview, onProgram: toProgram },
+    // [işletim] işletim düğmeleri (./shortcuts/wLed, wRoportaj, wOzet, wMac, wSahne, wGenel)
+    ops: settings.ops, setOps, markMoment, screenshot,
+    matchId, openMatch: setMatchId,
+    ozet: { hl: hasModes ? modes.highlights || hl : hl, imagesRef, matchId, stingerKind: hasModes ? (normalizeModeSettings(prefs.modes).between.kind === "cut" ? "stinger" : normalizeModeSettings(prefs.modes).between.kind) : "stinger" },
+    modes: hasModes ? { setPreview: modes.setPreview, clearPreview: modes.clearPreview, endOnAir: () => modes.endOnAir?.(), takeMode: takeModeAny, previewMode: modes.previewMode, airMode: modes.airMode } : null,
+    sceneOps: { list: config.scenes, sources: config.sources, setLayerVisible: (sceneId, layerId, visible) => setConfig((c) => updateLayer(c, sceneId, layerId, { visible: Boolean(visible) })) },
+    pgmFx: { kind: pgmFx?.kind || null, set: setPgmFx },
+    encoding: { value: prefs.encoding, set: (patch) => setEncoding({ ...prefs.encoding, ...patch }), pipeline: settings.stream.pipeline },
+    pipeline: { value: settings.stream.pipeline, set: (k) => setSetting("stream", { pipeline: k }), active: engine.status?.pipeline || null },
   };
   // Ekrandaki panolarda "Yayın" parçacığı varsa üst çubuktaki düğme gizlenir.
   const railHasGoLive = Object.entries(lay.layout.boards).some(([id, b]) => lay.has(boardPanelId(id)) && b.items.some((x) => x.t === "w:golive" || x.t === "w:goLivePro"));

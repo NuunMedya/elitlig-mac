@@ -25,6 +25,7 @@ import TransitionsTab from "../scenes/TransitionsTab";
 import { normalizeModeSettings } from "../../../lib/studio/modes";
 import { TRANSITIONS } from "../../../lib/studio/transitions";
 import DockSettings from "./DockSettings";
+import { opsSection } from "./OpsSettings";
 import ProfilesSection from "./ProfilesSection";
 import "./settings.css";
 import "../dock/dock.css";
@@ -32,6 +33,7 @@ import VarThemeSection, { VAR_THEME_SECTION } from "./VarThemeSection"; // [var-
 
 export const SETTINGS_GROUPS = [
   { key: "genel", label: "Genel" },
+  { key: "islem", label: "İşletim" },
   { key: "yerlesim", label: "Yerleşim" },
   { key: "grafik", label: "Grafikler" },
   { key: "panel", label: "Paneller" },
@@ -43,7 +45,11 @@ export const SETTINGS_SECTIONS = [
   { key: "tekrar", label: "Tekrar", icon: "repeat", group: "genel" },
   { ...VAR_THEME_SECTION, group: "grafik" }, // [var-tema] Ayarlar › Grafikler › VAR teması
   { key: "gecis", label: "Geçiş", icon: "swap", group: "genel" },
-  { key: "led", label: "LED ekran", icon: "overview", group: "genel" },
+  { key: "led", label: "LED ekran", icon: "overview", group: "islem" },
+  { key: "roportaj", label: "Röportaj", icon: "users", group: "islem" },
+  { key: "ozet", label: "Özet", icon: "sparkles", group: "islem" },
+  { key: "mac", label: "Reji / Maç", icon: "board", group: "islem" },
+  { key: "makro", label: "Makrolar", icon: "zap", group: "islem" },
   { key: "gorunum", label: "Görünüm", icon: "grid", group: "genel" },
   { key: "bildirim", label: "Bildirimler", icon: "bell", group: "genel" },
   { key: "serit", label: "Kısayollar panosu", icon: "zap", group: "yerlesim" },
@@ -281,8 +287,11 @@ function SettingsPage({
     body = <VarThemeSection prefs={prefs} setPref={setPref} />;
   } else if (section === "gecis") {
     body = <div className="st-set__wide"><TransitionsTab prefs={prefs} setPref={setPref} hasModes={hasModes} brandRef={brandRef} /></div>;
+  } else if (["roportaj", "ozet", "mac", "makro"].includes(section)) {
+    body = opsSection(section, { Section, Toggle, settings, set, led, railCtx, audio: audio || railCtx?.mixer });
   } else if (section === "led") {
     body = (
+      <>
       <Section title="LED ekran varsayılanları" sub="LED ekran sekmesiyle aynı ayarlar.">
         <Field label="Ekran">
           <select value={led.prefs.displayId ?? ""} onChange={(e) => led.setPref({ displayId: e.target.value === "" ? null : (Number.isNaN(Number(e.target.value)) ? e.target.value : Number(e.target.value)) })}>
@@ -298,6 +307,8 @@ function SettingsPage({
           <Choice on={led.prefs.web} title="Sitenin LED sayfası" text="elitlig.com/led/<maç>" onClick={() => led.setPref({ web: true })} />
         </div>
       </Section>
+      {opsSection("led", { Section, Toggle, settings, set, led, railCtx, audio: audio || railCtx?.mixer })}
+      </>
     );
   } else if (section === "gorunum") {
     body = (

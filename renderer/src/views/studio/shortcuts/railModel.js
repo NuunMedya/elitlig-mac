@@ -36,6 +36,10 @@ export const RAIL_GROUPS = [
   { key: "var", label: "VAR", icon: "target" },
   { key: "roportaj", label: "Röportaj", icon: "users" },
   { key: "muzik", label: "Müzik", icon: "music" },
+  { key: "led", label: "LED ekran", icon: "overview" },
+  { key: "ozet", label: "Özet", icon: "sparkles" },
+  { key: "mac", label: "Maç yönetimi", icon: "board" },
+  { key: "genel", label: "Araçlar · makro", icon: "zap" },
 ];
 
 /** family: aynı işlevin çeşitleri (katalogda yan yana, önizlemede gruplanır). */
@@ -139,6 +143,65 @@ export const RAIL_WIDGETS = [
   // ── müzik ──
   { type: "musicPlayer", family: "music", label: "Müzik çalar", icon: "music", group: "muzik", size: "2x2", sizes: ALL, hint: "Dosya seç, çal / duraklat / durdur, ilerleme, seviye, döngü" },
   { type: "goalMusicPro", family: "goalMusic", label: "Gol müziği · takım + ses", icon: "music", group: "muzik", size: "2x2", sizes: ALL, hint: "Takım müziğini çal, ses seviyesi, otomatik, MÜZİĞİ KES" },
+  // ══════════ işletim düğmeleri (./wLed, ./wRoportaj, ./wOzet, ./wMac, ./wSahne, ./wGenel) ══════════
+  // ── LED ekran ──
+  { type: "ledPower", family: "ledOps", label: "LED aç / kapat · ekran başına", icon: "overview", group: "led", size: "2x1", sizes: [...ALL, "3x2"], hint: "Ekrana dokun: LED o ekranda açılır; tık: aç / kapat" },
+  { type: "ledContent", family: "ledOps", label: "LED içeriği (sahne · ayna · skor · sponsor · metin · saat)", icon: "layers", group: "led", size: "2x2", sizes: ["1x1", "1x2", "2x1", "2x2", "3x2", "4x2"], hint: "Program / önizleme / sahne / site, yalnız skorbord, sponsor döngüsü, metin, saat, geri sayım" },
+  { type: "ledAdjust", family: "ledOps", label: "LED parlaklık · ölçek · konum", icon: "sun", group: "led", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2"], hint: "Parlaklık, ölçek, ← ↑ ↓ → kaydırma, sıfırla" },
+  { type: "ledFreeze", family: "ledOps", label: "LED dondur / karart", icon: "pause", group: "led", size: "2x1", sizes: ALL, hint: "Son kare kalır · LED siyah (pencere açık kalır)" },
+  { type: "ledTicker", family: "ledOps", label: "LED kayan yazı", icon: "list", group: "led", size: "2x1", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Alt bantta kayan yazı: metin, hız, renk" },
+  { type: "ledReplay", family: "ledOps", label: "Tekrarı LED'de göster (ayna)", icon: "repeat", group: "led", size: "1x1", sizes: ALL, hint: "Program aynası: tekrar, VAR, özet LED'de; tekrarda otomatik" },
+  { type: "ledPresets", family: "ledOps", label: "LED ön ayarları (A–D)", icon: "grid", group: "led", size: "2x1", sizes: ALL, hint: "Tık: içerik + görüntü + yönlendirme çağır · sağ tık: kaydet" },
+  { type: "ledDisplay", family: "ledOps", label: "LED ekran seçici", icon: "overview", group: "led", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2"], hint: "Bağlı ekranlar (çözünürlük); seç / o ekranda aç" },
+  { type: "ledClock", family: "ledOps", label: "LED saat / geri sayım", icon: "timer", group: "led", size: "2x1", sizes: ["1x1", "2x1", "2x2", "3x2"], hint: "Saat, N dk geri sayım, +1 dk" },
+  // ── röportaj ──
+  { type: "ivGuest", family: "ivOps", label: "Konuk hızlı seçim + bant", icon: "user", group: "roportaj", size: "2x2", sizes: [...ALL, "3x2", "4x2"], hint: "Son konuklar tek dokunuşla bantta; bant aç / kapat; kadrodan / elle ekle" },
+  { type: "ivTemplate", family: "ivOps", label: "Bant şablonu", icon: "palette", group: "roportaj", size: "2x1", sizes: ["1x2", "2x1", "2x2", "3x2"], hint: "Klasik · ince · yan panel · vitrin · dikey" },
+  { type: "ivTitle", family: "ivOps", label: "Bant başlığı / alt başlık", icon: "pencil", group: "roportaj", size: "2x1", sizes: ["2x1", "2x2", "3x2"], hint: "Başlık, ad, görev düzenle; hazır başlıklar" },
+  { type: "ivRec", family: "ivOps", label: "Röportaj kaydı · süre + hedef", icon: "mic", group: "roportaj", size: "1x1", sizes: ALL, hint: "Başlat / bitir, süre, hedef süre halkası, bantla kayıt" },
+  { type: "ivMark", family: "ivOps", label: "Röportajda an işaretle", icon: "star", group: "roportaj", size: "1x1", sizes: ALL, hint: "Son N sn tekrar + YouTube bölümü; işaret listesi" },
+  { type: "ivReview", family: "ivOps", label: "Röportaj · izle / yükle / sil", icon: "upload", group: "roportaj", size: "2x1", sizes: ["1x2", "2x1", "2x2"], hint: "Kaydı izle, maç sayfasına yükle (ilerleme), sil" },
+  { type: "ivMic", family: "ivOps", label: "Röportaj mikrofonu (kanal)", icon: "mic", group: "roportaj", size: "2x1", sizes: ALL, hint: "Röportaj kanalı seç; aç / kapat, öbür mikrofonları kapat" },
+  { type: "ivDuo", family: "ivOps", label: "İki kişilik bant", icon: "users", group: "roportaj", size: "2x1", sizes: ["2x1", "2x2", "3x2"], hint: "İki konuk seç (yer değiştir), bantta göster" },
+  // ── özet ──
+  { type: "hlBuild", family: "hlOps", label: "Özet · seçilenlerden oluştur", icon: "sparkles", group: "ozet", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2", "4x2"], hint: "Tekrarları seç / çıkar, süre, OLUŞTUR (panelle ortak seçim)" },
+  { type: "hlAddLast", family: "hlOps", label: "Son tekrarı özete ekle", icon: "plus", group: "ozet", size: "1x1", sizes: ["1x1", "2x1", "1x2"], hint: "Son tekrar özetin sonuna" },
+  { type: "hlCards", family: "hlOps", label: "Özet giriş / kapanış kartı", icon: "image", group: "ozet", size: "2x1", sizes: ["1x2", "2x1", "2x2", "3x2"], hint: "Uzun · kısa · yok" },
+  { type: "hlMusic", family: "hlOps", label: "Özet müziği · seviye", icon: "music", group: "ozet", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2"], hint: "Müzik seç / kaldır, seviye, kliplerde kıs" },
+  { type: "hlPreview", family: "hlOps", label: "Özeti önizle / yayına", icon: "eye", group: "ozet", size: "1x1", sizes: ALL, hint: "Önizle → yayına (GEÇİŞ) → canlıya dön" },
+  { type: "hlRender", family: "hlOps", label: "Özet oluştur → yükle (ilerleme)", icon: "upload", group: "ozet", size: "2x1", sizes: ALL, hint: "Oluştur, vazgeç, maç sayfasına yükle; ilerleme halkası" },
+  { type: "hlSetMatch", family: "hlOps", label: "Maçın golü / kurtarışı", icon: "award", group: "ozet", size: "2x1", sizes: ["2x1", "2x2", "3x2"], hint: "Golden / kurtarıştan seç, maç sayfasına yaz" },
+  // ── maç yönetimi ──
+  { type: "matchPick", family: "macOps", label: "Maç seçici (canlı maça geç)", icon: "calendar", group: "mac", size: "2x1", sizes: ["1x1", "2x1", "2x2", "3x2"], hint: "Günün maçları (dün / bugün / yarın), tık: o maça geç" },
+  { type: "lineupView", family: "macOps", label: "Kadro · hızlı görünüm + değiştir", icon: "shirt", group: "mac", size: "2x2", sizes: ["1x2", "2x2", "3x2", "4x2"], hint: "İlk 11, kaptan (K), kaleci (GK); ilk 11 ↔ yedek, kaptan / kaleci işaretle" },
+  { type: "captainMark", family: "macOps", label: "Kaptan / kaleci işareti", icon: "award", group: "mac", size: "2x1", sizes: ["1x2", "2x1", "2x2"], hint: "Takım başına kaptan ve kaleci; dokun: değiştir" },
+  { type: "periodPreset", family: "macOps", label: "Devre süresi (2×25, 2×30…)", icon: "clock", group: "mac", size: "2x2", sizes: ["2x1", "2x2", "3x2"], hint: "Devre süresi, kalan süre, devre arası / 2. yarı bu süreyle" },
+  { type: "injuryTime", family: "macOps", label: "Uzatma dakikası +N", icon: "clock", group: "mac", size: "2x1", sizes: ["1x1", "2x1", "2x2", "3x2"], hint: "+1 … +10 dk (altyazıda), 45+2 gösterimi" },
+  { type: "matchStatus", family: "macOps", label: "Maç durumu", icon: "flag", group: "mac", size: "2x1", sizes: ["1x2", "2x1", "2x2", "3x2"], hint: "Zamanlandı · Başladı · Devre · Bitti (onaylı) · Ertelendi" },
+  { type: "mvpPick", family: "macOps", label: "Maçın oyuncusu (MVP)", icon: "award", group: "mac", size: "1x1", sizes: ALL, hint: "Kadrodan MVP seç, maç sayfasına yaz" },
+  { type: "ratingQuick", family: "macOps", label: "Hızlı puan", icon: "star", group: "mac", size: "2x2", sizes: ["1x2", "2x2", "3x2", "4x2"], hint: "Oyuncuya dokun → 4–10 puan çipi" },
+  { type: "refNotes", family: "macOps", label: "Hakem / notlar", icon: "note", group: "mac", size: "2x2", sizes: ["2x1", "2x2", "3x2", "1x2"], hint: "Hakem adı, dakikalı notlar (maç başına)" },
+  { type: "cardsSummary", family: "macOps", label: "Kart özeti", icon: "tag", group: "mac", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2"], hint: "Takım başına sarı / kırmızı, oyuncular, 2. sarı uyarısı" },
+  { type: "statCounter", family: "macOps", label: "Topla oynama + sayaçlar", icon: "activity", group: "mac", size: "2x2", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Topla oynama süresi (%), şut / korner / ofsayt / faul sayaçları, altyazıya ver" },
+  { type: "teamColors", family: "macOps", label: "Takım renkleri · değiştir", icon: "palette", group: "mac", size: "2x1", sizes: ["1x1", "2x1", "2x2"], hint: "Ev / deplasman renkleri, yer değiştir, temaya dön" },
+  { type: "teamShort", family: "macOps", label: "Skorbord kısa adları", icon: "pencil", group: "mac", size: "2x1", sizes: ["2x1", "2x2"], hint: "Skorborddaki 3 harfli adları elle yaz" },
+  // ── sahne ──
+  { type: "sceneGridPro", family: "scene", label: "Sahneler · ızgara / liste / şerit / büyük", icon: "grid", group: "sahne", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2", "4x2"], hint: "Tally'li canlı küçük resimler; görünüm seçenekten" },
+  { type: "abBus", family: "scene", label: "A/B veriyolu (PGM / PVW)", icon: "swap", group: "sahne", size: "3x2", sizes: WIDE, hint: "Üst sıra doğrudan yayın, alt sıra önizleme; KES / GEÇİŞ" },
+  { type: "autoSwitch", family: "scene", label: "Otomatik kamera dönüşü", icon: "repeat", group: "sahne", size: "2x1", sizes: ["1x1", "2x1", "2x2", "3x2"], hint: "Her N sn sıradaki sahne (kesme ya da geçiş)" },
+  { type: "pipToggle", family: "scene", label: "PiP aç / kapat", icon: "layers", group: "sahne", size: "1x1", sizes: ALL, hint: "Sahnenin köşe kutularını (PiP) gizle / göster" },
+  { type: "layerToggles", family: "scene", label: "Katman aç / kapat (sahne başına)", icon: "layers", group: "sahne", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2"], hint: "Seçili / yayındaki sahnenin katmanları" },
+  { type: "blackStill", family: "pgmFx", label: "Siyah / bekleme kartı", icon: "eye", group: "sahne", size: "2x1", sizes: ALL, hint: "Program siyah ya da markalı bekleme kartı" },
+  { type: "freezePgm", family: "pgmFx", label: "Programı dondur", icon: "pause", group: "sahne", size: "1x1", sizes: ["1x1", "2x1", "1x2", "2x2"], hint: "Program son karede kalır" },
+  // ── araçlar · makro ──
+  { type: "streamHealth", family: "genel", label: "Yayın / kayıt sağlığı", icon: "activity", group: "genel", size: "2x1", sizes: ["1x2", "2x1", "2x2", "3x2"], hint: "FPS, kbps (eğri), düşen kare, hız, kayıt boyutu" },
+  { type: "bitrate", family: "genel", label: "Bit hızı değiştir", icon: "sliders", group: "genel", size: "2x1", sizes: ["1x2", "2x1", "2x2"], hint: "2,5 · 4,5 · 6 · 9 Mbps" },
+  { type: "encodePath", family: "genel", label: "Kodlama yolu", icon: "zap", group: "genel", size: "2x1", sizes: ["1x1", "2x1", "2x2"], hint: "Otomatik · WebCodecs · eski" },
+  { type: "screenshot", family: "genel", label: "Program ekran görüntüsü", icon: "camera", group: "genel", size: "1x1", sizes: ALL, hint: "Programı / önizlemeyi PNG kaydet" },
+  { type: "stopwatch", family: "genel", label: "Kronometre / geri sayım", icon: "timer", group: "genel", size: "2x1", sizes: ["1x1", "2x1", "2x2", "3x2"], hint: "Başlat / dur / tur / sıfır ya da hazır geri sayım" },
+  { type: "cueCards", family: "genel", label: "Notlar / istem kartları", icon: "note", group: "genel", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2", "4x2"], hint: "Spiker kartları ‹ ›, düzenle, altyazıya ver" },
+  { type: "macro", family: "macro", label: "Makro düğmesi", icon: "zap", group: "genel", size: "1x1", sizes: ALL, hint: "Adım dizisi (sahne + altyazı + müzik…) tek dokunuşta · sağ tık: makro seç" },
+  { type: "macroBank", family: "macro", label: "Makro bankası + düzenleyici", icon: "zap", group: "genel", size: "2x2", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Tüm makrolar; kalem: makro düzenleyici" },
 ];
 
 export const widgetOf = (type) => RAIL_WIDGETS.find((w) => w.type === type) || null;

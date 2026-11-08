@@ -15,6 +15,8 @@ import {
   LAYOUT_PRESETS, boardPanelId, componentOf, dockTree, missingPanels, panelMeta, parseId, removeItem, resizeItem, addItem, setBoardCols,
 } from "./layoutModel";
 import { itemLabel } from "./components";
+import TemplateCards from "./TemplateCards";
+import { templateOf } from "./boardTemplates";
 
 /** Hazır düzenin küçük çizimi (bölme ağacı → iç içe kutular). */
 function SpecPreview({ spec }) {
@@ -172,6 +174,9 @@ export default function LayoutSettings({ Section, layout, setLayout, ctrl, ctxLa
             </button>
           ))}
         </div>
+      </Section>
+      <Section title="Hazır paneller" sub="Çeşit çeşit panel yapısı: Reji (kompakt sütun, iki takım ayna, operatör ızgarası, olay günlüğü, dokunmatik), Maç masası, Tekrar (operatör, kompakt, EVS), Sahne (ızgara, liste, şerit, büyük tally, A/B), LED, Röportaj, Özet, Yayın araçları. “Sekme olarak ekle” etkin bölmenin sağına yeni pano açar.">
+        <div className="lw-tplset"><TemplateCards has={(k) => Object.values(layout.boards || {}).some((b) => b.title === templateOf(k)?.label)} onAdd={(t) => c.newBoard({}, { title: t.label, items: t.items, cols: t.cols, rowH: t.rowH })} /></div>
       </Section>
       <Section title="Yerleşim ağacı" sub="Bölmeler → sekme grupları → sekmeler. Adını değiştir, sırala, başka gruba taşı, ayrı bölmeye ayır, boyutla, kaldır. Panoların bileşenlerini ≡ ile aç.">
         <div className="lw-tree">{renderNode(tree.root)}</div>

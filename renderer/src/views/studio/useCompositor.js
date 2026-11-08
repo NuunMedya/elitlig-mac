@@ -62,7 +62,32 @@ function blit(ctx, src, v, W, H, blurCanvas) {
 /** Geçişte "özel kip" hedefi (sahne kimliği yerine). */
 export const MODE_TARGET = "mode:program";
 
-export function useCompositor({ width, height, fps, configRef, runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef, modesRef }) {
+/** Bekleme kartı: markalı koyu zemin, logo, yazı (Sahne › Siyah / bekleme kartı). */
+export function drawSlate(ctx, W, H, text, brand = {}) {
+  const b = brand.branding || {};
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, "#07040d");
+  g.addColorStop(0.55, b.primary || "#2e1065");
+  g.addColorStop(1, "#07040d");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  const logo = brand.logo;
+  if (logo && logo.naturalWidth) {
+    const k = Math.min((W * 0.22) / logo.naturalWidth, (H * 0.22) / logo.naturalHeight);
+    ctx.drawImage(logo, (W - logo.naturalWidth * k) / 2, H * 0.3 - (logo.naturalHeight * k) / 2, logo.naturalWidth * k, logo.naturalHeight * k);
+  }
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `900 ${Math.round(H * 0.07)}px ${b.fontFamily || "-apple-system, sans-serif"}`;
+  ctx.fillText(String(text || "YAYIN BİRAZDAN DEVAM EDECEK").toLocaleUpperCase("tr-TR"), W / 2, H * 0.6);
+  ctx.globalAlpha = 0.6;
+  ctx.font = `700 ${Math.round(H * 0.03)}px ${b.fontFamily || "-apple-system, sans-serif"}`;
+  ctx.fillText(b.brandName || "", W / 2, H * 0.7);
+  ctx.globalAlpha = 1;
+}
+
+export function useCompositor({ width, height, fps, configRef, runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef, modesRef, pgmFxRef = null }) {
   const program = useMemo(() => document.createElement("canvas"), []);
   const preview = useMemo(() => document.createElement("canvas"), []);
   const scratchA = useMemo(() => document.createElement("canvas"), []);
@@ -122,6 +147,14 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       drawScene(c, sceneOf(id), cfg.sources, runtime, w, h, opts);
     };
 
+    // 0. programın anlık durumu (Sahne düğmeleri): siyah · bekleme kartı · dondur (son kare kalır).
+    const pfx = pgmFxRef?.current || null;
+    pgm: {
+    if (pfx?.kind) {
+      if (pfx.kind === "black") { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
+      else if (pfx.kind === "slate") drawSlate(ctx, W, H, pfx.text, brand);
+      break pgm; // freeze: hiç çizilmez
+    }
     // 1. taban
     const tr = transitionRef.current;
     let stingerP = null;
@@ -203,6 +236,8 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       }
     }
 
+    } // pgm
+
     // ÖNİZLEME (2 / 3 karede bir; yayına gitmez)
     const f = frame.current;
     f.previewSkip = (f.previewSkip + 1) % (fps > 40 ? 3 : 2);
@@ -232,7 +267,7 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       f.drawMax = 0;
       f.stalls = 0;
     }
-  }, [blurC, brandRef, configRef, fps, matchClockRef, modesRef, overlayRef, overrideRef, preview, previewGraphicsRef, program, replayRef, runtimeRef, scratchA, scratchB, varRef]);
+  }, [blurC, brandRef, configRef, fps, matchClockRef, modesRef, overlayRef, overrideRef, pgmFxRef, preview, previewGraphicsRef, program, replayRef, runtimeRef, scratchA, scratchB, varRef]);
 
   useEffect(() => {
     let raf = 0;

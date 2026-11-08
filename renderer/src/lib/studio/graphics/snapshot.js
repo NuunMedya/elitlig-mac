@@ -130,6 +130,8 @@ export function buildGraphicsSnapshot(live, opts = {}) {
   const statusText = interviewStatusText({ finished, running, period: live?.period, clockMs: clockMsNow });
 
   const iv = opts.interview || {};
+  // Skorbord kısa adları (rejiden elle; boşsa takım adından).
+  const codes = { home: opts.teamCodes?.home ? String(opts.teamCodes.home).slice(0, 5) : null, away: opts.teamCodes?.away ? String(opts.teamCodes.away).slice(0, 5) : null };
   return {
     v: 1,
     // Sahne bazlı görünürlük (maç başına): drawGraphics(ctx, { sceneId }, snap) süzer.
@@ -140,7 +142,7 @@ export function buildGraphicsSnapshot(live, opts = {}) {
     match: {
       id: Number(m.id) || null,
       homeName, awayName,
-      homeCode: teamShortCode(homeName), awayCode: teamShortCode(awayName),
+      homeCode: codes.home || teamShortCode(homeName), awayCode: codes.away || teamShortCode(awayName),
       homeScore: Number(score.home) || 0, awayScore: Number(score.away) || 0,
       clock, period: Number(live?.period) || 1, running, finished, status: live?.status || null,
       league, season,
@@ -159,7 +161,7 @@ export function buildGraphicsSnapshot(live, opts = {}) {
       onAir: Boolean(sub.onAir),
       blocks: buildTickerBlocks({
         subtitle: settings,
-        match: { homeCode: teamShortCode(homeName), awayCode: teamShortCode(awayName), homeName, awayName, homeScore: Number(score.home) || 0, awayScore: Number(score.away) || 0, live: live?.status === "canli", statusText: live?.status === "canli" ? statusText : finished ? "MAÇ SONU" : "" },
+        match: { homeCode: codes.home || teamShortCode(homeName), awayCode: codes.away || teamShortCode(awayName), homeName, awayName, homeScore: Number(score.home) || 0, awayScore: Number(score.away) || 0, live: live?.status === "canli", statusText: live?.status === "canli" ? statusText : finished ? "MAÇ SONU" : "" },
         scorers,
       }),
       speed: settings.speed || "normal",

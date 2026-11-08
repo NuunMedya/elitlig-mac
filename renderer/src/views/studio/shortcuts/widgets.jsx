@@ -20,6 +20,13 @@ import { REJI_WIDGETS } from "./wReji";
 import { SES_WIDGETS } from "./wSes";
 import { TEKRAR_WIDGETS } from "./wTekrar";
 import { YAYIN_WIDGETS } from "./wYayin";
+import { LED_WIDGETS } from "./wLed";
+import { ROPORTAJ_WIDGETS } from "./wRoportaj";
+import { OZET_WIDGETS } from "./wOzet";
+import { MAC_WIDGETS } from "./wMac";
+import { SAHNE_WIDGETS } from "./wSahne";
+import { GENEL_WIDGETS } from "./wGenel";
+import "./widgetsOps.css";
 import "./widgetsPro.css";
 
 const clock = (ms) => {
@@ -340,5 +347,7 @@ export const WIDGET_IMPL = {
   ...MORE_WIDGETS,
   // çok işlevli düğmeler (reji, ses, tekrar, grafik / sahne / yayın / VAR / röportaj / müzik)
   ...REJI_WIDGETS, ...SES_WIDGETS, ...TEKRAR_WIDGETS, ...YAYIN_WIDGETS,
+  // işletim düğmeleri (LED, röportaj, özet, maç yönetimi, sahne, araçlar · makro)
+  ...LED_WIDGETS, ...ROPORTAJ_WIDGETS, ...OZET_WIDGETS, ...MAC_WIDGETS, ...SAHNE_WIDGETS, ...GENEL_WIDGETS,
 };
 

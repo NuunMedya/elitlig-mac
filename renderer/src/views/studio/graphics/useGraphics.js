@@ -139,6 +139,10 @@ export function useGraphics({ matchId, live } = {}) {
   }), note), [desk, iv]);
   const setInterviewStyle = useCallback((style) => saveInterview({ style }, null), [saveInterview]);
 
+  /* ------------------------- skorbord kısa adları (maç başına) ------------------------- */
+  const teamCodes = useMemo(() => ({ home: local.teamCodes?.home || null, away: local.teamCodes?.away || null }), [local.teamCodes?.home, local.teamCodes?.away]);
+  const setTeamCodes = useCallback((codes) => patchLocal({ teamCodes: { home: codes?.home || null, away: codes?.away || null } }), [patchLocal]);
+
   /* --------------------------------- snapshot --------------------------------- */
   const snapshot = useMemo(() => buildGraphicsSnapshot(live, {
     branding: brand.branding,
@@ -149,7 +153,8 @@ export function useGraphics({ matchId, live } = {}) {
     sponsors: desk.sponsors,
     subtitle: { onAir: Boolean(local.subtitleOnAir), settings: subtitleSettings, epoch: subtitleEpoch },
     interview: { onAir: Boolean(local.interviewOnAir), style: interviewStyle, title: iv.title, people: iv.people, sponsorId: iv.sponsorId, since: interviewSince },
-  }), [live, brand.branding, variant, variantSince, visibility, desk.sponsors, local.subtitleOnAir, local.interviewOnAir, subtitleSettings, subtitleEpoch, interviewStyle, iv, interviewSince]);
+    teamCodes,
+  }), [live, brand.branding, variant, variantSince, visibility, desk.sponsors, local.subtitleOnAir, local.interviewOnAir, subtitleSettings, subtitleEpoch, interviewStyle, iv, interviewSince, teamCodes]);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   useEffect(() => { preloadImages(snapshotImageUrls(snapshot)); }, [snapshot]);
@@ -174,6 +179,8 @@ export function useGraphics({ matchId, live } = {}) {
     // röportaj
     interview: { onAir: Boolean(local.interviewOnAir), style: interviewStyle, title: iv.title, people: iv.people, sponsorId: iv.sponsorId },
     setInterviewOnAir, saveInterview, setInterviewStyle,
+    // skorbord kısa adları (boşsa takım adından)
+    teamCodes, setTeamCodes,
     // yayın masası (sponsorlar vb.)
     desk,
     // ön ayarlar
