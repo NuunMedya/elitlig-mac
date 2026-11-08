@@ -12,10 +12,11 @@
 import React, { useState } from "react";
 import { Icon } from "../../../components/ui";
 import {
-  LAYOUT_PRESETS, boardPanelId, componentOf, dockTree, missingPanels, panelMeta, parseId, removeItem, resizeItem, addItem, setBoardCols,
+  LAYOUT_PRESETS, TAB_POSITIONS, boardPanelId, componentOf, dockTree, missingPanels, panelMeta, parseId, removeItem, resizeItem, addItem, setBoardCols, tabStyleOf,
 } from "./layoutModel";
 import { itemLabel } from "./components";
 import TemplateCards from "./TemplateCards";
+import { TabStyleFields, TabStylePreview } from "./TabStyle";
 import { templateOf } from "./boardTemplates";
 
 /** Hazır düzenin küçük çizimi (bölme ağacı → iç içe kutular). */
@@ -141,6 +142,7 @@ export function BoardEditor({ id, board, layout, setLayout, c, ctxLabel }) {
 export default function LayoutSettings({ Section, layout, setLayout, ctrl, ctxLabel = null, onAsk = null }) {
   const c = ctrl?.() || null;
   const [openBoard, setOpenBoard] = useState(null);
+  const [styleGid, setStyleGid] = useState(null); // sekme biçimi açık grup
   const tree = dockTree(layout.dock);
   const groups = [];
   const collect = (n) => { if (!n) return; if (n.type === "group") groups.push(n); else n.children.forEach(collect); };
@@ -205,6 +207,30 @@ export default function LayoutSettings({ Section, layout, setLayout, ctrl, ctxLa
         </ul>
         <div className="st-row">
           <button type="button" className="btn btn--sm" onClick={() => c.newBoard({})}><Icon name="plus" size={13} /> Yeni sekme (boş pano)</button>
+        </div>
+      </Section>
+      <Section title="Sekme şeritleri · yan sekmeler" sub="Her bölmenin sekmeleri üstte, solda, sağda ya da gizli olabilir; boyut, yazı kalınlığı, renkler ve simgeler. Stüdyoda bölme başlığındaki menüden de değişir.">
+        <div className="lw-tabset">
+          <div className="lw-tabset__def">
+            <strong>Tüm bölmeler (varsayılan)</strong>
+            <TabStylePreview value={tabStyleOf(layout, null)} />
+            <TabStyleFields value={tabStyleOf(layout, null)} onChange={(patch) => c.setTabStyle(null, patch)} />
+          </div>
+          <ul className="lw-tabset__groups">
+            {[...groups].map((g) => {
+              const st = tabStyleOf(layout, g.id);
+              const own = Boolean(layout.tabs?.[g.id]);
+              return (
+                <li key={g.id} className={own ? "is-own" : ""}>
+                  <span className="lw-tabset__name"><Icon name={g.floating ? "external" : "board"} size={12} /> {g.views.map((v) => v.title).join(" · ") || g.id}</span>
+                  <div className="st-seg">{TAB_POSITIONS.map(([k, l]) => <button key={k} type="button" className={st.pos === k ? "is-on" : ""} onClick={() => c.setTabStyle(g.id, { pos: k })}>{l}</button>)}</div>
+                  <button type="button" className={`btn btn--xs ${styleGid === g.id ? "is-on" : ""}`} onClick={() => setStyleGid((x) => (x === g.id ? null : g.id))}><Icon name="palette" size={11} /> Biçim…</button>
+                  {own && <button type="button" className="icon-btn icon-btn--xs" title="Varsayılana döndür" onClick={() => c.setTabStyle(g.id, { pos: null, size: null, weight: null, accent: null, bg: null, active: null, icons: null })}><Icon name="undo" size={12} /></button>}
+                  {styleGid === g.id && <div className="lw-tabset__edit"><TabStylePreview value={st} /><TabStyleFields value={st} onChange={(patch) => c.setTabStyle(g.id, patch)} /></div>}
+                </li>
+              );
+            })}
+          </ul>
         </div>
       </Section>
       <Section title="Seçenekler">

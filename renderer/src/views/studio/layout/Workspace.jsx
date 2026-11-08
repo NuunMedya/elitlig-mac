@@ -23,14 +23,16 @@ import "dockview/dist/styles/dockview.css";
 import { Icon, MenuButton } from "../../../components/ui";
 import { PanelScope } from "../dock/parts";
 import {
-  TAB_SPLITS, boardPanelId, compPanelId, defaultRailBoard, defaultTitle, addItem, dockPanelIds, dropRemoved, isKnownPanelId, newId, normalizeBoard, panelMeta, paramsOfId, parseId, presetOf, pushRemoved, specToDock, tilesToSpec,
+  TAB_SPLITS, boardPanelId, compPanelId, defaultRailBoard, defaultTitle, addItem, dockPanelIds, dropRemoved, isKnownPanelId, neighborOf, newId, normalizeBoard, panelMeta, paramsOfId, parseId, presetOf, presetTarget, pushRemoved, setTabStyle, specToDock, tabStyleOf, tilesToSpec, TAB_POSITIONS, TAB_SIZES, TAB_WEIGHTS,
 } from "./layoutModel";
 import { PRESET_RAILS } from "../shortcuts/railModel";
 import { boardFromTemplate, templateBoardId, templateOf } from "./boardTemplates";
 import Board from "./Board";
 import Catalog from "./Catalog";
+import { TabStyleFields, TabStylePreview } from "./TabStyle";
 import { renderComponent, widgetPopover } from "./components";
 import "./layout.css";
+import "./tabs.css";
 
 import { LayoutCtx } from "./ctx";
 
@@ -55,6 +57,22 @@ const DECOMPOSE = {
   ozet: ["part:ozet:air", "part:ozet:main"],
 };
 const BIG = Number.MAX_SAFE_INTEGER;
+const hexRgb = (h) => { const n = parseInt(String(h).slice(1), 16); return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`; };
+/** Grup sekme şeridi biçimi: sınıflar (yer, boy, simge) + CSS değişkenleri (renk, kalınlık) grup öğesinde. */
+function applyTabStyle(g, st, side) {
+  const el = g.element;
+  if (!el?.classList) return;
+  const cls = el.classList;
+  for (const c of [...cls]) if (c.startsWith("lw-tp-") || c.startsWith("lw-ts-")) cls.remove(c);
+  cls.add(`lw-tp-${side || (st.pos === "hidden" ? "hidden" : "top")}`, `lw-ts-${st.size}`);
+  cls.toggle("lw-ts-noicons", !st.icons);
+  const set = (k, v) => { if (v) el.style.setProperty(k, v); else el.style.removeProperty(k); };
+  set("--lw-tab-weight", String(st.weight));
+  set("--lw-tab-accent", st.accent || "");
+  set("--lw-tab-accent-rgb", st.accent ? hexRgb(st.accent) : "");
+  set("--lw-tab-bg", st.bg || "");
+  set("--lw-tab-active", st.active || "");
+}
 /** "Sekmelere ayır" ile oluşacak panel kimlikleri (yoksa []). */
 export function splitTargets(kind) {
   if (TAB_SPLITS[kind]) return TAB_SPLITS[kind];
@@ -144,6 +162,12 @@ function GroupActions({ group, containerApi, activePanel }) {
     ...(splits.length ? [{ label: `“${activePanel.title}” sekmelere ayır (${splits.length} sekme, bu bölmede)`, icon: "layers", onClick: () => c.splitTabs(activePanel.id) }] : []),
     ...(activePanel && DECOMPOSE[akind] ? [{ label: `“${activePanel.title}” parçalara ayır (pano: bileşenleri taşı / boyutla)`, icon: "grid", onClick: () => c.decompose(activePanel.id, (ctx.mixer?.strips || []).map((x) => x.id)) }] : []),
   ];
+  // Yan sekmeler: sekme şeridinin yeri ve biçimi (grup başına; Ayarlar › Yerleşim'de de)
+  const pos = tabStyleOf(ctx.layout, group.id).pos;
+  const sekme = floating ? [] : [
+    ...TAB_POSITIONS.map(([k, l]) => ({ label: `Sekmeler: ${l.toLocaleLowerCase("tr")}${pos === k ? " ✓" : ""}`, icon: k === "left" ? "chevronLeft" : k === "right" ? "chevronRight" : k === "hidden" ? "eye" : "chevronUp", onClick: () => c.setTabStyle(group.id, { pos: k }) })),
+    { label: "Sekme biçimi… (boyut, kalınlık, renkler)", icon: "palette", onClick: () => c.editTabStyle(group.id) },
+  ];
   const items = [
     { label: "Bu gruba sekme ekle…", icon: "plus", onClick: () => ctx.openCatalog({ group: group.id }) },
     { label: "Yeni pano (sekme) ekle", icon: "grid", onClick: () => c.newBoard({ group: group.id }) },
@@ -155,6 +179,7 @@ function GroupActions({ group, containerApi, activePanel }) {
       ? { label: "Izgaraya yerleştir (sağa)", icon: "board", onClick: () => c.dockFloating(group.id) }
       : { label: "Yüzen pencereye al", icon: "external", onClick: () => c.float(group.id) },
     { label: min ? "Küçültmeyi geri al" : "Küçült (yalnız başlık)", icon: "chevronUp", disabled: floating, onClick: () => c.minimize(group.id) },
+    ...(sekme.length ? ["-", ...sekme] : []),
     "-",
     { label: "Grubu kaldır (tüm sekmeler)", icon: "trash", danger: true, onClick: () => c.removeGroup(group.id) },
   ];
@@ -163,7 +188,32 @@ function GroupActions({ group, containerApi, activePanel }) {
       {min && <button type="button" className="lw-gact__b is-on" onClick={() => c.minimize(group.id)} title="Geri aç"><Icon name="chevronDown" size={13} /></button>}
       {!floating && <button type="button" className="lw-gact__b" onClick={() => c.maximize(group.id)} title={max ? "Eski boyutuna dön" : "Büyüt (tüm alan)"} aria-pressed={max}><Icon name={max ? "x" : "overview"} size={12} /></button>}
       {ctx.edit && <MenuButton items={items} label="Bölme seçenekleri" size={14} align="end" className="lw-gact__menu" />}
-      {!ctx.edit && ayir.length > 0 && <MenuButton items={ayir} label="Ayır: sekmelere / parçalara" icon="layers" size={13} align="end" className="lw-gact__menu is-split" />}
+      {!ctx.edit && (ayir.length > 0 || sekme.length > 0) && <MenuButton items={[...ayir, ...(ayir.length && sekme.length ? ["-"] : []), ...sekme]} label="Bölme: ayır, sekme yeri ve biçimi" icon="layers" size={13} align="end" className="lw-gact__menu is-split" />}
+    </div>
+  );
+}
+
+/** Grup menüsü › Sekme biçimi…: bu grubun sekme şeridi (yer, boy, kalınlık, renkler, simgeler). */
+function TabStyleDialog({ gid, layout, ctrl, title, onClose }) {
+  const v = tabStyleOf(layout, gid);
+  useEffect(() => {
+    const k = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  return (
+    <div className="lw-tsd" role="dialog" aria-label="Sekme biçimi">
+      <header className="lw-tsd__head">
+        <Icon name="palette" size={14} /><strong>Sekme biçimi</strong><small>{title ? `“${title}” bölmesi` : "bu bölme"}</small>
+        <span className="st-top__spacer" />
+        <button type="button" className="icon-btn icon-btn--xs" onClick={onClose} aria-label="Kapat"><Icon name="x" size={13} /></button>
+      </header>
+      <TabStylePreview value={v} />
+      <TabStyleFields value={v} onChange={(patch) => ctrl.setTabStyle(gid, patch)} />
+      <footer className="lw-tsd__foot">
+        <button type="button" className="btn btn--xs" onClick={() => ctrl.setTabStyle(gid, { pos: null, size: null, weight: null, accent: null, bg: null, active: null, icons: null })}><Icon name="undo" size={11} /> Bu bölmeyi varsayılana döndür</button>
+        <button type="button" className="btn btn--xs" onClick={() => { ctrl.setTabStyle(null, v); ctrl.clearTabStyles(); }} title="Bu biçim bütün bölmelerin varsayılanı olur">Tüm bölmelere uygula</button>
+      </footer>
     </div>
   );
 }
@@ -191,6 +241,7 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
   const saveT = useRef(null);
   const sizes = useRef({}); // küçültülen grubun önceki boyu
   const [catalog, setCatalog] = useState(null); // hedef: { group } | { board } | {}
+  const [tabEdit, setTabEdit] = useState(null); // { gid }: sekme biçimi penceresi
   const popOpeners = useMemo(() => new Set(), []);
 
   const titleOf = useCallback((id) => {
@@ -215,10 +266,15 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
     const auto = layoutRef.current.autoHide !== false;
     for (const g of api.groups) {
       const floating = g.api.location?.type === "floating";
+      const st = tabStyleOf(layoutRef.current, g.id);
+      const min = layoutRef.current.mins?.[g.id];
       // Düzenle kapalıyken tek panelli bölmede başlık yok (panelin kendi başlığı yeter); sekme şeridi
       // yalnız 2+ sekmeli gruplarda. Düzenle açıkken her bölmenin başlığı (sürükleme tutamacı) görünür.
-      const hide = !editRef.current && auto && !floating && !layoutRef.current.mins?.[g.id] && g.panels.length === 1;
+      // Sekme yeri "gizli": düzenle kapalıyken hiç görünmez; "solda / sağda": tek sekmede de görünür.
+      const side = !min && !floating && (st.pos === "left" || st.pos === "right") ? st.pos : null;
+      const hide = !editRef.current && !floating && !min && (st.pos === "hidden" || (auto && !side && g.panels.length === 1));
       if (g.header && g.header.hidden !== hide) g.header.hidden = hide;
+      applyTabStyle(g, st, side);
     }
   }, []);
 
@@ -276,7 +332,9 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
         let position;
         if (target.group && a.getGroup(target.group)) position = { referenceGroup: target.group, direction: target.direction || "within" };
         else if (target.panel && a.getPanel(target.panel)) position = { referencePanel: target.panel, direction: target.direction || "within" };
+        else if (!target.float && rem?.nb?.panel && a.getPanel(rem.nb.panel)) position = { referencePanel: rem.nb.panel, direction: rem.nb.direction || "within" };
         else if (!target.float && rem?.near && a.getPanel(rem.near)) position = { referencePanel: rem.near, direction: "within" };
+        else if (!target.float && !target.direction && (() => { const t = presetTarget(layoutRef.current.preset, id, (x) => Boolean(a.getPanel(x))); if (t) position = { referencePanel: t.panel, direction: t.direction }; return Boolean(t); })()) { /* hazır düzendeki yeri */ }
         else if (!target.float && a.activeGroup && a.activeGroup.api.location?.type !== "floating") position = { referenceGroup: a.activeGroup, direction: target.direction || "right" };
         const title = rem?.title || titleOf(id);
         const p = a.addPanel({
@@ -292,7 +350,10 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
         const p = a?.getPanel(id);
         if (!p) return;
         const near = p.group?.panels.find((x) => x.id !== id)?.id || null;
-        setLayout((l) => pushRemoved(l, { kind: "panel", id, label: p.title || titleOf(id), title: p.api?.title !== titleOf(id) ? p.api?.title : undefined, near }));
+        // Son yeri: aynı gruptaki sekme ya da ızgara komşusu + yön (Panel düğmeleri / Kutu ekle geri koyar).
+        let nb = null;
+        try { nb = neighborOf(a.toJSON(), id); } catch { nb = null; }
+        setLayout((l) => pushRemoved(l, { kind: "panel", id, label: p.title || titleOf(id), title: p.api?.title !== titleOf(id) ? p.api?.title : undefined, near, ...(nb ? { nb } : {}) }));
         a.removePanel(p);
         save();
       },
@@ -459,7 +520,7 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
         }
         const json = specToDock(p.spec, { titleOf });
         if (load(json)) {
-          setLayout((l) => ({ ...l, dock: apiRef.current.toJSON(), preset: key, mins: {} }));
+          setLayout((l) => ({ ...l, dock: apiRef.current.toJSON(), preset: key, mins: {}, tabs: {} }));
           syncHeaders();
         }
       },
@@ -493,6 +554,10 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
         if (next?.dock && load(next.dock, { reuse: true })) { applyMins(next.mins); syncHeaders(); }
       },
       syncHeaders,
+      /** Sekme şeridi biçimi (gid null: tüm gruplar için varsayılan). */
+      setTabStyle: (gid, patch) => setLayout((l) => setTabStyle(l, gid, patch)),
+      clearTabStyles: () => setLayout((l) => ({ ...l, tabs: {} })),
+      editTabStyle: (gid) => setTabEdit(gid ? { gid } : null),
       openCatalog: (target = {}) => setCatalog(target || {}),
       /** Kısayol tuşu: panolardaki parçacığın açılır panelini aç (ör. "event"). */
       openWidgetPop: (type) => { for (const f of popOpeners) if (f(type)) return true; return false; },
@@ -513,7 +578,7 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
     e.api.onDidRemovePanel?.(() => syncHeaders());
   }, [applyMins, load, save, syncHeaders, titleOf]);
 
-  useEffect(() => { syncHeaders(); }, [edit, layout.autoHide, syncHeaders]);
+  useEffect(() => { syncHeaders(); }, [edit, layout.autoHide, layout.tabs, layout.tabDefault, syncHeaders]);
   useEffect(() => () => clearTimeout(saveT.current), []);
 
   const ctx = useMemo(() => {
@@ -551,6 +616,7 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
       </div>
       </div>
       {catalog && <Catalog ctx={ctx} target={catalog} onClose={() => setCatalog(null)} />}
+      {tabEdit && <TabStyleDialog gid={tabEdit.gid} layout={layout} ctrl={ctrl} title={apiRef.current?.getGroup(tabEdit.gid)?.activePanel?.title} onClose={() => setTabEdit(null)} />}
     </LayoutCtx.Provider>
   );
 }

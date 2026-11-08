@@ -56,7 +56,7 @@
 
 /* ---------------- üst sekme kabuğu ---------------- */
 .gx-tab { display: flex; flex-direction: column; min-height: 0; height: 100%; overflow: hidden; }
-.gx-tab__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-2, #0d0814); min-height: 40px; }
+.gx-tab__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-2, var(--bg-2)); min-height: 40px; }
 .gx-tab__head h5 { margin: 0; display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 800; color: var(--text); }
 .gx-tab__body { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
 .gx-scope { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; background: var(--green-soft, rgba(34,197,94,0.18)); color: #86efac; font-size: 10.5px; font-weight: 800; letter-spacing: 0.03em; white-space: nowrap; }
@@ -94,7 +94,7 @@
 .gx-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border: 1px solid var(--border-strong); border-radius: 16px; background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; }
 .gx-chip:hover { color: var(--text); border-color: var(--tool); }
 .gx-chip.is-on { color: #fff; background: var(--tool); border-color: var(--tool); }
-.gx-chip.is-implied { color: var(--tool-text, #c4b5fd); border-color: color-mix(in srgb, var(--tool) 55%, transparent); background: var(--tool-soft); }
+.gx-chip.is-implied { color: var(--tool-text, var(--acc-text)); border-color: color-mix(in srgb, var(--tool) 55%, transparent); background: var(--tool-soft); }
 
 /* altyazı satırları */
 .gx-addline { display: flex; align-items: center; gap: 6px; }

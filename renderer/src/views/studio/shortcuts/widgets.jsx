@@ -26,6 +26,7 @@ import { OZET_WIDGETS } from "./wOzet";
 import { MAC_WIDGETS } from "./wMac";
 import { SAHNE_WIDGETS } from "./wSahne";
 import { GENEL_WIDGETS } from "./wGenel";
+import { PANEL_WIDGETS } from "./wPanels";
 import "./widgetsOps.css";
 import "./widgetsPro.css";
 
@@ -349,5 +350,7 @@ export const WIDGET_IMPL = {
   ...REJI_WIDGETS, ...SES_WIDGETS, ...TEKRAR_WIDGETS, ...YAYIN_WIDGETS,
   // işletim düğmeleri (LED, röportaj, özet, maç yönetimi, sahne, araçlar · makro)
   ...LED_WIDGETS, ...ROPORTAJ_WIDGETS, ...OZET_WIDGETS, ...MAC_WIDGETS, ...SAHNE_WIDGETS, ...GENEL_WIDGETS,
+  // panel açma düğmeleri (./wPanels): yerleşimde yerine koy / Kontrol merkezinde aç
+  ...PANEL_WIDGETS,
 };
 

@@ -1,0 +1,81 @@
+/* Yayın Stüdyosu · PARÇACIK YÖNÜ: pano hücresinin GERÇEK oranı (layout/components WidgetItem,
+   wkit.useOrient). .lw-ri.wo-tall | wo-wide | wo-square (+ wn: dar < 130 px, ws: alçak < 100 px);
+   Shell kabuğu da .wo-<yön> taşır. Kural: dikey hücrede öğeler yukarıdan aşağı, yatay hücrede
+   soldan sağa akar. Parçacığa özgü düzeltmeler en altta. */
+
+/* ───────── ızgaralar: dar dikey hücrede tek sütun, iki sütunlu dikeyde en çok iki ───────── */
+.lw-ri.wo-tall.wn .st-w :is(.wx-grid, .wx-teams, .wx-gb__kinds, .wx-cardgrid__g, .wx-split__row, .wx-statg__g, .wx-per__g, .wx-pre__g, .wx-ap__g, .wx-bank__g, .wx-ready__g, .wx-var__st, .wx-var__dec, .wl-pr__g, .wi-duo, .wm-cs__cols, .wg-hl__g, .wg-bank__g, .st-wag__grid, .st-wslow__rates, .st-wtk__kinds, .st-wsch__grid, .st-wsg__grid, .st-w__chips, .st-ev__teams, .wx-log__list.is-cols, .wx-gl__list.is-cols, .wx-q__list.is-cols) {
+  grid-template-columns: minmax(0, 1fr) !important; grid-auto-flow: row !important; grid-auto-columns: auto !important;
+}
+.lw-ri.wo-tall:not(.wn) .st-w :is(.wx-grid.is-3, .wx-grid.is-4, .wx-statg__g.is-n4, .wx-per__g.is-w3, .wx-pre__g.is-n4, .wx-bank__g.is-c3, .wx-bank__g.is-c4, .wx-var__dec.is-c3, .st-wtk__kinds, .st-wslow__rates) {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+/* alçak yatay hücrede ızgaralar tek sıra (soldan sağa) */
+.lw-ri.wo-wide.ws .st-w :is(.wx-grid, .wx-teams, .wx-cardgrid__g, .wx-statg__g, .wx-per__g, .wx-pre__g, .wx-ap__g, .wx-bank__g, .wx-ready__g, .wl-pr__g, .wg-bank__g, .st-wag__grid, .st-wslow__rates, .st-wtk__kinds, .st-wsg__grid) {
+  grid-template-columns: none !important; grid-auto-flow: column !important; grid-auto-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) !important;
+}
+
+/* ───────── kabuk (Shell) başka boyut sınıfıyla çizilmişse ───────── */
+/* büyük / geniş çizilmiş kart dikey hücrede: alt alta */
+.st-w.wx.wo-tall:is(.is-big, .is-huge, .is-wide):not(.wp-open) { flex-direction: column; flex-wrap: nowrap; }
+.st-w.wx.wo-tall.is-panel:not(.wp-open) > :not(.wx-head):not(.wx-kbd):last-child { flex: 1 1 auto; min-height: 0; }
+/* büyük / dikey çizilmiş kart yatay hücrede: başlık üstte, içerik soldan sağa */
+.st-w.wx.wo-wide:is(.is-big, .is-huge, .is-tall).is-panel:not(.wp-open) { flex-direction: row; flex-wrap: wrap; align-content: stretch; align-items: stretch; }
+.st-w.wx.wo-wide:is(.is-big, .is-huge, .is-tall).is-panel:not(.wp-open) > .wx-head { flex: 1 1 100%; }
+.st-w.wx.wo-wide:is(.is-big, .is-huge, .is-tall).is-panel:not(.wp-open) > :not(.wx-head):not(.wx-kbd) { flex: 1 1 0; min-width: 0; min-height: 0; }
+/* kutucuk (tek eylem) kartlar: dikeyde ortada alt alta, yatayda simge solda */
+.st-w.wx.wx-tile.wo-tall { flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.st-w.wx.wx-tile.wo-tall > .ic { width: 30px; height: 30px; }
+.st-w.wx.wx-tile.wo-wide:not(.is-wide) { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto; align-items: center; column-gap: 10px; text-align: left; justify-content: stretch; }
+.st-w.wx.wx-tile.wo-wide:not(.is-wide) > :is(.ic, .wx-ring, .wx-go__ic, .wx-duo) { grid-row: span 2; }
+
+/* ───────── eski (kabuksuz) parçacıklar ───────── */
+.lw-ri.wo-tall > .st-w:not(.wx):not(.is-scene):not(.is-panel) { flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.lw-ri.wo-wide > .st-w:not(.wx):not(.is-scene):not(.is-panel):not(.is-go) { flex-direction: row; justify-content: flex-start; align-items: center; gap: 10px; text-align: left; }
+.lw-ri.wo-tall > .st-w:not(.wx):not(.is-scene):not(.is-panel) .st-w__icon svg { width: 30px; height: 30px; }
+
+/* ───────── parçacığa özgü ───────── */
+/* GOL · iki takım (wReji GoalBoth, widgetsMore goalBoth): dikeyde takımlar alt alta */
+.lw-ri.wo-tall .st-w.wx.wx-gb { flex-direction: column; }
+.lw-ri.wo-tall .wx-gb__half { flex: 1 1 0; min-height: 0; }
+.lw-ri.wo-tall > .st-w.st-wgb { flex-direction: column; }
+.lw-ri.wo-tall > .st-w.st-wgb > * { flex: 1 1 0; min-height: 0; width: 100%; }
+/* VAR (wYayin VarPro): dikeyde üst satır alt alta */
+.lw-ri.wo-tall .wx-var__top { flex-direction: column; }
+/* Geçiş + tür ızgarası: dikeyde alt alta */
+.lw-ri.wo-tall > .st-w.st-wtk { flex-direction: column; align-items: stretch; }
+.lw-ri.wo-tall > .st-w.st-wtk > * { width: 100%; }
+/* Skorbord · çeşit ızgarası: dikeyde tek sütun */
+.lw-ri.wo-tall .st-wsch__grid.is-row { grid-auto-flow: row !important; grid-template-columns: minmax(0, 1fr) !important; }
+/* dar hücrede yazılar kırpılır, taşmaz */
+.lw-ri.wn .st-w :is(strong, b, span, small, em, button) { min-width: 0; }
+.lw-ri.wn .st-w button { max-width: 100%; }
+.lw-ri.wn .st-w input, .lw-ri.wn .st-w select { min-width: 0; max-width: 100%; }
+/* eski parçacık yatayda: ana yazı kırılmaz, alt yazı kısalır */
+.lw-ri.wo-wide > .st-w:not(.wx) > .st-w__label { flex: none; white-space: nowrap; }
+.lw-ri.wo-wide > .st-w:not(.wx) > .st-w__sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* GOL · iki takım: dar hücrede (kare de olsa) takımlar alt alta */
+.lw-ri.wn .st-w.wx.wx-gb, .lw-ri.wn > .st-w.st-wgb { flex-direction: column; }
+.lw-ri.wn .wx-gb__half, .lw-ri.wn > .st-w.st-wgb > * { flex: 1 1 0; min-height: 0; width: 100%; }
+.lw-ri.wn .wx-gb__btn strong, .lw-ri.wn .st-wgb__goal { font-size: 13px !important; writing-mode: horizontal-tb; white-space: nowrap; }
+/* Skor +/−: dar hücrede takım adı gizli, düğmeler küçük */
+.lw-ri.wn .st-wsc { padding: 4px; gap: 3px; }
+.lw-ri.wn .st-wsc__row { grid-template-columns: 20px minmax(0, 1fr) 20px; padding: 2px 3px; }
+.lw-ri.wn .st-wsc__name { display: none; }
+.lw-ri.wn .st-wsc__btn { width: 20px; height: 22px; font-size: 14px; }
+.lw-ri.wn .st-wsc__row strong { font-size: 17px; }
+/* dikey hücrede skor satırları dağılır */
+.lw-ri.wo-tall .st-wsc { justify-content: space-evenly; }
+/* Geçiş + tür ızgarası: dar hücrede GEÇİŞ yazısı harf harf kırılmaz; alçak yatayda türler yalnız geniş hücrede */
+.lw-ri.wn > .st-w.st-wtk .st-w__cta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; letter-spacing: 0.02em; }
+.lw-ri.wn > .st-w.st-wtk .st-w__cta small, .lw-ri.wn > .st-w.st-wtk .st-w__cta kbd { display: none; }
+.lw-ri.wo-square.wn > .st-w.st-wtk .st-wtk__kinds, .lw-ri.wo-wide.ws.wm > .st-w.st-wtk .st-wtk__kinds { display: none; }
+/* dar hücrede eski parçacık yazıları: küçük, ortalı, en çok iki satır */
+.lw-ri.wn > .st-w:not(.wx) .st-w__label { font-size: 11px; line-height: 1.15; white-space: normal; text-align: center; max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.lw-ri.wn > .st-w:not(.wx) .st-w__sub { font-size: 9.5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-align: center; }
+.lw-ri.wn > .st-w:not(.wx) { padding-left: 5px; padding-right: 5px; }
+.lw-ri.wo-tall .st-w.wx.wx-gb > .wx-gb__score { flex: none; flex-direction: row !important; justify-content: center; gap: 6px; }
+/* dar hücrede büyük düğme yazıları satıra kırılır (kesilmez) */
+.lw-ri.wn .st-w.wx button :is(span, strong) { white-space: normal; text-align: center; }
+.lw-ri.wn > .st-w.is-go .st-w__gotext { align-items: center; text-align: center; }
+.lw-ri.wn > .st-w.is-go .st-w__gotext > * { white-space: normal; font-size: 11px; line-height: 1.15; max-width: 100%; }
