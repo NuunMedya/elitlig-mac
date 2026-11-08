@@ -190,7 +190,7 @@ function buildSelectionArgs({ out, segments, size, fps = 30 }) {
   const parts = [];
   segments.forEach((s, i) => {
     const d = s.durationSec.toFixed(3);
-    parts.push(`[${i}:v:0]scale=${W}:${H}:force_original_aspect_ratio=decrease:flags=bicubic,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=yuv420p,trim=duration=${d},setpts=PTS-STARTPTS[v${i}]`);
+    parts.push(`[${i}:v:0]scale=${W}:${H}:force_original_aspect_ratio=decrease:flags=bicubic:out_color_matrix=bt709:out_range=tv,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=yuv420p,trim=duration=${d},setpts=PTS-STARTPTS[v${i}]`);
     if (audioIndex.has(i)) {
       const lead = Math.round((s.audio.leadSec || 0) * 1000);
       parts.push(`[${audioIndex.get(i)}:a:0]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asetpts=PTS-STARTPTS${lead > 0 ? `,adelay=${lead}|${lead}` : ""},apad,atrim=end=${d},asetpts=PTS-STARTPTS[a${i}]`);
@@ -206,6 +206,7 @@ function buildSelectionArgs({ out, segments, size, fps = 30 }) {
     "-map", "[v]", "-map", "[a]",
     "-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high", "-level", computeH264Level(W, H, fps),
     "-pix_fmt", "yuv420p", "-crf", "21", "-maxrate", "8M", "-bufsize", "16M",
+    ...ff.COLOR_ARGS, // BT.709 (TV aralığı) etiketleri: canlı yayınla aynı renk
     "-g", String(fps * 2), "-bf", "2", "-threads", "2",
     "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
     "-movflags", "+faststart", "-f", "mp4",
