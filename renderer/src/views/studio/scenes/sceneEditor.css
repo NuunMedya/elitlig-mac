@@ -2,7 +2,7 @@
 .sem-backdrop { position: fixed; inset: 0; z-index: 44; display: grid; place-items: center; background: rgba(6, 2, 14, 0.62); backdrop-filter: blur(2px); animation: fade 0.14s; }
 .sem { position: relative; width: 90vw; height: 90vh; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); min-width: min(760px, calc(100vw - 16px)); min-height: min(480px, calc(100vh - 16px));
   display: flex; flex-direction: column; overflow: hidden; border-radius: 14px; background: var(--bg); border: 1px solid var(--border-strong);
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(139, 92, 246, 0.25); animation: pop 0.14s; }
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(var(--acc-rgb), 0.25); animation: pop 0.14s; }
 .sem.is-max { width: calc(100vw - 16px) !important; height: calc(100vh - 16px) !important; border-radius: 10px; }
 .sem.is-program { box-shadow: 0 30px 90px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 45, 85, 0.5); }
 .sem__head { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-2); user-select: none; }
@@ -58,7 +58,7 @@
 
 .sem-tabs { flex: none; display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--surface); border: 1px solid var(--border); }
 .sem-tabs button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font: 700 12px var(--font); cursor: pointer; }
-.sem-tabs button.is-on { background: var(--brand-soft); color: var(--text); box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.45); }
+.sem-tabs button.is-on { background: var(--brand-soft); color: var(--text); box-shadow: inset 0 0 0 1px rgba(var(--acc-rgb), 0.45); }
 
 .sem-slider { display: grid; grid-template-columns: 72px minmax(0, 1fr) 52px; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); min-width: 0; }
 .sem-slider input { width: 100%; min-width: 0; }

@@ -21,6 +21,8 @@ import { MasterStrip, Strip, stripStatus, useMeterBank } from "../AudioPanel";
 import { ManagePart } from "../manage/ManageDock";
 import { AnglesTile, ClockTile, MetersTile } from "../stage/StageTiles";
 import { WIDGET_IMPL } from "../shortcuts/widgets";
+import { OrientCtx, useOrient } from "../shortcuts/wkit";
+import "../shortcuts/orient.css";
 import { RAIL_SIZES, boardWidgetSize, widgetOf } from "../shortcuts/railModel";
 import { componentOf } from "./layoutModel";
 
@@ -102,6 +104,7 @@ function MgPart({ tab, part, ctx }) {
 /* ───────────────────────── parçacık ───────────────────────── */
 
 function WidgetItem({ item, ctx, extra }) {
+  const [ref, orient] = useOrient();
   const type = componentOf(item.t)?.widget;
   const impl = WIDGET_IMPL[type];
   if (!impl) return <Hint>{widgetOf(type)?.label || type}: bu sürümde yok.</Hint>;
@@ -115,7 +118,15 @@ function WidgetItem({ item, ctx, extra }) {
     body = <div className="st-w is-plain"><span className="st-w__label">{widgetOf(type)?.label}</span><span className="st-w__sub">kullanılamıyor</span></div>;
   }
   const shape = item.w > item.h / 2 * 1.6 ? "is-wide" : item.h / 2 > item.w * 1.6 ? "is-tall" : "is-square";
-  return <div className={`st-ri lw-ri is-s${sk} ${big ? "is-2" : "is-1"} ${shape}`} data-type={type}>{body}</div>;
+  // Yön: ölçülen hücre oranı (yoksa ızgara biriminden tahmin); parçacık kabuğu wo-<yön> alır.
+  const full = orient || shape.slice(3);
+  const o = full.split(" ")[0];
+  const flags = full.slice(o.length);
+  return (
+    <div ref={ref} className={`st-ri lw-ri is-s${sk} ${big ? "is-2" : "is-1"} ${shape} wo-${o}${flags}`} data-type={type} data-orient={o}>
+      <OrientCtx.Provider value={o}>{body}</OrientCtx.Provider>
+    </div>
+  );
 }
 
 /** Parçacığın açılır paneli: { title, body } ya da null. */

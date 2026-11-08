@@ -4,8 +4,8 @@
 
 .yc-templates { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .yc-tpl { display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); cursor: pointer; text-align: left; }
-.yc-tpl:hover { border-color: rgba(139, 92, 246, 0.6); }
-.yc-tpl.is-on { border-color: #8b5cf6; box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.45); background: rgba(139, 92, 246, 0.12); }
+.yc-tpl:hover { border-color: rgba(var(--acc-rgb), 0.6); }
+.yc-tpl.is-on { border-color: var(--acc); box-shadow: 0 0 0 2px rgba(var(--acc-rgb), 0.45); background: rgba(var(--acc-rgb), 0.12); }
 .yc-tpl .yc-preview { border-radius: 6px; box-shadow: none; }
 .yc-tpl__label { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; padding: 0 2px 2px; }
 

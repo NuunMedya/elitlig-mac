@@ -3,7 +3,7 @@
    pencereler .st-modal.mg-modal ile koyu çizilir. Tüm sınıflar mg- önekli. */
 
 .mg-dock { display: flex; flex-direction: column; min-height: 0; height: 100%; font-size: 12.5px; color: var(--text); }
-.mg-tabs { display: flex; align-items: center; gap: 4px; padding: 6px 10px; min-height: 40px; border-bottom: 1px solid var(--border); background: var(--bg-2, #0d0814); flex-wrap: wrap; }
+.mg-tabs { display: flex; align-items: center; gap: 4px; padding: 6px 10px; min-height: 40px; border-bottom: 1px solid var(--border); background: var(--bg-2, var(--bg-2)); flex-wrap: wrap; }
 .mg-tabs > button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--muted); font-weight: 700; font-size: 12.5px; padding: 6px 12px; border-radius: 8px; white-space: nowrap; }
 .mg-tabs > button:hover:not(:disabled) { color: var(--text); background: var(--surface-2); }
 .mg-tabs > button.is-on { color: #fff; background: var(--tool-soft); box-shadow: inset 0 -2px 0 var(--tool); }
@@ -329,7 +329,7 @@ button.mg-matchinfo:hover { background: var(--surface-2); }
 .st-picker__codes { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
 
 /* ---------------- dok kabuğu: tam ekran ---------------- */
-.mg-manage.is-full { position: fixed; inset: 0; z-index: 40; height: auto; background: var(--bg, #07040b); font-size: 13px; }
+.mg-manage.is-full { position: fixed; inset: 0; z-index: 40; height: auto; background: var(--bg, var(--bg)); font-size: 13px; }
 .mg-manage.is-full .mg-tabs { padding: 8px 14px; }
 .mg-manage.is-full .mg-body { padding: 14px 18px; }
 .mg-manage.is-full .rj-bigoal { min-height: 84px; font-size: 32px; }
@@ -379,7 +379,7 @@ button.mg-matchinfo:hover { background: var(--surface-2); }
 .pt-cand.is-home { --c: var(--st-home); }
 .pt-cand.is-away { --c: var(--st-away); }
 .pt-cand.is-on { border-color: var(--tool); box-shadow: 0 0 0 1px var(--tool), 0 0 0 4px var(--tool-soft); }
-.pt-cand__thumb { position: relative; display: block; aspect-ratio: 16 / 9; padding: 0; border: 0; border-bottom: 3px solid var(--c); background: #0b0612; cursor: pointer; overflow: hidden; }
+.pt-cand__thumb { position: relative; display: block; aspect-ratio: 16 / 9; padding: 0; border: 0; border-bottom: 3px solid var(--c); background: var(--bg-deep); cursor: pointer; overflow: hidden; }
 .pt-cand__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pt-cand__ph { display: grid; place-items: center; width: 100%; height: 100%; color: color-mix(in srgb, var(--c) 70%, #fff); background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--c) 30%, transparent), transparent 70%); }
 .pt-cand__play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: rgba(0, 0, 0, 0.6); color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,0.7); }

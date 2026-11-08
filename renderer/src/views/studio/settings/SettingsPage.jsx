@@ -17,7 +17,7 @@ import { Field, Icon, Kbd } from "../../../components/ui";
 import { BITRATE_PRESETS, FPS_CHOICES, RESOLUTION_CHOICES, encodingPreset, recommendedBitrate } from "../../../lib/studio/broadcast";
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../../lib/studio/transitions";
 import { WORKSPACES, FIXED_SHORTCUTS } from "../../../lib/studio/scenesWorkspace";
-import { AUDIO_KBPS_CHOICES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, PIPELINES, STREAM_DELAY_CHOICES, RECORD_QUALITIES, RESERVED_KEYS, bindHotkey, keyText, recordEstimate } from "./settings";
+import { AUDIO_KBPS_CHOICES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, PIPELINES, STREAM_DELAY_CHOICES, RECORD_QUALITIES, RESERVED_KEYS, UI_SCALES, UI_THEMES, bindHotkey, keyText, recordEstimate } from "./settings";
 import QualityPresets from "../QualityPresets";
 import { RAIL_SIZES, RAIL_WIDGETS, addWidget, moveWidget, removeWidget, resizeWidget, sizeKey, sizesOf, widgetOf } from "../shortcuts/railModel";
 import { RailCatalog } from "../shortcuts/ShortcutRail";
@@ -148,7 +148,7 @@ function RailManager({ rail, scenes, ctx = null }) {
 function SettingsPage({
   section, onSection, settings, set, onReset, prefs, setPref, led, scenes, engine, onClose, toast, rail = null, hasModes = false, brandRef = null,
   railCtx = null, extraSections = [], dock = null, setDock = null, resetDock = null, dockDefs = {}, onProfileApplied = null, canReload = true, RoutePicker = null, audio = null,
-  renderRail = null,
+  renderRail = null, embedded = false,
 }) {
   const allSections = [...SETTINGS_SECTIONS, ...extraSections.map((x) => ({ group: "panel", ...x }))];
   const enc = prefs.encoding;
@@ -337,10 +337,25 @@ function SettingsPage({
             ))}
           </div>
         </Section>
+        <Section title="Renk teması" sub="Panellerin, sekmelerin ve düğmelerin renkleri. Yayına giden görüntü (skorbord, grafikler) değişmez.">
+          <div className="st-themes">
+            {UI_THEMES.map((t) => (
+              <button key={t.key} type="button" className={`st-theme ${settings.view.theme === t.key ? "is-on" : ""}`} onClick={() => set("view", { theme: t.key })} aria-pressed={settings.view.theme === t.key} data-theme-key={t.key}>
+                <span className="st-theme__pic" style={{ background: t.sw[0] }} aria-hidden="true">
+                  <i style={{ background: t.sw[1] }}><b style={{ background: t.sw[2] }} /><b style={{ background: t.sw[1], boxShadow: `inset 0 -2px 0 ${t.sw[2]}` }} /></i>
+                  <i style={{ background: t.sw[1] }}><em style={{ background: t.sw[2] }} /><em style={{ background: t.sw[3] }} /></i>
+                  <i style={{ background: t.sw[1] }}><em style={{ background: t.sw[3] }} /></i>
+                </span>
+                <strong>{t.label}</strong><small>{t.hint}</small>
+              </button>
+            ))}
+          </div>
+        </Section>
         <Section title="Arayüz">
-          <Field label="Arayüz ölçeği">
-            <div className="st-seg">{[90, 100, 110, 125].map((v) => <button key={v} type="button" className={settings.view.scale === v ? "is-on" : ""} onClick={() => set("view", { scale: v })}>%{v}</button>)}</div>
+          <Field label="Arayüz ölçeği · ⌘ + / ⌘ − / ⌘ 0 (Windows: Ctrl)">
+            <div className="st-seg st-seg--wrap">{UI_SCALES.map((v) => <button key={v} type="button" className={settings.view.scale === v ? "is-on" : ""} onClick={() => set("view", { scale: v })}>%{v}</button>)}</div>
           </Field>
+          <p className="st-hint">Küçük ekranda (13–14″ laptop) %75–85 tüm panelleri sığdırır; düzen ve panolar ölçekle birlikte küçülür.</p>
           <Toggle checked={settings.view.hints} onChange={(v) => set("view", { hints: v })} title="Kısayol rozetlerini göster" text="Düğmelerdeki tuş ipuçları (B, R, V …)" />
           <Toggle checked={settings.view.tooltips} onChange={(v) => set("view", { tooltips: v })} title="Açıklama balonlarını göster" />
           <Toggle checked={Boolean(prefs.previewGraphics)} onChange={(v) => setPref("previewGraphics", v)} title="Önizlemede grafikleri göster" text="Skorbord ve bantlar önizlemede soluk görünür" />
@@ -417,6 +432,8 @@ function SettingsPage({
     );
   }
 
+  // Kontrol merkezi: yalnız bölüm gövdesi (gezinme ve başlık yok).
+  if (embedded) return <div className="st-set st-set--embedded"><div className="st-set__body">{body}</div></div>;
   return (
     <div className="st-set" role="dialog" aria-label="Stüdyo ayarları">
       <nav className="st-set__nav">

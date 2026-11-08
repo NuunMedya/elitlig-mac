@@ -88,7 +88,7 @@ function BoardItem({ item, boardId, boards, edit, ctx, pop, setPop, onRemove, on
   let body = null;
   try { body = ctx.renderComponent(item, { boardId, popOpen, togglePop, setPopWide: (v) => setPop((p) => (p ? { ...p, wide: v } : p)) }); } catch (e) { body = <p className="st-hint st-pad">{label}: çizilemedi ({String(e?.message || e)})</p>; }
   return (
-    <div ref={ref} className={`lw-item ${edit ? "is-edit" : ""}`} data-t={item.t} data-type={meta?.widget || undefined}
+    <div ref={ref} className={`lw-item ${edit ? "is-edit" : ""}`} data-t={item.t} data-i={item.i} data-type={meta?.widget || undefined}
       onPointerDownCapture={() => { if (meta?.panel) ctx.onActivate?.(meta.panel); }}>
       <div className="lw-item__body">{body}</div>
       {edit && (

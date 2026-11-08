@@ -67,6 +67,22 @@ export const DEFAULT_HOTKEYS = Object.fromEntries(HOTKEY_ACTIONS.map((a) => [a.k
 /** Atanamayan tuşlar: sahne tuşları ve gol yanıtları. */
 export const RESERVED_KEYS = new Set(["1", "2", "3", "4", "5", "6", "7", "8", "9", "h", "a", "e", "d", "Escape", "Tab"]);
 
+/** Arayüz ölçeği seçenekleri (%); ⌘ + / − / 0 bunlar arasında gezer. */
+export const UI_SCALES = [70, 75, 80, 85, 90, 100, 110, 125];
+/** ⌘ + / ⌘ − : bir sonraki / önceki ölçek; ⌘ 0 : %100. */
+export function stepScale(cur, dir) {
+  if (!dir) return 100;
+  const i = UI_SCALES.indexOf(Number(cur));
+  const at = i < 0 ? UI_SCALES.indexOf(100) : i;
+  return UI_SCALES[Math.min(UI_SCALES.length - 1, Math.max(0, at + (dir > 0 ? 1 : -1)))];
+}
+/** Panel arayüzü renk temaları (studio.css: .studio[data-st-theme]). sw: önizleme renkleri [zemin, yüzey, vurgu, ikinci vurgu]. */
+export const UI_THEMES = [
+  { key: "gece", label: "Gece mavisi", hint: "Koyu mor-lacivert, mor vurgu (varsayılan)", sw: ["#07040b", "#1d1229", "#8b5cf6", "#c026d3"] },
+  { key: "grafit", label: "Grafit", hint: "Nötr gri, gök mavisi vurgu: göz yormaz", sw: ["#0b0c0e", "#1c1e22", "#38bdf8", "#94a3b8"] },
+  { key: "okyanus", label: "Okyanus", hint: "Derin lacivert-yeşil, turkuaz vurgu", sw: ["#03101a", "#0f2433", "#14b8a6", "#0ea5e9"] },
+  { key: "kirmizi", label: "Kırmızı reji", hint: "Siyah zemin, kırmızı vurgu (karanlık reji odası)", sw: ["#0a0505", "#1f1012", "#ef4444", "#f97316"] },
+];
 export const DEFAULT_SETTINGS = {
   v: 3,
   // pipeline: kodlama yolu — "auto" | "webcodecs" (tek kodlama) | "legacy" (MediaRecorder + ffmpeg)
@@ -76,7 +92,7 @@ export const DEFAULT_SETTINGS = {
   // tekrar klibi 15 sn: önizlemede giriş–çıkışla istenen bölüm seçilir. directTake: R kısayolu
   // son tekrarı önizlemeye yükleyip AYNI GEÇİŞ yoluyla hemen yayına alır [önizleme-geçiş]
   replay: { seconds: 15, directTake: false, postSeconds: 4, uploadDelaySec: 60 },
-  view: { hints: true, tooltips: true, scale: 100 },
+  view: { hints: true, tooltips: true, scale: 100, theme: "gece" },
   hotkeys: DEFAULT_HOTKEYS,
   notify: { micOpen: true, lowBitrate: true, silence: true, silenceSec: 30 },
   // İşletim varsayılanları (LED, röportaj, özet, reji / maç, makrolar): ./opsDefaults
@@ -159,7 +175,8 @@ export function normalizeSettings(raw) {
     view: {
       hints: bool(r.view?.hints, d.view.hints),
       tooltips: bool(r.view?.tooltips, d.view.tooltips),
-      scale: pick(Number(r.view?.scale), [90, 100, 110, 125], d.view.scale),
+      scale: pick(Number(r.view?.scale), UI_SCALES, d.view.scale),
+      theme: pick(String(r.view?.theme || ""), UI_THEMES.map((t) => t.key), d.view.theme),
     },
     hotkeys: normHotkeys(r.hotkeys),
     notify: {
