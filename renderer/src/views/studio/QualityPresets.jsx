@@ -1,14 +1,16 @@
-// Yayın Stüdyosu · "Yayın kalitesi" hızlı ayarları (Akıcı / Dengeli / Yüksek) ve
-// ağa göre öneri (RTMP aktarıcısının gönderim / atlama sayaçlarından). Yayın
-// sekmesi (Görüntü kalitesi) ve Ayarlar › Yayın ortak kullanır.
+// Yayın Stüdyosu · "Yayın kalitesi" hızlı ayarları (Akıcı / Dengeli / Yüksek / Çok yüksek / 1440p)
+// ve ağa göre öneri (RTMP aktarıcısının gönderim / atlama sayaçlarından). Yayın
+// sekmesi (Görüntü kalitesi) ve Ayarlar › Yayın ortak kullanır. Ağır ayarlarda
+// (≥ 12 Mbps, 1440p) yükleme hızı uyarısı gösterilir.
 import React, { memo } from "react";
-import { STREAM_QUALITY_PRESETS, qualityPresetKey, recommendQuality } from "../../lib/studio/broadcast";
+import { STREAM_QUALITY_PRESETS, heavyPresetWarning, qualityPresetKey, recommendQuality } from "../../lib/studio/broadcast";
 
 function QualityPresets({ encoding, onEncoding, locked = false, network = null }) {
   const on = qualityPresetKey(encoding);
   const rec = recommendQuality({ network, targetKbps: encoding.bitrateKbps });
   const apply = (p, bitrateKbps = p.bitrateKbps) => onEncoding({ ...encoding, resolution: p.resolution, fps: p.fps, bitrateKbps });
   const recPreset = rec ? STREAM_QUALITY_PRESETS.find((x) => x.key === rec.key) : null;
+  const heavy = heavyPresetWarning(encoding);
   return (
     <>
       <div className="st-choices is-grid">
@@ -18,6 +20,7 @@ function QualityPresets({ encoding, onEncoding, locked = false, network = null }
           </button>
         ))}
       </div>
+      {heavy && !rec && <p className="st-hint is-armed">{heavy}</p>}
       {rec && (
         <p className="st-hint is-armed" title={`Bağlantının taşıdığı ≈ ${rec.capacityKbps} kbps`}>
           {rec.reason}

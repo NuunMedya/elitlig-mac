@@ -161,6 +161,7 @@ function registerStudio({
   const ffmpegPath = () => lastFfmpegPath || "ffmpeg";
   const engine = createStudioEngine({
     getFfmpeg, tempRoot: path.join(tempRoot, "program"), log, diag: diagnostics,
+    qualityTuning: true,
     remuxLocal: ({ parts, outFile, ffmpegPath: bin }) => remuxParts({ parts, outFile, ffmpegPath: bin || ffmpegPath() }),
   });
   const angles = createAngles({ getFfmpeg, tempRoot: path.join(tempRoot, "angles"), log, diag: diagnostics });

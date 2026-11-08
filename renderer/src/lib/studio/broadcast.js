@@ -7,7 +7,8 @@ export const QUALITY_PRESETS = [
   { key: "1080p30", label: "1080p · 30 fps", hint: "Güçlü bağlantı (≥ 8 Mbps)", width: 1920, height: 1080, fps: 30, videoBitrateKbps: 4500 },
   { key: "1080p60", label: "1080p · 60 fps", hint: "Fiber / kablolu (≥ 10 Mbps), güçlü Mac", width: 1920, height: 1080, fps: 60, videoBitrateKbps: 6000 },
 ];
-export const AUDIO_BITRATE_KBPS = 128;
+/** Yayın sesi (AAC-LC 48 kHz stereo): 192 kbps (128 kbps'de 16 kHz üstü belirgin kesilir; YouTube ≥ 128 ister). */
+export const AUDIO_BITRATE_KBPS = 192;
 export const presetOf = (key) => QUALITY_PRESETS.find((p) => p.key === key) || QUALITY_PRESETS[0];
 
 /* ------------------- kodlama: çözünürlük · fps · bit hızı (elle) ------------------- */
@@ -15,6 +16,7 @@ export const presetOf = (key) => QUALITY_PRESETS.find((p) => p.key === key) || Q
 export const RESOLUTION_CHOICES = [
   { key: "720p", label: "720p", width: 1280, height: 720 },
   { key: "1080p", label: "1080p", width: 1920, height: 1080 },
+  { key: "1440p", label: "1440p", width: 2560, height: 1440 },
 ];
 export const FPS_CHOICES = [30, 60];
 export const BITRATE_MIN_KBPS = 800;
@@ -25,26 +27,44 @@ export const BITRATE_PRESETS = [
   { kbps: 4500, label: "4,5 Mbps", hint: "1080p30 için iyi" },
   { kbps: 6000, label: "6 Mbps", hint: "1080p60 için iyi" },
   { kbps: 9000, label: "9 Mbps", hint: "Fiber, en net görüntü" },
+  { kbps: 12000, label: "12 Mbps", hint: "1080p60 üst sınırı (YouTube)" },
+  { kbps: 18000, label: "18 Mbps", hint: "1440p60 (YouTube 9–18 Mbps)" },
 ];
 
 /**
  * Çözünürlük + fps için önerilen bit hızı (kbps). YouTube önerisi (H.264):
- * 720p30 1,5–4, 720p60 2,25–6, 1080p30 4,5–9, 1080p60 6–9+ Mbps; hareketli
- * (futbol) görüntüde aralığın üst yarısı: blok blok görüntü olmasın.
+ * 720p30 1,5–4, 720p60 2,25–6, 1080p30 4,5–9, 1080p60 6–9+ (en çok 12),
+ * 1440p30 6–13, 1440p60 9–18 Mbps; hareketli (futbol) görüntüde aralığın üst
+ * yarısı: blok blok görüntü olmasın.
  */
 export function recommendedBitrate(resolution, fps) {
-  const hd = resolution === "1080p";
   const hi = Number(fps) >= 60;
-  if (hd) return hi ? 9000 : 6000;
+  if (resolution === "1440p") return hi ? 18000 : 12000;
+  if (resolution === "1080p") return hi ? 9000 : 6000;
   return hi ? 4500 : 3000;
 }
+
+/** Çözünürlüğe göre anlamlı üst bit hızı (kbps): üstü YouTube'da fark yaratmaz, bağlantıyı zorlar. */
+export const maxUsefulBitrate = (resolution) => (resolution === "1440p" ? 20000 : resolution === "1080p" ? 12000 : 7500);
 
 /** "Yayın kalitesi" hızlı ayarları (Yayın sekmesi ve Ayarlar › Yayın). */
 export const STREAM_QUALITY_PRESETS = [
   { key: "smooth", label: "Akıcı", detail: "720p · 60 fps · 4,5 Mbps", hint: "Hızlı hareket akıcı; ≥ 7 Mbps yükleme", resolution: "720p", fps: 60, bitrateKbps: 4500 },
   { key: "balanced", label: "Dengeli", detail: "1080p · 30 fps · 6 Mbps", hint: "Önerilen; ≥ 9 Mbps yükleme", resolution: "1080p", fps: 30, bitrateKbps: 6000 },
   { key: "high", label: "Yüksek", detail: "1080p · 60 fps · 9 Mbps", hint: "Fiber / kablolu; ≥ 14 Mbps yükleme", resolution: "1080p", fps: 60, bitrateKbps: 9000 },
+  { key: "ultra", label: "Çok yüksek", detail: "1080p · 60 fps · 12 Mbps", hint: "YouTube'un 1080p60 üst sınırı; ≥ 18 Mbps kararlı yükleme", resolution: "1080p", fps: 60, bitrateKbps: 12000, heavy: true },
+  { key: "qhd", label: "1440p", detail: "1440p · 60 fps · 18 Mbps", hint: "YouTube 1440p60 (9–18 Mbps); ≥ 27 Mbps kararlı yükleme, güçlü bilgisayar (donanım kodlayıcı)", resolution: "1440p", fps: 60, bitrateKbps: 18000, heavy: true },
 ];
+
+/**
+ * Ağır hızlı ayar uyarısı (yükleme hızı): ≥ 12 Mbps görüntüde, bağlantının kararlı
+ * olarak taşıması gereken hız ve ne olacağı. Ağır değilse null.
+ */
+export function heavyPresetWarning(enc) {
+  const v = Number(enc?.bitrateKbps) || 0;
+  if (v < 12000 && enc?.resolution !== "1440p") return null;
+  return `Bu kalite ≈ ${String(uploadNeedMbps(v)).replace(".", ",")} Mbps kararlı yükleme ister. Bağlantı yetmezse yayın takılır ve tekrar bağlanır; yayından önce hız testi yapın (kablolu bağlantı önerilir).`;
+}
 /** Kodlama ayarı bir hızlı ayara denk geliyorsa anahtarı, değilse null. */
 export const qualityPresetKey = (enc) => STREAM_QUALITY_PRESETS.find((p) => p.resolution === enc?.resolution && p.fps === Number(enc?.fps) && p.bitrateKbps === Number(enc?.bitrateKbps))?.key || null;
 
@@ -100,7 +120,8 @@ export function bitrateAdvice(enc) {
   const rec = recommendedBitrate(enc.resolution, enc.fps);
   const v = Number(enc.bitrateKbps) || 0;
   if (v < rec * 0.6) return `Bu çözünürlük için düşük: görüntü bloklanabilir (önerilen ≈ ${rec} kbps).`;
-  if (v > 12000) return "YouTube 1080p için 12 Mbps'ın üstü gereksiz; bağlantı zorlanabilir.";
+  const max = maxUsefulBitrate(enc.resolution);
+  if (v > max) return `YouTube ${enc.resolution || "720p"} için ${String(Math.round(max / 100) / 10).replace(".", ",")} Mbps'ın üstü gereksiz; bağlantı zorlanabilir.`;
   return null;
 }
 

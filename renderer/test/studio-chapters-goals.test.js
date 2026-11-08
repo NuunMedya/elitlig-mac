@@ -12,7 +12,7 @@ describe("tekrar varsayılan süresi 15 sn", () => {
     expect(normalizeSettings({ replay: { seconds: 10 } }).replay.seconds).toBe(15); // sürümsüz = v1
     expect(normalizeSettings({ v: 1, replay: { seconds: 20 } }).replay.seconds).toBe(20);
     const s = patchSettings(normalizeSettings(null), "replay", { seconds: 10 });
-    expect(s.v).toBe(2);
+    expect(s.v).toBe(3);
     expect(s.replay.seconds).toBe(10);
     expect(normalizeSettings(JSON.parse(JSON.stringify(s))).replay.seconds).toBe(10);
     const store = { getItem: () => JSON.stringify({ v: 1, replay: { seconds: 10 } }) };

@@ -14,7 +14,7 @@
 // useEngine eski yola (MediaRecorder + yeniden kodlama) geçer; yayın kesilmez
 // (yalnız ffmpeg yeniden başlar, aktarıcı RTMP bağlantısını korur).
 import { createMkvMuxer, opusHead, sameBytes } from "../../lib/studio/mkvmux";
-import { createAudioClock, createFrameClock, createKeyframePlanner, videoEncoderCandidates } from "../../lib/studio/encodepath";
+import { createAudioClock, createFrameClock, createKeyframePlanner, encodedColorSpace, opusEncoderConfig, videoEncoderCandidates } from "../../lib/studio/encodepath";
 
 const FLUSH_MS = 50;
 const FLUSH_BYTES = 256 * 1024;
@@ -23,27 +23,72 @@ export const MAX_ENCODE_QUEUE = 6; // ~200 ms (30 fps): kodlayıcı geride kalı
 export const webCodecsAvailable = () => typeof window !== "undefined" && typeof window.VideoEncoder === "function" && typeof window.VideoFrame === "function";
 const audioCodecsAvailable = () => typeof window.AudioEncoder === "function" && typeof window.MediaStreamTrackProcessor === "function";
 
+/** Yüksek kaliteli Opus yapılandırması destekleniyor mu; değilse yalın (codec + bit hızı) yapılandırma. */
+async function supportedOpusConfig(want) {
+  const plain = { codec: "opus", sampleRate: want.sampleRate, numberOfChannels: want.numberOfChannels, bitrate: want.bitrate };
+  for (const c of [want, plain]) {
+    try { if ((await window.AudioEncoder.isConfigSupported(c))?.supported) return c; } catch { /* sonraki */ }
+  }
+  return null;
+}
+
+/**
+ * Kodlayıcının gerçekte yazdığı renk uzayı: tek karelik deneme kodlaması
+ * (VideoDecoderConfig.colorSpace). Ana süreç bunu kopyada SPS'e açıkça yazar
+ * (ffmpeg h264_metadata) — oynatıcı rengi tahmin etmez. Bilinmiyorsa null (dokunulmaz).
+ */
+async function probeColorSpace(config, { timeoutMs = 1500 } = {}) {
+  if (typeof window.OffscreenCanvas !== "function") return null;
+  let enc = null;
+  try {
+    const cs = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), timeoutMs);
+      const done = (v) => { clearTimeout(timer); resolve(v); };
+      enc = new window.VideoEncoder({
+        output: (_chunk, meta) => { if (meta?.decoderConfig) done(encodedColorSpace(meta.decoderConfig.colorSpace)); },
+        error: () => done(null),
+      });
+      enc.configure(config);
+      const c = new window.OffscreenCanvas(config.width, config.height);
+      const g = c.getContext("2d");
+      g.fillStyle = "#2f7d32";
+      g.fillRect(0, 0, config.width, config.height);
+      const frame = new window.VideoFrame(c, { timestamp: 0, alpha: "discard" });
+      try { enc.encode(frame, { keyFrame: true }); } finally { frame.close(); }
+      enc.flush().catch(() => done(null));
+    });
+    return cs;
+  } catch {
+    return null;
+  } finally {
+    try { if (enc && enc.state !== "closed") enc.close(); } catch { /* yoksay */ }
+  }
+}
+
 /**
  * Desteklenen ilk VideoEncoder yapılandırması.
- * → { ok, config, hardware, audio } | { ok: false, reason }
+ * → { ok, config, hardware, audio, audioConfig, colorSpace } | { ok: false, reason }
  */
-export async function probeWebCodecs({ width, height, fps, videoBitrateKbps, allowSoftware = false }) {
+export async function probeWebCodecs({ width, height, fps, videoBitrateKbps, audioBitrateKbps = 192, allowSoftware = false }) {
   if (!webCodecsAvailable()) return { ok: false, reason: "NO_WEBCODECS" };
-  let audio = false;
-  if (audioCodecsAvailable()) {
-    try { audio = Boolean((await window.AudioEncoder.isConfigSupported({ codec: "opus", sampleRate: 48000, numberOfChannels: 2, bitrate: 128000 }))?.supported); } catch { audio = false; }
-  }
+  let audioConfig = null;
+  if (audioCodecsAvailable()) audioConfig = await supportedOpusConfig(opusEncoderConfig({ sampleRate: 48000, numberOfChannels: 2, aacKbps: audioBitrateKbps }));
+  const audio = Boolean(audioConfig);
   if (!audio) return { ok: false, reason: "NO_OPUS_ENCODER" };
   for (const config of videoEncoderCandidates({ width, height, fps, videoBitrateKbps, allowSoftware })) {
     try {
       const r = await window.VideoEncoder.isConfigSupported(config);
-      if (r?.supported) return { ok: true, config: { ...config, ...(r.config || {}) }, hardware: config.hardwareAcceleration === "prefer-hardware", audio };
+      if (r?.supported) {
+        const chosen = { ...config, ...(r.config || {}) };
+        const colorSpace = await probeColorSpace(chosen);
+        return { ok: true, config: chosen, hardware: config.hardwareAcceleration === "prefer-hardware", audio, audioConfig, colorSpace };
+      }
     } catch { /* sonraki */ }
   }
   return { ok: false, reason: "NO_H264_ENCODER" };
 }
 
-export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height, audioBitrateKbps = 128, keyframeSec = 2, videoConfig, onData, onFatal, now = () => performance.now() }) {
+export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height, audioBitrateKbps = 192, keyframeSec = 2, videoConfig, audioConfig = null, onData, onFatal, now = () => performance.now() }) {
   const clock = createFrameClock(fps);
   const keys = createKeyframePlanner(fps, Math.min(2, keyframeSec || 2));
   const st = {
@@ -61,6 +106,7 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
   let flushTimer = null;
   let dead = false;
   let lastVideoMs = 0;
+  let colorSpace = null; // kodlayıcının bildirdiği renk uzayı (tanılama)
 
   const fatal = (reason, error) => {
     if (dead) return;
@@ -105,6 +151,7 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
   const venc = new window.VideoEncoder({
     output: (chunk, meta) => {
       if (dead) return;
+      if (meta?.decoderConfig?.colorSpace && !colorSpace) colorSpace = { ...meta.decoderConfig.colorSpace };
       const desc = meta?.decoderConfig?.description;
       if (desc) {
         const d = new Uint8Array(desc instanceof ArrayBuffer ? desc : desc.buffer ? new Uint8Array(desc.buffer, desc.byteOffset, desc.byteLength) : desc);
@@ -216,7 +263,10 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
             audioInfo = { sampleRate: data.sampleRate, channels: Math.min(2, data.numberOfChannels || 2) };
             audioClock = createAudioClock(data.sampleRate);
             aenc = new window.AudioEncoder({ output: audioOut, error: (e) => { st.errors += 1; console.warn("AudioEncoder", e); } });
-            aenc.configure({ codec: "opus", sampleRate: data.sampleRate, numberOfChannels: audioInfo.channels, bitrate: Math.round(audioBitrateKbps * 1000) });
+            // Ara Opus yüksek bit hızında (AAC hedefinin ≈ 1,5 katı), karmaşıklık 10: ffmpeg'deki
+            // AAC kodlamasına neredeyse kayıpsız girer. Aygıt hızı (44,1 kHz …) korunur: yeniden örnekleme yok.
+            const want = { ...(audioConfig || opusEncoderConfig({ aacKbps: audioBitrateKbps })), sampleRate: data.sampleRate, numberOfChannels: audioInfo.channels };
+            try { aenc.configure(want); } catch { aenc.configure({ codec: "opus", sampleRate: data.sampleRate, numberOfChannels: audioInfo.channels, bitrate: want.bitrate }); }
           }
           if (!clock.started() || aenc.state !== "configured") continue;
           const durMs = (data.numberOfFrames * 1000) / data.sampleRate;
@@ -261,6 +311,8 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
         hardware: videoConfig.hardwareAcceleration === "prefer-hardware",
         codec: videoConfig.codec,
         bitrateMode: videoConfig.bitrateMode,
+        colorSpace,
+        audioKbps: audioConfig ? Math.round(audioConfig.bitrate / 1000) : null,
         queue: dead ? 0 : venc.encodeQueueSize,
         encodedFps: win.fps,
         outKbps: win.kbps,

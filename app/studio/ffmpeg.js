@@ -133,6 +133,14 @@ const encoderTestArgs = (encoder) => [
   "-flags", "+global_header", "-f", "flv", "-",
 ];
 
+/** Ses kodlayıcısı deneme kodlaması (aac_at: AudioToolbox her Mac'te açılmayabilir). */
+const audioEncoderTestArgs = (encoder) => [
+  "-hide_banner", "-nostdin", "-loglevel", "error",
+  "-f", "lavfi", "-i", "sine=f=1000:sample_rate=48000:duration=0.3",
+  ...audioCodecArgs(encoder, 192), "-ar", "48000", "-ac", "2",
+  "-f", "adts", "-",
+];
+
 /**
  * ffmpeg'in sürümünü ve gerekli parçalarını yoklar. Yalnız bu işletim sisteminin
  * kodlayıcıları (encoderOrder) denenir; diğerleri false kalır.
@@ -140,7 +148,7 @@ const encoderTestArgs = (encoder) => [
  *     encoder (tercih edilen), muxers: { tee, segment, flv }, aac, error? }
  */
 async function probeFfmpeg(candidate, { runImpl = run, testEncoders = true, platform = process.platform } = {}) {
-  const none = { available: false, path: null, source: null, version: null, encoders: emptyEncoders(), encoder: null, muxers: { tee: false, segment: false, flv: false, fifo: false, matroska: false }, aac: false };
+  const none = { available: false, path: null, source: null, version: null, encoders: emptyEncoders(), encoder: null, muxers: { tee: false, segment: false, flv: false, fifo: false, matroska: false }, aac: false, audioEncoder: null };
   if (!candidate) return { ...none, error: "ffmpeg bulunamadı." };
   const version = await runImpl(candidate.path, ["-hide_banner", "-version"]);
   if (!version.ok) return { ...none, path: candidate.path, source: candidate.source, error: "ffmpeg çalıştırılamadı." };
@@ -154,6 +162,10 @@ async function probeFfmpeg(candidate, { runImpl = run, testEncoders = true, plat
       if (has[key]) has[key] = (await runImpl(candidate.path, encoderTestArgs(ENCODERS[key]), { timeout: 15000 })).ok;
     }
   }
+  // Ses kodlayıcısı: Mac'te AudioToolbox AAC (aac_at; Apple'ın kodlayıcısı ffmpeg'in yerleşik
+  // AAC'sinden belirgin iyidir) gerçekten açılıyorsa o, yoksa yerleşik "aac" (twoloop).
+  let audioEncoder = encoders.has("aac") ? "aac" : null;
+  if (encoders.has("aac_at") && (!testEncoders || (await runImpl(candidate.path, audioEncoderTestArgs("aac_at"), { timeout: 15000 })).ok)) audioEncoder = "aac_at";
   const info = {
     available: Boolean(Object.values(has).some(Boolean) && encoders.has("aac") && muxers.has("tee") && muxers.has("segment") && muxers.has("flv")),
     path: candidate.path,
@@ -165,6 +177,7 @@ async function probeFfmpeg(candidate, { runImpl = run, testEncoders = true, plat
     // matroska: yerel tam kayıt (.mkv).
     muxers: { tee: muxers.has("tee"), segment: muxers.has("segment"), flv: muxers.has("flv"), fifo: muxers.has("fifo"), matroska: muxers.has("matroska") },
     aac: encoders.has("aac"),
+    audioEncoder,
   };
   if (!info.available) info.error = "ffmpeg'de canlı yayın için gereken kodlayıcı / biçim yok.";
   return info;
@@ -236,7 +249,7 @@ function normalizeStreamOptions(opts = {}) {
     height: even(clampInt(opts.height, 180, 2160, 1080)),
     fps: clampInt(opts.fps, 15, 60, 30),
     videoBitrateKbps: clampInt(opts.videoBitrateKbps, 300, 20000, 4500),
-    audioBitrateKbps: clampInt(opts.audioBitrateKbps, 128, 320, 160),
+    audioBitrateKbps: clampInt(opts.audioBitrateKbps, 128, 320, DEFAULT_AUDIO_KBPS),
     mimeType: String(opts.mimeType || ""),
     // Anahtar kare aralığı (sn, 1–4; YouTube ≤ 4 ister). Parça halkası 2 sn'lik olduğundan
     // 2 sn'den uzun aralıkta yine 2 sn'de bir anahtar kare zorlanır (klip / tekrar sınırları).
@@ -247,7 +260,20 @@ function normalizeStreamOptions(opts = {}) {
     videoCopy: opts.videoCopy === true,
     pipeline: opts.videoCopy === true ? "webcodecs" : "legacy",
     videoEncoderLabel: opts.videoCopy === true && opts.videoEncoderLabel ? String(opts.videoEncoderLabel).slice(0, 120) : null,
+    // WebCodecs kodlayıcısının bildirdiği renk uzayı (kopyada SPS'e yazılır; colorMetadataFor).
+    videoColorSpace: opts.videoCopy === true ? normalizeColorSpace(opts.videoColorSpace) : null,
   };
+}
+
+/** { primaries, transfer, matrix, fullRange } — yalnız bilinen değerler; hiçbiri yoksa null. */
+function normalizeColorSpace(cs) {
+  if (!cs || typeof cs !== "object") return null;
+  const out = {};
+  if (Object.hasOwn(CS_PRIMARIES, String(cs.primaries))) out.primaries = String(cs.primaries);
+  if (Object.hasOwn(CS_TRANSFER, String(cs.transfer))) out.transfer = String(cs.transfer);
+  if (Object.hasOwn(CS_MATRIX, String(cs.matrix))) out.matrix = String(cs.matrix);
+  if (typeof cs.fullRange === "boolean") out.fullRange = cs.fullRange;
+  return Object.keys(out).length ? out : null;
 }
 
 /** Kodlayıcı adı + kodlama yolu (durum ve tanılama): "webcodecs" ya da ffmpeg kodlayıcısı. */
@@ -260,37 +286,110 @@ const pickEncoderFor = (encoders, preference, platform) => (preference === "soft
 const forcedKeyframeSec = (keyframeSec, segmentSeconds) => (keyframeSec > 0 ? Math.min(keyframeSec, segmentSeconds) : segmentSeconds);
 
 /**
- * Hız düzeyi (speedLevel 0..2): kodlayıcı gerçek zamana yetişemezse (ffmpeg
- * speed < 0.95, 10 sn) bir sonraki yeniden başlatmada daha hızlı ön ayar.
- *   libx264: veryfast → superfast → ultrafast;  NVENC: p4 → p2 → p1;
- *   diğer donanım kodlayıcılarında (VideoToolbox, QSV, AMF, MF) etkisi yok.
+ * Hız düzeyi (speedLevel −2..2; 0 = eski varsayılan). Oturum, işlemci payına
+ * göre daha kaliteli (negatif) bir düzeyle başlar (initialSpeedLevel); kodlayıcı
+ * gerçek zamana yetişemezse (ffmpeg speed < 0.95, 10 sn) bir sonraki yeniden
+ * başlatmada bir düzey hızlıya iner.
+ *   libx264:      medium → faster → veryfast → superfast → ultrafast
+ *   NVENC:        p6 → p5 → p4 → p2 → p1
+ *   VideoToolbox: ≤ 0 kalite öncelikli (-prio_speed 0), ≥ 1 kodlayıcının varsayılanı
+ *   diğer donanım kodlayıcılarında (QSV, AMF, MF) etkisi yok.
  */
-const X264_PRESETS = Object.freeze(["veryfast", "superfast", "ultrafast"]);
-const NVENC_PRESETS = Object.freeze(["p4", "p2", "p1"]);
-const MAX_SPEED_LEVEL = X264_PRESETS.length - 1;
-const presetFor = (list, level) => list[Math.min(list.length - 1, Math.max(0, Math.round(Number(level) || 0)))];
+const X264_PRESETS = Object.freeze(["medium", "faster", "veryfast", "superfast", "ultrafast"]);
+const NVENC_PRESETS = Object.freeze(["p6", "p5", "p4", "p2", "p1"]);
+const MIN_SPEED_LEVEL = -2;
+const MAX_SPEED_LEVEL = 2;
+const presetFor = (list, level) => list[Math.min(list.length - 1, Math.max(0, Math.round(Number(level) || 0) - MIN_SPEED_LEVEL))];
+
+/**
+ * libx264 ön ayarlarının işlemci çekirdeği başına yaklaşık hızı (milyon piksel/sn).
+ * Ölçüm: 4 çekirdek, 1080p30, 6 Mbps CBR, hareketli sentetik görüntü (medium ≈ 37,
+ * faster ≈ 51, veryfast ≈ 80 kare/sn). Aynı bit hızında SSIM: veryfast 13,37 dB,
+ * faster 13,57 dB, medium 13,67 dB — medium'un kalitesi veryfast'ta ≈ %20 daha fazla
+ * bit hızı ister (veryfast 7,2 Mbps ≈ medium 6 Mbps).
+ */
+const X264_MPIX_PER_CORE = Object.freeze({ medium: 19, faster: 26, veryfast: 41 });
+/** Gereken pay: tarayıcı (birleştirici + MediaRecorder) ve diğer işler için ×2,5. */
+const X264_CPU_MARGIN = 2.5;
+
+/**
+ * Oturumun başlangıç hız düzeyi. libx264: yayın piksel hızı × pay, çekirdek sayısı ×
+ * ön ayar hızına sığıyorsa daha kaliteli ön ayar (medium / faster), sığmıyorsa
+ * veryfast (eski varsayılan). NVENC: p5 (ekran kartında, işlemciden bağımsız; yetişemezse p4).
+ * Diğerleri 0.
+ */
+function initialSpeedLevel(encoder, { width = 1920, height = 1080, fps = 30, cores = 0 } = {}) {
+  if (encoder === ENCODERS.nvenc) return -1;
+  if (encoder !== ENCODERS.libx264) return 0;
+  const n = Number(cores) > 0 ? Number(cores) : 0;
+  if (!n) return 0;
+  const need = ((Number(width) || 1920) * (Number(height) || 1080) * (Number(fps) || 30) * X264_CPU_MARGIN) / 1e6;
+  if (n * X264_MPIX_PER_CORE.medium >= need) return -2;
+  if (n * X264_MPIX_PER_CORE.faster >= need) return -1;
+  return 0;
+}
+
+/** Bu kodlayıcıda hız düzeyini düşürmek (daha hızlı ön ayar) bir şey değiştirir mi. */
+const speedLevelMatters = (encoder) => [ENCODERS.libx264, ENCODERS.nvenc, ENCODERS.videotoolbox].includes(encoder);
+
+/**
+ * Renk: BT.709, sınırlı aralık (TV, 16–235). HD akışta renk bilgisi yazılmazsa
+ * oynatıcılar BT.709 varsayar; görüntü BT.601 ile dönüştürülüp etiketsiz giderse
+ * renk tonu kayar (kırmızı / yeşil). Ölçeklemede dönüşüm de BT.709'a yapılır
+ * (giriş etiketi okunur; etiketsiz giriş BT.601 sayılır — Chrome'un tuval / kamera
+ * dönüşümü).
+ */
+const COLOR_ARGS = Object.freeze(["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv"]);
+/** h264_metadata ile SPS'e yazılan renk bilgisi (BT.709 = 1, sınırlı aralık). */
+const H264_COLOR_METADATA = "video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1";
+/** Ölçekleme süzgeci (yayın / açı / öne çıkanlar): boyut + BT.709 sınırlı aralık. */
+const scaleFilter = (width, height) => `scale=${width}:${height}:flags=bicubic:out_color_matrix=bt709:out_range=tv`;
+
+/**
+ * WebCodecs kodlayıcısının bildirdiği renk uzayı (VideoDecoderConfig.colorSpace) →
+ * SPS renk bilgisi (h264_metadata). Kopyada görüntü yeniden kodlanmadığı için yalnız
+ * KODLAYICININ GERÇEKTEN KULLANDIĞI değerler yazılır (bilinmeyen alan atlanır);
+ * hiçbiri bilinmiyorsa null (akışa dokunulmaz).
+ */
+// Yalnız SDR YUV değerleri (yayın 8 bit 4:2:0); "rgb" matris / sRGB aktarım gibi giriş karesine
+// ait değerler yazılmaz. Matris bilinmiyorsa hiçbir şey yazılmaz (yanlış etiket, etiketsizden kötü).
+const CS_PRIMARIES = { bt709: 1, bt470bg: 5, smpte170m: 6 };
+const CS_TRANSFER = { bt709: 1, smpte170m: 6 };
+const CS_MATRIX = { bt709: 1, bt470bg: 5, smpte170m: 6 };
+function colorMetadataFor(cs) {
+  if (!cs || typeof cs !== "object" || CS_MATRIX[cs.matrix] === undefined) return null;
+  const parts = [];
+  if (typeof cs.fullRange === "boolean") parts.push(`video_full_range_flag=${cs.fullRange ? 1 : 0}`);
+  if (CS_PRIMARIES[cs.primaries] !== undefined) parts.push(`colour_primaries=${CS_PRIMARIES[cs.primaries]}`);
+  if (CS_TRANSFER[cs.transfer] !== undefined) parts.push(`transfer_characteristics=${CS_TRANSFER[cs.transfer]}`);
+  if (CS_MATRIX[cs.matrix] !== undefined) parts.push(`matrix_coefficients=${CS_MATRIX[cs.matrix]}`);
+  return parts.length ? parts.join(":") : null;
+}
 
 /**
  * Video kodlayıcı seçenekleri: sabit bit hızı (YouTube CBR önerisi:
  * -minrate = -b:v = -maxrate, -bufsize = 1× bit hızı → 1 sn'lik VBV, bit hızı
  * dalgalanmaz), 2 sn'de bir anahtar kare (-g = -keyint_min = 2 × fps; sahne
- * değişiminde ek anahtar kare yok), High profil, açık H.264 seviyesi.
- * width / height verilmezse 1080p varsayılır (seviye hesabı için).
+ * değişiminde ek anahtar kare yok), High profil, açık H.264 seviyesi, BT.709
+ * renk bilgisi (COLOR_ARGS). width / height verilmezse 1080p varsayılır (seviye hesabı için).
  */
 function videoEncoderArgs(encoder, { videoBitrateKbps, fps, width = 1920, height = 1080, keyframeSeconds = 2, speedLevel = 0 }) {
   const vb = videoBitrateKbps;
   const gop = Math.max(1, Math.round(fps * keyframeSeconds));
   const level = computeH264Level({ width, height, fps });
-  const rate = ["-b:v", `${vb}k`, "-minrate", `${vb}k`, "-maxrate", `${vb}k`, "-bufsize", `${vb}k`, "-g", String(gop), "-keyint_min", String(gop)];
+  const rate = ["-b:v", `${vb}k`, "-minrate", `${vb}k`, "-maxrate", `${vb}k`, "-bufsize", `${vb}k`, "-g", String(gop), "-keyint_min", String(gop), ...COLOR_ARGS];
   switch (encoder) {
     case ENCODERS.videotoolbox:
       // allow_sw 0: Apple'ın yazılım H.264'üne sessizce düşmesin (düşük kalite, yüksek işlemci);
       // donanım yoksa açılış hatası → x264'e geçilir (engine fallbackEncoder, yoklama da aynı seçenekle).
-      return ["-c:v", ENCODERS.videotoolbox, "-allow_sw", "0", "-realtime", "1", "-profile:v", "high", "-level", level, ...rate];
+      // prio_speed 0: kalite öncelikli (macOS 13+; desteklenmeyen sistemde ffmpeg yalnız uyarır).
+      // Yetişemezse (hız düzeyi ≥ 1) kodlayıcının varsayılanına dönülür.
+      return ["-c:v", ENCODERS.videotoolbox, "-allow_sw", "0", "-realtime", "1", ...(Math.round(Number(speedLevel) || 0) <= 0 ? ["-prio_speed", "0"] : []), "-profile:v", "high", "-level", level, ...rate];
     case ENCODERS.nvenc:
       // OBS ile aynı: tune hq + 2 B-kare (ll kalitesi düşük); forced-idr: -force_key_frames
-      // ile istenen kareler IDR olur (klip parçaları bağımsız açılır).
-      return ["-c:v", ENCODERS.nvenc, "-preset", presetFor(NVENC_PRESETS, speedLevel), "-tune", "hq", "-rc", "cbr", "-bf", "2", "-profile:v", "high", "-level", level, "-forced-idr", "1", "-no-scenecut", "1", ...rate];
+      // ile istenen kareler IDR olur (klip parçaları bağımsız açılır). spatial-aq: düz alanlarda
+      // (çim, gökyüzü) bloklanmayı azaltır; rc-lookahead 10: CBR'de bit dağılımı (≈ 0,2–0,3 sn ek gecikme).
+      return ["-c:v", ENCODERS.nvenc, "-preset", presetFor(NVENC_PRESETS, speedLevel), "-tune", "hq", "-rc", "cbr", "-bf", "2", "-spatial-aq", "1", "-rc-lookahead", "10", "-profile:v", "high", "-level", level, "-forced-idr", "1", "-no-scenecut", "1", ...rate];
     case ENCODERS.qsv:
       // QSV seviyeyi genel AVCodecContext.level'dan okur: 4.2 → 42. b:v = maxrate → CBR.
       return ["-c:v", ENCODERS.qsv, "-preset", "veryfast", "-look_ahead", "0", "-profile:v", "high", "-level", String(h264level.levelIdc(level)), "-forced_idr", "1", ...rate];
@@ -299,9 +398,14 @@ function videoEncoderArgs(encoder, { videoBitrateKbps, fps, width = 1920, height
     case ENCODERS.mf:
       // Media Foundation'ın seviye seçeneği yok: SPS'teki level_idc h264_metadata ile yazılır.
       // Profil sayıyla verilir (100 = High; h264_mf'in adlı profil seçeneği yok).
-      return ["-c:v", ENCODERS.mf, "-hw_encoding", "1", "-rate_control", "cbr", "-scenario", "live_streaming", "-profile:v", "100", ...rate, "-bsf:v", `h264_metadata=level=${level}`];
-    default:
-      return ["-c:v", ENCODERS.libx264, "-preset", presetFor(X264_PRESETS, speedLevel), "-profile:v", "high", "-level", level, "-bf", "2", "-sc_threshold", "0", ...rate, "-x264-params", "nal-hrd=cbr:force-cfr=1"];
+      // Renk bilgisi de aynı süzgeçle (MF kodlayıcısı AVCodecContext renk alanlarını yazmayabilir).
+      return ["-c:v", ENCODERS.mf, "-hw_encoding", "1", "-rate_control", "cbr", "-scenario", "live_streaming", "-profile:v", "100", ...rate, "-bsf:v", `h264_metadata=level=${level}:${H264_COLOR_METADATA}`];
+    default: {
+      // medium: 3 B-kare (ön ayarın kendi değeri), ileri bakış 30 kareyle sınırlı (gecikme ≤ 1 sn).
+      const preset = presetFor(X264_PRESETS, speedLevel);
+      const slow = preset === "medium";
+      return ["-c:v", ENCODERS.libx264, "-preset", preset, "-profile:v", "high", "-level", level, "-bf", slow ? "3" : "2", "-sc_threshold", "0", ...rate, "-x264-params", `nal-hrd=cbr:force-cfr=1${slow ? ":rc-lookahead=30" : ""}`];
+    }
   }
 }
 
@@ -411,8 +515,18 @@ const supportsFpsMode = (version) => {
  *                         basamakla değil, yumuşak açılır (yeniden başlatma "tık"ı olmaz).
  */
 const STREAM_AUDIO_FILTER = "aresample=async=1000,alimiter=limit=0.891:attack=5:release=50:level=0,afade=t=in:st=0:d=0.05";
+/** Varsayılan yayın ses bit hızı (kbps): AAC-LC 192 kbps stereo (128 kbps'de 16 kHz üstü belirgin kesilir). */
+const DEFAULT_AUDIO_KBPS = 192;
+/**
+ * AAC kodlayıcı seçenekleri (AAC-LC):
+ *   aac_at (Mac, AudioToolbox): CBR; kalite düzeyi kodlayıcının varsayılanı (en yüksek).
+ *   aac    (ffmpeg yerleşik):   twoloop arama (ffmpeg'in en iyi hız/kalite yöntemi; açıkça yazılır).
+ */
+const audioCodecArgs = (encoder, kbps) => (encoder === "aac_at"
+  ? ["-c:a", "aac_at", "-aac_at_mode", "cbr", "-b:a", `${clampInt(kbps, 128, 320, DEFAULT_AUDIO_KBPS)}k`]
+  : ["-c:a", "aac", "-profile:a", "aac_low", "-aac_coder", "twoloop", "-b:a", `${clampInt(kbps, 128, 320, DEFAULT_AUDIO_KBPS)}k`]);
 /** AAC-LC, 48 kHz stereo; bit hızı 128–320 kbps (YouTube: ≥ 128 kbps stereo). */
-const streamAudioArgs = (kbps) => ["-c:a", "aac", "-profile:a", "aac_low", "-b:a", `${clampInt(kbps, 128, 320, 160)}k`, "-ar", "48000", "-ac", "2", "-af", STREAM_AUDIO_FILTER];
+const streamAudioArgs = (kbps, encoder = "aac") => [...audioCodecArgs(encoder, kbps), "-ar", "48000", "-ac", "2", "-af", STREAM_AUDIO_FILTER];
 
 /**
  * Yayın komutu. ffmpeg, MediaRecorder çıktısını (Matroska/WebM) stdin'den okur,
@@ -429,10 +543,10 @@ const streamAudioArgs = (kbps) => ["-c:a", "aac", "-profile:a", "aac_low", "-b:a
  * İlerleme stdout'a (-progress pipe:1); günlük stderr'e, düzey önekli
  * ("[warning] …"; fifo'nun "Recovery successful" satırı info düzeyindedir).
  */
-function buildStreamArgs({ url = null, relayUrl = null, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec = null, segmentSeconds = 2, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska", fifo = false, localFile = null, localEncode = null, speedLevel = 0, fpsMode = true, platform = process.platform, videoCopy = false }) {
-  if (videoCopy) return buildCopyStreamArgs({ url, relayUrl, audioBitrateKbps, segmentSeconds, segmentStart, listFile, inputFormat, fifo, localFile, platform });
+function buildStreamArgs({ url = null, relayUrl = null, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, audioEncoder = "aac", keyframeSec = null, segmentSeconds = 2, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska", fifo = false, localFile = null, localEncode = null, speedLevel = 0, fpsMode = true, platform = process.platform, videoCopy = false, videoColorSpace = null }) {
+  if (videoCopy) return buildCopyStreamArgs({ url, relayUrl, audioBitrateKbps, audioEncoder, videoColorSpace, segmentSeconds, segmentStart, listFile, inputFormat, fifo, localFile, platform });
   if (localFile && localEncode) {
-    return buildDualEncodeArgs({ url, relayUrl, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec, segmentSeconds, segmentStart, listFile, inputFormat, fifo, localFile, localEncode, speedLevel, fpsMode, platform });
+    return buildDualEncodeArgs({ url, relayUrl, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, audioEncoder, keyframeSec, segmentSeconds, segmentStart, listFile, inputFormat, fifo, localFile, localEncode, speedLevel, fpsMode, platform });
   }
   const outputs = [];
   const net = networkSlave({ url, relayUrl, fifo });
@@ -447,11 +561,11 @@ function buildStreamArgs({ url = null, relayUrl = null, width, height, fps, vide
     "-probesize", "1000000", "-analyzeduration", "1000000",
     "-f", inputFormat, "-i", "pipe:0",
     "-map", "0:v:0", "-map", "0:a:0?",
-    "-vf", `scale=${width}:${height}:flags=bicubic,fps=${fps},format=${encoderPixelFormat(encoder)}`,
+    "-vf", `${scaleFilter(width, height)},fps=${fps},format=${encoderPixelFormat(encoder)}`,
     ...(fpsMode ? ["-fps_mode", "cfr"] : ["-vsync", "cfr"]), "-r", String(fps),
     ...videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height, keyframeSeconds: forcedKeyframeSec(keyframeSec, segmentSeconds), speedLevel }),
     "-force_key_frames", `expr:gte(t,n_forced*${forcedKeyframeSec(keyframeSec, segmentSeconds)})`,
-    ...streamAudioArgs(audioBitrateKbps),
+    ...streamAudioArgs(audioBitrateKbps, audioEncoder),
     "-flags", "+global_header",
     "-max_muxing_queue_size", "1024",
     "-f", "tee", outputs.join("|"),
@@ -466,8 +580,11 @@ function buildStreamArgs({ url = null, relayUrl = null, width, height, fps, vide
  * yoktur (kopya). h264_mp4toannexb: MPEG-TS (halka, aktarıcı) Annex B ister;
  * Matroska / FLV çıkışları başlığı kendileri avcC'ye çevirir. Ses buildStreamArgs
  * ile aynı (streamAudioArgs: Opus → AAC, aresample + alimiter + afade). Parça sınırları anahtar karelerde (2 sn).
+ * videoColorSpace (kodlayıcının bildirdiği renk uzayı) verilirse SPS'e renk bilgisi
+ * yazılır (h264_metadata; görüntü yeniden kodlanmaz): oynatıcı rengi tahmin etmez.
  */
-function buildCopyStreamArgs({ url = null, relayUrl = null, audioBitrateKbps, segmentSeconds = 2, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska", fifo = false, localFile = null, platform = process.platform }) {
+function buildCopyStreamArgs({ url = null, relayUrl = null, audioBitrateKbps, audioEncoder = "aac", videoColorSpace = null, segmentSeconds = 2, segmentStart = 0, listFile = "list.csv", inputFormat = "matroska", fifo = false, localFile = null, platform = process.platform }) {
+  const color = colorMetadataFor(videoColorSpace);
   const outputs = [];
   const net = networkSlave({ url, relayUrl, fifo });
   if (net) outputs.push(net);
@@ -480,8 +597,8 @@ function buildCopyStreamArgs({ url = null, relayUrl = null, audioBitrateKbps, se
     "-probesize", "1000000", "-analyzeduration", "1000000",
     "-f", inputFormat, "-i", "pipe:0",
     "-map", "0:v:0", "-map", "0:a:0?",
-    "-c:v", "copy", "-bsf:v", "h264_mp4toannexb",
-    ...streamAudioArgs(audioBitrateKbps),
+    "-c:v", "copy", "-bsf:v", color ? `h264_metadata=${color},h264_mp4toannexb` : "h264_mp4toannexb",
+    ...streamAudioArgs(audioBitrateKbps, audioEncoder),
     "-flags", "+global_header",
     "-max_muxing_queue_size", "1024",
     "-f", "tee", outputs.join("|"),
@@ -513,9 +630,11 @@ function specifyStream(args, spec) {
  * İşlemci: ikinci kodlama donanım kodlayıcıda ucuzdur; motor libx264'te bu
  * yolu yalnız açıkça izin verilirse kullanır (allowSoftware).
  */
-function buildDualEncodeArgs({ url, relayUrl = null, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, keyframeSec = null, segmentSeconds, segmentStart, listFile, inputFormat, fifo, localFile, localEncode, speedLevel, fpsMode, platform }) {
+function buildDualEncodeArgs({ url, relayUrl = null, width, height, fps, videoBitrateKbps, audioBitrateKbps, encoder, audioEncoder = "aac", keyframeSec = null, segmentSeconds, segmentStart, listFile, inputFormat, fifo, localFile, localEncode, speedLevel, fpsMode, platform }) {
   const L = localEncode;
   const pf = encoderPixelFormat(encoder);
+  // İki libx264 kodlaması: işlemci payı tek kodlamaya göre hesaplandı → en çok veryfast (düzey ≥ 0).
+  const dualSpeed = encoder === ENCODERS.libx264 ? Math.max(0, Math.round(Number(speedLevel) || 0)) : speedLevel;
   const outputs = [];
   const sel = (spec) => `select=\\'${spec}\\'`;
   const net = networkSlave({ url, relayUrl, fifo, select: `:${sel("v:0,a")}` });
@@ -524,8 +643,8 @@ function buildDualEncodeArgs({ url, relayUrl = null, width, height, fps, videoBi
   outputs.push(`[f=segment:segment_time=${segmentSeconds}:segment_time_delta=0.05:segment_format=mpegts:reset_timestamps=1:segment_start_number=${segmentStart}:segment_list=${listFile}:segment_list_type=csv:onfail=abort:${sel("v:0,a")}]${SEGMENT_PATTERN}`);
   const graph = [
     "[0:v:0]split=2[elv0][elv1]",
-    `[elv0]scale=${width}:${height}:flags=bicubic,fps=${fps},format=${pf}[elvs]`,
-    `[elv1]scale=${L.width}:${L.height}:flags=bicubic,fps=${L.fps},format=${pf}[elvl]`,
+    `[elv0]${scaleFilter(width, height)},fps=${fps},format=${pf}[elvs]`,
+    `[elv1]${scaleFilter(L.width, L.height)},fps=${L.fps},format=${pf}[elvl]`,
   ].join(";");
   const cfr = (spec, rate) => (fpsMode ? [`-fps_mode:${spec}`, "cfr", `-r:${spec}`, String(rate)] : [`-r:${spec}`, String(rate)]);
   return [
@@ -538,11 +657,11 @@ function buildDualEncodeArgs({ url, relayUrl = null, width, height, fps, videoBi
     "-map", "[elvs]", "-map", "[elvl]", "-map", "0:a:0?",
     ...(fpsMode ? [] : ["-vsync", "cfr"]),
     ...cfr("v:0", fps),
-    ...specifyStream(videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height, keyframeSeconds: forcedKeyframeSec(keyframeSec, segmentSeconds), speedLevel }), "v:0"),
+    ...specifyStream(videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height, keyframeSeconds: forcedKeyframeSec(keyframeSec, segmentSeconds), speedLevel: dualSpeed }), "v:0"),
     "-force_key_frames:v:0", `expr:gte(t,n_forced*${forcedKeyframeSec(keyframeSec, segmentSeconds)})`,
     ...cfr("v:1", L.fps),
-    ...specifyStream(videoEncoderArgs(encoder, { videoBitrateKbps: L.videoBitrateKbps, fps: L.fps, width: L.width, height: L.height, keyframeSeconds: 2, speedLevel }), "v:1"),
-    ...streamAudioArgs(audioBitrateKbps),
+    ...specifyStream(videoEncoderArgs(encoder, { videoBitrateKbps: L.videoBitrateKbps, fps: L.fps, width: L.width, height: L.height, keyframeSeconds: 2, speedLevel: dualSpeed }), "v:1"),
+    ...streamAudioArgs(audioBitrateKbps, audioEncoder),
     "-flags", "+global_header",
     "-max_muxing_queue_size", "1024",
     "-f", "tee", outputs.join("|"),
@@ -666,7 +785,9 @@ const parseSlaveFailure = (line) => {
 };
 
 module.exports = {
-  STREAM_AUDIO_FILTER, streamAudioArgs,
+  STREAM_AUDIO_FILTER, streamAudioArgs, audioCodecArgs, DEFAULT_AUDIO_KBPS,
+  COLOR_ARGS, H264_COLOR_METADATA, scaleFilter, colorMetadataFor,
+  initialSpeedLevel, speedLevelMatters, MIN_SPEED_LEVEL, NVENC_PRESETS,
   ENCODERS,
   ENCODER_ORDER,
   encoderOrder,

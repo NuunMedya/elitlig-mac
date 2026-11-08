@@ -1,4 +1,4 @@
-// Yayın Stüdyosu — şerit SES FİLTRELERİ penceresi: gecikme (senkron), gürültü kapısı,
+// Yayın Stüdyosu — şerit SES FİLTRELERİ penceresi: gecikme (senkron), düşük kesme, gürültü kapısı,
 // 3 bant EQ, sıkıştırıcı, hazır ayarlar. Değişiklik anında duyulur (WebAudio).
 import React, { useEffect, useState } from "react";
 import { Icon, Modal } from "../../../components/ui";
@@ -49,6 +49,10 @@ export default function AudioFiltersDialog({ strip, filters, onChange, onClose, 
           <Range label="Gecikme" value={f.delayMs} min={0} max={MAX_AUDIO_DELAY_MS} step={10} suffix=" ms" onChange={(v) => put({ delayMs: v })} />
           <small className="st-hint">Ses görüntüden ÖNCE geliyorsa (ör. kamera / drone görüntüsü 300 ms geç) sesi geciktir. Görüntüyü geciktirmek için: kaynak ayarları › Senkron.</small>
         </section>
+        {sec("hpf", "Düşük kesme (uğultu / rüzgâr)", "sliders", <>
+          <Range label="Frekans" value={f.hpf.freq} min={20} max={300} step={5} suffix=" Hz" onChange={(v) => put({ hpf: { ...f.hpf, freq: v } })} />
+          <small className="st-hint">Spiker mikrofonu için 80 Hz önerilir: uğultu, rüzgâr ve stand titreşimi kesilir, ses gövdesi korunur.</small>
+        </>)}
         {sec("gate", "Gürültü kapısı", "micOff", <>
           <Range label="Eşik" value={f.gate.threshold} min={-80} max={0} suffix=" dB" onChange={(v) => put({ gate: { ...f.gate, threshold: v } })} />
           <Range label="Açılış" value={f.gate.attackMs} min={1} max={200} suffix=" ms" onChange={(v) => put({ gate: { ...f.gate, attackMs: v } })} />

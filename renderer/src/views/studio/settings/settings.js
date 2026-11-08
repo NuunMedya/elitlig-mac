@@ -84,9 +84,10 @@ export const UI_THEMES = [
   { key: "kirmizi", label: "Kırmızı reji", hint: "Siyah zemin, kırmızı vurgu (karanlık reji odası)", sw: ["#0a0505", "#1f1012", "#ef4444", "#f97316"] },
 ];
 export const DEFAULT_SETTINGS = {
-  v: 2,
+  v: 3,
   // pipeline: kodlama yolu — "auto" | "webcodecs" (tek kodlama) | "legacy" (MediaRecorder + ffmpeg)
-  stream: { encoder: "auto", keyframeSec: 2, audioKbps: 128, pipeline: "auto", delaySec: 0 },
+  // audioKbps 192: AAC 128 kbps'de 16 kHz üstü belirgin kesilir (ölçüm: kaynak −41,9 dB → 128k −49,7 / 192k −46,0 dB).
+  stream: { encoder: "auto", keyframeSec: 2, audioKbps: 192, pipeline: "auto", delaySec: 0 },
   record: { enabled: false, dir: null, quality: "stream", customKbps: 10000, customHeight: 1080 },
   // tekrar klibi 15 sn: önizlemede giriş–çıkışla istenen bölüm seçilir. directTake: R kısayolu
   // son tekrarı önizlemeye yükleyip AYNI GEÇİŞ yoluyla hemen yayına alır [önizleme-geçiş]
@@ -133,15 +134,27 @@ export function migrateReplaySeconds(r) {
   return v < 2 && Number(sec) === LEGACY_REPLAY_SECONDS ? DEFAULT_SETTINGS.replay.seconds : sec;
 }
 
+/**
+ * Eski varsayılan ses bit hızı (128 kbps) yeni varsayılana (192) taşınır: kayıt
+ * sürümü 3'ten küçükse ve değer eski varsayılansa kullanıcı değiştirmemiş sayılır.
+ * 160 / 192 / 256 seçildiyse ya da kayıt v3 ise dokunulmaz.
+ */
+export function migrateAudioKbps(r) {
+  const k = r?.stream?.audioKbps;
+  if (k == null) return undefined;
+  const v = Number(r?.v) || 1;
+  return v < 3 && Number(k) === 128 ? DEFAULT_SETTINGS.stream.audioKbps : k;
+}
+
 export function normalizeSettings(raw) {
   const r = raw && typeof raw === "object" ? raw : {};
   const d = DEFAULT_SETTINGS;
   return {
-    v: 2,
+    v: 3,
     stream: {
       encoder: pick(r.stream?.encoder, ENCODER_PREFS.map((e) => e.key), d.stream.encoder),
       keyframeSec: pick(Number(r.stream?.keyframeSec), KEYFRAME_CHOICES, d.stream.keyframeSec),
-      audioKbps: pick(Number(r.stream?.audioKbps), AUDIO_KBPS_CHOICES, d.stream.audioKbps),
+      audioKbps: pick(Number(migrateAudioKbps(r)), AUDIO_KBPS_CHOICES, d.stream.audioKbps),
       pipeline: normalizePipeline(r.stream?.pipeline),
       delaySec: pick(Number(r.stream?.delaySec), STREAM_DELAY_CHOICES, d.stream.delaySec),
     },
