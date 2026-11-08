@@ -30,12 +30,23 @@ export const modeOfKind = (kind) => KIND_MODE[kind] || null;
 
 const defaultKey = (replayId, angle) => `${replayId || ""}|${angle || ""}`;
 const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
-const clampRate = (r) => Math.round(Math.min(1, Math.max(0.25, num(r, 1) || 1)) * 20) / 20;
+const clampRate = (r) => Math.round(Math.min(2, Math.max(0.25, num(r, 1) || 1)) * 20) / 20;
 const copyView = (v) => ({ zoom: num(v?.zoom, 1) || 1, cx: num(v?.cx, 0.5), cy: num(v?.cy, 0.5) });
 
-/** Seçimden (replayId → [açı]) yayın kuyruğu: tekrarlar eskiden yeniye, açılar kayıt sırasıyla. */
-function queueOf(list, selection, order = null) {
+/**
+ * Yayın kuyruğu. playlist ([{ replayId, angle }], açık sıra — replayDeck) verilirse o sırayla;
+ * yoksa seçimden (replayId → [açı]): tekrarlar eskiden yeniye, açılar kayıt sırasıyla.
+ */
+function queueOf(list, selection, order = null, playlist = null) {
   const out = [];
+  if (Array.isArray(playlist)) {
+    for (const e of playlist) {
+      const r = (list || []).find((x) => x.id === e?.replayId);
+      const a = r?.angles?.find((x) => x.angle === e.angle && x.url);
+      if (r && a) out.push({ replay: r, angle: a });
+    }
+    return out;
+  }
   const rank = (r) => { const i = order ? order.indexOf(r.id) : -1; return i >= 0 ? i : Infinity; };
   const sorted = [...(list || [])].sort((a, b) => (rank(a) - rank(b)) || (num(a.createdAt) - num(b.createdAt)));
   for (const r of sorted) {
@@ -49,13 +60,14 @@ function queueOf(list, selection, order = null) {
 /**
  * Önizlemedeki tekrarın yükü (yayına aynen gider).
  *   list: tekrarlar · selection: { replayId: [açı] } · order: tekrar sırası (isteğe bağlı) · cursor: { replayId, angle } (önizlenen klip)
- *   inOf / outOf / viewOf (anahtar → değer), keyOf(replayId, angle), rate
+ *   inOf / outOf / viewOf / rateOf (anahtar → değer; rateOf: öğeye özel hız ya da null), keyOf(replayId, angle), rate
+ *   playlist: açık sıralı oynatma listesi (verilirse selection / order yerine)
  * Önizleme imleçteki klibi gösterir; imleç seçili kuyruktaysa yayın o klipten
  * başlayıp kuyruğun kalanını sırayla oynar, değilse yalnız o klip yayına gider.
  * Dönüş: yük ya da null (önizlenecek klip yok).
  */
-export function replayPayload({ list, selection, order = null, cursor, inOf, outOf, viewOf, keyOf = defaultKey, rate = 1 } = {}) {
-  const queue = queueOf(list, selection, order);
+export function replayPayload({ list, selection, order = null, playlist = null, cursor, inOf, outOf, viewOf, rateOf, keyOf = defaultKey, rate = 1 } = {}) {
+  const queue = queueOf(list, selection, order, playlist);
   let cur = null;
   if (cursor?.replayId) {
     const r = (list || []).find((x) => x.id === cursor.replayId);
@@ -70,6 +82,7 @@ export function replayPayload({ list, selection, order = null, cursor, inOf, out
     const k = keyOf(replay.id, angle.angle);
     const startSec = Math.max(0, num(inOf?.(k), 0));
     const out = num(outOf?.(k), 0);
+    const own = num(rateOf?.(k), 0);
     return {
       key: `${replay.id}/${angle.angle}`,
       replayId: replay.id,
@@ -80,6 +93,7 @@ export function replayPayload({ list, selection, order = null, cursor, inOf, out
       startSec,
       endSec: out > startSec + 0.2 ? out : null,
       view: copyView(viewOf?.(k)),
+      ...(own > 0 ? { rate: clampRate(own) } : {}),
     };
   });
   const first = items[0];
@@ -101,7 +115,7 @@ export function replayPayload({ list, selection, order = null, cursor, inOf, out
 /** Oynatıcı kuyruğu (useReplayPlayer): her öğe kendi giriş / çıkışı, görünümü ve donmuş hızıyla. */
 export function playerQueueOf(payload) {
   if (!payload?.items?.length) return [];
-  return payload.items.map((it) => ({ ...it, view: { ...it.view }, rate: payload.rate }));
+  return payload.items.map((it) => ({ ...it, view: { ...it.view }, rate: it.rate > 0 ? it.rate : payload.rate }));
 }
 
 /** İki yük aynı mı (aynı klipler, açı, giriş / çıkış, görünüm, hız). */
@@ -112,7 +126,7 @@ export function samePayload(a, b) {
   if (a.rate !== b.rate || a.items.length !== b.items.length) return false;
   return a.items.every((x, i) => {
     const y = b.items[i];
-    return x.replayId === y.replayId && x.angle === y.angle && x.startSec === y.startSec && x.endSec === y.endSec
+    return x.replayId === y.replayId && x.angle === y.angle && x.startSec === y.startSec && x.endSec === y.endSec && (x.rate || 0) === (y.rate || 0)
       && x.view.zoom === y.view.zoom && x.view.cx === y.view.cx && x.view.cy === y.view.cy;
   });
 }

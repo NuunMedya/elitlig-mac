@@ -3,7 +3,8 @@
 // görünür. Oluşturma da tek yoldan (buildHighlight): plan + skorbord bilgisi + giriş /
 // kapanış kartı uzunluğu + arka plan müziği.
 import { useCallback, useMemo } from "react";
-import { buildHighlightPlan, defaultHighlightItems, eventsUntil, normalizeHighlightMusic, scoreForReplay } from "../../../lib/studio/highlights";
+import { buildHighlightPlan, eventsUntil, normalizeHighlightMusic, scoreForReplay } from "../../../lib/studio/highlights";
+import { defaultSummaryItems } from "../../../lib/studio/goalClips";
 import { PROGRAM_ANGLE, anglesOf, metaFor, replayBanner, replayOfMatch } from "../../../lib/studio/replays";
 import { scorerLines } from "../../../lib/studio/scorebug";
 import { cardInfo } from "../modes/useHighlightMode";
@@ -16,9 +17,12 @@ export const HL_MUSIC_KEY = "elitlig.studio.highlightMusic";
 /** Bu maçın özete girebilecek tekrarları. */
 export const mineOf = (replays, meta, matchId) => (replays || []).filter((r) => replayOfMatch(r, meta?.[r.id], matchId) && anglesOf(r).length);
 
+/** Varsayılan özet: goller + özete eklenen anlar + yayına verilen konumlar (açı ve giriş–çıkış bölümleriyle). */
+export const summaryDefaults = (mine, meta = {}) => defaultSummaryItems(mine, { preferredAngles: [PROGRAM_ANGLE], selectionOf: (id) => meta?.[id]?.selection || (mine || []).find((r) => r.id === id)?.selection || null });
+
 /** Seçim: { items, edited } (maç başına, bellekte; panel ve düğmeler ortak). */
-export function useHlSelection(matchId, mine) {
-  const defaults = useMemo(() => defaultHighlightItems(mine, { preferredAngles: [PROGRAM_ANGLE] }), [mine]);
+export function useHlSelection(matchId, mine, meta = {}) {
+  const defaults = useMemo(() => summaryDefaults(mine, meta), [mine, meta]);
   const [sel, setSel] = useLocal(`hl.${matchId || 0}`, { items: null, edited: false }, false);
   const items = sel?.edited && Array.isArray(sel.items) ? sel.items.filter((x) => mine.some((r) => r.id === x.replayId)) : defaults;
   const edit = useCallback((fn) => setSel((s) => {
@@ -29,10 +33,10 @@ export function useHlSelection(matchId, mine) {
   return { items, edited: Boolean(sel?.edited), edit, reset, defaults };
 }
 /** Düğmeler için (kancasız): seçime tekrar ekle. */
-export function addToHighlight(matchId, replay, mine, angles) {
+export function addToHighlight(matchId, replay, mine, angles, meta = {}) {
   const key = `hl.${matchId || 0}`;
   const cur = getLocal(key, { items: null, edited: false }, false);
-  const base = cur?.edited && Array.isArray(cur.items) ? cur.items : defaultHighlightItems(mine, { preferredAngles: [PROGRAM_ANGLE] });
+  const base = cur?.edited && Array.isArray(cur.items) ? cur.items : summaryDefaults(mine, meta);
   if (base.some((x) => x.replayId === replay.id)) return false;
   setLocal(key, { items: [...base, { replayId: replay.id, angles: angles?.length ? angles : [(replay.angles || []).find((a) => a.url)?.angle].filter(Boolean) }], edited: true }, false);
   return true;

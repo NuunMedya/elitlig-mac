@@ -23,7 +23,7 @@ function useHl(ctx) {
   const O = ctx.ozet || {};
   const meta = ctx.replay?.meta || {};
   const mine = useMemo(() => mineOf(ctx.replay?.list || [], meta, O.matchId), [ctx.replay?.list, meta, O.matchId]);
-  const sel = useHlSelection(O.matchId, mine);
+  const sel = useHlSelection(O.matchId, mine, meta);
   const [cards, setCards] = useHlCards(ctx.ops);
   const [music, setMusic] = useHlMusic(ctx.ops);
   const live = ctx.match;
@@ -109,7 +109,7 @@ function HlAddLast({ ctx, item, w, h, togglePop }) {
   const add = () => {
     if (!last) return;
     if (inIt) { if (item.opts?.toggle) H.sel.edit((l) => l.filter((x) => x.replayId !== last.id)); else ctx.toast?.("Son tekrar zaten özette.", { tone: "info", timeout: 1800 }); return; }
-    addToHighlight(H.O.matchId, last, H.mine, defaultAngles(last, ctx.replay?.recordAngles));
+    addToHighlight(H.O.matchId, last, H.mine, defaultAngles(last, ctx.replay?.recordAngles), H.meta);
     ctx.toast?.(`Özete eklendi: ${replayTitle(last, metaFor(last, H.meta))}.`, { tone: "success", timeout: 2200 });
   };
   const press = usePress(add, () => openPop(item, togglePop, { mode: "options" }));

@@ -36,12 +36,12 @@ export const BOARD_TEMPLATES = [
   { key: "mac-sonu", area: "mac", icon: "award", label: "Maç sonu masası", hint: "Durum, MVP, hızlı puan, maçın golü, kart özeti, maç sonu puanları", cols: 12,
     items: [W("matchStatus", 0, 0, 4, 2), W("mvpPick", 4, 0, 2, 2), W("hlSetMatch", 6, 0, 3, 2), W("cardsSummary", 9, 0, 3, 4), W("ratingQuick", 0, 2, 9, 6), C("mg.macsonu.awards", 9, 4, 3, 8)] },
   // ── tekrar (var olan tekrar parçaları ve düğmeleri) ──
-  { key: "tekrar-operator", area: "tekrar", icon: "repeat", label: "Tekrar · operatör", hint: "Liste, açı seçici, kuyruk, hız, yayın kartı, önizleme / yayına, önemli an", cols: 12,
-    items: [C("part:tekrar:list", 0, 0, 7, 10), C("tekrar.angles", 7, 0, 5, 4), C("part:tekrar:queue", 7, 4, 5, 6), C("part:tekrar:rate", 0, 10, 4, 3), C("part:tekrar:air", 4, 10, 4, 4), W("replayToPvw", 8, 10, 2, 2), W("replayToAir", 10, 10, 2, 2), W("momentPro", 8, 12, 4, 2)] },
+  { key: "tekrar-operator", area: "tekrar", icon: "repeat", label: "Tekrar · operatör", hint: "Olay listesi, açı ızgarası, süre çubuğu, oynatma listesi + YAYINA AL, J K L, hız, yakınlaştırma, an", cols: 12,
+    items: [C("part:tekrar:list", 0, 0, 5, 10), C("part:tekrar:grid", 5, 0, 7, 7), C("part:tekrar:timeline", 5, 7, 7, 3), C("part:tekrar:queue", 0, 10, 5, 8), C("part:tekrar:transport", 5, 10, 7, 2), C("part:tekrar:rate", 5, 12, 4, 2), C("part:tekrar:zoom", 9, 12, 3, 2), W("replayToPvw", 5, 14, 2, 2), W("replayToAir", 7, 14, 2, 2), W("momentPro", 9, 14, 3, 2)] },
   { key: "tekrar-compact", area: "tekrar", icon: "list", label: "Tekrar · kompakt", hint: "Dar sütun: son tekrar → önizleme / yayına, açılar, ağır çekim, son goller, an", cols: 4,
-    items: [W("replayToPvw", 0, 0, 2, 2), W("replayToAir", 2, 0, 2, 2), W("anglePick", 0, 2, 4, 4), W("slowPlay", 0, 6, 4, 4), W("goalReplays", 0, 10, 4, 4), W("momentPro", 0, 14, 4, 2)] },
-  { key: "tekrar-evs", area: "tekrar", icon: "sliders", label: "Tekrar · EVS tarzı", hint: "Giriş / çıkış · kare kare, çok açılı dizi, kuyruk, ağır çekim, VAR, açılar", cols: 12,
-    items: [W("replayJog", 0, 0, 6, 4), W("angleSeq", 6, 0, 6, 4), W("queuePro", 0, 4, 6, 4), W("slowPlay", 6, 4, 3, 4), W("replayToAir", 9, 4, 3, 2), W("replayVar", 9, 6, 3, 2), C("tekrar.angles", 0, 8, 8, 4), W("momentPro", 8, 8, 4, 2), W("goalReplays", 8, 10, 4, 2)] },
+    items: [W("replayToPvw", 0, 0, 2, 2), W("replayToAir", 2, 0, 2, 2), W("anglePick", 0, 2, 4, 4), C("part:tekrar:transport", 0, 6, 4, 2), W("slowPlay", 0, 8, 4, 4), W("goalReplays", 0, 12, 4, 4), W("momentPro", 0, 16, 4, 2)] },
+  { key: "tekrar-evs", area: "tekrar", icon: "sliders", label: "Tekrar · EVS tarzı", hint: "Tam en süre çubuğu, J K L taşıma, T-bar hız, yakınlaştırma, açı ızgarası, oynatma listesi, kare kare, çok açılı dizi", cols: 12,
+    items: [C("part:tekrar:timeline", 0, 0, 12, 3), C("part:tekrar:transport", 0, 3, 6, 2), C("part:tekrar:rate", 6, 3, 3, 2), C("part:tekrar:zoom", 9, 3, 3, 2), C("part:tekrar:grid", 0, 5, 6, 6), C("part:tekrar:queue", 6, 5, 6, 6), W("replayJog", 0, 11, 4, 4), W("angleSeq", 4, 11, 4, 4), W("replayVar", 8, 11, 2, 2), W("momentPro", 10, 11, 2, 2), W("goalReplays", 8, 13, 4, 2)] },
   // ── sahne ──
   { key: "sahne-grid", area: "sahne", icon: "grid", label: "Sahne · ızgara", hint: "Canlı küçük resimli sahne ızgarası, geçiş, önceki / sonraki", cols: 12,
     items: [W("sceneGridPro", 0, 0, 8, 8, { view: "grid" }), W("transitionPro", 8, 0, 4, 4), W("sceneNav", 8, 4, 4, 2), W("lastScene", 8, 6, 4, 2)] },

@@ -62,6 +62,7 @@ import { eventLabel, isGoalCode, timerNowMs } from "../../lib/studio/match";
 import { manageEventLabel } from "../../lib/studio/manage"; // [düğmeler] akış bildirimi
 import { normalizeVarV2 } from "../../lib/studio/var"; // [düğmeler] VAR durum / karar
 import { PROGRAM_ANGLE, angleLabel, anglesOf, anglesToRecord, buildReplayQueue, defaultAngles, metaFor, recordableSources, replayBanner, replayTitle } from "../../lib/studio/replays";
+import { pickDockClip, selectionFromPayload } from "../../lib/studio/goalClips"; // [gol-klip]
 import { payloadSummary, planTake, previewStateOf, programStateOf, samePayload, takeAfterLoad, takeLabel } from "../../lib/studio/previewTake"; // [önizleme-geçiş]
 import { useLiveMatch } from "./useLiveMatch";
 import { useStudioSources } from "./useStudioSources";
@@ -149,6 +150,9 @@ const RoutePicker = firstMod(import.meta.glob("./modes/ModeTab.jsx", { eager: tr
 const SETTINGS_TABS = { gecis: "gecis", marka: "marka", skorbord: "skorbord", altyazi: "altyazi", sponsor: "sponsor" };
 
 const PREFS_KEY = "studio.prefs.v1";
+// [gol-klip] Reji GOL dokunuşunun olay girilmesini bekleme süresi; ÖNEMLİ AN bildirimi.
+const DOCK_CLIP_WAIT_MS = 10 * 60_000;
+const momentToast = (pre, post) => (Number(post) > 0 ? `Önemli an kaydediliyor (${pre} sn öncesi + ${post} sn sonrası).` : `Önemli an kaydedildi (son ${pre} sn).`);
 const MATCH_KEY = "studio.match";
 const OLD_TABS = { mac: "yonetim", reji: "yonetim", olay: "yonetim", olaylar: "yonetim", tekrar: "tekrar", yayin: "yayin", ses: "ses", onayar: "marka", kaynak: "sahne" };
 const DEFAULT_PREFS = {
@@ -290,7 +294,13 @@ export default function Studio({ auth, go }) {
   brandingRef.current = branding;
 
   /* ───────── tekrarlar (kaynaklardan önce: "Tekrar" kaynağı son tekrarı oynatır) ───────── */
-  const replays = useReplays(matchId);
+  // [gol-klip] butondan sonraki süre ve gecikmeli yükleme (Ayarlar › Tekrar)
+  const replays = useReplays(matchId, { postSeconds: settings.replay.postSeconds, uploadDelaySec: settings.replay.uploadDelaySec });
+  /** [gol-klip] Yayına verilen tekrar yükü → tekrar başına açılar / bölümler (gecikmeli yükleme, özet). */
+  const noteAired = useStable((payload) => {
+    if (payload?.kind !== "replay") return;
+    for (const [id, sel] of Object.entries(selectionFromPayload(payload))) replays.markAiredSelection(id, sel);
+  });
   const latest = replays.latest;
   const replayUrlOf = useCallback((source) => {
     if (!latest) return null;
@@ -477,19 +487,19 @@ export default function Studio({ auth, go }) {
   const bannerOf = useCallback((item) => replayBanner(item.replay, metaFor(item.replay, replays.meta)), [replays.meta]);
   const onReplayError = useCallback((m) => toast(m, { tone: "error", timeout: 5000 }), [toast]);
   const player = useReplayPlayer({ els: replayEls, replayRef, playStinger: comp.playStinger, bannerOf, rate: prefs.replayRate, onError: onReplayError, onStart: mixer.resume });
-  const setReplayRate = useCallback((v) => setPref("replayRate", Math.min(1, Math.max(0.25, Number(v) || 1))), [setPref]);
+  const setReplayRate = useCallback((v) => setPref("replayRate", Math.min(2, Math.max(0.25, Number(v) || 1))), [setPref]);
 
   const captureMoment = useStable(() => {
     if (!engine.active) { toast("Tekrar için yayın ya da prova açık olmalı (Yayın sekmesi).", { tone: "warn", timeout: 4000 }); return; }
     replays.capture({ kind: "moment", angles: liveAngles, label: "Önemli an", seconds: settings.replay.seconds, meta: { minute: live.match ? live.minute : null, period: live.period } });
-    toast(`Önemli an kaydedildi (son ${settings.replay.seconds} sn).`, { tone: "success", timeout: 2500 });
+    toast(momentToast(settings.replay.seconds, settings.replay.postSeconds), { tone: "success", timeout: 2500 }); // [gol-klip]
   });
   /** [düğmeler] Önemli an, seçilen saniyeyle (Önemli an · saniye düğmesi). */
   const captureMomentFor = useStable((sec) => {
     if (!engine.active) { toast("Tekrar için yayın ya da prova açık olmalı (Yayın sekmesi).", { tone: "warn", timeout: 4000 }); return; }
     const seconds = Math.round(Math.min(120, Math.max(5, Number(sec) || settings.replay.seconds)));
     replays.capture({ kind: "moment", angles: liveAngles, label: "Önemli an", seconds, meta: { minute: live.match ? live.minute : null, period: live.period } });
-    toast(`Önemli an kaydedildi (son ${seconds} sn).`, { tone: "success", timeout: 2500 });
+    toast(momentToast(seconds, settings.replay.postSeconds), { tone: "success", timeout: 2500 }); // [gol-klip]
   });
   const playLatest = useStable(() => {
     const r = replays.latest;
@@ -654,6 +664,7 @@ export default function Studio({ auth, go }) {
       const modeTr = modes.settings?.transition || tr;
       try { ok = Boolean(await modes.takeToAir?.(modeTr, plan.mode, plan.payload)); } catch { ok = false; } finally { takingRef.current = false; }
       if (!ok) return false;
+      noteAired(plan.payload); // [gol-klip] yayına verilen açılar / bölümler → gecikmeli yükleme + özet
       // Önizleme tutarlı: kip yayına gitti → önizlemeye kipten önceki (alttaki) sahne gelir; ikinci GEÇİŞ geri döner.
       // Bu arada önizlemeye başka içerik yüklendiyse ona dokunulmaz.
       const pvAfter = modes.previewNow?.();
@@ -895,20 +906,22 @@ export default function Studio({ auth, go }) {
     const key = replays.capture({ kind: "goal", angles: liveAngles, seconds: settings.replay.seconds, meta: { side, code, minute: live.minute, period: live.period } });
     if (!key) return;
     const entry = { key, side, timer: null };
+    // [gol-klip] 10 dk içinde olay girilmezse klip yalnız bu bilgisayarda kalır (anahtar
+    // tüketilmez: geç girilen olay yine bağlanabilir — useReplays.attach).
     entry.timer = setTimeout(() => {
       dockGoalClipsRef.current = dockGoalClipsRef.current.filter((x) => x !== entry);
       replays.attach(key, { eventId: null });
-    }, 180_000);
+    }, DOCK_CLIP_WAIT_MS);
     dockGoalClipsRef.current.push(entry);
   });
   const onDockEventCreated = useStable(({ event, playerName, side, code } = {}) => {
     if (!isGoalCode(code || event?.olay_kodu)) return;
     addGoalChapter({ side, code: code || event?.olay_kodu, playerName, created: event }); // [bölüm]
     const list = dockGoalClipsRef.current;
-    // Kendi kalesine golde olayın tarafı GOL'e basılan taraftan farklı olabilir:
-    // önce aynı taraf, yoksa bekleyen en eski klip.
-    let i = list.findIndex((x) => !side || x.side === side);
-    if (i < 0) i = list.length ? 0 : -1;
+    // [gol-klip] Kendi kalesine golde olayın tarafı GOL'e basılan taraftan farklı olabilir:
+    // aynı tarafın EN YENİ klibi, yoksa en yeni (eskiden en eskisi: iptal edilmiş eski bir
+    // dokunuşun klibi — başka bir anın görüntüsü — golün videosu oluyordu).
+    const i = pickDockClip(list, side);
     if (i < 0) return;
     const [entry] = list.splice(i, 1);
     clearTimeout(entry.timer);
@@ -1079,8 +1092,23 @@ export default function Studio({ auth, go }) {
   // Tekrar kipi önizlemedeyken önizleme monitörü düzenleyiciye döner: yakınlaştır / kaydır,
   // zaman çizelgesi, giriş–çıkış, hız; "Yayına al" seçilen bölümü yayına verir.
   const RE = hasModes && modes.replayEditor ? modes.replayEditor : null;
+  // [gol-klip] Tekrar kipinde operatörün ELLE seçtiği açılar (kendiliğinden gelen varsayılandan
+  // farklıysa) gecikmeli gol yüklemesine girer; yayına verilen seçim (noteAired) önceliklidir.
+  const rmSelection = RE?.rm?.selection || null;
+  useEffect(() => {
+    if (!rmSelection) return;
+    for (const [id, angles] of Object.entries(rmSelection)) {
+      const r = replays.replays.find((x) => x.id === id);
+      if (!r || !Array.isArray(angles)) continue;
+      const auto = defaultAngles(r, liveAngles);
+      if (angles.length && angles.join() !== auto.join()) replays.noteSelection(id, angles);
+    }
+  }, [rmSelection]); // eslint-disable-line react-hooks/exhaustive-deps
   const replayEditing = Boolean(RE && RE.previewing && RE.rm?.transport);
   const [pvwBox, setPvwBox] = useState({ w: 0, h: 0 });
+  const [pgmBox, setPgmBox] = useState({ w: 0, h: 0 });
+  // Yayındaki tekrarın denetimi PROGRAM monitörünün üstünde (yalnız operatör görür, yayına çizilmez).
+  const replayAir = Boolean(RE?.decks?.program?.active);
   const pickAngle = useStable((r, angle) => {
     if (!r) return;
     if (!RE || !modes.openReplay) { toast("Tekrar düzenleme için yayın modları modülü gerekli.", { tone: "info" }); return; }
@@ -1099,14 +1127,14 @@ export default function Studio({ auth, go }) {
       </figcaption>
       <Monitor canvas={comp.preview} className="st-monitor__screen" onBox={setPvwBox}>
         {replayEditing && (
-          <ReplayPreviewOverlay rm={RE.rm} rate={RE.rate} onRate={RE.setRate} sources={RE.sources || config.sources} box={pvwBox}
-            onTake={() => toProgram()} canTake={canTake} />
+          <ReplayPreviewOverlay deck={RE.decks?.preview} rm={RE.rm} rate={RE.rate} onRate={RE.setRate} sources={RE.sources || config.sources} meta={replays.meta} box={pvwBox}
+            onTake={() => toProgram()} canTake={canTake} onFocus={RE.setFocus} keysOn={RE.keysOn} onKeys={RE.setKeysOn} />
         )}
       </Monitor>
     </figure>
   );
   const programMonitor = (
-    <figure className={`st-monitor is-program ${st.state === "live" ? "is-live" : ""} ${showMicWarning ? "is-micwarn" : ""}`} onContextMenu={onMonitorMenu("program")}>
+    <figure className={`st-monitor is-program ${st.state === "live" ? "is-live" : ""} ${showMicWarning ? "is-micwarn" : ""} ${replayAir ? "is-replayair" : ""}`} onContextMenu={onMonitorMenu("program")}>
       <figcaption>
         <span className={`st-tag ${onAir ? "is-live" : "is-pgm"}`}>{onAir ? "● YAYINDA" : "PROGRAM"}</span>
         <span className="st-monitor__name">{programTitle}</span>
@@ -1116,7 +1144,12 @@ export default function Studio({ auth, go }) {
         <span className="st-top__spacer" />
         {ledId && ledId === programIdForTally && <span className="st-tag is-led" title="LED ekran bu sahneyi gösteriyor">LED</span>}
       </figcaption>
-      <Monitor canvas={comp.program} className="st-monitor__screen" />
+      <Monitor canvas={comp.program} className="st-monitor__screen" onBox={setPgmBox}>
+        {replayAir && (
+          <ReplayPreviewOverlay deck={RE.decks.program} target="program" sources={RE.sources || config.sources} meta={replays.meta} box={pgmBox}
+            onLive={RE.live} onFocus={RE.setFocus} keysOn={RE.keysOn} onKeys={RE.setKeysOn} />
+        )}
+      </Monitor>
       {/* Program ses şeridi yuvası: ./audio/ProgramAudioStrip.jsx varsa burada (düzende "Ses ölçerleri" kutusu yoksa). */}
       {programAudio && !hasMetersTile && <div className="st-pgmaudio">{programAudio}</div>}
       {showMicWarning && <div className="st-micwarn" role="alert"><Icon name="mic" size={22} /> MİKROFON AÇIK <button type="button" onClick={toggleMic}>Kapat (M)</button></div>}
@@ -1168,7 +1201,7 @@ export default function Studio({ auth, go }) {
   // Tekrar hızı: yayın modları varsa kip ayarı (prefs.modes.rate), yoksa eski tercih.
   const replayRateNow = hasModes ? normalizeModeSettings(prefs.modes).rate : prefs.replayRate;
   const setReplayRateAny = useStable((v) => {
-    const r = Math.round(Math.min(1, Math.max(0.25, Number(v) || 1)) * 20) / 20;
+    const r = Math.round(Math.min(2, Math.max(0.25, Number(v) || 1)) * 20) / 20;
     if (hasModes) setPref("modes", (m) => ({ ...normalizeModeSettings(m), rate: r })); else setReplayRate(r);
   });
   /** Seçilen tekrarlar sırayla (her biri varsayılan açılarıyla) ÖNİZLEME'ye; yayına GEÇİŞ ile [önizleme-geçiş]. */
@@ -1209,7 +1242,12 @@ export default function Studio({ auth, go }) {
     try { goalMusic?.onGoal?.(s); } catch { /* yoksay */ }
     return engine.active ? replays.capture({ kind: "goal", angles: liveAngles, seconds: settings.replay.seconds, meta: { side: s, code: "GOAL_RIGHT_FOOT", minute: live.minute, period: live.period } }) || null : null;
   });
+  // [gol-klip] Kayıt sürerken akış kapanırsa (açılır panel kapandı / yeniden çizildi) iptal
+  // yok sayılır: eskiden klip "yalnız yerel"e bağlanıp anahtarı tüketiyor, ardından gelen
+  // olay bağlanamıyor, gol videosu hiç yüklenmiyordu.
+  const submittingRef = useRef(new Set());
   const flowCancel = useStable((clipKey, side) => {
+    if (clipKey && submittingRef.current.has(clipKey)) return;
     if (side) goalTapsRef.current.drop(side); // [bölüm]
     if (clipKey) replays.attach(clipKey, { eventId: null });
   });
@@ -1217,11 +1255,12 @@ export default function Studio({ auth, go }) {
     const list = (forms || []).filter(Boolean);
     if (!list.length) return [];
     const created = [];
+    if (clipKey) submittingRef.current.add(clipKey); // [gol-klip]
     try {
       for (const f of list) created.push(await live.addFullEvent(f));
     } catch (e) {
       toast(errorText(e, "Olay kaydedilemedi."), { tone: "error", timeout: 5000 });
-      if (!created.length) { if (clipKey) replays.attach(clipKey, { eventId: null }); throw e; }
+      if (!created.length) { if (clipKey) { submittingRef.current.delete(clipKey); replays.attach(clipKey, { eventId: null }); } throw e; }
     }
     const gi = list.findIndex((f) => isGoalCode(f.code));
     if (gi >= 0 && created[gi]) {
@@ -1236,6 +1275,7 @@ export default function Studio({ auth, go }) {
       try { for (const c of [...created].reverse()) if (c?.id) await live.removeEvent(Number(c.id)); toast("Geri alındı.", { tone: "info", timeout: 2200 }); } catch (e) { toast(errorText(e, "Geri alınamadı."), { tone: "error" }); }
     };
     toast(`${manageEventLabel(f0.code)}${who ? ` · ${who}` : ""}${more} kaydedildi (${created[0]?.dakika ?? live.minute}').`, { tone: "success", timeout: 7000, action: { label: "Geri al", run: undo } });
+    if (clipKey) submittingRef.current.delete(clipKey); // [gol-klip]
     return created;
   });
   // VAR durum / karar (İNCELEME · KONTROL · KARAR + GOL / İPTAL…): kip ayarına yazılır, yayında anında değişir.
@@ -1345,6 +1385,8 @@ export default function Studio({ auth, go }) {
       editor: RE ? {
         previewing: Boolean(RE.previewing), transport: RE.rm.transport, cursorKey: RE.rm.cursorKey, cursorAngle: RE.rm.cursor?.angle || null,
         inOf: RE.rm.inPointOf, outOf: RE.rm.outPointOf, setIn: RE.rm.setInPoint, setOut: RE.rm.setOutPoint,
+        // desteler: program yayındayken parçacıklar yayındaki tekrarı anında denetler
+        decks: RE.decks || null, focus: RE.focus || null,
       } : null,
     },
     moment: captureMoment,

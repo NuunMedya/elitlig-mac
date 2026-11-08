@@ -30,6 +30,7 @@ import ProfilesSection from "./ProfilesSection";
 import "./settings.css";
 import "../dock/dock.css";
 import VarThemeSection, { VAR_THEME_SECTION } from "./VarThemeSection"; // [var-tema]
+import CoverSection, { COVER_SECTION } from "../youtube/cover/CoverSection"; // [kapak]
 
 export const SETTINGS_GROUPS = [
   { key: "genel", label: "Genel" },
@@ -42,6 +43,7 @@ export const SETTINGS_GROUPS = [
 export const SETTINGS_SECTIONS = [
   { key: "yayin", label: "Yayın", icon: "broadcast", group: "genel" },
   { key: "kayit", label: "Kayıt", icon: "download", group: "genel" },
+  { ...COVER_SECTION, group: "genel" }, // [kapak] Ayarlar › Genel › YouTube kapağı
   { key: "tekrar", label: "Tekrar", icon: "repeat", group: "genel" },
   { ...VAR_THEME_SECTION, group: "grafik" }, // [var-tema] Ayarlar › Grafikler › VAR teması
   { key: "gecis", label: "Geçiş", icon: "swap", group: "genel" },
@@ -248,6 +250,13 @@ function SettingsPage({
           <Field label={`Golden önce kaydedilen süre · ${settings.replay.seconds} sn`} hint="Gol / önemli ana basıldığı andan geriye doğru yazılan süre.">
             <input type="range" min={5} max={30} step={1} value={settings.replay.seconds} onChange={(e) => set("replay", { seconds: Number(e.target.value) })} />
           </Field>
+          {/* [gol-klip] butondan sonrası + gecikmeli yükleme */}
+          <Field label={`Butondan sonra kaydedilecek süre · ${settings.replay.postSeconds ?? 4} sn`} hint="GOL / ÖNEMLİ AN'a basıldıktan sonra da bu kadar kaydedilir (kayıt süre dolunca yazılır; listede geri sayım). 0: yalnız öncesi.">
+            <input type="range" min={0} max={15} step={1} value={settings.replay.postSeconds ?? 4} onChange={(e) => set("replay", { postSeconds: Number(e.target.value) })} />
+          </Field>
+          <Field label={`Yükleme gecikmesi · ${settings.replay.uploadDelaySec ?? 60} sn`} hint="Gol klibi olaya bağlandıktan sonra bu kadar beklenir; bu sürede tekrar için seçtiğin / yayına verdiğin açılar (giriş–çıkış noktalarıyla) sırayla birleştirilip yüklenir. Seçim yoksa program açısı. 0: hemen yükle.">
+            <input type="range" min={0} max={300} step={10} value={settings.replay.uploadDelaySec ?? 60} onChange={(e) => set("replay", { uploadDelaySec: Number(e.target.value) })} />
+          </Field>
           <Field label={`Oynatma hızı · ${String(rate).replace(".", ",")}×`}>
             <div className="st-seg">{[0.25, 0.5, 0.75, 1].map((r) => <button key={r} type="button" className={Number(rate) === r ? "is-on" : ""} onClick={() => setRate(r)}>{String(r).replace(".", ",")}×</button>)}</div>
           </Field>
@@ -283,6 +292,8 @@ function SettingsPage({
         <p className="st-hint st-set__wide">Panelin her ayrıntısı (katmanlar, kuyruk, düzenleyici…) için: Ayarlar › Alt panel › Tekrar › Parçalar › “Paneli burada aç”.</p>
       </>
     );
+  } else if (section === COVER_SECTION.key) { // [kapak]
+    body = <CoverSection toast={toast} />;
   } else if (section === VAR_THEME_SECTION.key) { // [var-tema]
     body = <VarThemeSection prefs={prefs} setPref={setPref} />;
   } else if (section === "gecis") {
