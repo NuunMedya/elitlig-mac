@@ -503,9 +503,11 @@ async function renderOnce({ plan, info, images, boardOf, signal, onProgress, onP
         if (current && sounds.get(current) && sounds.get(current).el !== sounds.get(at.segment)?.el) { try { sounds.get(current).el.pause(); } catch { /* yoksay */ } }
         current = at.segment;
         const el = videos.get(current);
-        if (el) { try { el.currentTime = 0; } catch { /* yoksay */ } el.play().catch(() => {}); }
+        // [gol-klip] bölümün giriş noktası (yayına verilen / kırpılan)
+        const from = Number(current?.startSec) || 0;
+        if (el) { try { el.currentTime = from; } catch { /* yoksay */ } el.play().catch(() => {}); }
         const snd = sounds.get(current);
-        if (snd) { try { snd.el.currentTime = snd.offsetSec; } catch { /* yoksay */ } snd.el.play().catch(() => {}); }
+        if (snd) { try { snd.el.currentTime = snd.offsetSec + from; } catch { /* yoksay */ } snd.el.play().catch(() => {}); }
         // Müzik yatağı: kartlarda tam, kliplerde kısık (orijinal ses öne çıkar); yumuşak geçiş.
         if (bedEl && audio.bed && audio.ctx) {
           try { audio.bed.gain.setTargetAtTime(dbToGain(musicBedDb(music, current?.type)), audio.ctx.currentTime, 0.13); } catch { /* yoksay */ }

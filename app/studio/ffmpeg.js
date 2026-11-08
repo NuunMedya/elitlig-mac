@@ -109,10 +109,15 @@ function parseProbe(text) {
 
 /* --------------------------------- yoklama --------------------------------- */
 
-const run = (file, args, { timeout = 15000 } = {}) => new Promise((resolve) => {
-  execFile(file, args, { timeout, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
+// niceness: arka plan işleri (yükleme kopyası, açı birleştirme) canlı yayın kodlayıcısından
+// işlemci çalmasın diye düşük öncelikle (ör. 10) çalıştırılır.
+const run = (file, args, { timeout = 15000, niceness = 0 } = {}) => new Promise((resolve) => {
+  const child = execFile(file, args, { timeout, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
     resolve({ ok: !error, code: error ? (typeof error.code === "number" ? error.code : -1) : 0, stdout: String(stdout || ""), stderr: String(stderr || ""), error });
   });
+  if (niceness && child?.pid) {
+    try { require("node:os").setPriority(child.pid, niceness); } catch { /* yoksay */ }
+  }
 });
 
 /**

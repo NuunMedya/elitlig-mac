@@ -19,7 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { STINGER_MS } from "../../../lib/studio/stinger";
 import { PROGRAM_ANGLE, defaultAngles, metaFor, replayBanner } from "../../../lib/studio/replays";
 import { playerQueueOf, replayPayload } from "../../../lib/studio/previewTake";
-import { BLEND_BELOW, airedStart, airedSwitch, angleStep, clampRate, deckReducer, playlistFromSelection, selectionOf, zoomStep } from "../../../lib/studio/replayDeck";
+import { BLEND_BELOW, airedOut, airedStart, airedSwitch, angleStep, clampRate, deckReducer, playlistFromSelection, selectionOf, zoomStep } from "../../../lib/studio/replayDeck";
 import { isStingerKind } from "../../../lib/studio/transitions";
 import { drawReplayBadge } from "../../../lib/studio/scorebug";
 import { drawTransitionStinger } from "../../../lib/studio/transitions";
@@ -467,7 +467,12 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
     inPoint: Number(pi?.startSec) || 0,
     outPoint: Number(pi?.endSec) || 0,
     setIn: (sec) => ctl.setRange({ startSec: sec }),
-    setOut: (sec) => ctl.setRange({ endSec: sec > 0 ? sec : null }),
+    setOut: (sec) => {
+      ctl.setRange({ endSec: sec > 0 ? sec : null });
+      // Yayında çıkış değişti → yükleme hattına güncel bölüm [gol-klip]
+      const id = replayRef.current?.item?.replayId;
+      if (id && airedRef.current[id]) { airedRef.current = { ...airedRef.current, [id]: airedOut(airedRef.current[id], replayRef.current.item.endSec) }; mark(id, airedRef.current[id]); }
+    },
     transport: { el: ctl.el, onAir: () => true, toggle: ctl.toggle, play: ctl.play, pause: ctl.pause, reverse: ctl.reverse, seek: ctl.seek, nudge: ctl.nudge, step: ctl.step },
     state: () => ctl.state() || { time: 0, dur: 0, paused: true, reverse: 0, rate: 1 },
     setAngle: (angle) => ctl.switchAngle(angle, { mixMs: airMix ? MIX_MS : 0 }),

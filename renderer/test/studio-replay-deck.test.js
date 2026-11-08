@@ -4,7 +4,7 @@
 // kopyası (previewTake) ile birlikte.
 import { describe, expect, it } from "vitest";
 import {
-  DECK_RATES, MAX_RATE, MIN_RATE, STAGE, STAGE_LABEL, ZOOM_PRESETS, activityFromFrames, airedStart, airedSwitch, angleStep, clampRate, deckFromPayload,
+  DECK_RATES, MAX_RATE, MIN_RATE, STAGE, STAGE_LABEL, ZOOM_PRESETS, activityFromFrames, airedOut, airedStart, airedSwitch, angleStep, clampRate, deckFromPayload,
   deckKeyAction, deckReducer, jog, mapAngleTime, movePlaylist, playlistFromSelection, progressOf, rateStep, rateText, remainingOf, selectionOf,
   sequenceOf, setPlaylistAngle, stageOf, timeAt, togglePlaylist, zoomStep,
 } from "../src/lib/studio/replayDeck";
@@ -187,10 +187,12 @@ describe("yayınlanan seçim (markAiredSelection)", () => {
     const items = playerQueueOf(replayPayload({ list: LIST, playlist: [{ replayId: "r1", angle: "program" }, { replayId: "r2", angle: "program" }], cursor: { replayId: "r1", angle: "program" }, ...maps({ in: { "r1|program": 2 }, out: { "r1|program": 9 } }) }));
     const log = airedStart(items);
     expect(log.r1).toEqual({ angles: ["program"], segments: [{ angle: "program", inSec: 2, outSec: 9 }] });
-    expect(log.r2).toEqual({ angles: ["program"], segments: [{ angle: "program", inSec: 0, outSec: 12 }] });
+    expect(log.r2).toEqual({ angles: ["program"], segments: [{ angle: "program", inSec: 0, outSec: null }] });
     const sw = airedSwitch(log.r1, { fromAt: 5, angle: "cam1", toAt: 4, outSec: 8 });
     expect(sw).toEqual({ angles: ["program", "cam1"], segments: [{ angle: "program", inSec: 2, outSec: 5 }, { angle: "cam1", inSec: 4, outSec: 8 }] });
     expect(log.r1.segments[0].outSec).toBe(9); // değişmez (kopya)
+    expect(airedOut(sw, 0).segments[1].outSec).toBeNull();
+    expect(airedOut(sw, 6.5).segments).toEqual([{ angle: "program", inSec: 2, outSec: 5 }, { angle: "cam1", inSec: 4, outSec: 6.5 }]);
   });
 });
 

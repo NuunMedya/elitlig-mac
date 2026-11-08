@@ -19,6 +19,7 @@ import { PROGRAM_ANGLE, angleLabel, anglesOf, defaultAngles, recordableSources, 
 import { DECK_RATES, STAGE_LABEL, movePlaylist, rateText, sequenceOf, setPlaylistAngle, stageOf, togglePlaylist } from "../../lib/studio/replayDeck";
 import { TRANSITIONS } from "../../lib/studio/transitions";
 import UploadLog from "./modes/UploadLog";
+import { PendingNote, UploadControls } from "./replayUploadUi"; // [gol-klip]
 import { DeckAngles, DeckSpeed, DeckTarget, DeckTime, DeckTimeline, DeckTransport, DeckZoom, angleShort, useDeckClock } from "./modes/replayDeckUi";
 import { clipTime, viewKey } from "./modes/replayView";
 import "./modes/replayEditor.css";
@@ -31,6 +32,8 @@ const timeText = (ms) => (ms ? new Date(ms).toLocaleTimeString("tr-TR", { hour: 
 function uploadPill(u, replay, meta) {
   if (replay.kind !== "goal") return null;
   if (u?.status === "uploading") return { tone: "blue", text: "Profile yükleniyor…" };
+  if (u?.status === "scheduled") return { tone: "blue", text: "Yükleme bekliyor" }; // [gol-klip]
+  if (u?.status === "cancelled") return { tone: "", text: "Yükleme iptal" };
   if (u?.status === "uploaded") return { tone: "green", text: "Profilde" };
   if (u?.status === "failed") return { tone: "red", text: "Yüklenemedi" };
   if (replay.eventId || meta?.eventId) return { tone: "blue", text: "Yüklemeye hazır" };
@@ -180,7 +183,7 @@ function EventList({ list, pending, R, meta, playlist, cursor, air, selectedId, 
         {pending.map((p) => (
           <li key={p.key} className={`rpx-ev is-pending ${p.status === "error" ? "is-error" : ""}`}>
             <span className="rpx-ev__thumb is-ph"><Icon name={p.status === "error" ? "alert" : "clock"} size={16} /></span>
-            <span className="rpx-ev__main"><strong>{p.kind === "goal" ? "GOL" : "Önemli an"}{p.meta?.minute != null ? ` · ${p.meta.minute}'` : ""}</strong><small>{p.status === "error" ? p.error : "Kaydediliyor…"}</small></span>
+            <span className="rpx-ev__main"><strong>{p.kind === "goal" ? "GOL" : "Önemli an"}{p.meta?.minute != null ? ` · ${p.meta.minute}'` : ""}</strong><PendingNote p={p} now={R.now} /></span>
             {p.status === "error" && <button type="button" className="icon-btn icon-btn--xs" onClick={() => R.dismissPending?.(p.key)} title="Kapat"><Icon name="x" size={13} /></button>}
           </li>
         ))}
@@ -207,6 +210,7 @@ function EventList({ list, pending, R, meta, playlist, cursor, air, selectedId, 
                   {pill && <span className={`pill pill--xs ${pill.tone ? `pill--${pill.tone}` : ""}`}>{pill.text}</span>}
                   <StageBadge stage={stage} small />
                 </span>
+                <UploadControls u={u} replay={r} R={R} />
                 {u?.status === "failed" && <small className="text-red">{u.error} <button type="button" className="btn btn--xs" onClick={() => R.retry?.(r.id)}>Yeniden dene</button></small>}
               </span>
               <span className="rpx-ev__tools">

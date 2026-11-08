@@ -14,6 +14,7 @@ import * as api from "./studioApi";
 import { updateEvent as putEvent } from "./manage/manageApi";
 import { BUG_EVENT_MS, TIMELINE_CODES, bugEventOf, controlSteps, eventBody, isManualResult, livePhase, normalizeMatchStatus, scoreFromEvents, sortEvents, timerNowMs, toSquad } from "../../lib/studio/match";
 import { eventUpdateBody, fullEventBody } from "../../lib/studio/manage";
+import { mergeEvents } from "../../lib/studio/goalClips";
 
 function usePoll(fn, ms, enabled) {
   const ref = useRef(fn);
@@ -37,8 +38,14 @@ export function useLiveMatch(matchId, userId) {
   const idRef = useRef(matchId);
   idRef.current = matchId;
 
+  // [gol-klip] Yerel değişiklikler (yeni / silinen olay): olaydan ÖNCE başlayıp SONRA dönen
+  // yoklama, yeni golü içermeyen eski listeyle durumu ezmesin (gol listeden ve skordan
+  // kayboluyordu). Ayrıntı: lib/studio/goalClips › mergeEvents.
+  const localRef = useRef({ created: new Map(), removed: new Map() });
+  const merged = (list, issuedAt) => mergeEvents(list, localRef.current, Date.now(), { issuedAt });
   // Maç değişince eski maçın verisi görünmesin.
   useEffect(() => {
+    localRef.current = { created: new Map(), removed: new Map() };
     setMatch(null); setError(null); setRawEvents(null); setTimer(null); setLineup(null); setTeams(null);
   }, [matchId]);
 
@@ -46,7 +53,10 @@ export function useLiveMatch(matchId, userId) {
   const loadMatch = useCallback(() => api.getMatch(matchId).then(guard(matchId, (r) => {
     if (r.ok) { setMatch(r.data); setError(null); } else setError(r.error || { message: "Maç alınamadı." });
   })), [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
-  const loadEvents = useCallback(() => api.getEvents(matchId).then(guard(matchId, (r) => { if (r.ok && Array.isArray(r.data)) setRawEvents(r.data); })), [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const loadEvents = useCallback(() => {
+    const issuedAt = Date.now();
+    return api.getEvents(matchId).then(guard(matchId, (r) => { if (r.ok && Array.isArray(r.data)) setRawEvents(merged(r.data, issuedAt)); }));
+  }, [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
   const loadTimer = useCallback(() => api.getTimer(matchId).then(guard(matchId, (r) => { if (r.ok && r.data) setTimer(r.data); })), [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
   const loadLineup = useCallback(() => api.getLineup(matchId).then(guard(matchId, (r) => { if (r.ok && r.data) setLineup(r.data); })), [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -88,11 +98,15 @@ export function useLiveMatch(matchId, userId) {
   const score = manual ? { home: Number(match?.first_team_score) || 0, away: Number(match?.second_team_score) || 0 } : eventScore;
 
   const syncScore = useCallback(async () => {
+    const issuedAt = Date.now();
     const res = await api.getEvents(matchId);
     if (!res.ok || !Array.isArray(res.data)) return;
-    if (idRef.current === matchId) setRawEvents(res.data);
+    // [gol-klip] Sunucu yeni golü henüz döndürmediyse (okuma gecikmesi) skor ESKİ listeden
+    // hesaplanıp maç kaydına yazılmasın: yerel olaylarla birleştirilmiş liste esas.
+    const list = merged(res.data, issuedAt);
+    if (idRef.current === matchId) setRawEvents(list);
     if (manual || !match) return;
-    const next = scoreFromEvents(res.data, homeTeamId, awayTeamId);
+    const next = scoreFromEvents(list, homeTeamId, awayTeamId);
     if (next.home !== Number(match.first_team_score) || next.away !== Number(match.second_team_score)) {
       await api.must(api.updateMatch(matchId, { first_team_score: next.home, second_team_score: next.away }), "Skor yazılamadı.");
       loadMatch();
@@ -141,6 +155,7 @@ export function useLiveMatch(matchId, userId) {
 
   const addEvent = useCallback(async ({ side, code, playerId }) => {
     const created = await api.must(api.createEvent(matchId, eventBody({ side, code, playerId, minute, period, homeTeamId, awayTeamId, userId })), "Olay kaydedilemedi.");
+    if (created?.id != null) localRef.current.created.set(Number(created.id), { ev: created, at: Date.now() });
     setRawEvents((prev) => {
       const list = prev || [];
       return list.some((e) => Number(e.id) === Number(created?.id)) ? list : [...list, created];
@@ -161,6 +176,7 @@ export function useLiveMatch(matchId, userId) {
       homeTeamId, awayTeamId, userId,
     });
     const created = await api.must(api.createEvent(matchId, body), "Olay kaydedilemedi.");
+    if (created?.id != null) localRef.current.created.set(Number(created.id), { ev: created, at: Date.now() });
     setRawEvents((prev) => {
       const list = prev || [];
       return list.some((e) => Number(e.id) === Number(created?.id)) ? list : [...list, created];
@@ -178,6 +194,8 @@ export function useLiveMatch(matchId, userId) {
 
   const removeEvent = useCallback(async (eventId) => {
     await api.must(api.deleteEvent(matchId, eventId), "Olay silinemedi.");
+    localRef.current.created.delete(Number(eventId));
+    localRef.current.removed.set(Number(eventId), Date.now());
     setRawEvents((prev) => (prev || []).filter((e) => Number(e.id) !== Number(eventId)));
     await syncScore();
   }, [matchId, syncScore]);

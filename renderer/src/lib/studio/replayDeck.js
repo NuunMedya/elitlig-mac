@@ -251,10 +251,17 @@ export function airedStart(items) {
     if (!it?.replayId) continue;
     const e = (out[it.replayId] ||= { angles: [], segments: [] });
     if (!e.angles.includes(it.angle)) e.angles.push(it.angle);
-    const dur = num(it.durationMs, 0) / 1000;
-    e.segments.push({ angle: it.angle, inSec: Math.max(0, num(it.startSec, 0)), outSec: num(it.endSec, 0) > 0 ? num(it.endSec, 0) : dur || null });
+    e.segments.push({ angle: it.angle, inSec: Math.max(0, num(it.startSec, 0)), outSec: num(it.endSec, 0) > 0 ? num(it.endSec, 0) : null }); // null: klip sonuna kadar
   }
   return out;
+}
+
+/** Yayında çıkış noktası değişti: son bölümün çıkışı güncellenir (null: klip sonu). */
+export function airedOut(entry, outSec) {
+  if (!entry?.segments?.length) return entry || null;
+  const segs = entry.segments.map((s) => ({ ...s }));
+  segs[segs.length - 1].outSec = num(outSec, 0) > 0 ? num(outSec, 0) : null;
+  return { angles: [...entry.angles], segments: segs };
 }
 
 /** Yayında açı değişti: son bölüm atSec'te kapanır, yeni açının bölümü başlar. */
