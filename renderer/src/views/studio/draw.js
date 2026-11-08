@@ -8,6 +8,8 @@ import { fitRect } from "../../lib/studio/layouts";
 import { clockText, slideIndex } from "../../lib/studio/scenes";
 import { effectiveFx, fxActive, fxOrientOnly } from "../../lib/studio/videoFx";
 import { processFrame } from "./fx/fxProcessor";
+import { MAX_VIDEO_DELAY_MS, pickDelayed, regionPixels, tickerOffset } from "../../lib/studio/liveSources";
+import { isFullVisibility, layerVisibility } from "../../lib/studio/layerAnim";
 
 const PLACEHOLDER = {
   waiting: "Açılıyor…",
@@ -18,10 +20,65 @@ const PLACEHOLDER = {
   error: "Açılamadı",
   file: "Dosyayı yeniden seç",
   empty: "Tekrar yok",
+  standby: "Cihaz bekleniyor",
+  live: "Görüntü bekleniyor",
 };
 
-/** Kaynağın çizilebilir öğesi ve doğal boyutu; hazır değilse null. */
-export function drawableOf(rt, now = 0) {
+/**
+ * Ekran bölgesi: ekran görüntüsünün seçilen dikdörtgeni kendi tuvaline (kare başına
+ * bir kez; program / önizleme / küçük resim aynı kopyayı kullanır).
+ */
+function regionDrawable(rt, d, source, now) {
+  const { sx, sy, sw, sh } = regionPixels(source.region, d.w, d.h);
+  let c = rt.regionCanvas;
+  if (!c) { c = document.createElement("canvas"); rt.regionCanvas = c; }
+  if (c.width !== sw || c.height !== sh) { c.width = sw; c.height = sh; rt.regionAt = -1; }
+  if (now - (rt.regionAt ?? -1) >= 8 || now < rt.regionAt) {
+    rt.regionAt = now;
+    try { c.getContext("2d").drawImage(d.el, sx, sy, sw, sh, 0, 0, sw, sh); } catch { /* kare hazır değil */ }
+  }
+  return { el: c, w: sw, h: sh };
+}
+
+/**
+ * Görüntü gecikmesi (ses / görüntü eşleme, 0–500 ms): her yeni karede halkaya kopya,
+ * `delayMs` önceki kare çizilir. Kopyalar en çok 1920 px genişlikte tutulur.
+ */
+function delayedDrawable(rt, d, delayMs, now) {
+  let ring = rt.delayRing;
+  if (!ring) { ring = { frames: [], spare: [] }; rt.delayRing = ring; }
+  const last = ring.frames[ring.frames.length - 1];
+  if (!last || now - last.t >= 12 || now < last.t) {
+    const k = Math.min(1, 1920 / d.w);
+    const w = Math.max(2, Math.round(d.w * k));
+    const h = Math.max(2, Math.round(d.h * k));
+    // Gerekenden eski kareler geri dönüşüme (tuval yeniden kullanılır).
+    while (ring.frames.length > 1 && ring.frames[1].t <= now - delayMs - 40) ring.spare.push(ring.frames.shift().c);
+    if (ring.frames.length > 90) ring.spare.push(ring.frames.shift().c);
+    const c = ring.spare.pop() || document.createElement("canvas");
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    try { c.getContext("2d").drawImage(d.el, 0, 0, w, h); ring.frames.push({ t: now, c }); } catch { ring.spare.push(c); }
+    if (ring.spare.length > 4) ring.spare.length = 4;
+  }
+  const i = pickDelayed(ring.frames, now, delayMs);
+  if (i < 0) return d;
+  const c = ring.frames[i].c;
+  return { el: c, w: c.width, h: c.height };
+}
+
+/** Kaynağın çizilebilir öğesi ve doğal boyutu; hazır değilse null. source: bölge / gecikme için. */
+export function drawableOf(rt, now = 0, source = null) {
+  const d = baseDrawable(rt, now);
+  if (!d || !source) return d;
+  let out = d;
+  if (source.kind === "region" && source.region) out = regionDrawable(rt, out, source, now);
+  const delay = Math.min(MAX_VIDEO_DELAY_MS, Number(source.videoDelayMs) || 0);
+  if (delay > 0 && (out.el instanceof HTMLVideoElement || out.el instanceof HTMLCanvasElement)) out = delayedDrawable(rt, out, delay, now);
+  else if (rt.delayRing) rt.delayRing = null;
+  return out;
+}
+
+function baseDrawable(rt, now = 0) {
   if (!rt || rt.status !== "live") return null;
   if (rt.images) {
     const list = rt.images.filter((im) => im.complete && im.naturalWidth);
@@ -45,7 +102,7 @@ export function drawableOf(rt, now = 0) {
 
 /** Kaynağın doğal boyutu (oranı korumak için); bilinmiyorsa null. */
 export function naturalSize(source, rt) {
-  const d = drawableOf(rt, Date.now());
+  const d = drawableOf(rt, performance.now(), source);
   if (!d) return null;
   const r = effectiveFx(source, null)?.rotate;
   return r === 90 || r === 270 ? { w: d.h, h: d.w } : { w: d.w, h: d.h };
@@ -124,12 +181,36 @@ function drawText(ctx, w, h, s, text, H) {
   });
 }
 
+/** Kayan yazı: kutu içinde sağdan sola akan tek satır (kesintisiz döngü). */
+function drawTicker(ctx, w, h, s, H) {
+  if (s.background !== false) { ctx.fillStyle = s.bgColor || "#54009c"; ctx.fillRect(0, 0, w, h); }
+  const k = (H || 1080) / 1080;
+  const size = Math.max(6, Math.min(h * 0.8, (Number(s.size) || 44) * k));
+  const fam = s.font && s.font !== "-apple-system" ? `"${s.font}", -apple-system, sans-serif` : "-apple-system, \"Helvetica Neue\", sans-serif";
+  ctx.font = `${s.bold === false ? 500 : 800} ${size}px ${fam}`;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  const text = `${String(s.text || "").replace(/\s*\n\s*/g, " ")}${s.separator ?? "  •  "}`;
+  const tw = Math.max(1, ctx.measureText(text).width);
+  const off = tickerOffset(performance.now(), s.speed, tw, k);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.clip();
+  ctx.fillStyle = s.color || "#fff";
+  const rtl = s.direction === "right";
+  const start = rtl ? off - tw : -off;
+  for (let x = start; x < w; x += tw) ctx.fillText(text, x, h / 2);
+  ctx.restore();
+}
+
 /**
  * Bir katmanı çizer. opts: { placeholders, now, matchClockMs, override }
  * override: sürükleme sırasında yapılandırmaya yazılmamış kutu ({ x, y, w, h, crop, rot }).
  */
 export function drawLayer(ctx, layer, source, rt, W, H, opts = {}) {
-  if (!source || !layer.visible) return;
+  if (!source) return;
+  // Göster / gizle geçişi (katmanın showFx'i): gizlenen katman geçiş bitene dek çizilir.
+  const vis = layer.showFx ? layerVisibility(layer, Date.now()) : layer.visible ? null : false;
+  if (vis === false || (layer.showFx && !vis)) return;
   const L = opts.override && opts.override.layerId === layer.id ? { ...layer, ...opts.override.patch } : layer;
   const bw = L.w * W;
   const bh = L.h * H;
@@ -137,6 +218,12 @@ export function drawLayer(ctx, layer, source, rt, W, H, opts = {}) {
   ctx.save();
   ctx.translate(L.x * W + bw / 2, L.y * H + bh / 2);
   if (L.rot) ctx.rotate((L.rot * Math.PI) / 180);
+  if (vis && !isFullVisibility(vis)) {
+    if (vis.clip) { ctx.beginPath(); ctx.rect(-bw / 2, -bh / 2, bw, bh); ctx.clip(); }
+    ctx.globalAlpha *= vis.alpha;
+    ctx.translate(vis.dx * bw, vis.dy * bh);
+    if (vis.scale !== 1) ctx.scale(vis.scale, vis.scale);
+  }
   ctx.translate(-bw / 2, -bh / 2);
   // İsteğe bağlı görünüm: saydamlık, gölge, köşe yuvarlama (kırpma), çerçeve. Ölçüler
   // çıkış pikseli (1920 genişlik) üzerinden; küçük tuvallerde orantılı.
@@ -160,8 +247,9 @@ export function drawLayer(ctx, layer, source, rt, W, H, opts = {}) {
     if (kind === "color") drawColor(ctx, bw, bh, source, H);
     else if (kind === "text") drawText(ctx, bw, bh, source, source.text, H);
     else if (kind === "clock") drawText(ctx, bw, bh, source, clockText(source, Date.now(), { matchClockMs: opts.matchClockMs }), H);
+    else if (kind === "ticker") drawTicker(ctx, bw, bh, source, H);
     else {
-      let d = drawableOf(rt, opts.now ?? performance.now());
+      let d = drawableOf(rt, opts.now ?? performance.now(), source);
       // Görüntü ayarı (kaynağın ya da katmana özel): yalnız çevirme ise 2D dönüşüm,
       // değilse paylaşılan WebGL işlemcisi (aynı kare tüm çıkışlarda bir kez işlenir).
       // opts.fx: önizleme penceresi için açık ayar (false = ayarsız "önce" görüntüsü).
@@ -207,7 +295,7 @@ export function drawScene(ctx, scene, sources, runtime, W, H, opts = {}) {
   if (!scene) return;
   const byId = sourcesById(sources);
   for (const layer of scene.layers) {
-    if (!layer.visible) continue;
+    if (!layer.visible && !layer.showFx) continue;
     drawLayer(ctx, layer, byId.get(layer.sourceId), runtime.get(layer.sourceId), W, H, opts);
   }
 }

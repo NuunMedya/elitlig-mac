@@ -4,6 +4,8 @@
 //             fps / görüntü bit hızı Yayın sekmesiyle ortak: prefs.encoding)
 //   record    yerel kayıt: açık mı, klasör, KAYIT KALİTESİ (yayından ayrı)
 //   replay    gol öncesi kaç saniye tekrar yazılsın (varsayılan 15; v1 kayıtlarındaki eski
+//             varsayılan 10 → 15), butondan SONRA kaç saniye (postSeconds, 4), gol klibinin
+//             yükleme gecikmesi (uploadDelaySec, 60 — bu sürede seçilen açılar yüklenir); eski
 //             varsayılan 10, kullanıcı değiştirmemiş sayılıp 15'e taşınır — migrateReplaySeconds)
 //   view      ipuçları ve kısayol rozetleri, arayüz ölçeği
 //   hotkeys   ana eylemlerin tuşları (yeniden atanabilir)
@@ -15,6 +17,7 @@
 // düzenler (tek doğruluk kaynağı).
 export const SETTINGS_KEY = "studio.settings.v1";
 import { PIPELINES, normalizePipeline } from "../../../lib/studio/encodepath";
+import { DEFAULT_OPS, normalizeOps } from "./opsDefaults";
 export { PIPELINES };
 
 export const ENCODER_PREFS = [
@@ -23,6 +26,8 @@ export const ENCODER_PREFS = [
   { key: "software", label: "Yazılım (x264)", hint: "En uyumlu, işlemci kullanır" },
 ];
 export const KEYFRAME_CHOICES = [1, 2, 4];
+/** Yayın gecikmesi (sn): yalnız YouTube / RTMP'ye giden görüntü gecikir (OBS "Stream Delay"). */
+export const STREAM_DELAY_CHOICES = [0, 5, 10, 15, 30, 60, 120];
 export const AUDIO_KBPS_CHOICES = [128, 160, 192, 256]; // 96 kbps AAC stereo cızırtılı; kodlayıcı en az 128 yazar
 
 /** Kayıt kalitesi (yayından ayrı). videoKbps null = yayınla aynı. */
@@ -65,14 +70,16 @@ export const RESERVED_KEYS = new Set(["1", "2", "3", "4", "5", "6", "7", "8", "9
 export const DEFAULT_SETTINGS = {
   v: 2,
   // pipeline: kodlama yolu — "auto" | "webcodecs" (tek kodlama) | "legacy" (MediaRecorder + ffmpeg)
-  stream: { encoder: "auto", keyframeSec: 2, audioKbps: 128, pipeline: "auto" },
+  stream: { encoder: "auto", keyframeSec: 2, audioKbps: 128, pipeline: "auto", delaySec: 0 },
   record: { enabled: false, dir: null, quality: "stream", customKbps: 10000, customHeight: 1080 },
   // tekrar klibi 15 sn: önizlemede giriş–çıkışla istenen bölüm seçilir. directTake: R kısayolu
   // son tekrarı önizlemeye yükleyip AYNI GEÇİŞ yoluyla hemen yayına alır [önizleme-geçiş]
-  replay: { seconds: 15, directTake: false },
+  replay: { seconds: 15, directTake: false, postSeconds: 4, uploadDelaySec: 60 },
   view: { hints: true, tooltips: true, scale: 100 },
   hotkeys: DEFAULT_HOTKEYS,
   notify: { micOpen: true, lowBitrate: true, silence: true, silenceSec: 30 },
+  // İşletim varsayılanları (LED, röportaj, özet, reji / maç, makrolar): ./opsDefaults
+  ops: normalizeOps(DEFAULT_OPS),
 };
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -120,6 +127,7 @@ export function normalizeSettings(raw) {
       keyframeSec: pick(Number(r.stream?.keyframeSec), KEYFRAME_CHOICES, d.stream.keyframeSec),
       audioKbps: pick(Number(r.stream?.audioKbps), AUDIO_KBPS_CHOICES, d.stream.audioKbps),
       pipeline: normalizePipeline(r.stream?.pipeline),
+      delaySec: pick(Number(r.stream?.delaySec), STREAM_DELAY_CHOICES, d.stream.delaySec),
     },
     record: {
       enabled: bool(r.record?.enabled, d.record.enabled),
@@ -128,7 +136,13 @@ export function normalizeSettings(raw) {
       customKbps: clamp(Math.round(num(r.record?.customKbps, d.record.customKbps)), 1000, 50000),
       customHeight: pick(Number(r.record?.customHeight), [720, 1080], d.record.customHeight),
     },
-    replay: { seconds: clamp(Math.round(num(migrateReplaySeconds(r), d.replay.seconds)), 5, 30), directTake: bool(r.replay?.directTake, d.replay.directTake) },
+    replay: {
+      seconds: clamp(Math.round(num(migrateReplaySeconds(r), d.replay.seconds)), 5, 30),
+      directTake: bool(r.replay?.directTake, d.replay.directTake),
+      // [gol-klip] butondan SONRA kaydedilen süre (0–15 sn) ve gol klibi yükleme gecikmesi (0–600 sn)
+      postSeconds: clamp(Math.round(num(r.replay?.postSeconds, d.replay.postSeconds)), 0, 15),
+      uploadDelaySec: clamp(Math.round(num(r.replay?.uploadDelaySec, d.replay.uploadDelaySec)), 0, 600),
+    },
     view: {
       hints: bool(r.view?.hints, d.view.hints),
       tooltips: bool(r.view?.tooltips, d.view.tooltips),
@@ -141,6 +155,7 @@ export function normalizeSettings(raw) {
       silence: bool(r.notify?.silence, d.notify.silence),
       silenceSec: clamp(Math.round(num(r.notify?.silenceSec, d.notify.silenceSec)), 10, 300),
     },
+    ops: normalizeOps(r.ops),
   };
 }
 

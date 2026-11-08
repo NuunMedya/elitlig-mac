@@ -26,6 +26,7 @@ import {
   TAB_SPLITS, boardPanelId, compPanelId, defaultRailBoard, defaultTitle, addItem, dockPanelIds, dropRemoved, isKnownPanelId, newId, normalizeBoard, panelMeta, paramsOfId, parseId, presetOf, pushRemoved, specToDock, tilesToSpec,
 } from "./layoutModel";
 import { PRESET_RAILS } from "../shortcuts/railModel";
+import { boardFromTemplate, templateBoardId, templateOf } from "./boardTemplates";
 import Board from "./Board";
 import Catalog from "./Catalog";
 import { renderComponent, widgetPopover } from "./components";
@@ -382,10 +383,10 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
       },
       groupSize(gid) { const g = groupOf(gid); return g ? { width: Math.round(g.width), height: Math.round(g.height) } : null; },
       /** Yeni pano: sekme olarak (grup verilmişse) ya da etkin grubun sağına. */
-      newBoard(target = {}, { title = "Yeni sekme", items = [] } = {}) {
+      newBoard(target = {}, { title = "Yeni sekme", items = [], cols = undefined, rowH = undefined } = {}) {
         const id = newId("b");
         const n = Object.keys(layoutRef.current.boards || {}).filter((k) => k !== "rail").length + 1;
-        const board = normalizeBoard({ title: title === "Yeni sekme" ? `Sekme ${n}` : title, items });
+        const board = normalizeBoard({ title: title === "Yeni sekme" ? `Sekme ${n}` : title, items, cols, rowH }, cols ? { cols } : {});
         layoutRef.current = { ...layoutRef.current, boards: { ...layoutRef.current.boards, [id]: board } };
         setLayout((l) => ({ ...l, boards: { ...l.boards, [id]: board } }));
         c.add(boardPanelId(id), target);
@@ -444,6 +445,17 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
           const rail = defaultRailBoard(PRESET_RAILS[key] || undefined);
           layoutRef.current = { ...layoutRef.current, boards: { ...layoutRef.current.boards, rail } };
           setLayout((l) => ({ ...l, boards: { ...l.boards, rail } }));
+        }
+        // Hazır panelleri birleştiren düzen: eksik şablon panoları kurulur (var olanlar korunur).
+        const made = {};
+        for (const tk of p.boards || []) {
+          const bid = templateBoardId(tk);
+          const tpl = templateOf(tk);
+          if (tpl && !layoutRef.current.boards?.[bid]) made[bid] = boardFromTemplate(tpl);
+        }
+        if (Object.keys(made).length) {
+          layoutRef.current = { ...layoutRef.current, boards: { ...layoutRef.current.boards, ...made } };
+          setLayout((l) => ({ ...l, boards: { ...l.boards, ...made } }));
         }
         const json = specToDock(p.spec, { titleOf });
         if (load(json)) {

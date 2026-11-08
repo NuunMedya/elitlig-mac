@@ -118,14 +118,17 @@ function AngleSeq({ ctx, w, h, preview }) {
 
 function SlowPlay({ ctx, w, h }) {
   const R = ctx.replay;
-  const rate = Number(R.rate) || 1;
+  // Tekrar yayındaysa hız YAYINDAKİ tekrara anında uygulanır (program destesi).
+  const pgm = R.editor?.decks?.program?.active ? R.editor.decks.program : null;
+  const rate = Number(pgm ? pgm.rate : R.rate) || 1;
+  const setRate = pgm ? pgm.setRate : R.setRate;
   const r = playable(R)[0] || null;
   const rates = w >= 3 ? RATE_STEPS : w >= 2 ? [0.25, 0.5, 0.75, 1] : [0.5, 1];
   return (
     <Shell tone="violet" w={w} h={h} state={R.playing ? "air" : null} className="wx-slow">
       <Head icon="repeat" label="AĞIR ÇEKİM" right={<em className="wx-big">{rateText(rate)}</em>} />
       <div className={`wx-chips is-n${rates.length}`}>
-        {rates.map((v) => <button key={v} type="button" className={Math.abs(rate - v) < 0.01 ? "is-on" : ""} disabled={!R.setRate} onClick={() => R.setRate(v)}>{rateText(v)}</button>)}
+        {rates.map((v) => <button key={v} type="button" className={Math.abs(rate - v) < 0.01 ? "is-on" : ""} disabled={!setRate} onClick={() => setRate(v)}>{rateText(v)}</button>)}
       </div>
       {h >= 2 && (
         <div className="wx-row is-actions">
@@ -145,6 +148,9 @@ function JogTile({ ctx, w, h }) {
   const now = useNow(Boolean(E?.previewing), 200);
   void now;
   if (!E) return <Shell tone="violet" w={w} h={h}><Head icon="sliders" label="GİRİŞ / ÇIKIŞ" /><span className="st-w__empty">Tekrar düzenleyici bu sürümde yok.</span></Shell>;
+  // Tekrar yayındaysa YAYINDAKİ tekrar denetlenir (sar, kare kare: anında yayına).
+  const pgm = E.decks?.program?.active ? E.decks.program : null;
+  if (pgm) return <JogDeck ctx={ctx} deck={pgm} w={w} h={h} />;
   if (!E.previewing) {
     return (
       <Shell tone="violet" w={w} h={h} className="wx-jog is-idle">
@@ -178,6 +184,39 @@ function JogTile({ ctx, w, h }) {
           <button type="button" className={outP ? "is-on" : ""} onClick={() => E.setOut?.(key, cur)} title="Çıkış noktası (O)">ÇIKIŞ {outP ? secText(outP) : ""}</button>
           <button type="button" onClick={() => { E.setIn?.(key, 0); E.setOut?.(key, 0); }} title="Giriş / çıkışı temizle">×</button>
           {w >= 3 && <button type="button" className="is-air" onClick={() => ctx.transition?.take?.()} title="Önizlemedeki bölümü yayına al (GEÇİŞ)">YAYINA AL</button>}
+        </div>
+      )}
+    </Shell>
+  );
+}
+
+/** Yayındaki tekrar: süre çubuğu (tıkla: sar), kare kare, ±1 sn, oynat / duraklat, canlıya dön. */
+function JogDeck({ ctx, deck, w, h }) {
+  const now = useNow(true, 200);
+  void now;
+  const st = deck.state();
+  const cur = st.time || 0;
+  const dur = st.dur || 0;
+  const T = deck.transport;
+  const b = (label, fn, title, cls = "") => <button type="button" className={cls} onClick={fn} title={title}>{label}</button>;
+  const seekAt = (e) => { const r = e.currentTarget.getBoundingClientRect(); if (dur) T.seek(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * dur); };
+  return (
+    <Shell tone="danger" w={w} h={h} state="air" className="wx-jog">
+      <Head icon="sliders" label="YAYINDAKİ TEKRAR" right={<em className="wx-tc">{secText(cur)} · {rateText(st.rate || deck.rate)}</em>} />
+      <span className="wx-tl" onPointerDown={seekAt} style={{ cursor: "pointer" }} title="Tıkla: yayındaki tekrarı sar">
+        <i className="wx-tl__io" style={{ left: `${dur ? (deck.inPoint / dur) * 100 : 0}%`, right: `${dur && deck.outPoint ? 100 - (deck.outPoint / dur) * 100 : 0}%` }} /><b style={{ left: `${dur ? (cur / dur) * 100 : 0}%` }} />
+      </span>
+      <div className="wx-row is-jog">
+        {b("−1s", () => T.nudge(-1), "1 saniye geri")}
+        {(w >= 2) && b("◀︎", () => T.step(-1), "1 kare geri")}
+        {b(st.paused ? "▶︎" : "❚❚", () => T.toggle(), "Oynat / duraklat", "is-main")}
+        {(w >= 2) && b("▶︎|", () => T.step(1), "1 kare ileri")}
+        {b("+1s", () => T.nudge(1), "1 saniye ileri")}
+      </div>
+      {h >= 2 && (
+        <div className="wx-row is-io">
+          {[0.25, 0.5, 1].map((v) => <button key={v} type="button" className={Math.abs((st.rate || deck.rate) - v) < 0.01 ? "is-on" : ""} onClick={() => deck.setRate(v)}>{rateText(v)}</button>)}
+          {w >= 3 && <button type="button" className="is-air" onClick={() => ctx.replay.stop?.()} title="Canlıya dön">CANLIYA DÖN</button>}
         </div>
       )}
     </Shell>

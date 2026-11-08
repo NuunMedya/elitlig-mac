@@ -140,14 +140,18 @@ export const LAYOUT_COMPONENTS = [
   { ...P("ses", "mic", "Ses · mikrofon ve ek kaynaklar", [6, 8], [3, 3]), group: "ses", icon: "mic" },
   { ...P("ses", "music", "Ses · müzik / arka plan", [6, 6], [3, 3]), group: "ses", icon: "music" },
   // ── tekrar ──
-  { ...P("tekrar", "list", "Tekrar · liste", [8, 9], [3, 3]), group: "tekrar", icon: "list" },
+  { ...P("tekrar", "list", "Tekrar · olay listesi", [6, 9], [3, 3]), group: "tekrar", icon: "list", hint: "Goller / anlar: küçük resim, dakika, golcü, ★; tık: önizle" },
+  { ...P("tekrar", "grid", "Tekrar · açı ızgarası", [7, 7], [3, 3]), group: "tekrar", icon: "video", hint: "Seçili tekrarın tüm açıları canlı; tık: önizle · ⌘ tık: listeye" },
+  { ...P("tekrar", "queue", "Tekrar · oynatma listesi + YAYINA AL", [5, 8], [3, 3]), group: "tekrar", icon: "play", hint: "Sürükle bırak sıra, öğe başına açı / giriş–çıkış / hız; YAYINA AL, CANLIYA DÖN" },
+  { ...P("tekrar", "timeline", "Tekrar · süre çubuğu", [12, 3], [4, 2]), group: "tekrar", icon: "clock", hint: "Büyük süre çubuğu: tıkla / sürükle → sar; giriş / çıkış, işaretler (yayındaysa yayındaki tekrar)" },
+  { ...P("tekrar", "transport", "Tekrar · taşıma (J K L)", [8, 2], [3, 2]), group: "tekrar", icon: "play", hint: "Oynat / duraklat, kare kare, ±1 sn, J K L, döngü" },
+  { ...P("tekrar", "zoom", "Tekrar · yakınlaştırma", [6, 2], [3, 1]), group: "tekrar", icon: "search", hint: "1 / 1,5 / 2 / 3× ve kaydırıcı (yayındaysa yayına anında)" },
   { key: "tekrar.angles", group: "tekrar", label: "Tekrar · açı seçici", icon: "video", size: [6, 4], min: [2, 2], hint: "Son tekrarın açıları: tıkla → önizlemede düzenle" },
-  { ...P("tekrar", "rate", "Tekrar · hız / ağır çekim", [4, 3], [2, 2]), group: "tekrar", icon: "repeat" },
+  { ...P("tekrar", "rate", "Tekrar · hız / ağır çekim (T-bar)", [6, 2], [3, 2]), group: "tekrar", icon: "repeat", hint: "0,25…2× ve T-bar (yayındaysa yayındaki tekrara anında)" },
   { ...P("tekrar", "route", "Tekrar · yayına giden ses", [4, 4], [2, 2]), group: "tekrar", icon: "mic" },
   { ...P("tekrar", "angles", "Tekrar · kaydedilecek açılar", [4, 5], [2, 2]), group: "tekrar", icon: "camera" },
   { ...P("tekrar", "moment", "Tekrar · ÖNEMLİ AN", [3, 2], [2, 1]), group: "tekrar", icon: "star" },
   { ...P("tekrar", "air", "Tekrar · yayın kartı", [4, 4], [2, 2]), group: "tekrar", icon: "play" },
-  { ...P("tekrar", "queue", "Tekrar · önizleme ve kuyruk", [4, 5], [2, 2]), group: "tekrar", icon: "list" },
   { ...P("tekrar", "between", "Tekrar · aradaki geçiş", [4, 2], [2, 1]), group: "tekrar", icon: "swap" },
   { ...P("tekrar", "layers", "Tekrar · katmanlar", [4, 5], [2, 2]), group: "tekrar", icon: "layers" },
   { ...P("tekrar", "uploads", "Tekrar · yükleme günlüğü", [5, 5], [2, 2]), group: "tekrar", icon: "upload" },
@@ -548,6 +552,58 @@ export const LAYOUT_PRESETS = [
       { size: 11, row: [{ tabs: ["gecis"], size: 1.3 }, { tabs: ["olcer"], size: 6 }] },
       { size: 45, row: [{ tabs: ["ses"], size: 2.6 }, { tabs: ["tekrar", "sahneSerit", "yonetim", "sahne", "yayin"], size: 1.4 }] },
     ] }] },
+  },
+  // ── hazır panelleri birleştiren tam ekran düzenler (boards: kurulacak pano şablonları, ./boardTemplates) ──
+  {
+    key: "rejiMasa", label: "Reji masası · iki takım ayna", icon: "swap", boards: ["reji-mirror", "mac-masa"],
+    hint: "Monitörler üstte; ev sahibi | skor + saat + olaylar | deplasman; yanda maç masası (durum, devre, kadro, MVP…)",
+    spec: { row: [RAIL, { size: 88, col: [
+      { size: 32, row: [{ tabs: ["pvw"], size: 4 }, { tabs: ["pgm"], size: 4 }, { size: 2, col: [{ tabs: ["saat"], size: 1 }, { tabs: ["gecis"], size: 1.4 }] }] },
+      { size: 68, row: [{ tabs: ["board~tpl-reji-mirror", "yonetim"], size: 3 }, { tabs: ["board~tpl-mac-masa", "olaylar"], size: 2 }] },
+    ] }] },
+  },
+  {
+    key: "operator", label: "Operatör ızgarası", icon: "grid", boards: ["reji-grid", "sahne-ab"],
+    hint: "Monitörler; altta eşit kare reji düğmeleri ve A/B sahne veriyolu",
+    spec: { row: [RAIL, { size: 88, col: [MONITORS(40), { size: 60, row: [{ tabs: ["board~tpl-reji-grid"], size: 1 }, { tabs: ["board~tpl-sahne-ab", "sahne"], size: 1.1 }] }] }] },
+  },
+  {
+    key: "dokunmatik", label: "Dokunmatik reji", icon: "zap", boards: ["reji-touch", "sahne-list"],
+    hint: "Kısayol şeridi yok; büyük reji düğmeleri, sahne listesi, monitörler",
+    spec: { row: [{ size: 18, tabs: ["board~tpl-sahne-list"] }, { size: 82, col: [MONITORS(36), { tabs: ["board~tpl-reji-touch", "yonetim"], size: 64 }] }] },
+  },
+  {
+    key: "kompakt", label: "Kompakt reji sütunu", icon: "list", boards: ["reji-compact", "tekrar-compact"],
+    hint: "Solda tek sütun reji, sağda tek sütun tekrar; ortada monitörler, geçiş ve işletim panelleri",
+    spec: { row: [{ size: 15, tabs: ["board~tpl-reji-compact"] }, { size: 70, col: [MONITORS(46), TAKE_STRIP(15), { ...OPS("sahne"), size: 39 }] }, { size: 15, tabs: ["board~tpl-tekrar-compact"] }] },
+  },
+  {
+    key: "evs", label: "Tekrar · EVS tarzı", icon: "sliders", boards: ["tekrar-evs", "tekrar-operator"],
+    hint: "Büyük önizleme (düzenleyici), program + açılar; altta EVS tarzı tekrar panosu ve operatör panosu",
+    spec: { row: [RAIL, { size: 88, col: [
+      { size: 50, row: [{ tabs: ["pvw"], size: 6 }, { size: 4, col: [{ tabs: ["pgm"], size: 3 }, { tabs: ["acilar"], size: 2 }] }] },
+      { size: 50, row: [{ tabs: ["board~tpl-tekrar-evs"], size: 1.4 }, { tabs: ["board~tpl-tekrar-operator", "tekrar"], size: 1 }] },
+    ] }] },
+  },
+  {
+    key: "sahneAB", label: "Sahne · A/B ve tally", icon: "eye", boards: ["sahne-ab", "sahne-tally"],
+    hint: "Monitörler; A/B veriyolu, büyük tally'li sahne resimleri, otomatik dönüş",
+    spec: { row: [RAIL, { size: 88, col: [MONITORS(42), { size: 58, row: [{ tabs: ["board~tpl-sahne-ab"], size: 1.1 }, { tabs: ["board~tpl-sahne-tally", "sahne"], size: 1 }] }] }] },
+  },
+  {
+    key: "ledMasa", label: "LED masası", icon: "overview", boards: ["led-masa"],
+    hint: "LED önizleme ve program büyük; altta LED masası (ekran, içerik, ayar, kayan yazı, ayna…) ve LED sekmesi",
+    spec: { row: [RAIL, { size: 88, col: [{ size: 44, row: [{ tabs: ["ledPvw"], size: 1 }, { tabs: ["pgm"], size: 1 }] }, { size: 56, row: [{ tabs: ["board~tpl-led-masa"], size: 2 }, { tabs: ["led", "yonetim", "sahne"], size: 1 }] }] }] },
+  },
+  {
+    key: "roportajOzet", label: "Röportaj ve özet masası", icon: "users", boards: ["roportaj-masa", "ozet-masa"],
+    hint: "Monitörler; röportaj masası (konuk, bant, kayıt) ve özet masası (seçim, oluştur, yükle)",
+    spec: { row: [RAIL, { size: 88, col: [MONITORS(40), { size: 60, row: [{ tabs: ["board~tpl-roportaj-masa", "roportaj"], size: 1 }, { tabs: ["board~tpl-ozet-masa", "ozet"], size: 1 }] }] }] },
+  },
+  {
+    key: "yayinci", label: "Yayın sorumlusu", icon: "activity", boards: ["yayin-araclar", "mac-sonu"],
+    hint: "Program büyük; yayın araçları (sağlık, bit hızı, makrolar, istem kartları) ve maç sonu masası",
+    spec: { row: [RAIL, { size: 88, col: [MONITORS(44), { size: 56, row: [{ tabs: ["board~tpl-yayin-araclar", "yayin"], size: 1.3 }, { tabs: ["board~tpl-mac-sonu", "yonetim"], size: 1 }] }] }] },
   },
 ];
 export const presetOf = (key) => LAYOUT_PRESETS.find((p) => p.key === key) || null;

@@ -3,7 +3,7 @@
 // Arayüz program akışına ek olarak her kaynak (kamera vb.) için ayrı bir
 // MediaRecorder akışı yollar ("studio:angleChunk" { id, data }). Her açı için
 // motorun (engine.js) hafif bir kopyası çalışır: RTMP yok, 1 sn'lik MPEG-TS
-// parça halkası (~40 sn).
+// parça halkası (~64 sn).
 //
 // Kopya kipi (2.11): kaynak { mimeType } H.264 ise ("video/x-matroska;codecs=avc1",
 // "video/webm;codecs=h264"; arayüz 1 sn'de bir anahtar kare ister) görüntü
@@ -27,7 +27,7 @@ const { createSegmentRecorder } = require("./engine");
 const ffargs = require("./ffargs");
 
 const SOURCE_ID = /^[\w.:@-]{1,160}$/;
-const KEEP_ANGLE_SEGMENTS = 40; // ≈ 40 sn
+const KEEP_ANGLE_SEGMENTS = 64; // ≈ 64 sn (öncesi + butondan sonrası + kayıt payı)
 
 const ANGLE_MESSAGES = {
   stalled: "Açı görüntüsü gelmiyor (kaydedici durdu); yeniden başlatılıyor.",

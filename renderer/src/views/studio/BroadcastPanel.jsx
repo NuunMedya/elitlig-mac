@@ -10,6 +10,7 @@ import React, { memo, useEffect, useState } from "react";
 import { Field, Icon } from "../../components/ui";
 import * as api from "./studioApi";
 import YoutubeStartDialog from "./youtube/YoutubeStartDialog";
+import { CoverButton } from "./youtube/cover/CoverDialog"; // [kapak]
 import { parseStamp } from "./youtube/chapters";
 import "./youtube/youtube.css";
 import { Part } from "./dock/parts";
@@ -317,6 +318,7 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
                   <button type="button" className="icon-btn" title="Tarayıcıda aç" onClick={() => window.elitlig?.app?.openExternal?.(watch)}><Icon name="external" size={14} /></button>
                 </div>
               )}
+              {matchId && <CoverButton yt={yt} matchId={matchId} match={match} homeName={match?.first_team_name} awayName={match?.second_team_name} toast={toast} disabled={busy} />}{/* [kapak] */}
               {openStream && watchLinkOf(match) && <span className="st-okchip"><Icon name="check" size={12} /> Maç sayfasına canlı yayın linki eklendi</span>}
               {s?.sync_error?.message && <p className="st-hint text-red">{s.sync_error.message}</p>}
               {!matchId && <p className="st-hint">Önce Maç yönetimi sekmesinden maç aç.</p>}

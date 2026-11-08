@@ -17,7 +17,7 @@ import { Field, Icon, Kbd } from "../../../components/ui";
 import { BITRATE_PRESETS, FPS_CHOICES, RESOLUTION_CHOICES, encodingPreset, recommendedBitrate } from "../../../lib/studio/broadcast";
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../../lib/studio/transitions";
 import { WORKSPACES, FIXED_SHORTCUTS } from "../../../lib/studio/scenesWorkspace";
-import { AUDIO_KBPS_CHOICES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, PIPELINES, RECORD_QUALITIES, RESERVED_KEYS, bindHotkey, keyText, recordEstimate } from "./settings";
+import { AUDIO_KBPS_CHOICES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, PIPELINES, STREAM_DELAY_CHOICES, RECORD_QUALITIES, RESERVED_KEYS, bindHotkey, keyText, recordEstimate } from "./settings";
 import QualityPresets from "../QualityPresets";
 import { RAIL_SIZES, RAIL_WIDGETS, addWidget, moveWidget, removeWidget, resizeWidget, sizeKey, sizesOf, widgetOf } from "../shortcuts/railModel";
 import { RailCatalog } from "../shortcuts/ShortcutRail";
@@ -25,13 +25,16 @@ import TransitionsTab from "../scenes/TransitionsTab";
 import { normalizeModeSettings } from "../../../lib/studio/modes";
 import { TRANSITIONS } from "../../../lib/studio/transitions";
 import DockSettings from "./DockSettings";
+import { opsSection } from "./OpsSettings";
 import ProfilesSection from "./ProfilesSection";
 import "./settings.css";
 import "../dock/dock.css";
 import VarThemeSection, { VAR_THEME_SECTION } from "./VarThemeSection"; // [var-tema]
+import CoverSection, { COVER_SECTION } from "../youtube/cover/CoverSection"; // [kapak]
 
 export const SETTINGS_GROUPS = [
   { key: "genel", label: "Genel" },
+  { key: "islem", label: "İşletim" },
   { key: "yerlesim", label: "Yerleşim" },
   { key: "grafik", label: "Grafikler" },
   { key: "panel", label: "Paneller" },
@@ -40,10 +43,15 @@ export const SETTINGS_GROUPS = [
 export const SETTINGS_SECTIONS = [
   { key: "yayin", label: "Yayın", icon: "broadcast", group: "genel" },
   { key: "kayit", label: "Kayıt", icon: "download", group: "genel" },
+  { ...COVER_SECTION, group: "genel" }, // [kapak] Ayarlar › Genel › YouTube kapağı
   { key: "tekrar", label: "Tekrar", icon: "repeat", group: "genel" },
   { ...VAR_THEME_SECTION, group: "grafik" }, // [var-tema] Ayarlar › Grafikler › VAR teması
   { key: "gecis", label: "Geçiş", icon: "swap", group: "genel" },
-  { key: "led", label: "LED ekran", icon: "overview", group: "genel" },
+  { key: "led", label: "LED ekran", icon: "overview", group: "islem" },
+  { key: "roportaj", label: "Röportaj", icon: "users", group: "islem" },
+  { key: "ozet", label: "Özet", icon: "sparkles", group: "islem" },
+  { key: "mac", label: "Reji / Maç", icon: "board", group: "islem" },
+  { key: "makro", label: "Makrolar", icon: "zap", group: "islem" },
   { key: "gorunum", label: "Görünüm", icon: "grid", group: "genel" },
   { key: "bildirim", label: "Bildirimler", icon: "bell", group: "genel" },
   { key: "serit", label: "Kısayollar panosu", icon: "zap", group: "yerlesim" },
@@ -190,6 +198,10 @@ function SettingsPage({
           </div>
           <p className="st-hint">YouTube 2 sn anahtar kare önerir. Ses 128 kbps çoğu yayın için yeterli.</p>
         </Section>
+        <Section title="Yayın gecikmesi" sub="OBS “Stream Delay”: izleyiciye giden görüntü bu kadar geç gider (ör. canlı sonuç / küfür / taktik sızmasın). Kayıt ve tekrarlar anlık kalır; yeni ayar bir sonraki yayında geçerli.">
+          <div className="st-seg">{STREAM_DELAY_CHOICES.map((k) => <button key={k} type="button" className={(settings.stream.delaySec || 0) === k ? "is-on" : ""} onClick={() => set("stream", { delaySec: k })}>{k ? (k >= 60 ? `${k / 60} dk` : `${k} sn`) : "Yok"}</button>)}</div>
+          {settings.stream.delaySec > 0 && <p className="st-hint">Bellek: yaklaşık {Math.max(1, Math.round((Number(settings.stream.delaySec) || 0) * 0.75))} MB (6 Mbps’de). YouTube’un kendi 2–5 sn gecikmesi buna eklenir.</p>}
+        </Section>
       </>
     );
   } else if (section === "kayit") {
@@ -242,6 +254,13 @@ function SettingsPage({
           <Field label={`Golden önce kaydedilen süre · ${settings.replay.seconds} sn`} hint="Gol / önemli ana basıldığı andan geriye doğru yazılan süre.">
             <input type="range" min={5} max={30} step={1} value={settings.replay.seconds} onChange={(e) => set("replay", { seconds: Number(e.target.value) })} />
           </Field>
+          {/* [gol-klip] butondan sonrası + gecikmeli yükleme */}
+          <Field label={`Butondan sonra kaydedilecek süre · ${settings.replay.postSeconds ?? 4} sn`} hint="GOL / ÖNEMLİ AN'a basıldıktan sonra da bu kadar kaydedilir (kayıt süre dolunca yazılır; listede geri sayım). 0: yalnız öncesi.">
+            <input type="range" min={0} max={15} step={1} value={settings.replay.postSeconds ?? 4} onChange={(e) => set("replay", { postSeconds: Number(e.target.value) })} />
+          </Field>
+          <Field label={`Yükleme gecikmesi · ${settings.replay.uploadDelaySec ?? 60} sn`} hint="Gol klibi olaya bağlandıktan sonra bu kadar beklenir; bu sürede tekrar için seçtiğin / yayına verdiğin açılar (giriş–çıkış noktalarıyla) sırayla birleştirilip yüklenir. Seçim yoksa program açısı. 0: hemen yükle.">
+            <input type="range" min={0} max={300} step={10} value={settings.replay.uploadDelaySec ?? 60} onChange={(e) => set("replay", { uploadDelaySec: Number(e.target.value) })} />
+          </Field>
           <Field label={`Oynatma hızı · ${String(rate).replace(".", ",")}×`}>
             <div className="st-seg">{[0.25, 0.5, 0.75, 1].map((r) => <button key={r} type="button" className={Number(rate) === r ? "is-on" : ""} onClick={() => setRate(r)}>{String(r).replace(".", ",")}×</button>)}</div>
           </Field>
@@ -277,12 +296,17 @@ function SettingsPage({
         <p className="st-hint st-set__wide">Panelin her ayrıntısı (katmanlar, kuyruk, düzenleyici…) için: Ayarlar › Alt panel › Tekrar › Parçalar › “Paneli burada aç”.</p>
       </>
     );
+  } else if (section === COVER_SECTION.key) { // [kapak]
+    body = <CoverSection toast={toast} />;
   } else if (section === VAR_THEME_SECTION.key) { // [var-tema]
     body = <VarThemeSection prefs={prefs} setPref={setPref} />;
   } else if (section === "gecis") {
     body = <div className="st-set__wide"><TransitionsTab prefs={prefs} setPref={setPref} hasModes={hasModes} brandRef={brandRef} /></div>;
+  } else if (["roportaj", "ozet", "mac", "makro"].includes(section)) {
+    body = opsSection(section, { Section, Toggle, settings, set, led, railCtx, audio: audio || railCtx?.mixer });
   } else if (section === "led") {
     body = (
+      <>
       <Section title="LED ekran varsayılanları" sub="LED ekran sekmesiyle aynı ayarlar.">
         <Field label="Ekran">
           <select value={led.prefs.displayId ?? ""} onChange={(e) => led.setPref({ displayId: e.target.value === "" ? null : (Number.isNaN(Number(e.target.value)) ? e.target.value : Number(e.target.value)) })}>
@@ -298,6 +322,8 @@ function SettingsPage({
           <Choice on={led.prefs.web} title="Sitenin LED sayfası" text="elitlig.com/led/<maç>" onClick={() => led.setPref({ web: true })} />
         </div>
       </Section>
+      {opsSection("led", { Section, Toggle, settings, set, led, railCtx, audio: audio || railCtx?.mixer })}
+      </>
     );
   } else if (section === "gorunum") {
     body = (

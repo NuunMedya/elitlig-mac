@@ -411,6 +411,7 @@ function ScenesTabInner({ config, configRef, runtimeRef, register, version, stud
               <input type="checkbox" checked={Boolean(inline)} onChange={(e) => onInline(e.target.checked)} /> Katmanlar yanda
             </label>
           )}
+          {actions.onCollections && <button type="button" className="btn btn--sm" onClick={actions.onCollections} title="Sahne koleksiyonları: adlandırılmış sahne + kaynak takımlarını kaydet / yükle (ör. lig maçı, turnuva, röportaj)"><Icon name="folder" size={13} /> Koleksiyonlar</button>}
           <button type="button" className="btn btn--sm btn--primary" onClick={(e) => onAddScene(e.currentTarget)} title="Şablondan yeni sahne: kamera düzenleri, çoklu görüntü, başlıyor / ara / bitti, bilgi ekranları, maç anları, LED">
             <Icon name="plus" size={13} /> Yeni sahne ekle
           </button>

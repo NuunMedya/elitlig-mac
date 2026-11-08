@@ -15,8 +15,21 @@
 //   görsel / video  dosyanın tam yolu ana süreçte izin listesinde; adres
 //                   elitlig-studio://media/<kimlik>/<ad> (blob: değil). Dosya silinmiş /
 //                   taşınmışsa durum "file": "Dosya bulunamadı, yeniden seç".
+//   telefon         eşleme kodu (token) kaynakta saklanır: aynı QR yeniden açılışta da çalışır
+//
+// Canlı giriş türleri (live/):
+//   phone           WebRTC yanıtlayıcı (phonePeer.js); telefon bağlanana dek "standby"
+//   ingest / stream ana süreçte ffmpeg → fMP4 → MSE <video> (feedPlayer.js); bekleme / yeniden
+//                   bağlanma "standby", akış gelince "live"; bit hızı / fps kayıtta
+//   web             ekran dışı pencerenin kareleri tuvale (liveHub.paintWebFrame)
+//   playlist        tek <video>, bitince sonraki (sıralı / karışık, döngü)
+//   region          ekran yakalaması + bölge (çizimde kırpılır, draw.js)
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RESOLUTIONS, resolveCameraDevice } from "../../lib/studio/layouts";
+import { FEED_KINDS, feedSpecOf, liveSignature, playlistNext, shuffledOrder } from "../../lib/studio/liveSources";
+import { createFeedPlayer } from "./live/feedPlayer";
+import { createPhonePeer } from "./live/phonePeer";
+import { liveApi, on as onLive, paintWebFrame } from "./live/liveHub";
 
 const studio = () => window.elitlig?.studio;
 const md = () => navigator.mediaDevices;
@@ -126,6 +139,7 @@ export function useStudioSources(sources, { onResolve, replayUrlOf } = {}) {
   const release = useCallback((id) => {
     const rt = runtimeRef.current.get(id);
     if (!rt) return;
+    try { rt.dispose?.(); } catch { /* yoksay */ }
     stopStream(rt.stream);
     if (rt.el instanceof HTMLVideoElement) {
       try { rt.el.pause(); } catch { /* yoksay */ }
@@ -144,12 +158,13 @@ export function useStudioSources(sources, { onResolve, replayUrlOf } = {}) {
         return `camera|${dev ? dev.deviceId || "default" : "none"}|${source.resolution}`;
       }
       case "screen":
-      case "window": return `screen|${source.screenId || ""}|${source.nonce || 0}`;
+      case "window":
+      case "region": return `screen|${source.screenId || ""}|${source.nonce || 0}`;
       case "image": return `image|${source.url || ""}|${source.fileMissing ? 1 : 0}`;
       case "video": return `video|${source.url || ""}|${source.loop !== false}|${source.fileMissing ? 1 : 0}`;
       case "slideshow": return `slides|${(source.images || []).join("|").length}|${(source.images || []).length}|${(source.images || [])[0]?.slice(-40) || ""}|${source.intervalMs}`;
       case "replay": return `replay|${replayUrlOf?.(source) || ""}`;
-      default: return `${source.kind}`;
+      default: return liveSignature(source) || `${source.kind}`;
     }
   }, [devices.video, replayUrlOf]);
 
@@ -180,7 +195,11 @@ export function useStudioSources(sources, { onResolve, replayUrlOf } = {}) {
         if (!devices.video.some((d) => d.label)) refreshDevices();
         return;
       }
-      if (source.kind === "screen" || source.kind === "window") {
+      if (source.kind === "phone") { acquirePhone(source, sig, still); return; }
+      if (FEED_KINDS.has(source.kind)) { acquireFeed(source, sig, still); return; }
+      if (source.kind === "web") { acquireWeb(source, sig, still); return; }
+      if (source.kind === "playlist") { acquirePlaylist(source, still); return; }
+      if (source.kind === "screen" || source.kind === "window" || source.kind === "region") {
         if (!source.screenId) { set(id, { status: "missing", message: "Ekran ya da pencere seçilmedi." }); return; }
         const run = screenLock.then(async () => {
           if (!still()) return null;
@@ -268,11 +287,141 @@ export function useStudioSources(sources, { onResolve, replayUrlOf } = {}) {
       if (!still()) return;
       const status = errorStatus(err);
       const message = status === "denied"
-        ? (source.kind === "screen" || source.kind === "window" ? "Ekran kaydı izni yok: Sistem Ayarları › Gizlilik ve Güvenlik › Ekran ve Sistem Sesi Kaydı." : "Kamera izni yok: Sistem Ayarları › Gizlilik ve Güvenlik › Kamera.")
+        ? (source.kind === "screen" || source.kind === "window" || source.kind === "region" ? "Ekran kaydı izni yok: Sistem Ayarları › Gizlilik ve Güvenlik › Ekran ve Sistem Sesi Kaydı." : "Kamera izni yok: Sistem Ayarları › Gizlilik ve Güvenlik › Kamera.")
         : status === "busy" ? "Kamera başka bir uygulamada açık olabilir." : err?.message || "Kaynak açılamadı.";
       set(id, { status, message });
     }
-  }, [devices.video, devKey, refreshDevices, set]);
+  }, [devices.video, devKey, refreshDevices, set]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ───────── telefon kamerası (WebRTC) ───────── */
+  async function acquirePhone(source, sig, still) {
+    const id = source.id;
+    const api = liveApi()?.phone;
+    if (!api?.pair) { set(id, { status: "error", message: "Telefon kamerası bu sürümde yok (masaüstü uygulaması gerekir)." }); return; }
+    const el = makeVideo();
+    let configSent = false;
+    const peer = createPhonePeer({
+      send: (msg) => api.send(id, msg),
+      onStream: (stream) => {
+        if (!still()) return;
+        el.srcObject = stream;
+        el.play().catch(() => {});
+        set(id, { stream: null, mediaStream: stream });
+      },
+      onState: (state, info) => {
+        if (!still()) return;
+        if (state === "info") { set(id, { phoneInfo: { ...info } }); return; }
+        // İlk bağlantıda kaynağın ayarı (kamera / çözünürlük / fps / mikrofon) telefona gider.
+        if (state === "live" && !configSent) { configSent = true; peer.config({ facing: source.facing || "environment", res: Number(source.res) || 720, fps: Number(source.fps) || 30, mic: source.mic !== false }); }
+        set(id, { status: state === "connecting" ? "standby" : state, message: info?.message || (state === "connecting" ? "Telefon bağlanıyor…" : null), phoneInfo: { ...info } });
+      },
+    });
+    const offSig = onLive("phone", id, (msg) => peer.handle(msg));
+    const offPresence = onLive("presence", id, (p) => {
+      if (!still()) return;
+      const rt = runtimeRef.current.get(id);
+      set(id, { presence: p, ...(p.connected ? { label: p.device || "Telefon" } : {}), ...(!p.connected && rt?.status !== "live" ? { status: "standby", message: "Telefon bekleniyor: QR kodu telefonla okut." } : {}) });
+    });
+    set(id, { status: "standby", el, peer, message: "Telefon bekleniyor: QR kodu telefonla okut.", dispose: () => { offSig(); offPresence(); peer.close(); try { el.srcObject = null; } catch { /* yoksay */ } } });
+    try {
+      const r = await api.pair(id, source.token || null, source.name);
+      if (!still()) return;
+      if (!r?.ok) { set(id, { status: "error", message: r?.error?.message || "Telefon sunucusu açılamadı." }); return; }
+      set(id, { pairing: { url: r.url, urls: r.urls, port: r.port, fingerprint: r.fingerprint } });
+      if (r.token !== source.token) resolveRef.current?.(id, { token: r.token });
+    } catch (e) { if (still()) set(id, { status: "error", message: e?.message || "Telefon eşlenemedi." }); }
+  }
+
+  /* ───────── RTMP / SRT girişi, ağ akışı (ffmpeg → fMP4 → MSE) ───────── */
+  async function acquireFeed(source, sig, still) {
+    const id = source.id;
+    const api = liveApi()?.feed;
+    if (!api?.start) { set(id, { status: "error", message: "Ağ girişleri bu sürümde yok (masaüstü uygulaması gerekir)." }); return; }
+    if (source.kind === "stream" && !String(source.url || "").trim()) { set(id, { status: "missing", message: "Akış adresi girilmedi." }); return; }
+    const el = makeVideo();
+    let player = null;
+    const mkPlayer = () => createFeedPlayer(el, {
+      onInit: (info) => { if (still()) set(id, { codecs: info.codecs, video: info.video }); },
+      onUnsupported: (info) => { if (still()) { set(id, { status: "standby", message: `Bu görüntü biçimi (${info.codecs.join(", ") || "?"}) doğrudan oynatılamıyor; H.264'e çevriliyor…` }); api.transcode?.(id); } },
+      onError: () => {},
+    });
+    player = mkPlayer();
+    el.addEventListener("loadeddata", () => { if (still()) set(id, { status: "live", message: null }); });
+    const offData = onLive("feed", id, (p) => { if (still()) player.push(p.gen, p.data); });
+    const offStatus = onLive("feedStatus", id, (st) => {
+      if (!still()) return;
+      const status = st.state === "live" ? (el.readyState >= 2 ? "live" : "waiting") : st.state === "error" ? "error" : st.state === "stopped" ? "ended" : "standby";
+      set(id, { status, message: st.message || null, feed: { state: st.state, kbps: st.kbps ?? null, fps: st.fps ?? null, video: st.video || null, audio: st.audio || null, transcode: Boolean(st.transcode), since: st.since || null } });
+    });
+    set(id, { status: "waiting", el, message: "Başlatılıyor…", dispose: () => { offData(); offStatus(); player?.destroy(); api.stop?.(id); } });
+    try {
+      const r = await api.start(id, feedSpecOf(source));
+      if (!still()) return;
+      if (!r?.ok) { set(id, { status: "error", message: r?.error?.message || "Giriş başlatılamadı." }); return; }
+      set(id, { urls: r.urls || [] });
+    } catch (e) { if (still()) set(id, { status: "error", message: e?.message || "Giriş başlatılamadı." }); }
+  }
+
+  /* ───────── web sayfası (ekran dışı pencere) ───────── */
+  async function acquireWeb(source, sig, still) {
+    const id = source.id;
+    const api = liveApi()?.web;
+    if (!api?.open) { set(id, { status: "error", message: "Web sayfası kaynağı bu sürümde yok (masaüstü uygulaması gerekir)." }); return; }
+    if (!/^https?:\/\/./i.test(String(source.url || ""))) { set(id, { status: "missing", message: "Sayfa adresi girilmedi." }); return; }
+    const el = document.createElement("canvas");
+    el.width = 0;
+    let gen = null;
+    let painted = false;
+    const offFrame = onLive("web", id, (f) => {
+      if (!still()) return;
+      if (gen !== null && f.gen < gen) return;
+      gen = f.gen;
+      if (paintWebFrame(el, f) && !painted) { painted = true; set(id, { status: "live", message: null }); }
+    });
+    const offStatus = onLive("webStatus", id, (st) => {
+      if (!still()) return;
+      if (st.state === "error") set(id, { status: "error", message: st.message });
+      else if (st.state === "loading" && !painted) set(id, { status: "waiting", message: "Sayfa yükleniyor…" });
+      else set(id, { pageTitle: st.title || null });
+    });
+    set(id, { status: "waiting", el, message: "Sayfa açılıyor…", dispose: () => { offFrame(); offStatus(); api.close?.(id); } });
+    try {
+      const r = await api.open(id, { url: source.url, width: source.width, height: source.height, fps: source.fps, css: source.css, transparent: source.transparent !== false, zoom: source.zoom });
+      if (!still()) return;
+      if (!r?.ok) set(id, { status: "error", message: r?.error?.message || "Sayfa açılamadı." });
+      else api.refresh?.(id);
+    } catch (e) { if (still()) set(id, { status: "error", message: e?.message || "Sayfa açılamadı." }); }
+  }
+
+  /* ───────── medya oynatma listesi ───────── */
+  function acquirePlaylist(source, still) {
+    const id = source.id;
+    const items = (source.items || []).filter((i) => i?.url);
+    if (!items.length) { set(id, { status: "file", message: source.missingItems ? "Listedeki dosyalar bulunamadı: yeniden ekle." : "Listeye video ekle." }); return; }
+    const el = makeVideo();
+    el.crossOrigin = "anonymous";
+    const order = source.shuffle ? shuffledOrder(items.length) : items.map((_, i) => i);
+    const state = { order, pos: 0 };
+    const loadAt = (pos) => {
+      state.pos = pos;
+      const item = items[state.order[pos]];
+      el.src = item.url;
+      el.play().catch(() => {});
+      set(id, { playlist: { pos, index: state.order[pos], count: items.length, name: item.name, api } });
+    };
+    const step = (n) => {
+      const r = playlistNext(state, { loop: source.loop !== false, step: n });
+      if (r.index < 0) return;
+      if (r.ended && n > 0 && state.pos === items.length - 1) { set(id, { playlist: { ...(runtimeRef.current.get(id)?.playlist || {}), ended: true } }); return; }
+      loadAt(r.pos);
+    };
+    const api = { next: () => step(1), prev: () => step(-1), restart: () => loadAt(0), at: (i) => { const pos = state.order.indexOf(i); if (pos >= 0) loadAt(pos); } };
+    el.addEventListener("ended", () => { if (still()) step(1); });
+    el.addEventListener("loadeddata", () => { if (still()) set(id, { status: "live", message: null }); });
+    el.addEventListener("error", () => { if (still()) { set(id, { status: "error", message: `Oynatılamadı: ${items[state.order[state.pos]]?.name || "dosya"}; sıradakine geçiliyor.` }); setTimeout(() => { if (still()) step(1); }, 1500); } });
+    set(id, { el, status: "waiting" });
+    loadAt(0);
+  }
 
   // Yapılandırma / aygıt listesi değişince eşitle.
   useEffect(() => {
@@ -307,7 +456,7 @@ export function useStudioSources(sources, { onResolve, replayUrlOf } = {}) {
     }
     await refreshAccess();
     await refreshDevices();
-    if (granted) sources.filter((s) => (kind === "camera" ? s.kind === "camera" : s.kind === "screen" || s.kind === "window")).forEach((s) => reacquire(s));
+    if (granted) sources.filter((s) => (kind === "camera" ? s.kind === "camera" : s.kind === "screen" || s.kind === "window" || s.kind === "region")).forEach((s) => reacquire(s));
     return granted;
   }, [reacquire, refreshAccess, refreshDevices, sources]);
 

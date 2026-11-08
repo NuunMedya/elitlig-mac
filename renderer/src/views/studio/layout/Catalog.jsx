@@ -17,6 +17,10 @@ import {
 } from "./layoutModel";
 import { dynamicEntries } from "./components";
 import { endDrag, startDrag } from "./Board";
+import TemplateCards from "./TemplateCards";
+import { templateOf } from "./boardTemplates";
+
+const BOARD_TITLE = (k) => templateOf(k)?.label;
 
 const norm = (s) => String(s || "").toLocaleLowerCase("tr-TR");
 const matches = (q, ...xs) => !q || xs.some((x) => norm(x).includes(q));
@@ -129,7 +133,7 @@ export default function Catalog({ ctx, target = {}, onClose }) {
         <div className="lw-cat__head">
           <span className="lw-cat__search"><Icon name="search" size={14} /><input autoFocus placeholder="Ara: ses, tekrar, gol, saat…" value={q} onChange={(e) => setQ(e.target.value)} /></span>
           <div className="st-seg">
-            {[["hepsi", "Tümü"], ["kaldirilan", `Kaldırılanlar (${removed.length})`], ["panel", "Paneller"], ["bilesen", "Bileşenler"], ["dugme", "Düğmeler"]].map(([k, l]) => (
+            {[["hepsi", "Tümü"], ["kaldirilan", `Kaldırılanlar (${removed.length})`], ["hazir", "Hazır panel"], ["panel", "Paneller"], ["bilesen", "Bileşenler"], ["dugme", "Düğmeler"]].map(([k, l]) => (
               <button key={k} type="button" className={tab === k ? "is-on" : ""} onClick={() => setTab(k)}>{l}</button>
             ))}
           </div>
@@ -164,6 +168,8 @@ export default function Catalog({ ctx, target = {}, onClose }) {
             ) : <p className="st-hint">Kaldırılan bir şey yok. Düzenle kipinde sekmedeki × ya da bileşendeki × ile kaldırdıkların burada görünür.</p>}
           </section>
         )}
+
+        {show("hazir") && <TemplateCards filter={nq} has={(k) => Object.values(layout.boards || {}).some((b) => b.title === BOARD_TITLE(k))} onAdd={(t) => { c.newBoard(placeTarget(), { title: t.label, items: t.items, cols: t.cols, rowH: t.rowH }); onClose(); }} />}
 
         {show("panel") && PANEL_GROUPS.map((g) => {
           const list = g.key === "pano" ? boards.filter((b) => matches(nq, b.title, "pano sekme")) : panels.filter((p) => p.group === g.key);

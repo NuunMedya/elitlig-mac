@@ -16,6 +16,8 @@ import {
   settingsFromPreset, tagsText, templateVars, validateSettings,
 } from "./templates";
 import { useYoutubePresets } from "./useYoutubePresets";
+import { CoverStartRow } from "./cover/CoverDialog"; // [kapak]
+import { useAutoCover } from "./cover/useCoverUpload"; // [kapak]
 import "./youtube.css";
 
 const hasPlaceholder = (s) => /\{\w+\}/.test(String(s || ""));
@@ -197,6 +199,7 @@ export default function YoutubeStartDialog({ mode = "start", yt, match, homeName
         )}
         {edit && <p className="st-hint">Gecikme, DVR ve “çocuklara yönelik” yayın başladıktan sonra değişmez.</p>}
 
+        <CoverStartRow yt={yt} match={match} homeName={homeName} awayName={awayName} toast={toast} />{/* [kapak] */}
         {showPreview && (
           <section className="yt-preview" aria-label="Önizleme">
             <h5>Önizleme <small className="muted">(bu maçın verisiyle)</small></h5>
@@ -219,6 +222,8 @@ export function useYoutubeStart({ yt, matchId, match, homeName, awayName, onStar
   const [open, setOpen] = useState(false);
   const onStartRef = useRef(onStart);
   onStartRef.current = onStart;
+  // [kapak] Yayın açıldıktan sonra (ayar açıksa) kapak üretilip YouTube'a yüklenir.
+  const autoCover = useAutoCover({ yt, matchId, match, homeName, awayName, toast });
   const request = () => {
     if (!matchId) { toast?.("Önce Maç yönetimi sekmesinden maç aç.", { tone: "warn" }); return; }
     // Açık yayına devam (yeniden bağlanma): ayarlar zaten YouTube'da, pencere sorulmaz.
@@ -226,7 +231,7 @@ export function useYoutubeStart({ yt, matchId, match, homeName, awayName, onStar
     setOpen(true);
   };
   const dialog = open
-    ? <YoutubeStartDialog yt={yt} match={match} homeName={homeName} awayName={awayName} toast={toast} onStart={(s) => onStartRef.current?.(s)} onClose={() => setOpen(false)} />
+    ? <YoutubeStartDialog yt={yt} match={match} homeName={homeName} awayName={awayName} toast={toast} onStart={async (s) => { await onStartRef.current?.(s); autoCover.afterStart(); }} onClose={() => setOpen(false)} />
     : null;
   return { request, dialog, open };
 }

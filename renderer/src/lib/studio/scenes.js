@@ -26,6 +26,9 @@
 // serbest katmanlara çevrilir; önizleme / program aynı görüntüde kalır.
 import { STORAGE_KEY as V2_KEY, layerRect, normalizeConfig as normalizeV2 } from "./layouts";
 import { migrateSourceFx, normalizeLayerFx } from "./videoFx";
+import { LIVE_SOURCE_TYPES, liveSourceDefaults, normalizeRegion } from "./liveSources";
+import { normalizeShowFx } from "./layerAnim";
+import { normalizeCombo } from "./hotkeys";
 
 export const SCENES_KEY = "studio.v3";
 export const SCENES_VERSION = 3;
@@ -42,6 +45,15 @@ export const SOURCE_TYPES = [
   { kind: "clock", label: "Saat / geri sayım", icon: "clock", hint: "Saat, geri sayım ya da kronometre" },
   { kind: "replay", label: "Tekrar (son tekrar)", icon: "repeat", hint: "En son tekrarın seçili açısı döngüde" },
   { kind: "audio", label: "Ses girişi", icon: "mic", hint: "Yalnız ses: ses kartı, yakalama kartı, kamera mikrofonu (Ses sekmesine eklenir)" },
+  // Canlı giriş / yeni türler (liveSources.js): telefon, RTMP / SRT, IP kamera, web, kayan yazı, oynatma listesi, ekran bölgesi.
+  ...LIVE_SOURCE_TYPES,
+];
+/** Kaynak penceresindeki gruplar (sıra). */
+export const SOURCE_GROUPS = [
+  { key: "cihaz", label: "Kamera ve cihazlar", kinds: ["camera", "phone", "ingest", "stream"] },
+  { key: "ekran", label: "Ekran", kinds: ["screen", "window", "region"] },
+  { key: "medya", label: "Medya", kinds: ["video", "playlist", "image", "slideshow", "replay", "audio"] },
+  { key: "grafik", label: "Yazı ve grafik", kinds: ["text", "ticker", "clock", "color", "web"] },
 ];
 export const VISUAL_KINDS = new Set(SOURCE_TYPES.filter((t) => t.kind !== "audio").map((t) => t.kind));
 export const sourceTypeOf = (kind) => SOURCE_TYPES.find((t) => t.kind === kind) || null;
@@ -73,10 +85,12 @@ const str = (v, d = "", max = 60) => String(v ?? d).slice(0, max);
 /* ------------------------------ varsayılanlar ------------------------------ */
 
 /** Kaynak türünün kutu içi varsayılan sığdırması. */
-export const defaultFit = (kind) => (kind === "image" || kind === "slideshow" ? "contain" : kind === "color" || kind === "text" || kind === "clock" ? "stretch" : "cover");
+export const defaultFit = (kind) => (kind === "image" || kind === "slideshow" || kind === "web" ? "contain" : kind === "color" || kind === "text" || kind === "clock" || kind === "ticker" ? "stretch" : "cover");
 
 /** Yeni kaynak taslağı (iletişim penceresi ve testler). */
-export function sourceDefaults(kind, { cameraCount = 0 } = {}) {
+export function sourceDefaults(kind, { cameraCount = 0, count = 0 } = {}) {
+  const live = liveSourceDefaults(kind, { count });
+  if (live) return live;
   const base = { kind, name: kind === "camera" ? `Kamera ${cameraCount + 1}` : sourceKindLabel(kind) };
   switch (kind) {
     case "camera": return { ...base, deviceId: null, deviceIndex: cameraCount, resolution: "1080p", fps: 30 };
@@ -159,6 +173,8 @@ export function normalizeLayer(l, sourceKind) {
 //   shadow   { blur (çıkış px, 0…80), color }
 //   muted    true: katmanın sesi (video) yayına gitmez
 //   fx       görüntü ayarı: kaynağın ayarı yerine BU katmana özel (videoFx.js); yoksa kaynağınki
+//   showFx   göster / gizle geçişi { kind: fade | slideL | slideR | slideU | slideD | zoom, ms } (layerAnim.js)
+//   (visibleAt: görünürlüğün değiştiği an — yalnız bellekte; geçiş çizimi için, kayda yazılmaz)
 const HEX = /^#[0-9a-f]{3,8}$/i;
 const color = (v, d) => (typeof v === "string" && HEX.test(v) ? v : d);
 export const LAYER_STYLE_DEFAULTS = Object.freeze({ opacity: 1, radius: 0, border: { width: 0, color: "#ffffff" }, shadow: { blur: 0, color: "#000000" }, muted: false, name: "" });
@@ -177,6 +193,8 @@ export function layerStyle(l) {
   if (l?.muted === true) out.muted = true;
   const fx = normalizeLayerFx(l?.fx);
   if (fx) out.fx = fx;
+  const showFx = normalizeShowFx(l?.showFx);
+  if (showFx) out.showFx = showFx;
   return out;
 }
 
@@ -184,8 +202,11 @@ export function layerStyle(l) {
 //
 //   bg          sahne zemini (renk; varsayılan siyah)
 //   transition  { kind, ms } bu sahne YAYINA alınırken kullanılacak geçiş (yoksa seçili geçiş)
+//   hotkey      "F5" / "Ctrl+1": sahneye geç kısayolu (hotkeys.js)
 export function sceneExtras(sc) {
   const out = {};
+  const hk = normalizeCombo(sc?.hotkey);
+  if (hk) out.hotkey = hk;
   const bg = color(sc?.bg, null);
   if (bg && bg.toLowerCase() !== "#000" && bg.toLowerCase() !== "#000000") out.bg = bg;
   const t = sc?.transition;
@@ -209,6 +230,14 @@ function normalizeSource(s) {
     out.url = null;
     if (out.kind === "image" || out.kind === "video") out.fileMissing = true;
   }
+  if (out.kind === "region") out.region = normalizeRegion(out.region);
+  if (out.kind === "playlist") {
+    const all = Array.isArray(out.items) ? out.items : [];
+    out.items = all.filter((i) => i && persistentUrl(i.url)).slice(0, 100).map((i) => ({ url: i.url, name: str(i.name || i.fileName || "Video", "", 80), ...(i.filePath ? { filePath: String(i.filePath) } : {}) }));
+    if (out.items.length < all.length) out.missingItems = all.length - out.items.length;
+  }
+  if ("hotkey" in out) { const hk = normalizeCombo(out.hotkey); if (hk) out.hotkey = hk; else delete out.hotkey; }
+  if (out.videoDelayMs != null) out.videoDelayMs = Math.round(Math.min(500, Math.max(0, Number(out.videoDelayMs) || 0)));
   if (out.kind === "slideshow") {
     const all = Array.isArray(out.images) ? out.images : [];
     out.images = all.filter((u) => persistentUrl(u)).slice(0, 40);
@@ -392,9 +421,11 @@ export function addLayer(config, sceneId, sourceId, patch = {}) {
   return { config: mapScene(config, sceneId, (s) => ({ ...s, layers: [...s.layers, layer] })), layer };
 }
 
-const STYLE_KEYS = ["name", "opacity", "radius", "border", "shadow", "muted", "fx"];
+const STYLE_KEYS = ["name", "opacity", "radius", "border", "shadow", "muted", "fx", "showFx"];
 export const updateLayer = (config, sceneId, layerId, patch) => {
-  const next = mapScene(config, sceneId, (s) => ({ ...s, layers: s.layers.map((l) => (l.id === layerId ? { ...l, ...patch, ...(patch.crop ? { crop: normCrop({ ...l.crop, ...patch.crop }) } : {}) } : l)) }));
+  // Görünürlük değişimi: göster / gizle geçişi bu andan başlar (visibleAt, yalnız bellekte).
+  const vis = (l) => ("visible" in (patch || {}) && Boolean(patch.visible) !== (l.visible !== false) ? { visibleAt: Date.now() } : {});
+  const next = mapScene(config, sceneId, (s) => ({ ...s, layers: s.layers.map((l) => (l.id === layerId ? { ...l, ...patch, ...vis(l), ...(patch.crop ? { crop: normCrop({ ...l.crop, ...patch.crop }) } : {}) } : l)) }));
   return STYLE_KEYS.some((k) => k in (patch || {})) ? updateLayerStyle(next, sceneId, layerId, {}) : next;
 };
 
@@ -405,7 +436,7 @@ export const updateLayerStyle = (config, sceneId, layerId, patch) =>
   mapScene(config, sceneId, (s) => ({ ...s, layers: s.layers.map((l) => {
     if (l.id !== layerId) return l;
     const merged = { ...l, ...patch };
-    const { name, opacity, radius, border, shadow, muted, fx, ...rest } = merged; // eslint-disable-line no-unused-vars
+    const { name, opacity, radius, border, shadow, muted, fx, showFx, ...rest } = merged; // eslint-disable-line no-unused-vars
     return { ...rest, ...layerStyle(merged) };
   }) }));
 
@@ -426,7 +457,7 @@ export function duplicateLayer(config, sceneId, layerId) {
 export function updateScene(config, sceneId, patch) {
   return mapScene(config, sceneId, (s) => {
     const merged = { ...s, ...patch };
-    const { bg, transition, ...rest } = merged; // eslint-disable-line no-unused-vars
+    const { bg, transition, hotkey, ...rest } = merged; // eslint-disable-line no-unused-vars
     const name = patch.name != null ? str(String(patch.name).trim()) || s.name : s.name;
     return { ...rest, name, ...sceneExtras(merged) };
   });
@@ -461,6 +492,34 @@ export const updateSourceFx = (config, sourceId, fx) => ({
   ...config,
   sources: config.sources.map((s) => (s.id === sourceId ? migrateSourceFx({ ...s, mirror: undefined, fx }) : s)),
 });
+
+/**
+ * Kaynağı ÇOĞALT (OBS "Kopyala › Bağımsız"): ayarları aynı, kimliği yeni, bağımsız
+ * çalışan ikinci kaynak. Aynı kaynağı başka sahnede kullanmak için çoğaltma gerekmez
+ * (OBS "Referans": kitaplıktaki kaynağı "Sahneye ekle" — akış bir kez açılır).
+ * Telefon yeni eşleme kodu, RTMP / SRT girişi yeni port + anahtar alır; kısayol kopyalanmaz.
+ */
+export function duplicateSource(config, sourceId) {
+  const src = config.sources.find((s) => s.id === sourceId);
+  if (!src) return { config, source: null };
+  const copy = JSON.parse(JSON.stringify(src));
+  delete copy.id;
+  delete copy.hotkey;
+  copy.name = str(`${src.name} (kopya)`);
+  if (copy.kind === "phone") copy.token = null;
+  if (copy.kind === "ingest") {
+    const used = new Set(config.sources.filter((s) => s.kind === "ingest").map((s) => Number(s.port)));
+    let port = Number(src.port) || 1935;
+    while (used.has(port)) port += 1;
+    copy.port = port;
+    copy.key = liveSourceDefaults("ingest").key;
+  }
+  const { config: next, source } = addSource(config, copy);
+  const sources = [...next.sources];
+  const item = sources.pop();
+  sources.splice(config.sources.indexOf(src) + 1, 0, item);
+  return { config: { ...next, sources }, source };
+}
 
 export function removeSource(config, sourceId) {
   const next = {

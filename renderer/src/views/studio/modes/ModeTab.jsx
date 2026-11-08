@@ -126,14 +126,18 @@ function ModeBody({ api, mode }) {
 
 export default function ModeTab({ api, mode }) {
   // [önizleme-geçiş] Sekmeyi açmak / kapatmak önizlemeyi değiştirmez (önizlemede ne varsa yayına o gider).
+  // Tekrar: panel kendi YAYINA AL / CANLIYA DÖN düğmelerini taşır; yan kart (geçiş, ses, katmanlar)
+  // panelin "Ayarlar" düğmesiyle açılır (panoda tek parça olarak her zaman görünür).
+  const [side, setSide] = useState(false);
+  const bodyApi = mode === "tekrar" ? { ...api, sideOpen: side, toggleSide: () => setSide((x) => !x) } : api;
   return (
-    <div className={`md-tab is-${mode}`}>
+    <div className={`md-tab is-${mode} ${side ? "is-side" : ""}`}>
       <aside className="md-side">
         <AirBar api={api} mode={mode} />
         <RoutePicker audio={api.audio} context={ROUTE_CONTEXT[mode]} />
         <LayersPanel api={api} mode={mode} />
       </aside>
-      <div className="md-main"><ModeBody api={api} mode={mode} /></div>
+      <div className="md-main"><ModeBody api={bodyApi} mode={mode} /></div>
     </div>
   );
 }

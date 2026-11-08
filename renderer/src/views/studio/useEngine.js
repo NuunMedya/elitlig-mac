@@ -245,6 +245,8 @@ export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subs
     const extra = {
       ...(stream?.keyframeSec ? { keyframeSec: Number(stream.keyframeSec) } : {}),
       ...(stream?.encoder && stream.encoder !== "auto" ? { encoderPreference: stream.encoder } : {}),
+      // Yayın gecikmesi (0–120 sn): yalnız RTMP'ye giden bacak gecikir (kayıt / tekrar anlık).
+      ...(Number(stream?.delaySec) > 0 ? { streamDelaySec: Number(stream.delaySec) } : {}),
     };
     // Kodlama yolu: WebCodecs (tek kodlama) destekleniyorsa ve seçildiyse ffmpeg görüntüyü kopyalar.
     const setting = stream?.pipeline || "auto";

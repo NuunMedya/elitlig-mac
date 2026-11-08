@@ -29,7 +29,8 @@
 //           studio:displays, studio:led:open, studio:led:close, studio:led:status,
 //           studio:led:getState,
 //           studio:media:allow (preload: webUtils yolu), studio:media:pick (dosya penceresi),
-//           studio:media:check, studio:media:forget  (media.js — kalıcı yerel dosya kaynakları)
+//           studio:media:check, studio:media:forget  (media.js — kalıcı yerel dosya kaynakları),
+//           studio:live:* (live/index.js — telefon kamerası, RTMP / SRT girişi, ağ akışı, web sayfası)
 //   send:   studio:chunk (program parçası), studio:reportStats (arayüz kodlama sayaçları), studio:angleChunk { id, data },
 //           studio:renderChunk { id, data }, studio:led:sendState (yanıt yok)
 //   olay:   studio:status, studio:restartRecorder, studio:angles:status,
@@ -61,8 +62,10 @@ const { createInterviews } = require("./interview");
 const { createLedManager } = require("./led");
 const { createMediaLibrary, dialogFilters } = require("./media");
 const ff = require("./ffmpeg");
+const { registerLive } = require("./live");
 
 const DAY_MS = 24 * 3600 * 1000;
+const LIVE_UPLOAD_BYTES_PER_SEC = 250 * 1024; // ≈ 2 Mbit/sn: yayın sürerken gol klibi yüklemesi
 
 /** Tekrarın program açısı → eski klip nesnesi (saveClip / listClips geriye uyumluluğu). */
 function replayAsClip(replay) {
@@ -466,8 +469,12 @@ function registerStudio({
       // { matchId, eventId, replayId, angle = "program" } ya da eski { matchId, eventId, name }.
       // Ön imzalı yükleme (dosya doğrudan Spaces'e; Heroku'nun 30 sn sınırına takılmaz);
       // eski sunucuda çok parçalı yola düşer. Her adım yükleme günlüğüne yazılır.
+      // [gol-klip] Canlı yayın sürerken klip ~2 Mbit/sn ile gönderilir: tam hızda PUT, yayınla
+      // aynı yükleme hattını doldurup RTMP kuyruğunu taşırıyordu (gol anlarında kare atlama / kopma).
+      const onAirNow = engine.active() && engine.status()?.recordOnly === false;
+      const putImpl = onAirNow ? (url, o = {}) => loggedPut(url, { ...o, maxBytesPerSec: LIVE_UPLOAD_BYTES_PER_SEC }) : loggedPut;
       return uploadGoalClip(uploadApi, p, {
-        replays, clips, putImpl: loggedPut, isReplayId: (v) => REPLAY_ID.test(String(v || "")),
+        replays, clips, putImpl, isReplayId: (v) => REPLAY_ID.test(String(v || "")),
         emitProgress: (pr) => broadcast("studio:uploadProgress", pr),
       });
     });
@@ -640,8 +647,12 @@ function registerStudio({
     led.sendState(state, event.sender);
   });
 
+  // Canlı giriş kaynakları: telefon kamerası, RTMP / SRT girişi, ağ akışı, web sayfası (live/).
+  const live = registerLive({ ipcMain, app, BrowserWindow, electronSession, getFfmpeg, ownContents, log });
+
   return {
     engine,
+    live,
     angles,
     clips,
     replays,
@@ -653,6 +664,7 @@ function registerStudio({
     /** Uygulama kapanırken: ffmpeg süreçlerini öldür, parça klasörlerini sil. */
     dispose() {
       engine.dispose();
+      live.dispose();
       angles.dispose();
       renderer.dispose();
       interviews.dispose();

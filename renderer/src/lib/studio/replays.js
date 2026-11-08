@@ -15,7 +15,7 @@ import { isGoalCode } from "./match";
 export const PROGRAM_ANGLE = "program";
 export const REPLAY_SECONDS = 15;
 /** Açı kaydı yapılabilen kaynak türleri (görsel / renk plakası hareketsiz). */
-export const RECORDABLE_KINDS = new Set(["camera", "screen", "video"]);
+export const RECORDABLE_KINDS = new Set(["camera", "screen", "video", "phone", "ingest", "stream"]);
 
 const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
@@ -38,6 +38,8 @@ export function normalizeReplay(r) {
     minute: r.minute != null && Number.isFinite(Number(r.minute)) ? Number(r.minute) : null,
     uploaded: Boolean(r.uploaded),
     matchId: r.matchId != null && Number(r.matchId) > 0 ? Number(r.matchId) : null,
+    // [gol-klip] operatörün seçtiği / yayına verdiği açılar ve bölümler (replay.json)
+    selection: r.selection && typeof r.selection === "object" ? r.selection : null,
     angles,
   };
 }

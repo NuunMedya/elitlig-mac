@@ -132,17 +132,25 @@ export function buildHighlightPlan({ items, replays, introMs = INTRO_MS, outroMs
     segments.push({ ...seg, start: t, end: t + ms, ms });
     t += ms;
   };
-  push({ type: "intro", ms: introMs });
+  if (introMs > 0) push({ type: "intro", ms: introMs }); // 0: giriş kartı yok
   for (const item of items || []) {
     const r = byId.get(item.replayId);
     if (!r) continue;
-    for (const angle of item.angles || []) {
-      const a = r.angles.find((x) => x.angle === angle && x.url);
+    // [gol-klip] Bölümler (yayına verilen açı + giriş / çıkış) ya da açılar (+ isteğe bağlı kırpma).
+    const parts = Array.isArray(item.segments) && item.segments.length
+      ? item.segments
+      : (item.angles || []).map((angle) => ({ angle, inSec: item.trim?.inSec, outSec: item.trim?.outSec }));
+    for (const part of parts) {
+      const a = r.angles.find((x) => x.angle === part.angle && x.url);
       if (!a) continue;
-      push({ type: "clip", replayId: r.id, angle, url: a.url, ms: a.durationMs || r.durationMs || REPLAY_SECONDS * 1000, replay: r, score: scoreOf(r), ...clipAudio(r, a) });
+      const full = (a.durationMs || r.durationMs || REPLAY_SECONDS * 1000) / 1000;
+      const startSec = Math.min(Math.max(0, Number(part.inSec) || 0), Math.max(0, full - MIN_CLIP_MS / 1000));
+      const o = Number(part.outSec);
+      const endSec = Number.isFinite(o) && o > startSec ? Math.min(o, full) : full;
+      push({ type: "clip", replayId: r.id, angle: part.angle, url: a.url, ms: (endSec - startSec) * 1000, startSec, replay: r, score: scoreOf(r), ...clipAudio(r, a) });
     }
   }
-  push({ type: "outro", ms: outroMs });
+  if (outroMs > 0) push({ type: "outro", ms: outroMs }); // 0: kapanış kartı yok
   const stingers = [];
   for (let i = 1; i < segments.length; i += 1) {
     const at = segments[i].start;

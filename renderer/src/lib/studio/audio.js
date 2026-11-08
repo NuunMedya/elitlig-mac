@@ -25,6 +25,8 @@
 // program sahnesi listedeyse yayına gider ("Bu sahnede yayına ver").
 // killAll: "Tüm sesleri kapat" (yayına hiç ses gitmez; şerit ayarları korunur).
 
+import { compactFilters } from "./audioFilters";
+
 export const FADER_MAX_DB = 10;
 export const FADER_MIN_DB = -60;
 export const TRIM_RANGE_DB = 18;
@@ -225,6 +227,8 @@ export function normalizeStrip(s) {
     fader: Number.isFinite(fader) ? Math.round(clamp(fader, FADER_MIN_DB - 20, FADER_MAX_DB) * 10) / 10 : -Infinity,
     mute: Boolean(x.mute),
     solo: Boolean(x.solo),
+    // Ses filtreleri ve gecikme (audioFilters.js): yalnız varsayılandan farklıysa.
+    ...(compactFilters(x.filters) ? { filters: compactFilters(x.filters) } : {}),
   };
 }
 
@@ -254,6 +258,8 @@ export function normalizeAudio(a) {
   strips.mic = normalizeStrip(src.mic || { fader: volumeToDb(mic.volume) });
   for (const i of inputs) strips[i.id] = normalizeStrip(src[i.id] || { fader: volumeToDb(i.volume) });
   for (const f of FIXED_STRIPS) strips[f.id] = normalizeStrip(src[f.id]);
+  // Ses taşıyan görüntü kaynaklarının (telefon, RTMP / SRT, IP kamera, oynatma listesi) şeritleri: kaynak kimliğiyle.
+  for (const [k, v] of Object.entries(src)) if (/^src_/.test(k) && !strips[k]) strips[k] = normalizeStrip(v);
   // Sessiz bilgisi tek yerde: mikrofon / girişlerde mic.muted / input.muted.
   strips.mic.mute = Boolean(mic.muted);
   for (const i of inputs) strips[i.id].mute = Boolean(i.muted);

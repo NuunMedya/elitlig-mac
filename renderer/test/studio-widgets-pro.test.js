@@ -153,7 +153,7 @@ describe("tekrar ve sahne yardımcıları", () => {
 
 describe("katalog ve pano boyutları", () => {
   it("her çeşidin parçacığı ve kategorisi var; dokuz kategori", () => {
-    expect(RAIL_GROUPS.map((g) => g.key)).toEqual(["reji", "ses", "tekrar", "grafik", "sahne", "yayin", "var", "roportaj", "muzik"]);
+    expect(RAIL_GROUPS.map((g) => g.key)).toEqual(["reji", "ses", "tekrar", "grafik", "sahne", "yayin", "var", "roportaj", "muzik", "led", "ozet", "mac", "genel"]);
     const groups = new Set(RAIL_GROUPS.map((g) => g.key));
     for (const w of RAIL_WIDGETS) {
       expect(WIDGET_IMPL[w.type], w.type).toBeTruthy();

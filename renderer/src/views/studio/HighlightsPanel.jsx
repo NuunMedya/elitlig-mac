@@ -1,20 +1,21 @@
 // Yayın Stüdyosu · "Tekrar & Özet" sekmesi — ÖZET ÇIKAR bölümü.
 //
 //   Sol    özetin sırası (sürükle-bırak ya da ↑ ↓), her öğede açılar; varsayılan
-//          bu maçın tüm golleri + "özete ekle" işaretli önemli anlar.
+//          bu maçın tüm golleri + "özete ekle" işaretli önemli anlar + [gol-klip] yayına
+//          verilen / seçilen konumlar, AYNI açı ve giriş–çıkış bölümleriyle, kronolojik;
+//          her öğe düzenlenebilir (açı, kırpma, bölüm sil, sıra, çıkar / ekle).
 //   Orta   plan (giriş kartı · klipler · kapanış kartı, toplam süre), "Özeti
 //          oluştur", gerçek zamanlı ilerleme, vazgeç.
 //   Sağ    sonucun önizlemesi, "Maç sayfasına yükle"; sunucuda özet varsa
 //          "Özeti sil" / "Yeniden oluştur" (onaylı — yanlışlık geri alınabilsin).
-import React, { memo, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useMemo, useRef } from "react";
 import { Icon, MenuButton } from "../../components/ui";
-import { buildHighlightPlan, defaultHighlightItems, eventsUntil, mmss, moveItem, normalizeHighlightMusic, scoreForReplay } from "../../lib/studio/highlights";
-import { PROGRAM_ANGLE, angleLabel, anglesOf, defaultAngles, metaFor, replayBanner, replayOfMatch, replayTitle } from "../../lib/studio/replays";
-import { scorerLines } from "../../lib/studio/scorebug";
-import { cardInfo } from "./modes/useHighlightMode";
+import { mmss, moveItem } from "../../lib/studio/highlights";
+import { PROGRAM_ANGLE, angleLabel, defaultAngles, metaFor, replayTitle } from "../../lib/studio/replays";
 import UploadLog from "./modes/UploadLog";
+import { CARD_LENGTHS } from "./settings/opsDefaults";
+import { buildHighlight, highlightPlan, mineOf, useHlCards, useHlMusic, useHlSelection } from "./shortcuts/hlStore";
 
-const MUSIC_KEY = "elitlig.studio.highlightMusic";
 const PHASE = { preparing: "Klipler hazırlanıyor…", rendering: "Özet oluşturuluyor (gerçek zamanlı)…", finishing: "Dosya yazılıyor…", uploading: "Maç sayfasına yükleniyor…" };
 
 function HighlightsPanel(props) {
@@ -27,25 +28,23 @@ function HighlightsPanel(props) {
   return <HighlightsInner {...p} />;
 }
 
+const sec1 = (v) => (v == null || v === "" ? "" : String(Math.round(Number(v) * 10) / 10));
+const numOrNull = (v) => (v === "" || v == null || !Number.isFinite(Number(v)) ? null : Math.max(0, Number(v)));
+
 function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, hl, imagesRef, ask, toast, stingerKind = "stinger", onAir = false, inModes = false }) {
-  const mine = useMemo(() => replays.filter((r) => replayOfMatch(r, meta[r.id], matchId) && anglesOf(r).length), [replays, meta, matchId]);
-  const defaults = useMemo(() => defaultHighlightItems(mine, { preferredAngles: [PROGRAM_ANGLE] }), [mine]);
-  const [items, setItems] = useState(defaults);
-  const [edited, setEdited] = useState(false);
-  useEffect(() => { if (!edited) setItems(defaults); }, [defaults, edited]);
-  useEffect(() => { setEdited(false); }, [matchId]);
+  const mine = useMemo(() => mineOf(replays, meta, matchId), [replays, meta, matchId]);
+  // Seçim, kartlar ve müzik özet düğmeleriyle ortak (./shortcuts/hlStore).
+  const { items, edited, edit, reset } = useHlSelection(matchId, mine, meta);
+  const [cards, setCards] = useHlCards(null);
   const byId = useMemo(() => new Map(mine.map((r) => [r.id, r])), [mine]);
-  const edit = (fn) => { setEdited(true); setItems(fn); };
   const dragFrom = useRef(null);
 
   const finalScore = live.score;
-  const scoreOf = (r) => scoreForReplay(r, metaFor(r, meta), { events: live.events, homeTeamId: live.homeTeamId, awayTeamId: live.awayTeamId, fallback: finalScore });
-  const plan = useMemo(() => buildHighlightPlan({ items, replays: mine, scoreOf }), [items, mine, live.events]); // eslint-disable-line react-hooks/exhaustive-deps
+  const plan = useMemo(() => highlightPlan({ items, mine, meta, live, cards }), [items, mine, meta, live.events, cards.intro, cards.outro]); // eslint-disable-line react-hooks/exhaustive-deps
   const notIn = mine.filter((r) => !items.some((i) => i.replayId === r.id));
 
   // Arka plan müziği (isteğe bağlı): kliplerde orijinal sesin altında kısılır.
-  const [music, setMusicState] = useState(() => { try { return normalizeHighlightMusic(JSON.parse(localStorage.getItem(MUSIC_KEY) || "null")); } catch { return normalizeHighlightMusic(null); } });
-  const setMusic = (patch) => setMusicState((m) => { const n = normalizeHighlightMusic({ ...m, ...patch }); try { localStorage.setItem(MUSIC_KEY, JSON.stringify(n)); } catch { /* yoksay */ } return n; });
+  const [music, setMusic] = useHlMusic(null);
   const pickMusic = async () => {
     const r = await window.elitlig?.studio?.media?.pick?.({ kind: "audio" });
     const f = r?.files?.[0];
@@ -61,24 +60,7 @@ function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, 
   const build = async () => {
     if (!plan.clipCount) { toast("Özete klip ekle.", { tone: "warn" }); return; }
     if (job.file && job.phase !== "uploaded" && !(await ask({ title: "Yeniden oluştur", message: "Önizlemedeki özet atılıp yenisi oluşturulsun mu?", confirmLabel: "Yeniden oluştur" }))) return;
-    const info = { ...cardInfo(live), score: finalScore };
-    const boardOf = (seg) => {
-      const r = seg.replay;
-      const mm = metaFor(r, meta);
-      const known = mm.minute != null;
-      return {
-        homeName: live.homeName,
-        awayName: live.awayName,
-        homeScore: seg.score?.home ?? 0,
-        awayScore: seg.score?.away ?? 0,
-        clockMs: known ? mm.minute * 60000 : 0,
-        period: mm.period || 1,
-        clockLabel: known ? null : "MAÇ ÖZETİ",
-        scorers: scorerLines(eventsUntil(live.events, r, mm), { homeTeamId: live.homeTeamId, awayTeamId: live.awayTeamId, nameOf: live.nameOf }),
-        event: replayBanner(r, mm),
-      };
-    };
-    await hl.build({ plan, info, images: imagesRef?.current || {}, boardOf, stingerKind, music: music.url ? music : null });
+    await buildHighlight({ hl, plan, meta, live, imagesRef, stingerKind, music });
   };
 
   const upload = async () => {
@@ -101,7 +83,7 @@ function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, 
         <header className="st-dock-head">
           <h4>Özetin sırası <span className="muted">({items.length})</span></h4>
           <span className="st-top__spacer" />
-          {edited && <button type="button" className="btn btn--xs" onClick={() => { setEdited(false); setItems(defaults); }} title="Goller + özete eklenen anlar">Varsayılana dön</button>}
+          {edited && <button type="button" className="btn btn--xs" onClick={reset} title="Goller + özete eklenen anlar + yayına verilen konumlar">Varsayılana dön</button>}
           <MenuButton label="Tekrar ekle" icon="plus" text="Ekle" size={12} className="st-menu-sm"
             items={notIn.length ? notIn.map((r) => ({ label: replayTitle(r, metaFor(r, meta)), icon: r.kind === "goal" ? "ball" : "star", onClick: () => edit((l) => [...l, { replayId: r.id, angles: defaultAngles(r, recordAngles) }]) })) : [{ label: "Eklenecek tekrar yok", disabled: true, onClick: () => {} }]} />
         </header>
@@ -118,11 +100,33 @@ function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, 
                   <span className="st-row st-row--wrap">
                     {r.angles.filter((a) => a.url).map((a) => (
                       <button key={a.angle} type="button" className={`st-chip ${it.angles.includes(a.angle) ? "is-on" : ""}`}
-                        onClick={() => edit((l) => l.map((x) => (x.replayId === r.id ? { ...x, angles: r.angles.map((y) => y.angle).filter((y) => (y === a.angle ? !x.angles.includes(y) : x.angles.includes(y))) } : x)))}>
+                        onClick={() => edit((l) => l.map((x) => (x.replayId === r.id ? { replayId: x.replayId, trim: x.trim, angles: r.angles.map((y) => y.angle).filter((y) => (y === a.angle ? !x.angles.includes(y) : x.angles.includes(y))) } : x)))}>
                         {angleLabel(a, sources)}
                       </button>
                     ))}
                   </span>
+                  {it.segments?.length ? (
+                    <span className="st-row st-row--wrap st-hl__segs" title="Yayına verilen bölümler (açı · giriş–çıkış)">
+                      {it.segments.map((sg, si) => (
+                        <span key={`${sg.angle}-${si}`} className="st-chip is-on">
+                          {angleLabel(sg.angle, sources)} {sec1(sg.inSec) || "0"}–{sg.outSec != null ? sec1(sg.outSec) : "son"} sn
+                          <button type="button" className="icon-btn icon-btn--xs" title="Bölümü çıkar" onClick={() => edit((l) => l.map((x) => {
+                            if (x.replayId !== r.id) return x;
+                            const segs = x.segments.filter((_, k) => k !== si);
+                            return segs.length ? { ...x, segments: segs, angles: [...new Set(segs.map((y) => y.angle))] } : { replayId: x.replayId, angles: x.angles };
+                          }))}><Icon name="x" size={10} /></button>
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="st-row st-hl__trim" title="Klibi kırp (saniye; boş: tamamı)">
+                      <small>Kırp</small>
+                      <input type="number" min={0} step={0.5} className="input-xs" placeholder="baş" value={sec1(it.trim?.inSec)} aria-label="Başlangıç (sn)"
+                        onChange={(e) => { const v = numOrNull(e.target.value); edit((l) => l.map((x) => (x.replayId === r.id ? { ...x, trim: { ...(x.trim || {}), inSec: v } } : x))); }} />
+                      <input type="number" min={0} step={0.5} className="input-xs" placeholder="son" value={sec1(it.trim?.outSec)} aria-label="Bitiş (sn)"
+                        onChange={(e) => { const v = numOrNull(e.target.value); edit((l) => l.map((x) => (x.replayId === r.id ? { ...x, trim: { ...(x.trim || {}), outSec: v } } : x))); }} />
+                    </span>
+                  )}
                 </span>
                 <button type="button" className="icon-btn icon-btn--xs" disabled={i === 0} onClick={() => edit((l) => moveItem(l, i, i - 1))} title="Yukarı"><Icon name="chevronUp" size={13} /></button>
                 <button type="button" className="icon-btn icon-btn--xs" disabled={i === items.length - 1} onClick={() => edit((l) => moveItem(l, i, i + 1))} title="Aşağı"><Icon name="chevronDown" size={13} /></button>
@@ -153,6 +157,13 @@ function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, 
             </>
           )}
           {!music.url && <small className="muted">İsteğe bağlı: kartlarda tam, kliplerde orijinal sesin altında kısık çalar.</small>}
+        </div>
+        <div className="st-hl__cards">
+          {[["intro", "Giriş kartı"], ["outro", "Kapanış kartı"]].map(([k, l]) => (
+            <label key={k} className="st-row"><small>{l}</small>
+              <span className="st-seg">{CARD_LENGTHS.map((c) => <button key={c.key} type="button" disabled={busy} className={cards[k] === c.key ? "is-on" : ""} onClick={() => setCards({ [k]: c.key })}>{c.label}</button>)}</span>
+            </label>
+          ))}
         </div>
         <p className="st-hl__total">Toplam ≈ <strong>{mmss(plan.durationMs)}</strong> · 1920×1080 · 30 fps</p>
         {busy ? (
