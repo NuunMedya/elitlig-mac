@@ -18,6 +18,7 @@ import { drawGraphicsSafe } from "../scenes/graphicsBridge";
 import { useVar } from "../var/useVar";
 import { drawExtras, drawModeGraphics, makeScratch, paintTransition } from "./drawModes";
 import { useReplayMode } from "./useReplayMode";
+import { clampRate, deckKeyAction } from "../../../lib/studio/replayDeck";
 import { useInterviewMode } from "./useInterviewMode";
 import { useHighlightMode } from "./useHighlightMode";
 import ModeTab from "./ModeTab";
@@ -70,8 +71,9 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
 
   /* ───────── mod denetleyicileri ───────── */
   const endRef = useRef(() => {});
+  const setReplayRate = useCallback((v) => setCfg((c) => ({ ...c, rate: clampRate(v) })), [setCfg]);
   const rm = useReplayMode({
-    replays, rate: cfg.rate, audio, between: cfg.between, brandRef,
+    replays, rate: cfg.rate, setRate: setReplayRate, audio, between: cfg.between, brandRef,
     onFinished: () => endRef.current(), onError: (m) => say(m, { tone: "error", timeout: 5000 }), previewing: previewMode === "tekrar",
   });
   const setVarSettings = useCallback((fn) => setCfg((c) => ({ ...c, var: typeof fn === "function" ? fn(c.var) : fn })), [setCfg]);
@@ -262,15 +264,45 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     return takeToAir(null, mode, previewNow()?.payload);
   }, [previewNow, setPreview, takeToAir]);
 
+  /* ───────── tekrar destesi tuşları (J / K / L, ←/→, +/−, 1–6, A / S, Enter, Esc) ───────── */
+  // Tekrar önizlemede ya da yayındayken (ve "tekrar tuşları" açıkken) stüdyo kısayollarından
+  // önce yakalanır: rakamlar hız, L ileri vb. Odak bir deste yüzeyindeyse (data-deck) o deste,
+  // değilse program yayındaysa program, değilse önizleme. G (gol) sonrası tuşa dokunulmaz.
+  const lastKeyRef = useRef({ key: "", at: 0 });
+  useEffect(() => {
+    const onKey = (e) => {
+      const prev = lastKeyRef.current;
+      lastKeyRef.current = { key: String(e.key || "").toLowerCase(), at: performance.now() };
+      const { rm: R } = ctrl.current;
+      const s = stateRef.current;
+      const inReplay = s.preview === "tekrar" || (s.air === "tekrar" && s.stage !== "idle" && s.stage !== "leaving");
+      if (!R.keysOn || !inReplay || (e.repeat && !/^Arrow/.test(e.key))) return;
+      if (prev.key === "g" && performance.now() - prev.at < 2500) return;
+      if (document.querySelector(".modal-backdrop, .st-pop, .st-set")) return;
+      const host = e.target?.closest?.("[data-deck]");
+      const act = deckKeyAction(e, { focused: Boolean(host) });
+      if (!act) return;
+      if (act.type === "take" && s.preview !== "tekrar") return;
+      const want = host?.dataset?.deck;
+      const d = want && R.decks[want]?.active ? R.decks[want] : R.focusedDeck;
+      const take = () => { const t = takeRefRef.current?.current; if (t) t(); else takeToAir(null, "tekrar", R.payload()); };
+      if (R.runKey(act, d, { take, live: () => endOnAir() })) { e.preventDefault(); e.stopPropagation(); }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [endOnAir, takeToAir]);
+
   /* ───────── sekmeler ───────── */
   // Tekrar listesinde satır / açı / kuyruk seçmek önizlemeyi tekrara alır (sütun kipinde de) [önizleme-geçiş].
   const rmApi = useMemo(() => ({
     ...rm,
     setCursor: (v) => { rm.setCursor(v); setPreview("tekrar"); },
     setSelection: (v) => { rm.setSelection(v); setPreview("tekrar"); },
+    setPlaylist: (v) => { rm.setPlaylist(v); setPreview("tekrar"); },
+    load: (r, o) => { const ok = rm.load(r, o); if (ok) setPreview("tekrar"); return ok; },
   }), [rm, setPreview]);
   const api = {
-    state, cfg, setCfg, takeToAir, takeMode, endOnAir, setPreview, clearPreview, airMode, previewMode,
+    state, cfg, setCfg, setReplayRate, takeToAir, takeMode, endOnAir, setPreview, clearPreview, airMode, previewMode,
     rm: rmApi, vr, im, hm, replays, sources: src, scenes, live, g, audio, engine, toast, ask, matchId, imagesRef, brandRef,
   };
   const apiRef = useRef(api);
@@ -303,7 +335,11 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     replay: { loadLatest, loadQueue, stop: () => endOnAir(), playing: airMode === "tekrar", index: rm.player.index, total: rm.player.total, item: rm.player.item },
     // Önizleme ekranındaki tekrar düzenleyicisi (modes/ReplayPreviewOverlay): yakınlaştır / kaydır,
     // zaman çizelgesi, giriş–çıkış noktası, hız. rate: ağır çekim (yayında anında uygulanır).
-    replayEditor: { rm: rmApi, rate: cfg.rate, setRate: (v) => setCfg((c) => ({ ...c, rate: Math.min(1, Math.max(0.25, Number(v) || 1)) })), sources: src.list, previewing: previewMode === "tekrar", onAir: airMode === "tekrar" },
+    // decks: önizleme / program destesi (yayındaki tekrarın canlı denetimi: hız, sar, yakınlaştır, açı).
+    replayEditor: {
+      rm: rmApi, rate: cfg.rate, setRate: setReplayRate, sources: src.list, previewing: previewMode === "tekrar", onAir: airMode === "tekrar",
+      decks: rm.decks, focus: rm.focus, setFocus: rm.setFocus, live: () => endOnAir(), keysOn: rm.keysOn, setKeysOn: rm.setKeysOn,
+    },
     var: { toggle: toggleVar, preview: () => setPreview("var"), active: airMode === "var", previewing: previewMode === "var" },
     interview: im.iv,
     highlights: hm.hl,

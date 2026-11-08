@@ -108,29 +108,66 @@ describe("ses sekmesi", () => {
   });
 });
 
-describe("tekrar düzenleyici (önizleme ekranında)", () => {
-  it("denetimler oynatıcıya gider; giriş / çıkış, yakınlaştırma sıfırlama, hız, açı, yayına al", () => {
-    const calls = [];
+describe("tekrar destesi kaplaması (önizleme ve program monitörü)", () => {
+  const mkDeck = (target, calls, extra = {}) => {
     const el = document.createElement("video");
-    const rm = {
-      editKey: "r1|program", viewTick: 0, viewOf: () => ({ zoom: 2, cx: 0.5, cy: 0.5 }), setView: (k, v) => calls.push(["view", k, typeof v === "function" ? v(DEFAULT_VIEW) : v]),
-      inPointOf: () => 0, setInPoint: (k, s) => calls.push(["in", k, s]), outPointOf: () => 0, setOutPoint: (k, s) => calls.push(["out", k, s]),
-      cursor: { replayId: "r1", angle: "program", replay: { angles: [{ angle: "program", url: "elitlig-studio://replays/r/program.mp4" }, { angle: "cam1", url: "elitlig-studio://replays/r/angle-1.mp4" }] } },
-      setCursor: (c) => calls.push(["cursor", c.angle]),
-      transport: { el: () => el, onAir: () => false, toggle: () => calls.push(["toggle"]), play: () => {}, pause: () => calls.push(["pause"]), seek: (s) => calls.push(["seek", s]), nudge: (s) => calls.push(["nudge", s]), step: (f) => calls.push(["step", f]) },
+    return {
+      target, active: true, key: "r1|program", replayId: "r1", angle: "program",
+      replay: { id: "r1", kind: "goal", angles: [{ angle: "program", url: "elitlig-studio://replays/r/program.mp4" }, { angle: "cam1", url: "elitlig-studio://replays/r/angle-1.mp4" }] },
+      angles: [{ angle: "program", url: "elitlig-studio://replays/r/program.mp4" }, { angle: "cam1", url: "elitlig-studio://replays/r/angle-1.mp4" }],
+      view: { zoom: 2, cx: 0.5, cy: 0.5 }, setView: (v) => calls.push(["view", typeof v === "function" ? v(DEFAULT_VIEW) : v]),
+      rate: 1, setRate: (v) => calls.push(["rate", v]), loop: false, setLoop: () => calls.push(["loop"]),
+      inPoint: 0, outPoint: 0, setIn: (s) => calls.push(["in", s]), setOut: (s) => calls.push(["out", s]),
+      transport: {
+        el: () => el, toggle: () => calls.push(["toggle"]), play: () => calls.push(["play"]), pause: () => calls.push(["pause"]), reverse: (v) => calls.push(["reverse", v]),
+        seek: (s) => calls.push(["seek", s]), nudge: (s) => calls.push(["nudge", s]), step: (f) => calls.push(["step", f]), shuttle: (k) => calls.push(["shuttle", k]),
+      },
+      state: () => ({ time: 0, dur: 10, paused: true, reverse: 0, rate: 1 }),
+      el: () => el, setAngle: (a) => calls.push(["angle", a]), mix: false, setMix: () => calls.push(["mix"]), marks: [], addMark: (s) => calls.push(["mark", s]),
+      index: 0, total: 1, skip: () => calls.push(["skip"]),
+      ...extra,
     };
-    const { host, unmount } = mount(h(ReplayPreviewOverlay, { rm, rate: 1, onRate: (v) => calls.push(["rate", v]), sources: [{ id: "cam1", name: "Kale arkası" }], box: { w: 900, h: 506 }, onTake: () => calls.push(["take"]) }));
-    const btn = (text) => [...host.querySelectorAll("button")].find((b) => b.textContent.includes(text) || b.getAttribute("aria-label") === text || b.title.startsWith(text));
+  };
+  const btnIn = (host) => (text) => [...host.querySelectorAll("button")].find((b) => b.textContent.includes(text) || b.getAttribute("aria-label") === text || b.title.startsWith(text));
+  it("önizleme: taşıma, giriş / çıkış, yakınlaştırma, hız, açı, yayına al", () => {
+    const calls = [];
+    const deck = mkDeck("preview", calls);
+    const { host, unmount } = mount(h(ReplayPreviewOverlay, { deck, target: "preview", sources: [{ id: "cam1", name: "Kale arkası" }], box: { w: 1000, h: 562 }, onTake: () => calls.push(["take"]) }));
+    const btn = btnIn(host);
+    expect(host.querySelector(".rpo__tag").textContent).toBe("ÖNİZLEMEDE");
     act(() => btn("−1 sn").click());
     act(() => btn("Oynat").click());
     act(() => btn("Tam kare").click());
     act(() => btn("Giriş").click());
     act(() => btn("Çıkış").click());
-    act(() => btn("0,5×").click());
-    act(() => host.querySelectorAll(".rpo__angles button")[1].click());
+    act(() => btn("Hız 0,5×").click());
+    act(() => btn("Hız 2×").click());
+    act(() => host.querySelectorAll(".rdk-an button")[1].click());
     act(() => { host.querySelector(".rpo__surf").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })); });
-    act(() => btn("Yayına al").click());
-    expect(calls).toEqual([["nudge", -1], ["toggle"], ["view", "r1|program", DEFAULT_VIEW], ["in", "r1|program", 0], ["out", "r1|program", 0], ["rate", 0.5], ["cursor", "cam1"], ["step", 1], ["take"]]);
+    act(() => btn("YAYINA AL").click());
+    expect(calls).toEqual([["nudge", -1], ["toggle"], ["view", DEFAULT_VIEW], ["in", 0], ["out", 0], ["rate", 0.5], ["rate", 2], ["angle", "cam1"], ["step", 1], ["take"]]);
+    expect(host.textContent).not.toMatch(/CANLIYA DÖN/);
+    unmount();
+  });
+  it("program: YAYINDA etiketi, süre çubuğu, J / L, yakınlaştırma basamağı, kesme / karışım, canlıya dön (yayına al yok)", () => {
+    const calls = [];
+    const deck = mkDeck("program", calls, { view: { zoom: 1, cx: 0.5, cy: 0.5 }, total: 2 });
+    const { host, unmount } = mount(h(ReplayPreviewOverlay, { deck, target: "program", sources: [], box: { w: 1000, h: 562 }, onLive: () => calls.push(["live"]) }));
+    const btn = btnIn(host);
+    expect(host.querySelector(".rpo__tag").textContent).toBe("● YAYINDA");
+    expect(host.querySelector(".rpo").dataset.deck).toBe("program");
+    expect(host.querySelector(".rdk-tl__bar")).not.toBeNull();
+    expect(btn("YAYINA AL")).toBeUndefined();
+    act(() => btn("Geri oynat").click());
+    act(() => btn("İleri oynat").click());
+    act(() => btn("Yakınlaştır 1,5×").click());
+    act(() => btn("KESME").click());
+    act(() => btn("Sıradaki").click());
+    act(() => btn("CANLIYA DÖN").click());
+    expect(calls[0]).toEqual(["shuttle", "j"]);
+    expect(calls[1]).toEqual(["shuttle", "l"]);
+    expect(calls[2]).toEqual(["view", { zoom: 1.5, cx: 0.5, cy: 0.5 }]);
+    expect(calls.slice(3)).toEqual([["mix"], ["skip"], ["live"]]);
     unmount();
   });
 });

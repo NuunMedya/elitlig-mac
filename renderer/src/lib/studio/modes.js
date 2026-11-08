@@ -211,7 +211,7 @@ export function normalizeModeSettings(v) {
   const x = v && typeof v === "object" ? v : {};
   const layers = {};
   for (const m of MODE_KEYS) layers[m] = normalizeLayers(x.layers?.[m], m);
-  const rate = Math.round(Math.min(1, Math.max(0.25, Number(x.rate) || 1)) * 20) / 20;
+  const rate = Math.round(Math.min(2, Math.max(0.25, Number(x.rate) || 1)) * 20) / 20; // ağır çekim 0,25× … hızlı 2×
   return {
     transition: normalizeTransition(x.transition, { kind: "stinger" }),
     between: normalizeTransition(x.between, { kind: "stinger" }),
