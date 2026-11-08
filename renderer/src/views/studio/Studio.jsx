@@ -298,7 +298,10 @@ export default function Studio({ auth, go }) {
 
   /* ───────── tekrarlar (kaynaklardan önce: "Tekrar" kaynağı son tekrarı oynatır) ───────── */
   // [gol-klip] butondan sonraki süre ve gecikmeli yükleme (Ayarlar › Tekrar)
-  const replays = useReplays(matchId, { postSeconds: settings.replay.postSeconds, uploadDelaySec: settings.replay.uploadDelaySec });
+  // [yayın öncelikli] gol klibi yüklemesi motor durumuna (aktarıcı kuyruğu, gönderim hızı,
+  // kopmalar) bakarak ertelenir / kısılır; motor aşağıda kurulur, durum ref'ten okunur.
+  const engineStatusRef = useRef(null);
+  const replays = useReplays(matchId, { postSeconds: settings.replay.postSeconds, uploadDelaySec: settings.replay.uploadDelaySec, getStatus: () => engineStatusRef.current });
   /** [gol-klip] Yayına verilen tekrar yükü → tekrar başına açılar / bölümler (gecikmeli yükleme, özet). */
   const noteAired = useStable((payload) => {
     if (payload?.kind !== "replay") return;
@@ -396,6 +399,7 @@ export default function Studio({ auth, go }) {
   /* ───────── kodlayıcı ve YouTube ───────── */
   const onEngineError = useCallback((m) => toast(m, { tone: "error", timeout: 6000 }), [toast]);
   const engine = useEngine({ getVideoTrack: comp.getVideoTrack, getAudioTrack: mixer.audioTrack, getCanvas: comp.getCanvas, subscribeFrames: comp.subscribeFrames, getDrawStats: comp.getStats, onError: onEngineError });
+  engineStatusRef.current = engine.status;
   const yt = useYoutube(matchId, { encodingLive: engine.mode === "live" && engine.active });
   const hl = useHighlights(matchId);
   const [busy, setBusy] = useState(false);
@@ -1116,18 +1120,8 @@ export default function Studio({ auth, go }) {
   // Tekrar kipi önizlemedeyken önizleme monitörü düzenleyiciye döner: yakınlaştır / kaydır,
   // zaman çizelgesi, giriş–çıkış, hız; "Yayına al" seçilen bölümü yayına verir.
   const RE = hasModes && modes.replayEditor ? modes.replayEditor : null;
-  // [gol-klip] Tekrar kipinde operatörün ELLE seçtiği açılar (kendiliğinden gelen varsayılandan
-  // farklıysa) gecikmeli gol yüklemesine girer; yayına verilen seçim (noteAired) önceliklidir.
-  const rmSelection = RE?.rm?.selection || null;
-  useEffect(() => {
-    if (!rmSelection) return;
-    for (const [id, angles] of Object.entries(rmSelection)) {
-      const r = replays.replays.find((x) => x.id === id);
-      if (!r || !Array.isArray(angles)) continue;
-      const auto = defaultAngles(r, liveAngles);
-      if (angles.length && angles.join() !== auto.join()) replays.noteSelection(id, angles);
-    }
-  }, [rmSelection]); // eslint-disable-line react-hooks/exhaustive-deps
+  // [gol-klip] Pozisyon başına seçili açılar useReplays'te (setPicks) saklanır ve gecikmeli gol
+  // yüklemesi onları izler (yayına verilen bölümlerin giriş / çıkışı korunur).
   const replayEditing = Boolean(RE && RE.previewing && RE.rm?.transport);
   const [pvwBox, setPvwBox] = useState({ w: 0, h: 0 });
   const [pgmBox, setPgmBox] = useState({ w: 0, h: 0 });
@@ -1403,6 +1397,19 @@ export default function Studio({ auth, go }) {
       // durum eşzamanlı okunur, önizlemede görünen aynen yayına gider) · playLatest: R ile aynı.
       preview: (r, angles) => loadReplayAny(r, { angles }),
       take: async (r, angles) => { loadReplayAny(r, { angles, take: true }); },
+      // POZİSYON BAŞINA SEÇİM: picks { replayId: [açı] } · pick.toggle / all / clear ·
+      // send(r, { rate, take }): seçili açıları (yoksa program) önizlemeye, take: GEÇİŞ ile yayına.
+      picks: RE?.rm?.picks || replays.picks || {},
+      pick: RE?.rm?.pick || null,
+      send: (r, { rate, take: andTake = false } = {}) => {
+        if (!r) return false;
+        if (!modes.sendToPreview) return loadReplayAny(r, { take: andTake });
+        if (!modes.sendToPreview(r, { rate })) return false;
+        if (andTake || takeAfterLoad({ studioMode })) takeRef.current?.();
+        return true;
+      },
+      previewPos: RE?.rm?.previewPos || null, airPos: RE?.rm?.airPos || null,
+      uploadOf: replays.uploadOf, uploadNow: replays.uploadNow, cancelUpload: replays.cancelUpload, reschedule: replays.reschedule, health: replays.health, now: replays.now,
       direct: Boolean(settings.replay.directTake) || !studioMode,
       stop: stopReplay, playLatest: playLatestAny, loadLatest: playLatestAny, openTab: () => setTab(replayTabKey),
       rate: replayRateNow, setRate: setReplayRateAny, playQueue: playReplayQueue, momentFor: captureMomentFor,

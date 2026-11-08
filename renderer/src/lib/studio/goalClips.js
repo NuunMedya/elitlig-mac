@@ -76,6 +76,28 @@ export function normalizeAired(sel, replay = null) {
 }
 
 /**
+ * Yüklenecek seçim = YAYINA VERİLEN bölümler + operatörün o pozisyon için SEÇTİĞİ açılar.
+ *   aired: { angles, segments } (yayındaki giriş / çıkışlarla) | null
+ *   picks: [açı] (pozisyonun seçili açıları, tıklama sırası) | null
+ * Seçim varsa yükleme ONU izler (yükleme anına kadar değiştirilebilir): seçili her açı için
+ * yayındaki bölümleri (varsa, aynı giriş / çıkışla) yoksa tüm klibi, seçim sırasıyla.
+ * Seçim yoksa yayına verilen; o da yoksa null (→ program açısı).
+ */
+export function effectiveSelection({ aired = null, picks = null } = {}, replay = null) {
+  const a = normalizeAired(aired, replay);
+  const have = replay ? new Set(anglesOf(replay)) : null;
+  const p = (Array.isArray(picks) ? picks : []).filter((x, i, l) => typeof x === "string" && x && (!have || have.has(x)) && l.indexOf(x) === i);
+  if (!p.length) return a ? { ...a, aired: true } : null;
+  const segments = [];
+  for (const angle of p) {
+    const own = (a?.segments || []).filter((s) => s.angle === angle);
+    if (own.length) segments.push(...own.map((s) => ({ ...s })));
+    else segments.push({ angle, inSec: 0, outSec: null });
+  }
+  return normalizeAired({ angles: p, segments, aired: Boolean(a), at: Date.now() }, replay);
+}
+
+/**
  * Yüklemede ne gönderilir:
  *   { mode: "program" }                              seçim yok ya da yalnız program
  *   { mode: "angles", segments, count }              bölümler (yayına verilen) ya da seçilen açılar sırayla

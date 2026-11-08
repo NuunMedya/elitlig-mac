@@ -10,8 +10,12 @@
 //             YALNIZ program destesine ve ANINDA yayına uygulanır. Önizleme destesi
 //             bağımsızdır: orada hazırlanan yeni tekrar yeni "YAYINA AL" ile yerine geçer.
 //
-// Oynatma listesi: açık sıralı [{ replayId, angle }] (sürükle bırak; öğe başına açı, giriş /
-// çıkış, hız). Eski seçim API'si (selection / setSelection) listeden türetilir.
+// POZİSYON BAŞINA SEÇİM (oynatma listesi yok): her gol / anın seçili açıları (picks:
+// { replayId: [açı] }, tıklama sırası; useReplays'te saklanır ve 1 dk sonra o golün klibi
+// olarak yüklenir). "ÖNİZLEMEYE GÖNDER" (sendToPreview) YALNIZ o pozisyonun seçili
+// açılarını (yoksa program açısını) sırayla önizlemeye yükler: önizleme açıları sırayla
+// oynatır (seq); GEÇİŞ aynen o diziyi yayına verir. Önizlemede / yayında açı değişimi bu
+// seçili küme içindedir (tek açıysa tüm açılar).
 // Ağır çekim < 0,5×: kare harmanlama (replayView.makeFrameBlender) — kapatılabilir.
 // Yayına giden bölümler replays.markAiredSelection(replayId, { angles, segments }) ile
 // yükleme hattına bildirilir (yoksa no-op).
@@ -19,7 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { STINGER_MS } from "../../../lib/studio/stinger";
 import { PROGRAM_ANGLE, defaultAngles, metaFor, replayBanner } from "../../../lib/studio/replays";
 import { playerQueueOf, replayPayload } from "../../../lib/studio/previewTake";
-import { BLEND_BELOW, airedOut, airedStart, airedSwitch, angleStep, clampRate, deckReducer, playlistFromSelection, selectionOf, zoomStep } from "../../../lib/studio/replayDeck";
+import { BLEND_BELOW, airedOut, airedStart, airedSwitch, angleStep, clampRate, deckReducer, nextInSequence, pickAll, positionAngles, rampSteps, setPicks as setPicksIn, togglePick, zoomStep } from "../../../lib/studio/replayDeck";
 import { isStingerKind } from "../../../lib/studio/transitions";
 import { drawReplayBadge } from "../../../lib/studio/scorebug";
 import { drawTransitionStinger } from "../../../lib/studio/transitions";
@@ -44,31 +48,62 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
   const recordAngles = replays?.recordAngles || [PROGRAM_ANGLE];
   const replaysRef = useRef(replays);
   replaysRef.current = replays;
-  // Liste ve imleç ref'te de tutulur: yükleyip AYNI anda yayına almak (stüdyo modu kapalı,
-  // "R = doğrudan yayına") React yenilemesini beklemeden güncel yükü okur [önizleme-geçiş].
-  const [playlist, setPlaylistState] = useState([]); // [{ replayId, angle }]
+  // Önizlemedeki dizi (TEK pozisyonun açıları) ve imleç ref'te de tutulur: yükleyip AYNI
+  // anda yayına almak React yenilemesini beklemeden güncel yükü okur [önizleme-geçiş].
+  const [seq, setSeqState] = useState([]); // [{ replayId, angle }] — hep aynı replayId
   const [cursor, setCursorState] = useState(null); // { replayId, angle }
-  const plRef = useRef(playlist);
+  const plRef = useRef(seq);
   const cursorRef = useRef(cursor);
   const listRef = useRef(list);
   listRef.current = list;
-  const setPlaylist = useCallback((v) => {
+  const setSeq = useCallback((v) => {
     const next = typeof v === "function" ? v(plRef.current) : v;
-    plRef.current = Array.isArray(next) ? next : [];
-    setPlaylistState(plRef.current);
+    const arr = Array.isArray(next) ? next : [];
+    const id = arr[0]?.replayId;
+    plRef.current = arr.filter((e, i) => e?.replayId === id && arr.findIndex((x) => x.angle === e.angle) === i);
+    setSeqState(plRef.current);
   }, []);
   const setCursor = useCallback((v) => {
     const next = typeof v === "function" ? v(cursorRef.current) : v;
     cursorRef.current = next || null;
     setCursorState(cursorRef.current);
   }, []);
-  const selection = useMemo(() => selectionOf(playlist), [playlist]);
-  /** Eski seçim API'si: { replayId: [açı] } → liste (var olanların sırası korunur). */
+
+  /* ───────── pozisyon başına seçili açılar (useReplays'te kalıcı; yoksa yerel) ───────── */
+  const [localPicks, setLocalPicks] = useState({});
+  const picks = replays?.setPicks ? (replays.picks || {}) : localPicks;
+  const picksRef = useRef(picks);
+  picksRef.current = picks;
+  const writePicks = useCallback((replayId, angles) => {
+    const next = setPicksIn(picksRef.current, replayId, angles);
+    picksRef.current = next;
+    if (replaysRef.current?.setPicks) replaysRef.current.setPicks(replayId, next[replayId] || []);
+    else setLocalPicks(next);
+    // Önizlemedeki pozisyonun seçimi değişti → önizleme dizisi de (imleç kümede kalırsa yerinde).
+    const s = plRef.current;
+    if (s.length && s[0].replayId === replayId) {
+      const r = listRef.current.find((x) => x.id === replayId);
+      const want = positionAngles(next, r, PROGRAM_ANGLE);
+      if (want.length) {
+        setSeq(want.map((a) => ({ replayId, angle: a })));
+        if (!want.includes(cursorRef.current?.angle)) setCursor({ replayId, angle: want[0] });
+      }
+    }
+    return next[replayId] || [];
+  }, [setCursor, setSeq]);
+  const pickApi = useMemo(() => ({
+    toggle: (replayId, angle) => writePicks(replayId, togglePick(picksRef.current, replayId, angle)[replayId] || []),
+    all: (replay) => writePicks(replay.id, pickAll(picksRef.current, replay)[replay.id] || []),
+    clear: (replayId) => writePicks(replayId, []),
+    set: (replayId, angles) => writePicks(replayId, angles),
+    of: (replayId) => picksRef.current[replayId] || [],
+  }), [writePicks]);
+  /** Eski seçim API'si: { replayId: [açı] } (artık pozisyon başına seçim). */
+  const selection = picks;
   const setSelection = useCallback((v) => {
-    const prevSel = selectionOf(plRef.current);
-    const next = typeof v === "function" ? v(prevSel) : v;
-    setPlaylist(playlistFromSelection(listRef.current, next || {}, { prev: plRef.current }));
-  }, [setPlaylist]);
+    const next = typeof v === "function" ? v(picksRef.current) : v;
+    for (const id of new Set([...Object.keys(picksRef.current), ...Object.keys(next || {})])) writePicks(id, (next || {})[id] || []);
+  }, [writePicks]);
 
   const rateRef = useRef(rate);
   rateRef.current = rate;
@@ -138,12 +173,15 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
   const attach = audio?.attachMedia;
   useEffect(() => { if (attach) [...els, soundEl].forEach((el) => attach(el, { strip: "media", on: true })); }, [attach, els, soundEl]);
 
-  /** Liste → oynatılabilir öğeler (görüntü için). */
-  const queue = useMemo(() => playlist.map((e) => {
+  /** Önizlemedeki dizi → oynatılabilir öğeler. */
+  const queue = useMemo(() => seq.map((e) => {
     const r = list.find((x) => x.id === e.replayId);
     const a = r?.angles?.find((x) => x.angle === e.angle && x.url);
     return r && a ? { key: `${r.id}/${a.angle}`, replayId: r.id, angle: a.angle, url: a.url, durationMs: a.durationMs || r.durationMs, replay: r } : null;
-  }).filter(Boolean), [playlist, list]);
+  }).filter(Boolean), [seq, list]);
+  const seqAngles = useMemo(() => queue.map((q) => q.angle), [queue]);
+  const seqRef = useRef(seqAngles);
+  seqRef.current = seqAngles;
   const cursorItem = useMemo(() => {
     const c = cursor || (queue[0] ? { replayId: queue[0].replayId, angle: queue[0].angle } : null);
     if (!c) return null;
@@ -158,15 +196,17 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
   const previewRateRef = useRef(previewRate);
   previewRateRef.current = previewRate;
 
-  // Önizleme öğesi: imleçteki klip döngüyle.
+  // Önizleme öğesi: imleçteki klip; dizide birden çok açı varsa sırayla (sonra başa döner).
   const [previewReady, setPreviewReady] = useState(false);
+  const previewReadyRef = useRef(false);
+  previewReadyRef.current = previewReady;
   const pUrl = cursorItem?.url || null;
   const pendingSeekRef = useRef(null); // açı değişiminde aynı ana git
   useEffect(() => {
     setPreviewReady(false);
     if (!pUrl) { try { previewEl.pause(); } catch { /* yoksay */ } return undefined; }
     let alive = true;
-    previewEl.loop = true;
+    previewEl.loop = seqRef.current.length <= 1 && previewLoopRef.current;
     prepare(previewEl, pUrl).then(() => {
       if (!alive) return;
       // Önizleme klibi giriş noktasından başlar (yayına alınınca da oradan başlar).
@@ -188,8 +228,23 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
     else if (!previewing) { try { previewEl.pause(); } catch { /* yoksay */ } }
   }, [previewing, previewReady, previewEl]);
 
-  // Önizleme döngüsü giriş–çıkış arasında: çıkışa gelince (ya da klip başa sarınca) girişe döner
-  // (döngü kapalıysa çıkışta durur). Geri oynatma (J) da burada.
+  /** Önizleme dizisinde sıradaki açıya geç (aynı pozisyon; giriş noktasından). */
+  const advanceRef = useRef(() => false);
+  advanceRef.current = (dir = 1) => {
+    const c = cursorRef.current;
+    const angles = seqRef.current;
+    if (!c || angles.length < 2) return false;
+    let nx;
+    if (dir < 0) { const i = angles.indexOf(c.angle); nx = angles[(Math.max(0, i) - 1 + angles.length) % angles.length]; } else nx = nextInSequence(angles, c.angle, { loop: previewLoopRef.current });
+    if (!nx) return false;
+    if (nx === c.angle) { try { previewEl.currentTime = inRef.current.get(viewKey(c.replayId, nx)) || 0; } catch { /* yoksay */ } return true; }
+    pendingSeekRef.current = inRef.current.get(viewKey(c.replayId, nx)) || 0;
+    previewReadyRef.current = false; // yeni klip yüklenene dek döngü bir daha ilerletmesin
+    setCursor({ replayId: c.replayId, angle: nx });
+    return true;
+  };
+  // Önizleme döngüsü giriş–çıkış arasında: çıkışa gelince (ya da klip bitince) dizide sıradaki
+  // açıya geçer; tek açıysa girişe döner (döngü kapalıysa çıkışta durur). Geri oynatma (J) da burada.
   useEffect(() => {
     if (!previewing) return undefined;
     let last = 0;
@@ -209,18 +264,21 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
         last = previewEl.currentTime || 0;
         return;
       }
+      if (!previewReadyRef.current) { last = 0; return; }
+      const multi = seqRef.current.length > 1;
+      if (multi && previewEl.ended && !previewPausedRef.current) { advanceRef.current(1) || (previewPausedRef.current = true); last = 0; return; }
       if (!k || previewEl.paused) { last = previewEl.currentTime || 0; return; }
       const cur = previewEl.currentTime || 0;
       const wrapped = cur + 0.3 < last;
       if (b > a + 0.2 && cur >= b) {
-        if (previewLoopRef.current) { try { previewEl.currentTime = a; } catch { /* yoksay */ } } else { try { previewEl.pause(); } catch { /* yoksay */ } previewPausedRef.current = true; tick(); }
+        if (multi) { if (!advanceRef.current(1)) { try { previewEl.pause(); } catch { /* yoksay */ } previewPausedRef.current = true; tick(); } } else if (previewLoopRef.current) { try { previewEl.currentTime = a; } catch { /* yoksay */ } } else { try { previewEl.pause(); } catch { /* yoksay */ } previewPausedRef.current = true; tick(); }
       } else if (wrapped && a > 0) { try { previewEl.currentTime = a; } catch { /* yoksay */ } }
       last = previewEl.currentTime || 0;
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
   }, [previewing, previewEl, tick]);
-  useEffect(() => { previewEl.loop = previewLoop; }, [previewLoop, previewEl]);
+  useEffect(() => { previewEl.loop = previewLoop && seqAngles.length <= 1; }, [previewLoop, previewEl, seqAngles.length]);
 
   const bannerOf = useCallback((item) => replayBanner(item.replay, metaFor(item.replay, meta)), [meta]);
   const betweenRef = useRef(between);
@@ -257,10 +315,10 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
 
   /**
    * ÖNİZLEMENİN YÜKÜ (eşzamanlı, ref'lerden): yayına aynen giden içerik [önizleme-geçiş].
-   * Önizlemedeki klipten başlar; imleç listedeyse listenin kalanı sırayla.
+   * Önizlemedeki pozisyonun seçili açıları baştan sırayla (imleç hangi açıda olursa olsun).
    */
   const payload = useCallback(() => replayPayload({
-    list: listRef.current, playlist: plRef.current, cursor: cursorRef.current,
+    list: listRef.current, playlist: plRef.current, cursor: plRef.current[0] || cursorRef.current,
     inOf: (k) => inRef.current.get(k) || 0, outOf: (k) => outRef.current.get(k) || 0, viewOf: (k) => viewsRef.current.get(k) || DEFAULT_VIEW,
     rateOf: (k) => ratesRef.current.get(k) || 0, keyOf: viewKey, rate: rateRef.current,
   }), []);
@@ -286,7 +344,7 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
   const latestQueue = useCallback(() => {
     const r = replays?.latest || list[0];
     if (!r) return [];
-    const p = replayPayload({ list: [r], playlist: defaultAngles(r, recordAngles).map((angle) => ({ replayId: r.id, angle })), cursor: null, keyOf: viewKey, rate: rateRef.current,
+    const p = replayPayload({ list: [r], playlist: positionAngles(picksRef.current, r, defaultAngles(r, recordAngles)[0] || PROGRAM_ANGLE).map((angle) => ({ replayId: r.id, angle })), cursor: null, keyOf: viewKey, rate: rateRef.current,
       inOf: (k) => inRef.current.get(k) || 0, outOf: (k) => outRef.current.get(k) || 0, viewOf: (k) => viewsRef.current.get(k) || DEFAULT_VIEW });
     return playerQueueOf(p);
   }, [replays?.latest, list, recordAngles]);
@@ -299,29 +357,37 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
     if (!replay?.id) return false;
     const r = listRef.current.find((x) => x.id === replay.id) || replay;
     const have = (r.angles || []).filter((a) => a.url).map((a) => a.angle);
-    const want = (Array.isArray(angles) && angles.length ? angles : defaultAngles(r, recordAngles)).filter((a) => have.includes(a));
+    // Açı verilmezse: o pozisyonun SEÇİLİ açıları; seçim yoksa program (varsayılan) açısı.
+    const base = Array.isArray(angles) && angles.length ? angles : positionAngles(picksRef.current, r, defaultAngles(r, recordAngles)[0] || PROGRAM_ANGLE);
+    const want = base.filter((a) => have.includes(a));
     const chosen = want.length ? want : have.slice(0, 1);
     if (!chosen.length) return false;
-    setPlaylist(chosen.map((a) => ({ replayId: r.id, angle: a })));
+    setSeq(chosen.map((a) => ({ replayId: r.id, angle: a })));
     setCursor({ replayId: r.id, angle: angle && chosen.includes(angle) ? angle : chosen[0] });
+    previewPausedRef.current = false;
     return true;
-  }, [recordAngles, setCursor, setPlaylist]);
+  }, [recordAngles, setCursor, setSeq]);
   const open = useCallback((replay, opts) => load(replay, opts), [load]);
-  /** Birden çok tekrarı (her biri varsayılan açılarıyla) bu sırayla önizlemeye yükle. */
+  /**
+   * "ÖNİZLEMEYE GÖNDER": pozisyonun seçili açıları (yoksa program açısı) sırayla önizlemeye.
+   * rate: isteğe bağlı hız (ör. "Tekrar + ağır çekim" 0,5×).
+   */
+  const sendToPreview = useCallback((replay, { rate: r } = {}) => {
+    const rp = typeof replay === "string" ? listRef.current.find((x) => x.id === replay) : replay;
+    if (!rp) return false;
+    if (r > 0) { const v = clampRate(r); rateRef.current = v; setRateProp?.(v); }
+    return load(rp, { angles: positionAngles(picksRef.current, rp, defaultAngles(rp, recordAngles)[0] || PROGRAM_ANGLE) });
+  }, [load, recordAngles, setRateProp]);
+  /** Eski çağrılar (çoklu kuyruk): artık YALNIZ ilk pozisyon (pozisyonlar arası liste yok). */
   const loadQueue = useCallback((picked) => {
-    const items = (picked || []).map((x) => listRef.current.find((r) => r.id === x?.id) || x).filter((r) => r?.id && (r.angles || []).some((a) => a.url));
-    if (!items.length) return false;
-    const pl = [];
-    for (const r of items) for (const a of defaultAngles(r, recordAngles)) pl.push({ replayId: r.id, angle: a });
-    setPlaylist(pl);
-    setCursor(pl[0] ? { ...pl[0] } : null);
-    return true;
-  }, [recordAngles, setCursor, setPlaylist]);
-  /** Son tekrarı önizlemeye yükle (R). */
+    const r = (picked || []).map((x) => listRef.current.find((y) => y.id === x?.id) || x).find((y) => y?.id && (y.angles || []).some((a) => a.url));
+    return r ? sendToPreview(r) : false;
+  }, [sendToPreview]);
+  /** Son tekrarı (seçili açılarıyla) önizlemeye yükle (R). */
   const loadLatest = useCallback(() => {
     const r = replays?.latest || list[0];
-    return r ? load(r) : false;
-  }, [replays?.latest, list, load]);
+    return r ? sendToPreview(r) : false;
+  }, [replays?.latest, list, sendToPreview]);
 
   /* ───────── çizim ───────── */
   const pgmBlender = useMemo(() => makeFrameBlender(), []);
@@ -360,7 +426,7 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
       ctx.fillStyle = "rgba(255,255,255,0.55)";
       ctx.font = `700 ${Math.round(H * 0.045)}px -apple-system, sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(cursorItem ? "Tekrar yükleniyor…" : "Önizlemek için listeden tekrar seç", W / 2, H / 2);
+      ctx.fillText(cursorItem ? "Tekrar yükleniyor…" : "Tekrar listesinde açıları seç → ÖNİZLEMEYE GÖNDER", W / 2, H / 2);
     }
   }, [previewReady, previewEl, cursorItem, cursorKey, viewOf, pvwBlender]);
   const event = useCallback((target) => (target === "program" ? replayRef.current?.event || null : cursorItem ? bannerOf(cursorItem) : null), [cursorItem, bannerOf]);
@@ -387,6 +453,20 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
 
   /* ───────── desteler (önizleme / program): ortak arayüz ───────── */
   const playableAngles = (r) => (r?.angles || []).filter((a) => a.url);
+  /** Açı değişimi seçili küme içinde (kümede tek açı varsa tüm açılar). */
+  const setAngles = (r, ids) => {
+    const all = playableAngles(r);
+    const inSet = (ids || []).map((id) => all.find((a) => a.angle === id)).filter(Boolean);
+    return inSet.length > 1 ? inSet : all;
+  };
+  // Ağır çekim rampası (deste başına zamanlayıcılar).
+  const rampTimers = useRef({ preview: [], program: [] });
+  const rampWith = (d, to, ms = 900) => {
+    const tm = rampTimers.current[d.target] || [];
+    tm.forEach(clearTimeout);
+    const from = d.state?.()?.rate || d.rate || 1;
+    rampTimers.current[d.target] = rampSteps(from, to, ms).map((s) => setTimeout(() => d.setRate(s.rate), s.at));
+  };
   const shuttleWith = (d, key) => {
     const st = d.state() || {};
     const cur = { rate: d.rate, paused: Boolean(st.paused), shuttle: st.reverse || 0, views: {} };
@@ -407,7 +487,10 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
     replay: cursorItem?.replay || null,
     replayId: cursorItem?.replayId || null,
     angle: cursorItem?.angle || null,
-    angles: playableAngles(cursorItem?.replay),
+    angles: setAngles(cursorItem?.replay, seqAngles),
+    seq: seqAngles,
+    seqIndex: Math.max(0, seqAngles.indexOf(cursorItem?.angle)),
+    seqStep: (dir) => advanceRef.current(dir),
     view: viewOf(cursorKey),
     setView: (v) => setViewFor(cursorKey, v),
     rate: previewRate,
@@ -423,6 +506,8 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
     state: () => ({ time: previewEl.currentTime || 0, dur: Number.isFinite(previewEl.duration) ? previewEl.duration : (cursorItem?.durationMs || 0) / 1000, paused: previewRevRef.current ? false : previewEl.paused, reverse: previewRevRef.current, rate: previewRate }),
     setAngle: (angle) => {
       if (!cursorItem || angle === cursorItem.angle) return;
+      // Tek açılık dizide başka açı: o açı önizlenir ve yayına O gider (seçim değişmez).
+      if (!seqRef.current.includes(angle)) setSeq([{ replayId: cursorItem.replayId, angle }]);
       // Önizlemede açı değişimi de aynı andan devam eder (açılar yakalama anında biter).
       const from = cursorItem.replay.angles.find((a) => a.angle === cursorItem.angle);
       const to = cursorItem.replay.angles.find((a) => a.angle === angle);
@@ -449,7 +534,10 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
     replay: pi?.replay || null,
     replayId: pi?.replayId || null,
     angle: pi?.angle || null,
-    angles: playableAngles(pi?.replay),
+    angles: setAngles(pi?.replay, (airPayloadRef.current?.items || []).filter((x) => x.replayId === pi?.replayId).map((x) => x.angle)),
+    seq: (airPayloadRef.current?.items || []).map((x) => x.angle),
+    seqIndex: player.index || 0,
+    seqStep: (dir) => { if (dir > 0) player.skip?.(); },
     view: airViewOf(pi),
     setView: (v) => {
       const it = replayRef.current?.active ? replayRef.current.item : null;
@@ -485,7 +573,14 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
     skip: player.skip,
     blend, setBlend,
   };
-  for (const d of [pvwDeck, pgmDeck]) d.transport = { ...d.transport, shuttle: (key) => shuttleWith(d, key) };
+  for (const d of [pvwDeck, pgmDeck]) {
+    d.transport = { ...d.transport, shuttle: (key) => shuttleWith(d, key) };
+    /** Kareyi dondur / devam (duraklat — yayında görüntü o karede kalır). */
+    d.freeze = () => d.transport.toggle();
+    /** Ağır çekim rampası: hıza yumuşak geçiş (ör. 1× → 0,25×, tekrar basınca geri 1×). */
+    d.ramp = (to = 0.25, ms = 900) => rampWith(d, to, ms);
+    d.rampToggle = (slow = 0.25) => rampWith(d, (d.state?.()?.rate || d.rate || 1) > slow + 0.05 ? slow : 1);
+  }
   const decks = { preview: pvwDeck, program: pgmDeck };
 
   // Klavye / panel denetimleri hangi desteye: son dokunulan (önizleme / program); program
@@ -517,8 +612,13 @@ export function useReplayMode({ replays, rate, setRate: setRateProp, audio, betw
     }
   };
 
+  /** Önizlemedeki pozisyon: { replayId, angles } | null; yayındaki: aynı biçim. */
+  const previewPos = seq.length ? { replayId: seq[0].replayId, angles: seqAngles, angle: cursorItem?.angle || null } : null;
+  const airPos = pi ? { replayId: pi.replayId, angle: pi.angle, angles: (airPayloadRef.current?.items || []).map((x) => x.angle) } : null;
+
   return {
-    selection, setSelection, playlist, setPlaylist, cursor: cursorItem, setCursor, queue, airQueue, latestQueue, open,
+    selection, setSelection, picks, pick: pickApi, sendToPreview, previewPos, airPos, seq, setSeq,
+    cursor: cursorItem, setCursor, queue, airQueue, latestQueue, open,
     load, loadQueue, loadLatest, payload, airPayload: () => (replayRef.current?.active ? airPayloadRef.current : null),
     player, start, stop: (withTr) => player.stop(withTr), drawProgram, drawProgramTop, drawPreview, event, previewEl, previewReady, ready: Boolean(cursorItem),
     // düzenleyici (önizleme destesi; eski API)

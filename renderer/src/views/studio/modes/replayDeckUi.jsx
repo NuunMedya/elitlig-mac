@@ -270,3 +270,47 @@ export function DeckTarget({ decks, focus, setFocus }) {
     </span>
   );
 }
+
+/* ───────────────────────── seçili açı dizisi ───────────────────────── */
+
+/**
+ * Pozisyonun seçili açıları (sırayla oynar): 1 Kale arkası ▸ 2 Program … Şu anki parlar;
+ * tık: o açıya geç (önizlemede o açıdan devam, yayında kesme / karışım).
+ */
+export function DeckSeq({ deck, sources, compact = false }) {
+  const seq = deck?.seq || [];
+  if (seq.length < 2) return null;
+  const all = deck.replay?.angles || [];
+  const cur = deck.angle;
+  return (
+    <span className={`rdk-seq ${compact ? "is-compact" : ""}`} data-deck={deck.target} title="Seçili açılar bu sırayla oynar">
+      <button type="button" className="rdk-seq__nav" onClick={() => deck.seqStep?.(-1)} disabled={deck.target === "program"} title="Önceki açı" aria-label="Önceki açı">‹</button>
+      {seq.map((id, i) => {
+        const a = all.find((x) => x.angle === id) || { angle: id };
+        return (
+          <button key={id} type="button" className={id === cur ? "is-on" : i < (deck.seqIndex || 0) ? "is-done" : ""} onClick={() => deck.setAngle(id)} title={`${i + 1}. açı: ${angleLabel(a, sources)}`}>
+            <b>{i + 1}</b>{!compact && angleShort(a, sources)}
+          </button>
+        );
+      })}
+      <button type="button" className="rdk-seq__nav" onClick={() => deck.seqStep?.(1)} title="Sıradaki açı" aria-label="Sıradaki açı">›</button>
+    </span>
+  );
+}
+
+/** Kareyi dondur · ağır çekim rampası (1× ⇄ 0,25×). */
+export function DeckExtras({ deck, t, compact = false }) {
+  const off = !deck?.active;
+  const frozen = Boolean(t?.paused) && !t?.reverse && Boolean(deck?.active);
+  const slow = (t?.rate || deck?.rate || 1) <= 0.3;
+  return (
+    <span className={`rdk-ex ${compact ? "is-compact" : ""}`} data-deck={deck?.target}>
+      <button type="button" className={frozen ? "is-on" : ""} disabled={off} onClick={() => deck.freeze?.()} title={frozen ? "Devam et" : "Kareyi dondur (o karede kalır)"}>
+        <Icon name={frozen ? "play" : "pause"} size={11} />{compact ? "" : frozen ? " DEVAM" : " DONDUR"}
+      </button>
+      <button type="button" className={slow ? "is-on" : ""} disabled={off} onClick={() => deck.rampToggle?.(0.25)} title={slow ? "Rampa: yumuşakça 1×'e dön" : "Rampa: yumuşakça 0,25× ağır çekime in"}>
+        <Icon name="activity" size={11} />{compact ? "" : slow ? " RAMPA 1×" : " RAMPA 0,25×"}
+      </button>
+    </span>
+  );
+}

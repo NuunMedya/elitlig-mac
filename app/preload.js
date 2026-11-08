@@ -132,6 +132,8 @@ contextBridge.exposeInMainWorld("elitlig", {
     listClips: () => ipcRenderer.invoke("studio:listClips"),
     deleteClip: (name) => ipcRenderer.invoke("studio:deleteClip", name),
     uploadClip: (opts) => ipcRenderer.invoke("studio:uploadClip", opts || {}),
+    // [gol-klip] yayın öncelikli yükleme: { kbps, paused } · { reset: true } · { cancel: true } · null → durum
+    uploadThrottle: (opts) => ipcRenderer.invoke("studio:uploadThrottle", opts ?? null),
     revealClip: (name) => ipcRenderer.invoke("studio:revealClip", name),
     // Çok açılı kayıt: her kaynak (kamera vb.) için ayrı MediaRecorder akışı (Matroska/WebM).
     // sources: [{ id, name, width, height, fps, mimeType }] — mimeType H.264 ise

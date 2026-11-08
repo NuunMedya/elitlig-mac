@@ -222,15 +222,21 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     setPreview("tekrar");
     return true;
   }, [say, setPreview]);
+  /** Pozisyonun seçili açılarını önizlemeye gönder (rate: isteğe bağlı hız). */
+  const sendToPreview = useCallback((replay, opts) => {
+    if (!ctrl.current.rm.sendToPreview(replay, opts)) { say("Bu pozisyonun oynatılabilir açısı yok."); return false; }
+    setPreview("tekrar");
+    return true;
+  }, [say, setPreview]);
   /** Son tekrarı önizlemeye yükle (R). */
   const loadLatest = useCallback(() => {
     if (!ctrl.current.rm.loadLatest()) { say("Henüz tekrar yok: GOL'e bas ya da ÖNEMLİ AN (B) ile kaydet."); return false; }
     setPreview("tekrar");
     return true;
   }, [say, setPreview]);
-  /** Birden çok tekrarı sırayla önizlemeye yükle (şeritteki "Tekrar kuyruğu"). */
+  /** Eski "Tekrar kuyruğu": pozisyonlar arası liste yok — ilk pozisyon (seçili açılarıyla) önizlemeye. */
   const loadQueue = useCallback((list) => {
-    if (!ctrl.current.rm.loadQueue(list)) { say("Kuyrukta oynatılabilir açı yok."); return false; }
+    if (!ctrl.current.rm.loadQueue(list)) { say("Oynatılabilir açı yok."); return false; }
     setPreview("tekrar");
     return true;
   }, [say, setPreview]);
@@ -297,8 +303,8 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
   const rmApi = useMemo(() => ({
     ...rm,
     setCursor: (v) => { rm.setCursor(v); setPreview("tekrar"); },
-    setSelection: (v) => { rm.setSelection(v); setPreview("tekrar"); },
-    setPlaylist: (v) => { rm.setPlaylist(v); setPreview("tekrar"); },
+    // Açı seçmek önizlemeyi DEĞİŞTİRMEZ; yalnız "ÖNİZLEMEYE GÖNDER" (sendToPreview) değiştirir.
+    sendToPreview: (r, o) => { const ok = rm.sendToPreview(r, o); if (ok) setPreview("tekrar"); return ok; },
     load: (r, o) => { const ok = rm.load(r, o); if (ok) setPreview("tekrar"); return ok; },
   }), [rm, setPreview]);
   const api = {
@@ -331,7 +337,7 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     clearPreview,
     openReplay,
     // [önizleme-geçiş] yükleyiciler (önizlemeye) + eşzamanlı önizleme / yayın durumu (Studio › take)
-    loadReplay, loadLatest, loadQueue, previewNow, airNow,
+    loadReplay, loadLatest, loadQueue, sendToPreview, previewNow, airNow,
     replay: { loadLatest, loadQueue, stop: () => endOnAir(), playing: airMode === "tekrar", index: rm.player.index, total: rm.player.total, item: rm.player.item },
     // Önizleme ekranındaki tekrar düzenleyicisi (modes/ReplayPreviewOverlay): yakınlaştır / kaydır,
     // zaman çizelgesi, giriş–çıkış noktası, hız. rate: ağır çekim (yayında anında uygulanır).

@@ -1,42 +1,75 @@
-// Yayın Stüdyosu · TEKRAR düğmeleri: son tekrar → önizleme / → yayına, canlı açı seçici,
-// çok açılı dizi kurucu (açı sırası → önizleme → yayına), ağır çekim + oynat, giriş /
-// çıkış ve kare kare ilerletme (önizlemedeki tekrar), son N gol, önemli an (saniye seçimi,
-// geri sayımlı kayıt), tekrar + VAR, "sırala ve yayınla" kuyruğu.
+// Yayın Stüdyosu · TEKRAR düğmeleri — POZİSYON BAŞINA açı seçimi (oynatma listesi yok).
 //
-// [önizleme-geçiş] Her şey önce ÖNİZLEME'ye yüklenir; "yayına" düğmeleri yükleyip aynı
-// GEÇİŞ yolunu çağırır (ctx.replay.take / playQueue({ take })) — önizlemede görünen aynen gider.
-import React, { useState } from "react";
+// Her gol / anın kendi seçili açıları vardır (ctx.replay.picks, tıklama sırası). Düğmeler:
+//   son gol → önizleme / yayına (seçili açılar) · son golün açıları (hızlı seçim ızgarası) ·
+//   pozisyon gezgini (önceki / sonraki gol + açılar + gönder) · "Seçili açıları önizlemeye
+//   gönder" · açı 1…N (önizlemede / yayında o açıya geç) · önceki / sonraki gol · hız ön
+//   ayarları · jog tekerleği · yakınlaştırma ön ayarları · tekrar + ağır çekim (tek dokunuş) ·
+//   yükleme durumu (şimdi / iptal, yayın sağlığı) · son N gol (her biri KENDİ açılarıyla) ·
+//   giriş / çıkış · döngü · kareyi dondur · ağır çekim rampası · önemli an · tekrar + VAR.
+//
+// [önizleme-geçiş] Her şey önce ÖNİZLEME'ye yüklenir; "yayına" düğmeleri yükleyip aynı GEÇİŞ
+// yolunu çağırır (ctx.replay.send(r, { take: true })) — önizlemede görünen aynen gider.
+// Deste düğmeleri (hız, açı, jog, yakınlaştırma, dondur, rampa, döngü) tekrar yayındaysa
+// YAYINDAKİ tekrara anında, değilse önizlemedekine uygulanır.
+import React, { useRef, useState } from "react";
 import { Icon } from "../../../components/ui";
-import { angleLabel, anglesOf, defaultAngles, metaFor, replayTitle } from "../../../lib/studio/replays";
-import { MOMENT_SECONDS, RATE_STEPS, goalReplays, jogTo, secText, seqMove, seqToggle } from "./flowLogic";
+import { angleLabel, anglesOf, metaFor, replayTitle } from "../../../lib/studio/replays";
+import { ZOOM_PRESETS, pickNumbers, picksOf, positionAngles, positionStep } from "../../../lib/studio/replayDeck";
+import { countdownText } from "../../../lib/studio/goalClips";
+import { healthText } from "../../../lib/studio/uploadGuard";
+import { MOMENT_SECONDS, RATE_STEPS, goalReplays, jogTo, secText } from "./flowLogic";
 import { Chip, FlowNote, Head, Kbd, Ring, Shell, hk, openPop, startTimer, stopTimer, timerOf, useNow, usePress } from "./wkit";
+import "./wTekrar.css";
 
 const playable = (R) => (R?.list || []).filter((r) => anglesOf(r).length);
 const titleOf = (R, r) => replayTitle(r, metaFor(r, R.meta));
 const rateText = (v) => `${String(Math.round(v * 100) / 100).replace(".", ",")}×`;
+const zoomText = (z) => `${String(Math.round(z * 10) / 10).replace(".", ",")}×`;
 const haveAngles = (r) => (r?.angles || []).filter((a) => a.url);
 const empty = (w, h, label, icon = "repeat") => <Shell tone="violet" w={w} h={h}><Head icon={icon} label={label} /><span className="st-w__empty">Henüz tekrar yok. GOL ya da ÖNEMLİ AN ile kaydet.</span></Shell>;
+const lastGoal = (R) => playable(R).find((r) => r.kind === "goal") || playable(R)[0] || null;
+/** Pozisyonun seçili açıları; seçim yoksa program açısı. */
+const toSend = (R, r) => positionAngles(R.picks || {}, r);
+/** Gönder (önizlemeye; take: GEÇİŞ ile yayına). Eski bağlamda (send yok) açılarla preview / take. */
+const sendPos = (R, r, { take = false, rate } = {}) => {
+  if (!r) return false;
+  if (R.send) return R.send(r, { take, rate });
+  if (rate) R.setRate?.(rate);
+  return take ? R.take(r, toSend(R, r)) : R.preview(r, toSend(R, r));
+};
+const pickToggle = (R, r, a) => (R.pick ? R.pick.toggle(r.id, a) : null);
+/** Denetlenen deste: tekrar yayındaysa program (önizleme odaktaysa önizleme), değilse önizleme. */
+function deckOf(R) {
+  const D = R.editor?.decks;
+  if (!D) return null;
+  if (R.editor.focus === "preview" && D.preview?.active) return D.preview;
+  if (D.program?.active) return D.program;
+  return D.preview?.active ? D.preview : null;
+}
+/** Odaktaki pozisyon: önizlemedeki → yayındaki → son seçim yapılan → son gol. */
+function focusPos(R) {
+  const id = R.previewPos?.replayId || R.airPos?.replayId || null;
+  const l = playable(R);
+  return (id && l.find((r) => r.id === id)) || l.find((r) => (R.picks || {})[r.id]?.length) || lastGoal(R);
+}
 
-function Thumb({ a, R, preview, on, order, onClick, onDoubleClick, title }) {
+function Thumb({ a, R, preview, on, order, onClick, onDoubleClick, title, live = true }) {
   return (
-    <button type="button" className={`wx-th ${on ? "is-on" : ""}`} onClick={onClick} onDoubleClick={onDoubleClick} title={title}>
-      {preview || !a.url ? <span className="wx-th__ph"><Icon name="video" size={14} /></span> : <video src={a.url} muted loop autoPlay playsInline preload="metadata" />}
+    <button type="button" className={`wx-th ${on ? "is-on" : ""} ${order != null ? "is-picked" : ""}`} onClick={onClick} onDoubleClick={onDoubleClick} title={title} aria-pressed={order != null}>
+      {preview || !a.url ? <span className="wx-th__ph"><Icon name="video" size={14} /></span> : <video src={live ? a.url : `${a.url}#t=0.5`} muted loop autoPlay={live} playsInline preload="metadata" />}
       <span className="wx-th__l">{angleLabel(a, R.sources)}</span>
       {order != null && <b className="wx-th__o">{order}</b>}
     </button>
   );
 }
 
-/* ═════════════════════════ SON TEKRAR → ÖNİZLEME / YAYINA ═════════════════════════ */
+/* ═════════════════════════ SON GOL → ÖNİZLEME / YAYINA (seçili açılar) ═════════════════════════ */
 
 function LastReplay({ ctx, w, h, air }) {
   const R = ctx.replay;
-  const r = playable(R)[0] || null;
-  const go = () => {
-    if (!r) return;
-    const angles = defaultAngles(r, R.recordAngles);
-    if (air) R.take(r, angles); else R.preview(r, angles);
-  };
+  const r = lastGoal(R);
+  const n = r ? picksOf(R.picks || {}, r).length : 0;
   if (R.playing && air) {
     return (
       <Shell as="button" tone="danger" w={w} h={h} state="air" className="wx-tile wx-go is-stop" onClick={R.stop}>
@@ -45,97 +78,188 @@ function LastReplay({ ctx, w, h, air }) {
     );
   }
   return (
-    <Shell as="button" tone={air ? "danger" : "green"} w={w} h={h} state={!air && R.previewing ? "pvw" : null} className={`wx-tile wx-go ${air ? "is-air" : "is-pvw"}`} disabled={!r} onClick={go}
-      title={air ? "Son tekrarı önizlemeye yükler ve aynı GEÇİŞ yoluyla hemen yayına verir" : "Son tekrarı varsayılan açılarla önizlemeye yükler (yayına GEÇİŞ ile)"}>
+    <Shell as="button" tone={air ? "danger" : "green"} w={w} h={h} state={!air && R.previewing ? "pvw" : null} className={`wx-tile wx-go ${air ? "is-air" : "is-pvw"}`} disabled={!r} onClick={() => sendPos(R, r, { take: air })}
+      title={air ? "Son golün SEÇİLİ açılarını (yoksa program) önizlemeye yükler ve aynı GEÇİŞ yoluyla hemen yayına verir" : "Son golün SEÇİLİ açılarını (yoksa program) sırayla önizlemeye yükler (yayına GEÇİŞ ile)"}>
       <Kbd k={!air ? hk(ctx, "replay") : null} />
       <span className="wx-go__ic"><Icon name={air ? "play" : "eye"} size={h >= 2 ? 24 : 16} strokeWidth={2.6} /></span>
-      <strong className="wx-t">{air ? "SON TEKRAR · YAYINA" : "SON TEKRAR · ÖNİZLEME"}</strong>
-      <small className="wx-s">{r ? `${titleOf(R, r)} · ${anglesOf(r).length} açı` : "henüz tekrar yok"}</small>
+      <strong className="wx-t">{air ? "SON GOL · YAYINA" : "SON GOL · ÖNİZLEME"}</strong>
+      <small className="wx-s">{r ? `${titleOf(R, r)} · ${n ? `${n} açı seçili` : "program açısı"}` : "henüz tekrar yok"}</small>
     </Shell>
   );
 }
 
-/* ═════════════════════════ AÇI SEÇİCİ (canlı) ═════════════════════════ */
+/* ═════════════════════════ AÇI SEÇ: son golün açıları (hızlı seçim ızgarası) ═════════════════════════ */
+
+function PosGrid({ R, r, w, preview, max }) {
+  const nums = pickNumbers(R.picks || {}, r.id);
+  const list = haveAngles(r).slice(0, max);
+  const pv = R.previewPos?.replayId === r.id ? R.previewPos.angle : null;
+  return (
+    <div className={`wx-ap__g is-n${list.length} is-seq`}>
+      {list.map((a) => (
+        <Thumb key={a.angle} a={a} R={R} preview={preview} on={pv === a.angle} order={nums[a.angle] ?? null} live={w >= 2}
+          onClick={() => pickToggle(R, r, a.angle)} onDoubleClick={() => sendPos(R, r)}
+          title={`${angleLabel(a, R.sources)} — tık: ${nums[a.angle] ? `seçimden çıkar (${nums[a.angle]}.)` : "seç"} · çift tık: önizlemeye gönder`} />
+      ))}
+    </div>
+  );
+}
 
 function AnglePick({ ctx, w, h, preview }) {
   const R = ctx.replay;
-  const r = playable(R)[0] || null;
+  const r = lastGoal(R);
   if (!r) return empty(w, h, "AÇI SEÇ", "video");
-  const list = haveAngles(r).slice(0, w >= 4 ? 6 : w >= 3 ? 4 : h >= 2 ? 4 : 3);
-  const curAngle = R.previewing ? R.editor?.cursorAngle : null;
+  const n = picksOf(R.picks || {}, r).length;
   return (
-    <Shell tone="violet" w={w} h={h} state={R.previewing ? "pvw" : null} className="wx-ap">
-      <Head icon="video" label={titleOf(R, r)} right={<small className="wx-head__r">tık: önizleme · çift: yayına</small>} />
-      <div className={`wx-ap__g is-n${list.length}`}>
-        {list.map((a) => (
-          <Thumb key={a.angle} a={a} R={R} preview={preview} on={curAngle === a.angle} onClick={() => R.preview(r, [a.angle])} onDoubleClick={() => R.take(r, [a.angle])}
-            title={`${angleLabel(a, R.sources)} — tık: önizlemeye · çift tık: yayına`} />
-        ))}
-      </div>
+    <Shell tone="violet" w={w} h={h} state={R.previewPos?.replayId === r.id ? "pvw" : null} className="wx-ap">
+      <Head icon="video" label={titleOf(R, r)} right={<small className="wx-head__r">{n ? `${n} seçili` : "tık: seç"}</small>} />
+      <PosGrid R={R} r={r} w={w} preview={preview} max={w >= 4 ? 6 : w >= 3 ? 4 : h >= 2 ? 4 : 3} />
+      {h >= 2 && (
+        <div className="wx-row is-actions">
+          <button type="button" className="wx-btn is-pvw" onClick={() => sendPos(R, r)}><Icon name="eye" size={12} /> Önizlemeye{n ? ` (${n})` : ""}</button>
+          {w >= 2 && <button type="button" className="wx-btn" disabled={!n} onClick={() => R.pick?.clear(r.id)}>Temizle</button>}
+        </div>
+      )}
     </Shell>
   );
 }
 
-/* ═════════════════════════ ÇOK AÇILI DİZİ ═════════════════════════ */
+/* ═════════════════════════ POZİSYON GEZGİNİ (önceki / sonraki gol + açılar) ═════════════════════════ */
 
 function AngleSeq({ ctx, w, h, preview }) {
   const R = ctx.replay;
   const list = playable(R);
-  const [idx, setIdx] = useState(0);
-  const [seq, setSeq] = useState([]);
-  const r = list[Math.min(idx, list.length - 1)] || null;
-  if (!r) return empty(w, h, "AÇI DİZİSİ", "layers");
-  const have = haveAngles(r).slice(0, w >= 4 ? 6 : 4);
-  const chosen = seq.filter((a) => have.some((x) => x.angle === a));
-  const step = (d) => { setIdx((i) => (i + d + list.length) % list.length); setSeq([]); };
+  const [id, setId] = useState(null);
+  const r = (id && list.find((x) => x.id === id)) || focusPos(R);
+  if (!r) return empty(w, h, "POZİSYON", "layers");
+  const step = (d) => { const nx = positionStep(list, r.id, d); if (nx) setId(nx.id); };
+  const chosen = picksOf(R.picks || {}, r);
+  const i = list.findIndex((x) => x.id === r.id);
   return (
-    <Shell tone="violet" w={w} h={h} state={R.previewing ? "pvw" : null} className="wx-seq">
-      <Head icon="layers" label="AÇI DİZİSİ" right={<span className="wx-pager"><button type="button" onClick={() => step(-1)} disabled={list.length < 2}>‹</button><small>{titleOf(R, r)}</small><button type="button" onClick={() => step(1)} disabled={list.length < 2}>›</button></span>} />
-      <div className={`wx-ap__g is-n${have.length} is-seq`}>
-        {have.map((a) => {
-          const o = chosen.indexOf(a.angle);
-          return <Thumb key={a.angle} a={a} R={R} preview={preview} on={o >= 0} order={o >= 0 ? o + 1 : null} onClick={() => setSeq((s) => seqToggle(s, a.angle))} title={`${angleLabel(a, R.sources)}: diziye ekle / çıkar`} />;
-        })}
-      </div>
-      {w >= 3 && chosen.length > 1 && (
+    <Shell tone="violet" w={w} h={h} state={R.airPos?.replayId === r.id ? "air" : R.previewPos?.replayId === r.id ? "pvw" : null} className="wx-seq">
+      <Head icon="layers" label="POZİSYON" right={<span className="wx-pager"><button type="button" onClick={() => step(-1)} disabled={i <= 0} title="Daha yeni">‹</button><small>{titleOf(R, r)}</small><button type="button" onClick={() => step(1)} disabled={i >= list.length - 1} title="Daha eski">›</button></span>} />
+      <PosGrid R={R} r={r} w={w} preview={preview} max={w >= 4 ? 6 : 4} />
+      {w >= 3 && chosen.length > 0 && (
         <div className="wx-seq__order">
-          {chosen.map((a, i) => (
-            <span key={a} className="wx-seq__it"><b>{i + 1}</b>{angleLabel(have.find((x) => x.angle === a), R.sources)}
-              <button type="button" disabled={i === 0} onClick={() => setSeq((s) => seqMove(s.filter((x) => chosen.includes(x)), i, -1))} title="Öne al">‹</button>
-            </span>
-          ))}
+          {chosen.map((a, k) => <span key={a} className="wx-seq__it"><b>{k + 1}</b>{angleLabel(haveAngles(r).find((x) => x.angle === a) || { angle: a }, R.sources)}</span>)}
         </div>
       )}
       <div className="wx-row is-actions">
-        <button type="button" className="wx-btn is-pvw" disabled={!chosen.length} onClick={() => R.preview(r, chosen)}><Icon name="eye" size={12} /> Önizle{chosen.length ? ` (${chosen.length})` : ""}</button>
-        <button type="button" className="wx-btn is-air" disabled={!chosen.length} onClick={() => { R.take(r, chosen); setSeq([]); }}><Icon name="play" size={12} /> YAYINA</button>
+        <button type="button" className="wx-btn is-pvw" onClick={() => sendPos(R, r)}><Icon name="eye" size={12} /> Önizlemeye{chosen.length ? ` (${chosen.length})` : ""}</button>
+        <button type="button" className="wx-btn is-air" onClick={() => sendPos(R, r, { take: true })}><Icon name="play" size={12} /> YAYINA</button>
       </div>
     </Shell>
   );
 }
 
-/* ═════════════════════════ AĞIR ÇEKİM + OYNAT ═════════════════════════ */
+/* ═════════════════════════ SEÇİLİ AÇILARI ÖNİZLEMEYE GÖNDER ═════════════════════════ */
+
+function SendPicked({ ctx, w, h }) {
+  const R = ctx.replay;
+  const r = focusPos(R);
+  const ids = r ? toSend(R, r) : [];
+  const n = r ? picksOf(R.picks || {}, r).length : 0;
+  return (
+    <Shell as="button" tone="green" w={w} h={h} state={r && R.previewPos?.replayId === r.id ? "pvw" : null} className="wx-tile wx-go is-pvw" disabled={!r} onClick={() => sendPos(R, r)}
+      title="Odaktaki pozisyonun seçili açılarını sırayla önizlemeye gönder (seçim yoksa program açısı)">
+      <span className="wx-go__ic"><Icon name="eye" size={h >= 2 ? 22 : 15} strokeWidth={2.6} /></span>
+      <strong className="wx-t">SEÇİLİ AÇILAR → ÖNİZLEME</strong>
+      <small className="wx-s">{r ? `${titleOf(R, r)} · ${n ? ids.map((a) => angleLabel(r.angles.find((x) => x.angle === a) || { angle: a }, R.sources)).join(" → ") : "program açısı"}` : "pozisyon yok"}</small>
+    </Shell>
+  );
+}
+
+/* ═════════════════════════ AÇI 1…N (önizlemede / yayında o açıya geç) ═════════════════════════ */
+
+function AngleKeys({ ctx, w, h }) {
+  const R = ctx.replay;
+  const d = deckOf(R);
+  const angles = d?.angles || [];
+  const max = w * (h >= 2 ? 4 : 2);
+  return (
+    <Shell tone={d?.target === "program" ? "danger" : "violet"} w={w} h={h} state={d?.target === "program" ? "air" : d ? "pvw" : null} className="wx-akeys">
+      <Head icon="video" label={d?.target === "program" ? "AÇI · YAYINDA" : "AÇI"} right={d?.target === "program" && w >= 2 ? <button type="button" className={`wx-mini ${d.mix ? "is-on" : ""}`} onClick={() => d.setMix()}>{d.mix ? "KARIŞIM" : "KESME"}</button> : null} />
+      {d && angles.length ? (
+        <div className={`wx-chips is-wrap is-c${Math.min(4, Math.max(2, w * 2))}`}>
+          {angles.slice(0, max).map((a, i) => (
+            <button key={a.angle} type="button" className={d.angle === a.angle ? "is-on" : ""} onClick={() => d.setAngle(a.angle)} title={angleLabel(a, R.sources)}>
+              <b className="wx-akeys__n">{i + 1}</b> {w >= 2 ? angleLabel(a, R.sources) : ""}
+            </button>
+          ))}
+        </div>
+      ) : <span className="st-w__empty">Önizlemede ya da yayında tekrar yok.</span>}
+    </Shell>
+  );
+}
+
+/* ═════════════════════════ ÖNCEKİ / SONRAKİ GOL ═════════════════════════ */
+
+function PosStep({ ctx, w, h }) {
+  const R = ctx.replay;
+  const list = playable(R);
+  const cur = R.previewPos?.replayId || null;
+  const go = (d) => {
+    const goals = list.filter((r) => r.kind === "goal");
+    const base = goals.length ? goals : list;
+    const nx = cur ? positionStep(base, cur, d) : base[0];
+    if (nx) sendPos(R, nx);
+  };
+  const r = cur ? list.find((x) => x.id === cur) : null;
+  return (
+    <Shell tone="violet" w={w} h={h} state={R.previewing ? "pvw" : null} className="wx-pstep">
+      {h >= 2 && <Head icon="ball" label="GOL GEZ" />}
+      <div className="wx-row is-big">
+        <button type="button" disabled={!list.length} onClick={() => go(-1)} title="Daha yeni gol → önizleme (seçili açılarıyla)">‹ {w >= 2 ? "Yeni" : ""}</button>
+        <button type="button" disabled={!list.length} onClick={() => go(1)} title="Daha eski gol → önizleme (seçili açılarıyla)">{w >= 2 ? "Eski" : ""} ›</button>
+      </div>
+      {(h >= 2 || w >= 2) && <small className="wx-s">{r ? titleOf(R, r) : "önizlemede pozisyon yok"}</small>}
+    </Shell>
+  );
+}
+
+/* ═════════════════════════ AĞIR ÇEKİM / HIZ ÖN AYARLARI ═════════════════════════ */
 
 function SlowPlay({ ctx, w, h }) {
   const R = ctx.replay;
-  // Tekrar yayındaysa hız YAYINDAKİ tekrara anında uygulanır (program destesi).
-  const pgm = R.editor?.decks?.program?.active ? R.editor.decks.program : null;
-  const rate = Number(pgm ? pgm.rate : R.rate) || 1;
-  const setRate = pgm ? pgm.setRate : R.setRate;
-  const r = playable(R)[0] || null;
+  const d = deckOf(R);
+  const rate = Number(d ? d.state?.()?.rate || d.rate : R.rate) || 1;
+  const setRate = d ? d.setRate : R.setRate;
+  const r = focusPos(R);
   const rates = w >= 3 ? RATE_STEPS : w >= 2 ? [0.25, 0.5, 0.75, 1] : [0.5, 1];
+  useNow(Boolean(d), 300);
   return (
-    <Shell tone="violet" w={w} h={h} state={R.playing ? "air" : null} className="wx-slow">
-      <Head icon="repeat" label="AĞIR ÇEKİM" right={<em className="wx-big">{rateText(rate)}</em>} />
+    <Shell tone="violet" w={w} h={h} state={d?.target === "program" ? "air" : null} className="wx-slow">
+      <Head icon="repeat" label={d?.target === "program" ? "HIZ · YAYINDA" : "AĞIR ÇEKİM"} right={<em className="wx-big">{rateText(rate)}</em>} />
       <div className={`wx-chips is-n${rates.length}`}>
         {rates.map((v) => <button key={v} type="button" className={Math.abs(rate - v) < 0.01 ? "is-on" : ""} disabled={!setRate} onClick={() => setRate(v)}>{rateText(v)}</button>)}
       </div>
       {h >= 2 && (
         <div className="wx-row is-actions">
-          <button type="button" className="wx-btn is-pvw" disabled={!r} onClick={() => R.preview(r, defaultAngles(r, R.recordAngles))}><Icon name="eye" size={12} /> Önizle</button>
-          <button type="button" className="wx-btn is-air" disabled={!r && !R.playing} onClick={() => (R.playing ? R.stop() : R.take(r, defaultAngles(r, R.recordAngles)))}><Icon name={R.playing ? "stop" : "play"} size={12} /> {R.playing ? "Canlıya" : "YAYINA"}</button>
+          <button type="button" className="wx-btn is-pvw" disabled={!r} onClick={() => sendPos(R, r)}><Icon name="eye" size={12} /> Önizle</button>
+          <button type="button" className="wx-btn is-air" disabled={!r && !R.playing} onClick={() => (R.playing ? R.stop() : sendPos(R, r, { take: true }))}><Icon name={R.playing ? "stop" : "play"} size={12} /> {R.playing ? "Canlıya" : "YAYINA"}</button>
         </div>
       )}
+    </Shell>
+  );
+}
+
+/* ═════════════════════════ TEKRAR + AĞIR ÇEKİM (tek dokunuş) ═════════════════════════ */
+
+function SlowTakeOptions({ ctx, item, onClose }) {
+  const cur = Number(item.opts?.rate) || 0.5;
+  return <div className="wx-flow"><FlowNote icon="repeat">Hangi hızla yayına?</FlowNote><div className="wx-grid is-4">{[0.25, 0.5, 0.75].map((v) => <Chip key={v} on={cur === v} onClick={() => { ctx.setItemOpts?.(item.id, { rate: v }); onClose(); }}>{rateText(v)}</Chip>)}</div></div>;
+}
+function SlowTake({ ctx, item, w, h, togglePop }) {
+  const R = ctx.replay;
+  const rate = Number(item.opts?.rate) || 0.5;
+  const r = lastGoal(R);
+  const press = usePress(() => sendPos(R, r, { take: true, rate }), () => openPop(item, togglePop, { mode: "options" }));
+  return (
+    <Shell as="button" tone="danger" w={w} h={h} state={R.playing ? "air" : null} className="wx-tile wx-go is-air" disabled={!r} {...press}
+      title={`Son golün seçili açıları ${rateText(rate)} ağır çekimle tek dokunuşta yayına · basılı tut: hız`}>
+      <span className="wx-duo"><Icon name="repeat" size={h >= 2 ? 22 : 15} /><Icon name="play" size={h >= 2 ? 20 : 13} /></span>
+      <strong className="wx-t">TEKRAR + {rateText(rate)}</strong>
+      <small className="wx-s">{r ? titleOf(R, r) : "tekrar yok"}</small>
     </Shell>
   );
 }
@@ -155,7 +279,7 @@ function JogTile({ ctx, w, h }) {
     return (
       <Shell tone="violet" w={w} h={h} className="wx-jog is-idle">
         <Head icon="sliders" label="GİRİŞ / ÇIKIŞ" />
-        <button type="button" className="wx-btn is-pvw" disabled={!playable(R).length} onClick={R.playLatest}><Icon name="eye" size={12} /> Son tekrarı önizlemeye al</button>
+        <button type="button" className="wx-btn is-pvw" disabled={!playable(R).length} onClick={() => sendPos(R, focusPos(R))}><Icon name="eye" size={12} /> Seçili açıları önizlemeye al</button>
       </Shell>
     );
   }
@@ -183,7 +307,7 @@ function JogTile({ ctx, w, h }) {
           <button type="button" className={inP ? "is-on" : ""} onClick={() => E.setIn?.(key, cur)} title="Giriş noktası (I)">GİRİŞ {inP ? secText(inP) : ""}</button>
           <button type="button" className={outP ? "is-on" : ""} onClick={() => E.setOut?.(key, cur)} title="Çıkış noktası (O)">ÇIKIŞ {outP ? secText(outP) : ""}</button>
           <button type="button" onClick={() => { E.setIn?.(key, 0); E.setOut?.(key, 0); }} title="Giriş / çıkışı temizle">×</button>
-          {w >= 3 && <button type="button" className="is-air" onClick={() => ctx.transition?.take?.()} title="Önizlemedeki bölümü yayına al (GEÇİŞ)">YAYINA AL</button>}
+          {w >= 3 && <button type="button" className="is-air" onClick={() => ctx.transition?.take?.()} title="Önizlemedeki pozisyonu yayına al (GEÇİŞ)">GEÇİŞ</button>}
         </div>
       )}
     </Shell>
@@ -223,28 +347,178 @@ function JogDeck({ ctx, deck, w, h }) {
   );
 }
 
-/* ═════════════════════════ SON N GOL ═════════════════════════ */
+/* ═════════════════════════ JOG TEKERLEĞİ ═════════════════════════ */
+
+/** Tekerleği çevir: bir tur = 2 sn (saat yönü ileri). Çevirirken duraklar, bırakınca durur. */
+function JogWheel({ ctx, w, h }) {
+  const R = ctx.replay;
+  const d = deckOf(R);
+  const ref = useRef(null);
+  const drag = useRef(null);
+  const [rot, setRot] = useState(0);
+  useNow(Boolean(d), 250);
+  const st = d?.state?.() || { time: 0, dur: 0 };
+  const angleAt = (e) => { const r = ref.current.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)); };
+  const down = (e) => {
+    if (!d) return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    d.transport.pause();
+    drag.current = { a: angleAt(e), t: d.state?.()?.time || 0 };
+  };
+  const move = (e) => {
+    const g = drag.current;
+    if (!g || !d) return;
+    const a = angleAt(e);
+    let da = a - g.a;
+    if (da > Math.PI) da -= 2 * Math.PI;
+    if (da < -Math.PI) da += 2 * Math.PI;
+    g.a = a;
+    g.t = Math.max(0, g.t + (da / (2 * Math.PI)) * 2);
+    setRot((x) => x + (da * 180) / Math.PI);
+    d.transport.seek(g.t);
+  };
+  const up = () => { drag.current = null; };
+  const size = Math.max(54, Math.min(w, h) * 64 - 18);
+  return (
+    <Shell tone={d?.target === "program" ? "danger" : "violet"} w={w} h={h} state={d?.target === "program" ? "air" : d ? "pvw" : null} className="wx-wheel">
+      {h >= 2 && <Head icon="refresh" label={d?.target === "program" ? "JOG · YAYINDA" : "JOG"} right={<em className="wx-tc">{secText(st.time || 0)}</em>} />}
+      <div className="wx-wheel__c">
+        <span ref={ref} className={`wx-wheel__w ${d ? "" : "is-off"}`} style={{ width: size, height: size, transform: `rotate(${rot}deg)` }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} role="slider" aria-label="Jog tekerleği" aria-valuenow={Math.round((st.time || 0) * 10) / 10} title="Çevir: kare kare sar (bir tur = 2 sn)">
+          <i />
+        </span>
+        {w >= 2 && (
+          <span className="wx-wheel__b">
+            <button type="button" disabled={!d} onClick={() => d.transport.step(-1)} title="1 kare geri">◀︎</button>
+            <button type="button" disabled={!d} onClick={() => d.transport.toggle()} title="Oynat / duraklat">{st.paused ? "▶︎" : "❚❚"}</button>
+            <button type="button" disabled={!d} onClick={() => d.transport.step(1)} title="1 kare ileri">▶︎|</button>
+          </span>
+        )}
+      </div>
+    </Shell>
+  );
+}
+
+/* ═════════════════════════ YAKINLAŞTIRMA ÖN AYARLARI ═════════════════════════ */
+
+function ZoomPro({ ctx, w, h }) {
+  const R = ctx.replay;
+  const d = deckOf(R);
+  const z = d?.view?.zoom || 1;
+  const presets = w >= 2 ? ZOOM_PRESETS : [1, 2];
+  return (
+    <Shell tone={d?.target === "program" ? "danger" : "violet"} w={w} h={h} state={d?.target === "program" ? "air" : null} className="wx-zoom">
+      <Head icon="search" label={d?.target === "program" ? "YAKINLAŞ · YAYINDA" : "YAKINLAŞ"} right={<em className="wx-big">{zoomText(z)}</em>} />
+      <div className={`wx-chips is-n${presets.length}`}>
+        {presets.map((v) => <button key={v} type="button" disabled={!d} className={Math.abs(z - v) < 0.02 ? "is-on" : ""} onClick={() => d.setView((x) => ({ ...x, zoom: v, ...(v === 1 ? { cx: 0.5, cy: 0.5 } : {}) }))}>{zoomText(v)}</button>)}
+      </div>
+    </Shell>
+  );
+}
+
+/* ═════════════════════════ GİRİŞ / ÇIKIŞ İŞARETLERİ ═════════════════════════ */
+
+function InOut({ ctx, w, h }) {
+  const R = ctx.replay;
+  const d = R.editor?.decks?.preview?.active ? R.editor.decks.preview : null;
+  useNow(Boolean(d), 300);
+  const t = d?.state?.()?.time || 0;
+  return (
+    <Shell tone="violet" w={w} h={h} state={d ? "pvw" : null} className="wx-io">
+      {h >= 2 && <Head icon="flag" label="GİRİŞ / ÇIKIŞ" />}
+      <div className="wx-row is-big">
+        <button type="button" disabled={!d} className={d?.inPoint ? "is-on" : ""} onClick={() => d.setIn(d.outPoint && t >= d.outPoint ? 0 : t)} title="Giriş (I): önizlemedeki açı bu kareden başlar">[ {d?.inPoint ? secText(d.inPoint) : "GİRİŞ"}</button>
+        <button type="button" disabled={!d} className={d?.outPoint ? "is-on" : ""} onClick={() => d.setOut(t <= d.inPoint ? 0 : t)} title="Çıkış (O): açı burada biter (sıradaki açıya geçer)">{d?.outPoint ? secText(d.outPoint) : "ÇIKIŞ"} ]</button>
+        {w >= 2 && <button type="button" disabled={!d || (!d.inPoint && !d.outPoint)} onClick={() => { d.setIn(0); d.setOut(0); }} title="Temizle (tüm klip)">×</button>}
+      </div>
+    </Shell>
+  );
+}
+
+/* ═════════════════════════ DÖNGÜ · DONDUR · RAMPA ═════════════════════════ */
+
+function DeckToggle({ ctx, w, h, kind }) {
+  const R = ctx.replay;
+  const d = deckOf(R);
+  useNow(Boolean(d), 300);
+  const st = d?.state?.() || {};
+  const cfg = {
+    loop: { icon: "repeat", label: "DÖNGÜ", on: Boolean(d?.loop), sub: d?.loop ? "giriş–çıkış döner" : "çıkışta biter", act: () => d.setLoop() },
+    freeze: { icon: st.paused ? "play" : "pause", label: st.paused && d?.active ? "DEVAM" : "DONDUR", on: Boolean(st.paused && d?.active), sub: "kare donar", act: () => d.freeze() },
+    ramp: { icon: "activity", label: (st.rate || d?.rate || 1) <= 0.3 ? "RAMPA → 1×" : "RAMPA → 0,25×", on: (st.rate || d?.rate || 1) <= 0.3, sub: "yumuşak ağır çekim", act: () => d.rampToggle(0.25) },
+  }[kind];
+  return (
+    <Shell as="button" tone={d?.target === "program" ? "danger" : "violet"} w={w} h={h} state={cfg.on ? "armed" : null} className={`wx-tile wx-dtog ${cfg.on ? "is-on" : ""}`} disabled={!d} onClick={cfg.act}
+      title={`${cfg.label}: ${d?.target === "program" ? "yayındaki tekrara anında" : "önizlemedeki tekrara"}`}>
+      <Icon name={cfg.icon} size={h >= 2 ? 22 : 15} strokeWidth={2.4} />
+      <strong className="wx-t">{cfg.label}</strong>
+      {(h >= 2 || w >= 2) && <small className="wx-s">{d ? `${d.target === "program" ? "yayında" : "önizlemede"} · ${cfg.sub}` : "tekrar yok"}</small>}
+    </Shell>
+  );
+}
+
+/* ═════════════════════════ YÜKLEME DURUMU (son gol) ═════════════════════════ */
+
+function UploadPro({ ctx, w, h }) {
+  const R = ctx.replay;
+  useNow(true, 1000);
+  const goals = playable(R).filter((r) => r.kind === "goal");
+  const r = goals[0] || null;
+  const u = r ? R.uploadOf?.(r.id) : null;
+  const hl = R.health || null;
+  const now = Date.now();
+  let text = "—";
+  let tone = "plain";
+  if (u?.status === "scheduled") { text = u.deferred ? `Yayın öncelikli · ${countdownText(u.dueAt - now)}` : `Profile ${countdownText(u.dueAt - now)}`; tone = u.deferred ? "amber" : "blue"; }
+  else if (u?.status === "uploading") { text = u.throttle?.paused ? "Duraklatıldı (yayın)" : `Yükleniyor${u.throttle?.kbps ? ` ≤${u.throttle.kbps} kbit/sn` : ""}`; tone = u.throttle?.paused ? "amber" : "blue"; }
+  else if (u?.status === "uploaded") { text = "Profilde ✓"; tone = "green"; }
+  else if (u?.status === "failed") { text = "Yüklenemedi"; tone = "red"; }
+  else if (u?.status === "cancelled") { text = "İptal edildi"; }
+  else if (r) text = r.eventId || R.meta?.[r.id]?.eventId ? "Yüklemeye hazır" : "Golcü bekleniyor";
+  const n = r ? picksOf(R.picks || {}, r).length : 0;
+  return (
+    <Shell tone="blue" w={w} h={h} className="wx-upl" title={healthText(hl) || "Gol klibi seçili açılarla profile yüklenir; canlı yayın önceliklidir"}>
+      <Head icon="upload" label="GOL KLİBİ" right={hl?.live ? <em className={`wx-upl__h is-${hl.level}`}>{hl.level === "ok" ? "yayın ✓" : "yayın riskte"}</em> : null} />
+      <strong className={`wx-upl__s is-${tone}`}>{text}</strong>
+      {(h >= 2 || w >= 3) && <small className="wx-s">{r ? `${titleOf(R, r)} · ${n ? `${n} açı` : "program açısı"}` : "henüz gol yok"}</small>}
+      {r && (h >= 2 || w >= 2) && (
+        <div className="wx-row is-actions">
+          <button type="button" className="wx-btn" disabled={!R.uploadNow || u?.status === "uploading" || !(r.eventId || R.meta?.[r.id]?.eventId)} onClick={() => R.uploadNow(r.id)}><Icon name="upload" size={11} /> Şimdi</button>
+          <button type="button" className="wx-btn is-danger" disabled={!R.cancelUpload || !(u?.status === "scheduled" || u?.status === "uploading")} onClick={() => R.cancelUpload(r.id)}>İptal</button>
+        </div>
+      )}
+    </Shell>
+  );
+}
+
+/* ═════════════════════════ SON N GOL (her biri kendi açılarıyla) ═════════════════════════ */
 
 function GoalsOptions({ ctx, item, onClose }) {
   const cur = Number(item.opts?.n) || 3;
   return <div className="wx-flow"><FlowNote icon="ball">Kaç gol listelensin?</FlowNote><div className="wx-grid is-4">{[2, 3, 5, 8].map((n) => <Chip key={n} on={cur === n} onClick={() => { ctx.setItemOpts?.(item.id, { n }); onClose(); }}>Son {n}</Chip>)}</div></div>;
 }
-function GoalsTile({ ctx, item, w, h, togglePop }) {
+function PosListTile({ ctx, item, w, h, togglePop, goalsOnly = true }) {
   const R = ctx.replay;
-  const n = Number(item.opts?.n) || (h >= 2 ? 3 : 2);
-  const list = goalReplays(R.list, Math.min(n, h >= 2 ? (w >= 3 ? 8 : 4) : 2));
+  const n = Number(item.opts?.n) || (h >= 2 ? 4 : 2);
+  const cap = h >= 2 ? (w >= 3 ? 8 : 5) : 2;
+  const list = goalsOnly ? goalReplays(R.list, Math.min(n, cap)) : playable(R).slice(0, cap);
   const opts = () => openPop(item, togglePop, { mode: "options" });
   return (
-    <Shell tone="green" w={w} h={h} className="wx-gl" onContextMenu={(e) => { e.preventDefault(); opts(); }}>
-      <Head icon="ball" label="GOL TEKRARLARI" right={<button type="button" className="wx-gear" onClick={opts} title="Kaç gol"><Icon name="sliders" size={11} /></button>} />
+    <Shell tone="green" w={w} h={h} className="wx-gl" onContextMenu={(e) => { e.preventDefault(); if (goalsOnly) opts(); }}>
+      <Head icon={goalsOnly ? "ball" : "list"} label={goalsOnly ? "GOL TEKRARLARI" : "POZİSYONLAR"} right={goalsOnly ? <button type="button" className="wx-gear" onClick={opts} title="Kaç gol"><Icon name="sliders" size={11} /></button> : null} />
       <ul className={`wx-gl__list ${w >= 3 ? "is-cols" : ""}`}>
-        {list.map((r) => (
-          <li key={r.id}>
-            <button type="button" className="wx-gl__r" onClick={() => R.preview(r, defaultAngles(r, R.recordAngles))} title="Önizlemeye al"><Icon name="ball" size={11} /><span>{titleOf(R, r)}</span></button>
-            {w >= 2 && <button type="button" className="wx-gl__air" onClick={() => R.take(r, defaultAngles(r, R.recordAngles))} title="Yayına ver"><Icon name="play" size={11} /></button>}
-          </li>
-        ))}
-        {!list.length && <li className="st-w__empty">Henüz gol tekrarı yok.</li>}
+        {list.map((r) => {
+          const k = picksOf(R.picks || {}, r).length;
+          const st = R.airPos?.replayId === r.id ? "is-air" : R.previewPos?.replayId === r.id ? "is-pvw" : "";
+          return (
+            <li key={r.id} className={st}>
+              <button type="button" className="wx-gl__r" onClick={() => sendPos(R, r)} title="Bu pozisyonun seçili açıları önizlemeye (yoksa program açısı)">
+                <Icon name={r.kind === "goal" ? "ball" : "star"} size={11} /><span>{titleOf(R, r)}</span>{w >= 2 && <em className="wx-gl__k">{k ? `${k} açı` : "PGM"}</em>}
+              </button>
+              {w >= 2 && <button type="button" className="wx-gl__air" onClick={() => sendPos(R, r, { take: true })} title="Seçili açılarıyla yayına"><Icon name="play" size={11} /></button>}
+            </li>
+          );
+        })}
+        {!list.length && <li className="st-w__empty">{goalsOnly ? "Henüz gol tekrarı yok." : "Henüz tekrar yok."}</li>}
       </ul>
     </Shell>
   );
@@ -322,52 +596,27 @@ function ReplayVar({ ctx, w, h }) {
   );
 }
 
-/* ═════════════════════════ SIRALA VE YAYINLA ═════════════════════════ */
-
-function QueuePro({ ctx, w, h }) {
-  const R = ctx.replay;
-  const list = playable(R).slice(0, w >= 3 ? 8 : 6);
-  const [q, setQ] = useState([]);
-  const [busy, setBusy] = useState(false);
-  const chosen = q.filter((id) => list.some((r) => r.id === id));
-  if (!list.length) return empty(w, h, "KUYRUK", "list");
-  const run = async (take) => {
-    const items = chosen.map((id) => list.find((r) => r.id === id)).filter(Boolean);
-    if (!items.length) return;
-    setBusy(true);
-    try { if (await R.playQueue?.(items, { take }) && take) setQ([]); } finally { setBusy(false); }
-  };
-  return (
-    <Shell tone="violet" w={w} h={h} state={R.playing ? "air" : R.previewing ? "pvw" : null} className="wx-q">
-      <Head icon="list" label="SIRALA · YAYINLA" right={chosen.length ? <b className="st-w__count">{chosen.length}</b> : null} />
-      <ul className={`wx-q__list ${w >= 3 ? "is-cols" : ""}`}>
-        {list.map((r) => {
-          const i = chosen.indexOf(r.id);
-          return (
-            <li key={r.id} className={i >= 0 ? "is-on" : ""}>
-              <button type="button" className="wx-q__r" onClick={() => setQ((s) => seqToggle(s, r.id))}><b>{i >= 0 ? i + 1 : "+"}</b><span>{titleOf(R, r)}</span></button>
-              {i > 0 && <button type="button" className="wx-q__up" onClick={() => setQ(seqMove(chosen, i, -1))} title="Öne al">↑</button>}
-            </li>
-          );
-        })}
-      </ul>
-      <div className="wx-row is-actions">
-        <button type="button" className="wx-btn is-pvw" disabled={!chosen.length || busy} onClick={() => run(false)}><Icon name="eye" size={12} /> Önizle</button>
-        <button type="button" className="wx-btn is-air" disabled={!chosen.length || busy} onClick={() => run(true)}><Icon name="play" size={12} /> YAYINLA</button>
-      </div>
-    </Shell>
-  );
-}
-
 export const TEKRAR_WIDGETS = {
   replayToPvw: { render: (p) => <LastReplay {...p} /> },
   replayToAir: { render: (p) => <LastReplay {...p} air /> },
   anglePick: { render: (p) => <AnglePick {...p} /> },
   angleSeq: { render: (p) => <AngleSeq {...p} /> },
+  sendPicked: { render: (p) => <SendPicked {...p} /> },
+  angleKeys: { render: (p) => <AngleKeys {...p} /> },
+  posStep: { render: (p) => <PosStep {...p} /> },
   slowPlay: { render: (p) => <SlowPlay {...p} /> },
+  slowTake: { popTitle: "Ağır çekim hızı", popover: (p) => <SlowTakeOptions {...p} />, render: (p) => <SlowTake {...p} /> },
   replayJog: { render: (p) => <JogTile {...p} /> },
-  goalReplays: { popTitle: "Gol tekrarları", popover: (p) => <GoalsOptions {...p} />, render: (p) => <GoalsTile {...p} /> },
+  jogWheel: { render: (p) => <JogWheel {...p} /> },
+  zoomPro: { render: (p) => <ZoomPro {...p} /> },
+  inOut: { render: (p) => <InOut {...p} /> },
+  loopPro: { render: (p) => <DeckToggle {...p} kind="loop" /> },
+  freezePro: { render: (p) => <DeckToggle {...p} kind="freeze" /> },
+  rampPro: { render: (p) => <DeckToggle {...p} kind="ramp" /> },
+  uploadPro: { render: (p) => <UploadPro {...p} /> },
+  goalReplays: { popTitle: "Gol tekrarları", popover: (p) => <GoalsOptions {...p} />, render: (p) => <PosListTile {...p} /> },
   momentPro: { popTitle: "Önemli an ayarı", popover: (p) => <MomentOptions {...p} />, render: (p) => <MomentTile {...p} /> },
   replayVar: { render: (p) => <ReplayVar {...p} /> },
-  queuePro: { render: (p) => <QueuePro {...p} /> },
+  // Eski "sırala ve yayınla" kuyruğu: pozisyonlar arası liste yok — son pozisyonlar, her biri kendi açılarıyla.
+  queuePro: { render: (p) => <PosListTile {...p} goalsOnly={false} /> },
 };

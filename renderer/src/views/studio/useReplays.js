@@ -6,10 +6,15 @@
 //      (listede geri sayım). Golcü seçimi beklenmez, olay akışı bekletilmez.
 //   2. Olay sunucuya yazılınca attach(key, { eventId, scorer }) tekrarı olaya bağlar
 //      (studio.updateReplay) ve YÜKLEMEYİ PLANLAR: "Yükleme gecikmesi" (varsayılan 60 sn)
-//      boyunca operatörün o tekrar için seçtiği / yayına verdiği açılar kaydedilir
-//      (markAiredSelection, noteSelection). Süre dolunca: bölüm / açı seçildiyse onların
+//      boyunca operatörün o POZİSYON için seçtiği (setPicks) / yayına verdiği açılar
+//      (markAiredSelection) kaydedilir; seçim yüklemeye kadar değiştirilebilir ve yükleme
+//      SEÇİMİ izler (goalClips.effectiveSelection). Süre dolunca: açı seçildiyse onların
 //      kurgusu (ana süreç replays.composeSelection), yoksa PROGRAM açısı oyuncunun
 //      profiline gol videosu olarak yüklenir (studio.uploadClip). "Şimdi yükle" / "İptal".
+//      YAYIN ÖNCELİKLİ (lib/studio/uploadGuard): canlı yayın riskteyse (kuyruk doluyor,
+//      paket atılıyor, yeniden bağlanıyor) yükleme geri çekilmeyle ERTELENİR; sürerken
+//      hız her saniye yayının boş kapasitesine göre ayarlanır, riskte DURAKLATILIR
+//      (studio.uploadThrottle → ana süreç PUT hız sınırı).
 //      attach(key, { eventId: null }) (akış iptali, Reji'nin bekleme süresi) anahtarı
 //      TÜKETMEZ: aynı gol sonradan kaydedilirse klip yine bağlanır ve yüklenir.
 //   3. "ÖNEMLİ AN" (B) olaysız tekrar kaydeder (kind "moment"); listede kalır,
@@ -22,7 +27,8 @@
 // "studio.replayMeta.v1"de; özet o anın skorunu ve varsayılan açılarını buradan alır.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PROGRAM_ANGLE, REPLAY_SECONDS, latestReplay, normalizeReplay, normalizeReplays, replayFromClip } from "../../lib/studio/replays";
-import { POST_ROLL_DEFAULT, UPLOAD_DELAY_DEFAULT, captureWindow, clampUploadDelay, normalizeAired, uploadPlanOf } from "../../lib/studio/goalClips";
+import { POST_ROLL_DEFAULT, UPLOAD_DELAY_DEFAULT, captureWindow, clampUploadDelay, effectiveSelection, normalizeAired, uploadPlanOf } from "../../lib/studio/goalClips";
+import { deferDecision, healthText, nextUploadKbps, pushHealth, streamHealth } from "../../lib/studio/uploadGuard";
 
 const studio = () => window.elitlig?.studio;
 const META_KEY = "studio.replayMeta.v1";
@@ -36,7 +42,7 @@ function readMeta() {
 /** Çok açılı tekrar API'si var mı (yoksa yalnız program klibi). */
 export const hasReplayApi = () => Boolean(studio()?.saveReplay);
 
-export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDelaySec = UPLOAD_DELAY_DEFAULT } = {}) {
+export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDelaySec = UPLOAD_DELAY_DEFAULT, getStatus = null } = {}) {
   const [replays, setReplays] = useState([]);
   const [pending, setPending] = useState([]); // [{ key, kind, meta, status: "waiting" | "saving" | "error", saveAt, error }]
   const [uploads, setUploads] = useState({}); // replayId → { status: "uploading" | "uploaded" | "failed" | "cancelled", error }
@@ -55,6 +61,15 @@ export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDel
   const delayRef = useRef(uploadDelaySec);
   delayRef.current = uploadDelaySec;
   const scheduledRef = useRef(scheduled);
+  const statusRef = useRef(getStatus);
+  statusRef.current = getStatus;
+  const uploadsRef = useRef(uploads);
+  uploadsRef.current = uploads;
+  const healthRef = useRef([]); // yayın sağlığı geçmişi (uploadGuard.pushHealth)
+  const seenKbpsRef = useRef(0); // görülen en yüksek toplam gönderim (yayın + yükleme)
+  const throttleRef = useRef({ kbps: 0, paused: false });
+  const cancelledRef = useRef(new Set()); // sürerken iptal edilen yüklemeler
+  const [health, setHealth] = useState(null);
   const setScheduled = useCallback((fn) => {
     scheduledRef.current = typeof fn === "function" ? fn(scheduledRef.current) : fn;
     setScheduledState(scheduledRef.current);
@@ -70,11 +85,12 @@ export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDel
     }, 200);
     return () => clearTimeout(t);
   }, [meta]);
-  const patchMeta = useCallback((id, patch) => setMeta((m) => {
-    const next = { ...m, [id]: { ...(m[id] || {}), ...patch } };
-    metaRef.current = next;
-    return next;
-  }), []);
+  const patchMeta = useCallback((id, patch) => {
+    // ref'i hemen güncelle: aynı anda gelen seçim / yayın bildirimleri birbirini ezmesin
+    metaRef.current = { ...metaRef.current, [id]: { ...(metaRef.current[id] || {}), ...patch } };
+    return patchMetaState(id, patch);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const patchMetaState = (id, patch) => setMeta((m) => ({ ...m, [id]: { ...(m[id] || {}), ...patch } }));
 
   const reload = useCallback(async () => {
     const s = studio();
@@ -154,8 +170,9 @@ export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDel
   /** Tekrar için kayıtlı açı seçimi (yerel bilgi önce, sonra replay.json). */
   const selectionOf = useCallback((id) => metaRef.current[id]?.selection || replaysRef.current.find((r) => r.id === id)?.selection || null, []);
 
-  const upload = useCallback(async (replay) => {
+  const upload = useCallback(async (replay, { kbps = null, paused = false } = {}) => {
     setScheduled((s) => { if (!s[replay.id]) return s; const n = { ...s }; delete n[replay.id]; return n; });
+    cancelledRef.current.delete(replay.id);
     const m = metaRef.current[replay.id] || {};
     const eventId = replay.eventId || m.eventId;
     // Önce program açısı; yoksa (eski kayıtlar) dosyası olan ilk kamera açısı.
@@ -166,7 +183,16 @@ export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDel
     if (why) { setUploads((u) => ({ ...u, [replay.id]: { status: "failed", error: why } })); return; }
     const legacy = String(replay.id).startsWith("clip:");
     const plan = legacy ? { mode: "program" } : uploadPlanOf(replay, selectionOf(replay.id));
-    setUploads((u) => ({ ...u, [replay.id]: { status: "uploading", plan } }));
+    // Yayın öncelikli: ilk hız sınırı (yayın yoksa sınırsız) ana sürece.
+    // ("Şimdi yükle": geçmiş örnek eski olabilir → motor durumundan anında bir örnek)
+    const lastH = healthRef.current[healthRef.current.length - 1] || null;
+    const nowH = !lastH || Date.now() - lastH.at > 3000 ? streamHealth(typeof statusRef.current === "function" ? statusRef.current() : null, null, lastH, Date.now()) : lastH;
+    const first = kbps != null ? { kbps, paused } : nextUploadKbps(0, nowH, seenKbpsRef.current);
+    throttleRef.current = first;
+    Promise.resolve(studio()?.uploadThrottle?.({ kbps: first.kbps, paused: first.paused })).catch(() => {});
+    const started = { status: "uploading", plan, throttle: first, startedAt: Date.now() };
+    uploadsRef.current = { ...uploadsRef.current, [replay.id]: started };
+    setUploads((u) => ({ ...u, [replay.id]: started }));
     try {
       const res = await studio()?.uploadClip?.({
         matchId: mid,
@@ -177,10 +203,12 @@ export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDel
         width: prog.width,
         height: prog.height,
       });
+      if (cancelledRef.current.has(replay.id)) return;
       if (!res?.ok) throw new Error(res?.error?.message || "Yüklenemedi.");
-      setUploads((u) => ({ ...u, [replay.id]: { status: "uploaded", serverUrl: res.data?.url ?? res.url ?? null, composed: Boolean(res.composed) } }));
-      patchMeta(replay.id, { uploaded: true });
+      setUploads((u) => ({ ...u, [replay.id]: { status: "uploaded", serverUrl: res.data?.url ?? res.url ?? null, composed: Boolean(res.composed), plan } }));
+      patchMeta(replay.id, { uploaded: true, uploadedPlan: plan });
     } catch (e) {
+      if (cancelledRef.current.has(replay.id)) return;
       setUploads((u) => ({ ...u, [replay.id]: { status: "failed", error: errText(e, "Yüklenemedi.") } }));
     }
   }, [patchMeta, selectionOf, setScheduled]);
@@ -194,31 +222,102 @@ export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDel
     setScheduled((s) => ({ ...s, [id]: { dueAt: Date.now() + delay, eventId: Number(eventId) } }));
   }, [setScheduled, upload]);
 
-  // Saniyede bir: geri sayımlar ve zamanı gelen yüklemeler.
+  /** Yayın sağlığı örneği (motor durumu + taze aktarıcı durumu). */
+  const sampleHealth = useCallback(async () => {
+    let net = null;
+    try { net = await studio()?.network?.(); } catch { /* yoksay */ }
+    const status = typeof statusRef.current === "function" ? statusRef.current() : null;
+    const hist = healthRef.current;
+    const h = streamHealth(status, net, hist[hist.length - 1] || null, Date.now());
+    healthRef.current = pushHealth(hist, h);
+    setHealth(h);
+    return h;
+  }, []);
+
+  // Saniyede bir: geri sayımlar, yayın sağlığı, zamanı gelen (ya da ertelenen) yüklemeler,
+  // sürmekte olan yüklemenin hız sınırı.
   const waiting = pending.some((p) => p.status === "waiting");
   const anyScheduled = Object.keys(scheduled).length > 0;
+  const anyUploading = Object.values(uploads).some((u) => u?.status === "uploading");
   useEffect(() => {
-    if (!waiting && !anyScheduled) return undefined;
-    const t = setInterval(() => {
+    if (!waiting && !anyScheduled && !anyUploading) return undefined;
+    let busy = false;
+    const t = setInterval(async () => {
       const at = Date.now();
       setNow(at);
-      for (const [id, s] of Object.entries(scheduledRef.current)) {
-        if (s.dueAt > at) continue;
-        const r = replaysRef.current.find((x) => x.id === id);
-        if (r) upload({ ...r, eventId: r.eventId || s.eventId });
-        else setScheduled((x) => { const n = { ...x }; delete n[id]; return n; });
-      }
+      if (busy) return;
+      busy = true;
+      try {
+        const due = Object.entries(scheduledRef.current).filter(([, s]) => s.dueAt <= at + 15_000);
+        const uploading = Object.entries(uploadsRef.current).filter(([, u]) => u?.status === "uploading");
+        if (!due.length && !uploading.length) return;
+        const h = await sampleHealth();
+        // Sürmekte olan yükleme: hız (AIMD), riskte duraklat.
+        if (uploading.length) {
+          const next = nextUploadKbps(throttleRef.current.kbps, h, seenKbpsRef.current);
+          const changed = next.kbps !== throttleRef.current.kbps || next.paused !== throttleRef.current.paused;
+          const st = await Promise.resolve(studio()?.uploadThrottle?.(changed ? { kbps: next.kbps, paused: next.paused } : null)).catch(() => null);
+          throttleRef.current = next;
+          if (h.level === "ok" && st?.measuredKbps > 0) seenKbpsRef.current = Math.max(seenKbpsRef.current, h.sentKbps + st.measuredKbps);
+          setUploads((u) => {
+            let n = u;
+            for (const [id] of uploading) if (u[id]?.status === "uploading") n = { ...n, [id]: { ...u[id], throttle: next, measuredKbps: st?.measuredKbps ?? null, reason: next.paused ? healthText(h) : "" } };
+            return n;
+          });
+        }
+        // Zamanı gelenler: yayın riskteyse ertele (geri çekilmeyle).
+        for (const [id, s] of due) {
+          if (s.dueAt > at) continue;
+          const r = replaysRef.current.find((x) => x.id === id);
+          if (!r) { setScheduled((x) => { const n = { ...x }; delete n[id]; return n; }); continue; }
+          if (uploading.length) { // aynı anda tek yükleme: yayının hattı paylaşılmasın
+            setScheduled((x) => (x[id] ? { ...x, [id]: { ...x[id], dueAt: at + 5000, deferred: true, reason: "önceki yükleme sürüyor" } } : x));
+            continue;
+          }
+          const d = deferDecision(healthRef.current, { now: at, deferredSince: s.deferredSince ?? null, attempt: s.attempt || 0 });
+          if (!d.go) {
+            setScheduled((x) => (x[id] ? { ...x, [id]: { ...x[id], dueAt: d.retryAt, deferred: true, deferredSince: x[id].deferredSince ?? at, attempt: d.attempt, reason: d.reason } } : x));
+            continue;
+          }
+          upload({ ...r, eventId: r.eventId || s.eventId }, { kbps: d.kbps, paused: Boolean(d.paused) });
+          break;
+        }
+      } finally { busy = false; }
     }, 1000);
     return () => clearInterval(t);
-  }, [waiting, anyScheduled, upload, setScheduled]);
+  }, [waiting, anyScheduled, anyUploading, upload, setScheduled, sampleHealth]);
+  // Yükleme bitince ana süreçteki hız sınırı kalkar.
+  const hadUploadRef = useRef(false);
+  useEffect(() => {
+    if (anyUploading) { hadUploadRef.current = true; return; }
+    if (!hadUploadRef.current) return;
+    throttleRef.current = { kbps: 0, paused: false };
+    Promise.resolve(studio()?.uploadThrottle?.({ reset: true })).catch(() => {});
+  }, [anyUploading]);
 
+  /** "Şimdi yükle": geri sayımı / ertelemeyi atlar (hız sınırı yine yayına göre). */
   const uploadNow = useCallback((id) => {
     const r = replaysRef.current.find((x) => x.id === id);
     if (r) upload({ ...r, eventId: r.eventId || scheduledRef.current[id]?.eventId || null });
   }, [upload]);
+  /** Planlanmış ya da SÜRMEKTE olan yüklemeyi iptal et. */
   const cancelUpload = useCallback((id) => {
+    if (uploadsRef.current[id]?.status === "uploading") {
+      cancelledRef.current.add(id);
+      Promise.resolve(studio()?.uploadThrottle?.({ cancel: true })).catch(() => {});
+    }
     setScheduled((s) => { const n = { ...s }; delete n[id]; return n; });
     setUploads((u) => ({ ...u, [id]: { status: "cancelled" } }));
+  }, [setScheduled]);
+  /** Yüklemeyi (iptal edilmişse de) gecikmeyle yeniden planla. */
+  const reschedule = useCallback((id) => {
+    const r = replaysRef.current.find((x) => x.id === id);
+    const eid = r?.eventId || metaRef.current[id]?.eventId;
+    if (!r || !eid) return false;
+    const delay = clampUploadDelay(delayRef.current) * 1000;
+    setUploads((u) => { if (!u[id]) return u; const n = { ...u }; delete n[id]; return n; });
+    setScheduled((s) => ({ ...s, [id]: { dueAt: Date.now() + delay, eventId: Number(eid) } }));
+    return true;
   }, [setScheduled]);
 
   /**
@@ -252,26 +351,39 @@ export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDel
    *   markAiredSelection(replayId, { angles: ["cam-1", "program"], segments: [{ angle, inSec, outSec }] })
    * Aynı tekrar yeniden yayına verilirse son yayın esas alınır. → true | false
    */
+  /** Etkin seçimi (yayına verilen + seçilen) yeniden hesapla, yerelde ve replay.json'da sakla. */
+  const storeSelection = useCallback((replayId, patch) => {
+    const r = replaysRef.current.find((x) => x.id === replayId) || null;
+    const m = { ...(metaRef.current[replayId] || {}), ...patch };
+    // Eski kayıtlar: airedSel yoksa yayına verilmiş "selection" esas alınır.
+    const aired = m.airedSel !== undefined ? m.airedSel : (m.selection?.aired ? m.selection : (r?.selection?.aired ? r.selection : null));
+    const sel = effectiveSelection({ aired, picks: m.picks || null }, r);
+    patchMeta(replayId, { ...patch, airedSel: aired || null, selection: sel });
+    if (!String(replayId).startsWith("clip:")) Promise.resolve(studio()?.updateReplay?.(replayId, { selection: sel ? { ...sel, at: new Date(sel.at).toISOString() } : null })).catch(() => {});
+    return sel;
+  }, [patchMeta]);
+
   const markAiredSelection = useCallback((replayId, { angles = [], segments = [] } = {}) => {
     const r = replaysRef.current.find((x) => x.id === replayId) || null;
     const sel = normalizeAired({ angles, segments, aired: true, at: Date.now() }, r);
     if (!sel) return false;
-    patchMeta(replayId, { selection: sel });
-    if (!String(replayId).startsWith("clip:")) Promise.resolve(studio()?.updateReplay?.(replayId, { selection: { ...sel, at: new Date(sel.at).toISOString() } })).catch(() => {});
+    storeSelection(replayId, { airedSel: sel });
     return true;
-  }, [patchMeta]);
+  }, [storeSelection]);
 
-  /** Operatörün seçtiği (henüz yayına verilmemiş) açılar; yayına verilmiş seçimi ezmez. */
-  const noteSelection = useCallback((replayId, angles) => {
-    if (metaRef.current[replayId]?.selection?.aired) return false;
-    const r = replaysRef.current.find((x) => x.id === replayId) || null;
-    const sel = normalizeAired({ angles, segments: [], aired: false }, r);
-    const prev = metaRef.current[replayId]?.selection || null;
-    if (!sel) { if (prev) patchMeta(replayId, { selection: null }); return false; }
-    if (prev && prev.angles?.join() === sel.angles.join()) return false;
-    patchMeta(replayId, { selection: sel });
+  /**
+   * Pozisyonun SEÇİLİ açıları (tıklama sırası). Yüklemeye kadar değiştirilebilir: yükleme
+   * bu seçimi izler (yayına verilen bölümlerin giriş / çıkışı korunur). [] → seçim yok.
+   */
+  const setPicks = useCallback((replayId, angles) => {
+    const list = (angles || []).filter((a, i, l) => typeof a === "string" && a && l.indexOf(a) === i);
+    const prev = metaRef.current[replayId]?.picks || [];
+    if (prev.join() === list.join()) return false;
+    storeSelection(replayId, { picks: list.length ? list : null });
     return true;
-  }, [patchMeta]);
+  }, [storeSelection]);
+  /** Eski ad: seçilen açılar (artık yayına verilmiş seçimi de günceller). */
+  const noteSelection = setPicks;
 
   const retry = useCallback((id) => {
     const r = replays.find((x) => x.id === id);
@@ -306,15 +418,22 @@ export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDel
     const s = scheduled[id];
     if (s) {
       const r = replays.find((x) => x.id === id);
-      return { status: "scheduled", dueAt: s.dueAt, leftMs: Math.max(0, s.dueAt - now), plan: uploadPlanOf(r, meta[id]?.selection || r?.selection || null) };
+      return { status: "scheduled", dueAt: s.dueAt, leftMs: Math.max(0, s.dueAt - now), deferred: Boolean(s.deferred), reason: s.reason || "", attempt: s.attempt || 0, plan: uploadPlanOf(r, meta[id]?.selection || r?.selection || null) };
     }
     if (meta[id]?.uploaded || replays.find((r) => r.id === id)?.uploaded) return { status: "uploaded" };
     return uploads[id] || null;
   }, [meta, uploads, replays, scheduled, now]);
 
   const latest = useMemo(() => latestReplay(replays), [replays]);
+  /** Pozisyon başına seçili açılar: { replayId: [açı] }. */
+  const picks = useMemo(() => {
+    const out = {};
+    for (const [id, m] of Object.entries(meta)) if (Array.isArray(m?.picks) && m.picks.length) out[id] = m.picks;
+    return out;
+  }, [meta]);
   return {
     replays, pending, meta, latest, now, capture, saveNow, attach, update, retry, remove, dismissPending, reveal, reload, uploadOf,
-    scheduled, uploadNow, cancelUpload, markAiredSelection, noteSelection, selectionOf, multiAngle: hasReplayApi(),
+    scheduled, uploadNow, cancelUpload, reschedule, markAiredSelection, noteSelection, setPicks, picks, selectionOf, health,
+    uploadDelaySec: clampUploadDelay(uploadDelaySec), multiAngle: hasReplayApi(),
   };
 }

@@ -14,7 +14,7 @@
 //           studio:listScreens, studio:selectScreen, studio:start, studio:stop,
 //           studio:restartEncoder (reason, { videoCopy? }), studio:health, studio:network (RTMP aktarıcısı, relay.js),
 //           studio:saveClip, studio:listClips, studio:deleteClip,
-//           studio:uploadClip, studio:revealClip,
+//           studio:uploadClip, studio:uploadThrottle (yayın öncelikli hız / duraklat / iptal), studio:revealClip,
 //           studio:angles:start, studio:angles:stop, studio:angles:status,
 //           studio:saveReplay, studio:listReplays, studio:getReplay,
 //           studio:updateReplay, studio:deleteReplay, studio:revealReplay,
@@ -54,6 +54,7 @@ const { createAngles } = require("./angles");
 const { createReplayStore } = require("./replays");
 const { createRenderer, pruneHighlights } = require("./render");
 const { uploadHighlight, deleteHighlight, putFile } = require("./highlights");
+const { createUploadGovernor } = require("./uploadgov");
 const { createUploadLog, withUploadLog } = require("./uploadlog");
 const { serveStudio, REPLAY_ID } = require("./scheme");
 const { createDiagnostics } = require("./diag");
@@ -124,6 +125,8 @@ function registerStudio({
   });
   const uploadApi = withUploadLog(api, uploadLog);
   const loggedPut = withUploadLog.put(putFile, uploadLog);
+  // [gol-klip] Yayın öncelikli yükleme: arayüz yayın sağlığına göre hız / duraklatma gönderir.
+  const uploadGov = createUploadGovernor();
   /** Sunucuya hiç gitmeden düşen deneme (maç / olay yok, dosya yok, oturum kapalı …) da günlüğe. */
   const trackUpload = async (kind, endpoint, payload, fn) => {
     const before = uploadLog.size();
@@ -471,14 +474,19 @@ function registerStudio({
       // eski sunucuda çok parçalı yola düşer. Her adım yükleme günlüğüne yazılır.
       // [gol-klip] Canlı yayın sürerken klip ~2 Mbit/sn ile gönderilir: tam hızda PUT, yayınla
       // aynı yükleme hattını doldurup RTMP kuyruğunu taşırıyordu (gol anlarında kare atlama / kopma).
-      const onAirNow = engine.active() && engine.status()?.recordOnly === false;
-      const putImpl = onAirNow ? (url, o = {}) => loggedPut(url, { ...o, maxBytesPerSec: LIVE_UPLOAD_BYTES_PER_SEC }) : loggedPut;
+      // [yayın öncelikli] Hız her an değişebilir: arayüz (useReplays › uploadGuard) yayın
+      // sağlığına göre studio:uploadThrottle ile sınır / duraklatma gönderir; arayüz sessizse
+      // yayın sürerken güvenli sabit hız, yayın yoksa sınırsız.
+      const onAirNow = () => engine.active() && engine.status()?.recordOnly === false;
+      const putImpl = (url, o = {}) => loggedPut(url, { ...o, throttleStream: () => uploadGov.stream(() => (onAirNow() ? LIVE_UPLOAD_BYTES_PER_SEC : 0)) });
       return uploadGoalClip(uploadApi, p, {
         replays, clips, putImpl, isReplayId: (v) => REPLAY_ID.test(String(v || "")),
         emitProgress: (pr) => broadcast("studio:uploadProgress", pr),
       });
     });
   });
+  /** [gol-klip] Yükleme hız sınırı: { kbps, paused } · { reset } · { cancel } · null → durum. */
+  ipcMain.handle("studio:uploadThrottle", (_e, opts = null) => uploadGov.set(opts || null));
   ipcMain.handle("studio:revealClip", (_e, name) => {
     const file = REPLAY_ID.test(String(name || "")) ? replayAsClip(replays.get(name))?.path : clips.resolve(name);
     if (!file || !fs.existsSync(file)) return false;

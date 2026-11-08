@@ -4,8 +4,9 @@
 //   Görüntü    tekerlek / kıstırma: imlecin altına yakınlaştır · sürükle: kaydır · çift tık:
 //              sıfırla · "Alan" kipi: dikdörtgen çiz → o bölgeye yakınlaş (tık: 2× o noktaya).
 //              Köşede tam kare küçük haritası.
-//   Üst şerit  durum (ÖNİZLEMEDE / ● YAYINDA), açılar (A / S; programda kesme / karışım),
-//              yakınlaştırma basamakları 1 / 1,5 / 2 / 3.
+//   Üst şerit  durum (ÖNİZLEMEDE / ● YAYINDA), pozisyonun SEÇİLİ açı dizisi (1 ▸ 2 ▸ 3: sırayla
+//              oynar; tık: o açıya geç) ya da tek açıda tüm açılar (A / S; programda kesme /
+//              karışım), yakınlaştırma basamakları 1 / 1,5 / 2 / 3.
 //   Alt şerit  SÜRE ÇUBUĞU (tıkla / sürükle → ara; giriş / çıkış tutamakları), zaman, taşıma
 //              (−1 sn, kare, J, oynat, L, kare, +1 sn, döngü), hız 0,25…2× + T-bar.
 //              Önizlemede: Giriş / Çıkış, YAYINA AL. Programda: sıradaki, CANLIYA DÖN.
@@ -15,7 +16,7 @@ import React, { memo, useEffect, useRef, useState } from "react";
 import { Icon } from "../../../components/ui";
 import { replayTitle } from "../../../lib/studio/replays";
 import { DEFAULT_VIEW, clipTime, isZoomed, panBy, zoomAt, zoomRect, clampView } from "./replayView";
-import { DeckAngles, DeckSpeed, DeckTime, DeckTimeline, DeckTransport, DeckZoom, useDeckClock } from "./replayDeckUi";
+import { DeckAngles, DeckExtras, DeckSeq, DeckSpeed, DeckTime, DeckTimeline, DeckTransport, DeckZoom, useDeckClock } from "./replayDeckUi";
 import "./replayEditor.css";
 
 /** Eski arayüz (rm) → önizleme destesi (testler / eski çağrılar). */
@@ -174,7 +175,7 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
       <div className="rpo__top">
         <span className={`rpo__tag ${isPgm ? "is-air" : ""}`}>{tag}</span>
         {!tiny && title && <span className="rdk-title">{title}{isPgm && deck.total > 1 ? ` · ${deck.index + 1}/${deck.total}` : ""}</span>}
-        {!tiny && <span className="rpo__angles"><DeckAngles deck={deck} sources={sources} mixToggle={!compact} /></span>}
+        {!tiny && <span className="rpo__angles">{(deck.seq || []).length > 1 ? <DeckSeq deck={deck} sources={sources} compact={compact} /> : null}<DeckAngles deck={(deck.seq || []).length > 1 ? { ...deck, angles: [] } : deck} sources={sources} mixToggle={!compact} />{(deck.seq || []).length > 1 && isPgm && !compact && <button type="button" className={`rdk-an__mix ${deck.mix ? "is-on" : ""}`} onClick={() => deck.setMix()} title="Açı değişimi: kesme ya da karışım">{deck.mix ? "KARIŞIM" : "KESME"}</button>}</span>}
         <span className="st-top__spacer" />
         {!tiny && (
           <span className="rpo__zoom">
@@ -189,6 +190,7 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
         <div className="rpo__row">
           <DeckTime deck={deck} t={t} compact={compact} />
           <DeckTransport deck={deck} t={t} compact={compact} />
+          {!tiny && <DeckExtras deck={deck} t={t} compact={compact} />}
           {!tiny && <span className="rpo__rates"><DeckSpeed deck={deck} t={t} slider={!compact} /></span>}
           <span className="st-top__spacer" />
           {onKeys && !compact && <button type="button" className={`rdk-keys ${keysOn ? "is-on" : ""}`} onClick={() => onKeys(!keysOn)} title="Tekrar tuşları: J K L, ←/→, ⇧ ±1 sn, +/−, 1–6 hız, A / S açı, Enter yayına al, Esc canlıya dön">⌨</button>}
