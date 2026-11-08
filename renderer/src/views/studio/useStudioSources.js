@@ -299,6 +299,7 @@ export function useStudioSources(sources, { onResolve, replayUrlOf } = {}) {
     const api = liveApi()?.phone;
     if (!api?.pair) { set(id, { status: "error", message: "Telefon kamerası bu sürümde yok (masaüstü uygulaması gerekir)." }); return; }
     const el = makeVideo();
+    let configSent = false;
     const peer = createPhonePeer({
       send: (msg) => api.send(id, msg),
       onStream: (stream) => {
@@ -310,6 +311,8 @@ export function useStudioSources(sources, { onResolve, replayUrlOf } = {}) {
       onState: (state, info) => {
         if (!still()) return;
         if (state === "info") { set(id, { phoneInfo: { ...info } }); return; }
+        // İlk bağlantıda kaynağın ayarı (kamera / çözünürlük / fps / mikrofon) telefona gider.
+        if (state === "live" && !configSent) { configSent = true; peer.config({ facing: source.facing || "environment", res: Number(source.res) || 720, fps: Number(source.fps) || 30, mic: source.mic !== false }); }
         set(id, { status: state === "connecting" ? "standby" : state, message: info?.message || (state === "connecting" ? "Telefon bağlanıyor…" : null), phoneInfo: { ...info } });
       },
     });

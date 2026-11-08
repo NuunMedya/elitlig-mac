@@ -79,7 +79,7 @@ export function LiveConnect({ source, runtimeRef, onPatch }) {
           {url && <div className="lv-url"><code>{url}</code><Copy text={url} /></div>}
           {rt?.pairing?.urls?.length > 1 && <small className="muted">Diğer ağ adresleri: {rt.pairing.urls.slice(1).join(" · ")}</small>}
           {pres?.connected && <p className="lv-meta"><Icon name="phone" size={12} /> {pres.device || "Telefon"} ({pres.remote}){info?.media ? ` · ${phoneMediaText(info.media)}` : ""}{info?.battery ? ` · pil %${info.battery.level}${info.battery.charging ? " (şarjda)" : ""}` : ""}</p>}
-          {rt?.message && st !== "live" && <small className="st-src__msg">{rt.message}</small>}
+          {rt?.message && st !== "live" && <small className={st === "error" ? "st-src__msg" : "muted"}>{rt.message}</small>}
           {st === "live" && rt?.peer && (
             <div className="lv-remote">
               <span>Uzaktan:</span>
