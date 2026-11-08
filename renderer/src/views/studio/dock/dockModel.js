@@ -47,12 +47,15 @@ const modeParts = (extra = []) => [
 ];
 export const PANEL_PARTS = {
   tekrar: modeParts([
-    { id: "editor", label: "Tekrar düzenleyici (büyük önizleme, zaman çizelgesi)" },
-    { id: "angles", label: "Kaydedilecek açılar" },
+    { id: "list", label: "Olay listesi (goller / anlar, küçük resim, ★)" },
+    { id: "grid", label: "Açı ızgarası (seçili tekrarın tüm açıları)" },
+    { id: "queue", label: "Oynatma listesi ve YAYINA AL / CANLIYA DÖN" },
+    { id: "timeline", label: "Süre çubuğu (giriş / çıkış, işaretler, hareket)" },
+    { id: "transport", label: "Taşıma (oynat, kare kare, J K L, döngü)" },
+    { id: "rate", label: "Hız / ağır çekim (0,25…2×, T-bar)" },
+    { id: "zoom", label: "Yakınlaştırma (1 / 1,5 / 2 / 3×)" },
     { id: "moment", label: "ÖNEMLİ AN düğmesi" },
-    { id: "rate", label: "Hız / ağır çekim kaydırıcısı" },
-    { id: "list", label: "Tekrar listesi" },
-    { id: "queue", label: "Önizleme ve kuyruk" },
+    { id: "angles", label: "Kaydedilecek açılar" },
     { id: "between", label: "Aradaki geçiş seçimi" },
     { id: "uploads", label: "Yükleme günlüğü" },
   ]),

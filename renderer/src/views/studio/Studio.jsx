@@ -475,7 +475,7 @@ export default function Studio({ auth, go }) {
   const bannerOf = useCallback((item) => replayBanner(item.replay, metaFor(item.replay, replays.meta)), [replays.meta]);
   const onReplayError = useCallback((m) => toast(m, { tone: "error", timeout: 5000 }), [toast]);
   const player = useReplayPlayer({ els: replayEls, replayRef, playStinger: comp.playStinger, bannerOf, rate: prefs.replayRate, onError: onReplayError, onStart: mixer.resume });
-  const setReplayRate = useCallback((v) => setPref("replayRate", Math.min(1, Math.max(0.25, Number(v) || 1))), [setPref]);
+  const setReplayRate = useCallback((v) => setPref("replayRate", Math.min(2, Math.max(0.25, Number(v) || 1))), [setPref]);
 
   const captureMoment = useStable(() => {
     if (!engine.active) { toast("Tekrar için yayın ya da prova açık olmalı (Yayın sekmesi).", { tone: "warn", timeout: 4000 }); return; }
@@ -1113,6 +1113,9 @@ export default function Studio({ auth, go }) {
   }, [rmSelection]); // eslint-disable-line react-hooks/exhaustive-deps
   const replayEditing = Boolean(RE && RE.previewing && RE.rm?.transport);
   const [pvwBox, setPvwBox] = useState({ w: 0, h: 0 });
+  const [pgmBox, setPgmBox] = useState({ w: 0, h: 0 });
+  // Yayındaki tekrarın denetimi PROGRAM monitörünün üstünde (yalnız operatör görür, yayına çizilmez).
+  const replayAir = Boolean(RE?.decks?.program?.active);
   const pickAngle = useStable((r, angle) => {
     if (!r) return;
     if (!RE || !modes.openReplay) { toast("Tekrar düzenleme için yayın modları modülü gerekli.", { tone: "info" }); return; }
@@ -1131,14 +1134,14 @@ export default function Studio({ auth, go }) {
       </figcaption>
       <Monitor canvas={comp.preview} className="st-monitor__screen" onBox={setPvwBox}>
         {replayEditing && (
-          <ReplayPreviewOverlay rm={RE.rm} rate={RE.rate} onRate={RE.setRate} sources={RE.sources || config.sources} box={pvwBox}
-            onTake={() => toProgram()} canTake={canTake} />
+          <ReplayPreviewOverlay deck={RE.decks?.preview} rm={RE.rm} rate={RE.rate} onRate={RE.setRate} sources={RE.sources || config.sources} meta={replays.meta} box={pvwBox}
+            onTake={() => toProgram()} canTake={canTake} onFocus={RE.setFocus} keysOn={RE.keysOn} onKeys={RE.setKeysOn} />
         )}
       </Monitor>
     </figure>
   );
   const programMonitor = (
-    <figure className={`st-monitor is-program ${st.state === "live" ? "is-live" : ""} ${showMicWarning ? "is-micwarn" : ""}`} onContextMenu={onMonitorMenu("program")}>
+    <figure className={`st-monitor is-program ${st.state === "live" ? "is-live" : ""} ${showMicWarning ? "is-micwarn" : ""} ${replayAir ? "is-replayair" : ""}`} onContextMenu={onMonitorMenu("program")}>
       <figcaption>
         <span className={`st-tag ${onAir ? "is-live" : "is-pgm"}`}>{onAir ? "● YAYINDA" : "PROGRAM"}</span>
         <span className="st-monitor__name">{programTitle}</span>
@@ -1148,7 +1151,12 @@ export default function Studio({ auth, go }) {
         <span className="st-top__spacer" />
         {ledId && ledId === programIdForTally && <span className="st-tag is-led" title="LED ekran bu sahneyi gösteriyor">LED</span>}
       </figcaption>
-      <Monitor canvas={comp.program} className="st-monitor__screen" />
+      <Monitor canvas={comp.program} className="st-monitor__screen" onBox={setPgmBox}>
+        {replayAir && (
+          <ReplayPreviewOverlay deck={RE.decks.program} target="program" sources={RE.sources || config.sources} meta={replays.meta} box={pgmBox}
+            onLive={RE.live} onFocus={RE.setFocus} keysOn={RE.keysOn} onKeys={RE.setKeysOn} />
+        )}
+      </Monitor>
       {/* Program ses şeridi yuvası: ./audio/ProgramAudioStrip.jsx varsa burada (düzende "Ses ölçerleri" kutusu yoksa). */}
       {programAudio && !hasMetersTile && <div className="st-pgmaudio">{programAudio}</div>}
       {showMicWarning && <div className="st-micwarn" role="alert"><Icon name="mic" size={22} /> MİKROFON AÇIK <button type="button" onClick={toggleMic}>Kapat (M)</button></div>}
@@ -1201,7 +1209,7 @@ export default function Studio({ auth, go }) {
   // Tekrar hızı: yayın modları varsa kip ayarı (prefs.modes.rate), yoksa eski tercih.
   const replayRateNow = hasModes ? normalizeModeSettings(prefs.modes).rate : prefs.replayRate;
   const setReplayRateAny = useStable((v) => {
-    const r = Math.round(Math.min(1, Math.max(0.25, Number(v) || 1)) * 20) / 20;
+    const r = Math.round(Math.min(2, Math.max(0.25, Number(v) || 1)) * 20) / 20;
     if (hasModes) setPref("modes", (m) => ({ ...normalizeModeSettings(m), rate: r })); else setReplayRate(r);
   });
   /** Seçilen tekrarlar sırayla (her biri varsayılan açılarıyla) ÖNİZLEME'ye; yayına GEÇİŞ ile [önizleme-geçiş]. */
@@ -1350,6 +1358,8 @@ export default function Studio({ auth, go }) {
       editor: RE ? {
         previewing: Boolean(RE.previewing), transport: RE.rm.transport, cursorKey: RE.rm.cursorKey, cursorAngle: RE.rm.cursor?.angle || null,
         inOf: RE.rm.inPointOf, outOf: RE.rm.outPointOf, setIn: RE.rm.setInPoint, setOut: RE.rm.setOutPoint,
+        // desteler: program yayındayken parçacıklar yayındaki tekrarı anında denetler
+        decks: RE.decks || null, focus: RE.focus || null,
       } : null,
     },
     moment: captureMoment,

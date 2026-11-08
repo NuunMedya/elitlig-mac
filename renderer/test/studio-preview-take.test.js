@@ -54,7 +54,7 @@ describe("önizleme yükü (replayPayload)", () => {
   it("çıkış girişten en az 0,2 sn sonra değilse yok sayılır; hız sınırlanır", () => {
     const p = replayPayload({ list: LIST, selection: {}, cursor: { replayId: "r1", angle: "program" }, rate: 3, ...maps({ in: { "r1|program": 5 }, out: { "r1|program": 5.1 } }) });
     expect(p.items[0].endSec).toBeNull();
-    expect(p.rate).toBe(1);
+    expect(p.rate).toBe(2); // hızlı oynatma en çok 2×
     expect(replayPayload({ list: LIST, selection: {}, cursor: { replayId: "r1", angle: "program" }, rate: 0.1, ...maps() }).rate).toBe(0.25);
   });
   it("oynatıcı kuyruğu: her öğe donmuş hız ve görünümle", () => {
