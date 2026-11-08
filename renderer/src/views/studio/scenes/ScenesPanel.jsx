@@ -1,7 +1,9 @@
 // Yayın Stüdyosu · SAHNELER (basit mantık):
 //
-//   Sahneler sekmesi   sahne kartları: tık → SEÇ + önizleme, çift tık → yayın, kalem → DÜZENLE
-//                      (büyük açılır pencere: ./SceneEditorModal), "Yayına al", "LED'e ver".
+//   Sahneler sekmesi   sade sahne kartları (büyük küçük resim, YAYINDA / ÖNİZLEME tally,
+//                      1–9 kısayolu): tık → SEÇ + önizleme, çift tık → yayın; üzerine gelince
+//                      Yayına al · düzenle (./SceneEditorModal) · çoğalt · sil · menü. Arama,
+//                      kart / liste görünümü; panel biçimine göre (dar / uzun / geniş) düzen.
 //                      Şablonlar YALNIZ "Yeni sahne ekle" ile açılan pencerede (TemplateGallery).
 //   Yandaki panel      SceneInlineEditor — İSTEĞE BAĞLI ("Sahne katmanlarını yanda göster" ayarı):
 //                      seçili sahnenin katmanları kartların yanında, küçük tuvalde taşı / boyutla.
@@ -18,7 +20,7 @@ import { Field, Icon, MenuButton, Modal } from "../../../components/ui";
 import { FITS, TEMPLATE_CATEGORIES, layersTopFirst, sourceKindIcon, sourceKindLabel, sourceUsage, templateOf, templatePreview, templateSourceIds, templatesOfCategory, uiIndexToArray } from "../../../lib/studio/scenes";
 import { centerLayer, fitToScreen, fromPixels, normAspect, stretchToScreen, toPixels } from "../../../lib/studio/scenesTransform";
 import { drawScene, naturalSize } from "../draw";
-import { Tile, tileWarning } from "../Multiview";
+import { ContextMenu, Tile, tileWarning } from "../Multiview";
 import { BAD, FX_KINDS, STATUS_TEXT, SourceThumb } from "../SourcesPanel";
 import SceneEditOverlay from "./SceneEditOverlay";
 import Monitor from "./Monitor";
@@ -389,56 +391,143 @@ function SceneInlineEditorInner({ config, configRef, runtimeRef, scene, selected
 }
 export const SceneInlineEditor = memo(SceneInlineEditorInner);
 
+/** Yoğunluk tercihi (kart / liste) — operatörün makinesinde kalır. */
+const DENSITY_KEY = "studio.scenes.density";
+const readDensity = () => { try { return localStorage.getItem(DENSITY_KEY) === "list" ? "list" : "grid"; } catch { return "grid"; } };
+
+/** Panel boyutuna göre düzen: dar (tek sütun), uzun (kaynaklar altta), geniş (kaynaklar yanda). */
+function usePanelShape(ref) {
+  const [shape, setShape] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(([e]) => {
+      const r = e.contentRect;
+      setShape((o) => (Math.abs(o.w - r.width) < 8 && Math.abs(o.h - r.height) < 8 ? o : { w: r.width, h: r.height }));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return shape;
+}
+
+/**
+ * Sahne kartı: büyük canlı küçük resim (Studio'nun kutu çizicisi register ile
+ * doldurur), tally (YAYINDA kırmızı / ÖNİZLEME yeşil / LED), kısayol numarası,
+ * üzerine gelince sade eylemler (düzenle · çoğalt · sil · menü) ve "Yayına al".
+ * Tık: seç + önizleme · çift tık: yayına al · sağ tık: tam menü.
+ */
+const SceneCard = memo(function SceneCard({ scene, index, list, register, onAir, inPreview, onLed, selected, bad, layerNames, actions, menu, onPick, onEdit, canDelete, sourceItems }) {
+  const ref = useRef(null);
+  const [ctxAt, setCtxAt] = useState(null);
+  const closeCtx = useCallback(() => setCtxAt(null), []);
+  const setRef = useCallback((el) => { register(scene.id, el, ref.current); ref.current = el; }, [register, scene.id]);
+  useEffect(() => () => { if (ref.current) register(scene.id, null, ref.current); }, [register, scene.id]);
+  const hotkey = index < 9 ? index + 1 : null;
+  const tally = onAir ? "is-program" : inPreview ? "is-preview" : "";
+  const meta = layerNames.length ? `${layerNames.length} katman` : "Boş sahne";
+  const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+  return (
+    <div className={`scn-card ${list ? "is-row" : ""} ${tally} ${selected ? "is-selected" : ""} ${bad ? "is-bad" : ""}`}
+      onContextMenu={menu ? (e) => { e.preventDefault(); setCtxAt({ x: e.clientX, y: e.clientY }); } : undefined}>
+      {ctxAt && menu && <ContextMenu at={ctxAt} items={menu} onClose={closeCtx} label={`Sahne: ${scene.name}`} />}
+      <button type="button" className="scn-card__hit" onClick={() => onPick(scene.id)} onDoubleClick={() => actions.onProgram(scene.id)}
+        title={`${scene.name} — tık: önizleme · çift tık: yayına al${hotkey ? ` · kısayol ${hotkey}` : ""}`} aria-pressed={selected}>
+        <span className="scn-card__thumb">
+          <canvas ref={setRef} width={256} height={144} />
+          {hotkey && <b className="scn-card__key" aria-label={`Kısayol ${hotkey}`}>{hotkey}</b>}
+          <span className="scn-card__tally">
+            {onAir && <span className="scn-tag is-live">YAYINDA</span>}
+            {inPreview && <span className="scn-tag is-pvw">ÖNİZLEME</span>}
+            {onLed && <span className="scn-tag is-led">LED</span>}
+          </span>
+          {bad && <span className="scn-card__warn"><Icon name="alert" size={10} /> {bad}</span>}
+        </span>
+        <span className="scn-card__text">
+          <span className="scn-card__name" title={scene.name}>{scene.name}</span>
+          <span className="scn-card__meta" title={layerNames.join(", ") || "Boş sahne"}>{meta}</span>
+        </span>
+      </button>
+      <div className="scn-card__acts" role="toolbar" aria-label={`${scene.name} eylemleri`}>
+        {!onAir && <button type="button" className="scn-act is-air" onClick={stop(() => actions.onProgram(scene.id))} title="Yayına al (geçişle)"><Icon name="play" size={11} /><span>Yayına al</span></button>}
+        <button type="button" className="scn-act" onClick={stop(() => onEdit(scene.id))} title="Düzenle" aria-label="Düzenle"><Icon name="pencil" size={12} /></button>
+        {actions.onDuplicateScene && <button type="button" className="scn-act" onClick={stop(() => actions.onDuplicateScene(scene.id))} title="Çoğalt" aria-label="Çoğalt"><Icon name="copy" size={12} /></button>}
+        {actions.onRemoveScene && <button type="button" className="scn-act is-danger" disabled={!canDelete} onClick={stop(() => actions.onRemoveScene(scene))} title={canDelete ? "Sil" : "Son sahne silinemez"} aria-label="Sil"><Icon name="trash" size={12} /></button>}
+        {(menu || sourceItems) && <MenuButton label="Diğer" size={13} items={[...(menu || []), ...(sourceItems?.length ? ["-", ...sourceItems.map((it) => (it === "-" ? it : { ...it, label: `Kaynak ekle: ${it.label}` }))] : [])]} />}
+      </div>
+    </div>
+  );
+});
+
 function ScenesTabInner({ config, configRef, runtimeRef, register, version, studioMode, ledId, actions, libActions, selectedSceneId, onSelectScene, selectedLayerId, onSelectLayer, outW = 1920, outH = 1080, overrideRef, matchClockRef, onAddScene, inline = false, onInline = null }) {
-  const { onPreview, onProgram, onToLed, tileMenu } = actions;
+  const { onPreview, tileMenu } = actions;
+  const rootRef = useRef(null);
+  const shape = usePanelShape(rootRef);
+  const [query, setQuery] = useState("");
+  const [density, setDensity] = useState(readDensity);
+  const setDense = (d) => { setDensity(d); try { localStorage.setItem(DENSITY_KEY, d); } catch { /* yoksay */ } };
   const byId = new Map(config.sources.map((s) => [s.id, s]));
   const scene = config.scenes.find((s) => s.id === selectedSceneId) || null;
   const showInline = Boolean(inline && scene);
-  // Kart tıklaması: seç + önizlemeye al; kalem / katman satırı: düzenleyici (büyük pencere,
-  // "Sahne katmanlarını yanda göster" açıksa yandaki panel).
-  const select = useCallback((id) => { onSelectScene(id); }, [onSelectScene]);
   const edit = useCallback((id) => { onSelectScene(id); actions.onEdit?.(id); }, [actions, onSelectScene]);
   const pick = useCallback((id) => { onSelectScene(id); onPreview(id); }, [onPreview, onSelectScene]);
+  const q = query.trim().toLocaleLowerCase("tr-TR");
+  const items = config.scenes.map((sc, i) => ({ sc, i })).filter(({ sc }) => !q || sc.name.toLocaleLowerCase("tr-TR").includes(q));
+  // Panel biçimi: dar → tek sütun, kaynaklar altta; uzun ve dar → kaynaklar altta; geniş → yanda.
+  const narrow = shape.w > 0 && shape.w < 560;
+  const tall = shape.h > 0 && shape.h > shape.w * 0.9;
+  const sideLib = Boolean(libActions) && !narrow && !tall && !showInline && shape.w >= 820;
+  const list = density === "list";
+  const programId = config.programSceneId;
   return (
-    <div className={`st-scenetab is-v2 ${showInline ? "has-edit" : ""} ${libActions ? "has-lib" : ""}`}>
+    <div ref={rootRef} className={`st-scenetab is-v3 ${showInline ? "has-edit" : ""} ${sideLib ? "has-side" : ""} ${narrow ? "is-narrow" : ""} ${tall ? "is-tall" : ""}`}>
       <div className="st-scenetab__main">
-        <header className="st-scenetab__bar">
+        <header className="st-scenetab__bar scn-bar">
           <h4>Sahneler</h4><span className="st-col__count">{config.scenes.length}</span>
-          <span className="st-hint">tıkla: seç + önizleme · çift tık: yayına al · kalem: düzenle</span>
+          <label className="scn-search" title="Sahne ara">
+            <Icon name="search" size={12} />
+            <input type="search" value={query} placeholder="Ara…" onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape") setQuery(""); }} aria-label="Sahne ara" />
+          </label>
           <span className="st-top__spacer" />
-          {onInline && (
-            <label className="st-scenetab__inline" title="Seçili sahnenin katmanlarını kartların yanında küçük bir panelde göster (kapalıyken kalem büyük düzenleyiciyi açar)">
-              <input type="checkbox" checked={Boolean(inline)} onChange={(e) => onInline(e.target.checked)} /> Katmanlar yanda
-            </label>
+          <div className="scn-seg" role="radiogroup" aria-label="Görünüm">
+            <button type="button" role="radio" aria-checked={!list} className={!list ? "is-on" : ""} onClick={() => setDense("grid")} title="Kartlar (büyük küçük resim)"><Icon name="grid" size={13} /></button>
+            <button type="button" role="radio" aria-checked={list} className={list ? "is-on" : ""} onClick={() => setDense("list")} title="Liste (sıkı)"><Icon name="list" size={13} /></button>
+          </div>
+          {(onInline || actions.onCollections) && (
+            <MenuButton label="Sahne seçenekleri" size={14} items={[
+              ...(onInline ? [{ label: inline ? "Katmanları yanda gösterme" : "Katmanları yanda göster", icon: "layers", onClick: () => onInline(!inline) }] : []),
+              ...(actions.onCollections ? [{ label: "Koleksiyonlar… (sahne takımlarını kaydet / yükle)", icon: "folder", onClick: actions.onCollections }] : []),
+            ]} />
           )}
-          {actions.onCollections && <button type="button" className="btn btn--sm" onClick={actions.onCollections} title="Sahne koleksiyonları: adlandırılmış sahne + kaynak takımlarını kaydet / yükle (ör. lig maçı, turnuva, röportaj)"><Icon name="folder" size={13} /> Koleksiyonlar</button>}
-          <button type="button" className="btn btn--sm btn--primary" onClick={(e) => onAddScene(e.currentTarget)} title="Şablondan yeni sahne: kamera düzenleri, çoklu görüntü, başlıyor / ara / bitti, bilgi ekranları, maç anları, LED">
-            <Icon name="plus" size={13} /> Yeni sahne ekle
+          <button type="button" className="btn btn--sm btn--primary" onClick={(e) => onAddScene(e.currentTarget)} title="Şablondan yeni sahne: kamera düzenleri, çoklu görüntü, başlıyor / ara / bitti, bilgi ekranları, LED">
+            <Icon name="plus" size={13} /> <span className="scn-bar__new">Yeni sahne</span>
           </button>
         </header>
-        <section className="st-scenegrid" aria-label="Sahneler">
-          {config.scenes.map((sc, i) => {
-            const t = { id: sc.id, kind: "scene", name: sc.name, hotkey: i < 9 ? i + 1 : null };
+        <section className={`st-scenegrid scn-grid ${list ? "is-list" : ""}`} aria-label="Sahneler">
+          {items.map(({ sc, i }) => {
+            const t = { id: sc.id, kind: "scene", name: sc.name };
             const names = sc.layers.map((l) => byId.get(l.sourceId)?.name).filter(Boolean);
             return (
-              <div key={sc.id} className={`st-scard ${sc.id === selectedSceneId ? "is-selected" : ""}`}>
-                <Tile tile={t} size="grid" register={register} studioMode={studioMode}
-                  onAir={sc.id === config.programSceneId} inPreview={studioMode && sc.id === config.previewSceneId && sc.id !== config.programSceneId} onLed={sc.id === ledId}
-                  bad={tileWarning(config, runtimeRef.current, t)} onPreview={pick} onProgram={onProgram} onToLed={onToLed} onEdit={edit} menu={tileMenu(t)} />
-                <div className="st-scard__foot">
-                  <button type="button" className="st-scard__layers" onClick={() => (inline ? select(sc.id) : edit(sc.id))} title={`${names.join(", ") || "Boş sahne"} — tıkla: katmanları düzenle`}><Icon name="layers" size={11} /> {names.length ? `${names.length} katman · ${names.join(" · ")}` : "boş — katman ekle"}</button>
-                  <MenuButton label="Kaynak ekle" icon="plus" text="Kaynak" size={12} className="st-menu-sm" align="end" items={sourceMenu(config, sc.id, actions)} />
-                </div>
-              </div>
+              <SceneCard key={sc.id} scene={sc} index={i} list={list} register={register}
+                onAir={sc.id === programId} inPreview={studioMode && sc.id === config.previewSceneId && sc.id !== programId} onLed={sc.id === ledId}
+                selected={sc.id === selectedSceneId} bad={tileWarning(config, runtimeRef.current, t)} layerNames={names}
+                actions={actions} menu={tileMenu ? tileMenu(t) : null} onPick={pick} onEdit={edit} canDelete={config.scenes.length > 1}
+                sourceItems={sourceMenu(config, sc.id, actions)} />
             );
           })}
-          <button type="button" className="st-scard is-add" onClick={(e) => onAddScene(e.currentTarget)}><Icon name="plus" size={18} /><span>Yeni sahne ekle</span><small>şablonlar ve hazır ekranlar</small></button>
+          {!q && (
+            <button type="button" className={`scn-card is-add ${list ? "is-row" : ""}`} onClick={(e) => onAddScene(e.currentTarget)}>
+              <span className="scn-add__ic"><Icon name="plus" size={18} /></span><span>Yeni sahne</span>
+            </button>
+          )}
+          {q && !items.length && <p className="st-hint scn-empty">“{query}” ile eşleşen sahne yok.</p>}
         </section>
+        {!list && config.scenes.length > 0 && <p className="scn-help">Tık: önizleme · çift tık: yayına al · 1–9: kısayol · sağ tık: menü</p>}
       </div>
       {showInline && (
         <SceneInlineEditor config={config} configRef={configRef} runtimeRef={runtimeRef} scene={scene} selectedLayerId={selectedLayerId} onSelectLayer={onSelectLayer}
           outW={outW} outH={outH} overrideRef={overrideRef} matchClockRef={matchClockRef}
-          isProgram={scene.id === config.programSceneId} isPreview={studioMode && scene.id === config.previewSceneId} actions={actions} onClose={() => onSelectScene(null)} />
+          isProgram={scene.id === programId} isPreview={studioMode && scene.id === config.previewSceneId} actions={actions} onClose={() => onSelectScene(null)} />
       )}
       {libActions && <aside className="st-scenetab__side"><SourceRows config={config} runtimeRef={runtimeRef} version={version} sceneId={scene?.id || null} actions={{ ...libActions, onSceneFromSource: actions.onSceneFromSource }} /></aside>}
     </div>

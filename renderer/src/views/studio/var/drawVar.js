@@ -9,10 +9,14 @@ import { normalizeVarV2, varDecisionPositive, varLayout, varLayoutOf, varLayoutV
 import { normalizeVarTheme, varThemeOf } from "../../../lib/studio/varThemes";
 import { drawSource, drawVideoIn } from "../draw";
 import { upper } from "./kit";
+import { loadStudioFonts } from "../../../lib/studio/fonts";
 import { VAR_THEME_DRAW } from "./themes";
 import { badge as redBadge, VAR_RED } from "./themes/kirmizi";
 
 export { VAR_RED };
+
+// Gömülü yazı tiplerini erkenden yükle (her kare çizildiği için yüklenince kendiliğinden düzelir).
+loadStudioFonts();
 
 /** "VAR" rozeti (Kırmızı Alarm). → genişlik. */
 export const drawVarBadge = (ctx, x, y, h, s = 1) => redBadge(ctx, x, y, h, s);

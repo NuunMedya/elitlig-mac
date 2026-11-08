@@ -67,10 +67,12 @@ describe("VAR temaları: kayıt", () => {
     expect(varThemeFromPrefs(null)).toBe("kirmizi");
   });
 
-  it("Kırmızı Alarm yerleşimi eskisiyle aynı (yan raylar), raysız temalarda ray yok", () => {
-    for (const l of VAR_LAYOUTS) expect(varThemeLayout("kirmizi", l.key, 1920, 1080)).toEqual(varLayoutV2(l.key, 1920, 1080));
-    expect(varThemeLayout("stadyum", "two", 1920, 1080).rails).toHaveLength(0);
-    expect(varThemeLayout("klasik", "two", 1920, 1080).rails).toHaveLength(2);
+  it("temalar raysız ortak yerleşimi kullanır (kendi ölçüleriyle); yeni temalar kayıtlı", () => {
+    expect(VAR_THEME_KEYS).toEqual(expect.arrayContaining(["gece", "beyaz"]));
+    for (const t of VAR_THEMES) {
+      for (const l of VAR_LAYOUTS) expect(varThemeLayout(t.key, l.key, 1920, 1080)).toEqual(varLayoutV2(l.key, 1920, 1080, t.layout));
+      expect(varThemeLayout(t.key, "two", 1920, 1080).rails).toHaveLength(0);
+    }
   });
 
   it("her temada her düzen: pencereler sahnede, üst / alt bantla çakışmaz, 16:9", () => {

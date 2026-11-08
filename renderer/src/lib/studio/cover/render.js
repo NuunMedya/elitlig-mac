@@ -7,6 +7,7 @@
 
 import { COVER_H, COVER_W, dominantColor, encodeUnderBudget } from "./model";
 import { drawCover } from "./draw";
+import { loadStudioFonts } from "../fonts";
 
 const cache = new Map(); // url → Promise<HTMLImageElement|null>
 const LOAD_TIMEOUT_MS = 8000;
@@ -83,11 +84,13 @@ export function logoColor(img) {
  * @returns {Promise<{ images: { home, away, brand, bg }, data: object }>}  data: renkleri doldurulmuş kopya
  */
 export async function prepareCover(data, settings, { defaultBrandLogo = null } = {}) {
+  // Gömülü yazı tipleri yüklenmeden çizilirse yedek yazı tipine düşer: bekle.
   const [home, away, brand, bg] = await Promise.all([
     loadCoverImage(data?.home?.logo),
     loadCoverImage(data?.away?.logo),
     loadCoverImage(data?.brand?.logo || defaultBrandLogo).then((img) => img || (data?.brand?.logo && defaultBrandLogo ? loadCoverImage(defaultBrandLogo) : null)),
     loadCoverImage(settings?.background || null),
+    loadStudioFonts(),
   ]);
   const next = {
     ...data,

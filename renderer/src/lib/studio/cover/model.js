@@ -14,12 +14,15 @@ export const COVER_TARGET_BYTES = Math.floor(1.9 * 1024 * 1024);
 export const JPEG_QUALITIES = [0.92, 0.88, 0.82, 0.75, 0.66, 0.56, 0.45];
 
 export const COVER_TEMPLATES = Object.freeze([
-  { key: "klasik", label: "Klasik VS", hint: "Koyu zemin, iki arma ve ortada büyük VS" },
-  { key: "stadyum", label: "Stadyum ışıkları", hint: "Gece maçı: projektörler, çim ve parlayan armalar" },
-  { key: "capraz", label: "Çapraz renkler", hint: "Takım renkleriyle çapraz ikiye bölünmüş zemin" },
-  { key: "minimal", label: "Minimal", hint: "Açık zemin, sade tipografi, ince aksan çizgisi" },
-  { key: "neon", label: "Neon", hint: "Gece mor zemini, ızgara ve neon ışıklı çerçeveler" },
-  { key: "poster", label: "Gazete / Poster", hint: "Kâğıt dokusu, manşet tipografisi ve CANLI damgası" },
+  { key: "klasik", label: "Klasik VS", hint: "Koyu zemin, takım renginde yan ışıklar, halkalı armalar ve ortada VS" },
+  { key: "stadyum", label: "Stadyum ışıkları", hint: "Gece maçı: projektör konileri, tribün silueti ve çim" },
+  { key: "capraz", label: "Çapraz renkler", hint: "Takım renkleriyle çapraz bölünmüş zemin, beyaz arma tabakları" },
+  { key: "minimal", label: "Minimal", hint: "Açık zemin, büyük dar yazı, sade üç sütunlu bilgi satırı" },
+  { key: "neon", label: "Neon", hint: "Gece moru, perspektif ızgara ve neon halkalı armalar" },
+  { key: "poster", label: "Poster", hint: "Kâğıt dokusu, manşet tipografisi ve CANLI damgası" },
+  { key: "macgunu", label: "Maç günü", hint: "Dev saat, eğik takım renkleri ve sol sütunda takımlar" },
+  { key: "bolme", label: "İkiye bölünmüş", hint: "Ekran ikiye bölünür: her yarı takım renginde, dev arma filigranı" },
+  { key: "sinema", label: "Sinematik", hint: "Sinema bantları, altın ince çizgiler, sakin ve şık" },
 ]);
 const TEMPLATE_KEYS = new Set(COVER_TEMPLATES.map((t) => t.key));
 
