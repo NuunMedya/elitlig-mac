@@ -16,6 +16,9 @@
 //            büyüt / eski boyut, Kapat (Esc)
 //
 // Değişiklikler anında yapılandırmaya yazılır (yayındaki sahnede canlı görünür).
+import { SHOW_FX } from "../../../lib/studio/layerAnim";
+import { hotkeyOwner } from "../../../lib/studio/hotkeys";
+import { HotkeyField } from "../live/LiveSourceFields";
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, MenuButton } from "../../../components/ui";
 import { layersTopFirst, sourceKindIcon, uiIndexToArray } from "../../../lib/studio/scenes";
@@ -167,6 +170,14 @@ function StyleProps({ layer, source, set }) {
         <Slider label="Gölge" value={shadow.blur} min={0} max={80} suffix=" px" onChange={(v) => set({ shadow: { ...shadow, blur: v } })} />
         <input type="color" value={shadow.color} onChange={(e) => set({ shadow: { blur: shadow.blur || 24, color: e.target.value } })} aria-label="Gölge rengi" title="Gölge rengi" />
       </div>
+      <div className="sem-row2">
+        <label className="sem-field" style={{ flex: 1 }}><span>Göster / gizle geçişi</span>
+          <select value={layer.showFx?.kind || "none"} onChange={(e) => set({ showFx: e.target.value === "none" ? null : { kind: e.target.value, ms: layer.showFx?.ms || 400 } })}>
+            {SHOW_FX.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+          </select>
+        </label>
+      </div>
+      {layer.showFx && <Slider label="Geçiş süresi" value={layer.showFx.ms} min={50} max={3000} step={50} suffix=" ms" onChange={(v) => set({ showFx: { ...layer.showFx, ms: v } })} />}
       {media && (
         <label className="sem-check">
           <input type="checkbox" checked={!layer.muted} onChange={(e) => set({ muted: !e.target.checked })} />
@@ -236,6 +247,8 @@ function SceneSettings({ config, scene, actions, graphics, audio }) {
         {kind && kind.max > 0 && (
           <Slider label="Süre" value={tr.ms ?? transitionMs(kind.key, {})} min={kind.min} max={kind.max} step={50} suffix=" ms" onChange={(v) => actions.onUpdateScene?.(scene.id, { transition: { kind: kind.key, ms: v } })} />
         )}
+        <HotkeyField value={scene.hotkey || ""} onChange={(hotkey) => actions.onUpdateScene?.(scene.id, { hotkey: hotkey || null })} label="Sahne kısayolu" hint="1–9 sıradaki sahneler için zaten var; ek olarak F1–F12 ya da ⌥ / ⌃ / ⌘ ile."
+          conflict={scene.hotkey ? hotkeyOwner(config, scene.hotkey, scene.id)?.name || null : null} />
       </section>
       <section className="sem-card" aria-label="Yayın grafikleri bu sahnede">
         <header className="sem-card__head"><h4><Icon name="trophy" size={13} /> Grafikler bu sahnede</h4></header>

@@ -13,6 +13,8 @@
 //   Genel      "Tüm sesleri kapat" (yayına hiç ses gitmez) · "Yalnız mikrofonu kapat";
 //              her şeritte YAYINDA / neden kapalı rozeti
 // Ölçerler tek rAF döngüsünde DOM'u doğrudan günceller (React çizimi yok).
+import AudioFiltersDialog from "./live/AudioFiltersDialog";
+import { filtersSummary } from "../../lib/studio/audioFilters";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Field, Icon, Kbd } from "../../components/ui";
 import { levelFromSamples } from "../../lib/studio/compose";
@@ -158,7 +160,10 @@ function Fader({ db, onChange, label }) {
 
 const GROUP_SHORT = Object.fromEntries(ROUTE_GROUPS.map((g) => [g.key, g.short]));
 
-export function Strip({ strip, st, audio, bind, status }) {
+export function Strip({ strip, st: stIn, audio, bind, status }) {
+  const st = stIn || { trim: 0, fader: 0, mute: false, solo: false };
+  const [fxOpen, setFxOpen] = useState(false);
+  const fxText = filtersSummary(st.filters);
   const air = audio.airOf ? audio.airOf(strip.id) : null;
   const onAir = air ? air.onAir : audio.routeNow?.[strip.group] && !st.mute;
   const set = (patch) => audio.setStrip(strip.id, patch);
@@ -184,7 +189,10 @@ export function Strip({ strip, st, audio, bind, status }) {
       <div className="mx-strip__btns">
         <button type="button" className={`mx-btn is-mute ${st.mute ? "is-on" : ""}`} onClick={() => set({ mute: !st.mute })} title={strip.id === "mic" ? "Sessiz (M)" : "Sessiz"}>M</button>
         <button type="button" className={`mx-btn is-solo ${st.solo ? "is-on" : ""}`} onClick={() => set({ solo: !st.solo })} title="Solo / kulaklıkla dinle"><Phones /></button>
+        <button type="button" className={`mx-btn is-fx ${fxText ? "is-on" : ""}`} onClick={() => setFxOpen(true)} title={`Ses filtreleri: gecikme, gürültü kapısı, EQ, sıkıştırıcı${fxText ? ` (${fxText})` : ""}`}>FX</button>
       </div>
+      {fxText && <div className="mx-strip__fx" title={fxText}>{fxText}</div>}
+      {fxOpen && <AudioFiltersDialog strip={strip} filters={st.filters || null} gateOpen={audio.gateOpen} onChange={(filters) => set({ filters })} onClose={() => setFxOpen(false)} />}
       {perScene && audio.scenes?.length > 0 && <div className={`mx-strip__scenes ${Array.isArray(scenes) ? "is-some" : ""}`} title="Hangi sahnelerde yayına gider (Sahne başına ses)">{scenesText(scenes, audio.scenes)}</div>}
       <footer className={`mx-strip__bus ${onAir ? "is-air" : ""}`} title={air ? air.reason : onAir ? "Bu bara şu an yayına gidiyor" : "Bu bara şu an yayına GİTMİYOR (yönlendirme)"}>
         {onAir ? <><i className="au-dot" /> YAYINDA</> : `${GROUP_SHORT[strip.group]} · ${air?.muted ? "SESSİZ" : air && !air.inScene ? "SAHNEDE YOK" : "KAPALI"}`}

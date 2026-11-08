@@ -17,7 +17,7 @@ import { Field, Icon, Kbd } from "../../../components/ui";
 import { BITRATE_PRESETS, FPS_CHOICES, RESOLUTION_CHOICES, encodingPreset, recommendedBitrate } from "../../../lib/studio/broadcast";
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../../lib/studio/transitions";
 import { WORKSPACES, FIXED_SHORTCUTS } from "../../../lib/studio/scenesWorkspace";
-import { AUDIO_KBPS_CHOICES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, PIPELINES, RECORD_QUALITIES, RESERVED_KEYS, bindHotkey, keyText, recordEstimate } from "./settings";
+import { AUDIO_KBPS_CHOICES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, PIPELINES, STREAM_DELAY_CHOICES, RECORD_QUALITIES, RESERVED_KEYS, bindHotkey, keyText, recordEstimate } from "./settings";
 import QualityPresets from "../QualityPresets";
 import { RAIL_SIZES, RAIL_WIDGETS, addWidget, moveWidget, removeWidget, resizeWidget, sizeKey, sizesOf, widgetOf } from "../shortcuts/railModel";
 import { RailCatalog } from "../shortcuts/ShortcutRail";
@@ -191,6 +191,10 @@ function SettingsPage({
             </Field>
           </div>
           <p className="st-hint">YouTube 2 sn anahtar kare önerir. Ses 128 kbps çoğu yayın için yeterli.</p>
+        </Section>
+        <Section title="Yayın gecikmesi" sub="OBS “Stream Delay”: izleyiciye giden görüntü bu kadar geç gider (ör. canlı sonuç / küfür / taktik sızmasın). Kayıt ve tekrarlar anlık kalır; yeni ayar bir sonraki yayında geçerli.">
+          <div className="st-seg">{STREAM_DELAY_CHOICES.map((k) => <button key={k} type="button" className={(settings.stream.delaySec || 0) === k ? "is-on" : ""} onClick={() => set("stream", { delaySec: k })}>{k ? (k >= 60 ? `${k / 60} dk` : `${k} sn`) : "Yok"}</button>)}</div>
+          {settings.stream.delaySec > 0 && <p className="st-hint">Bellek: yaklaşık {Math.max(1, Math.round((Number(settings.stream.delaySec) || 0) * 0.75))} MB (6 Mbps’de). YouTube’un kendi 2–5 sn gecikmesi buna eklenir.</p>}
         </Section>
       </>
     );

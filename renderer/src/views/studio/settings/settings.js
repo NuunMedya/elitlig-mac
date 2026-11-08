@@ -25,6 +25,8 @@ export const ENCODER_PREFS = [
   { key: "software", label: "Yazılım (x264)", hint: "En uyumlu, işlemci kullanır" },
 ];
 export const KEYFRAME_CHOICES = [1, 2, 4];
+/** Yayın gecikmesi (sn): yalnız YouTube / RTMP'ye giden görüntü gecikir (OBS "Stream Delay"). */
+export const STREAM_DELAY_CHOICES = [0, 5, 10, 15, 30, 60, 120];
 export const AUDIO_KBPS_CHOICES = [128, 160, 192, 256]; // 96 kbps AAC stereo cızırtılı; kodlayıcı en az 128 yazar
 
 /** Kayıt kalitesi (yayından ayrı). videoKbps null = yayınla aynı. */
@@ -67,7 +69,7 @@ export const RESERVED_KEYS = new Set(["1", "2", "3", "4", "5", "6", "7", "8", "9
 export const DEFAULT_SETTINGS = {
   v: 2,
   // pipeline: kodlama yolu — "auto" | "webcodecs" (tek kodlama) | "legacy" (MediaRecorder + ffmpeg)
-  stream: { encoder: "auto", keyframeSec: 2, audioKbps: 128, pipeline: "auto" },
+  stream: { encoder: "auto", keyframeSec: 2, audioKbps: 128, pipeline: "auto", delaySec: 0 },
   record: { enabled: false, dir: null, quality: "stream", customKbps: 10000, customHeight: 1080 },
   // tekrar klibi 15 sn: önizlemede giriş–çıkışla istenen bölüm seçilir. directTake: R kısayolu
   // son tekrarı önizlemeye yükleyip AYNI GEÇİŞ yoluyla hemen yayına alır [önizleme-geçiş]
@@ -122,6 +124,7 @@ export function normalizeSettings(raw) {
       keyframeSec: pick(Number(r.stream?.keyframeSec), KEYFRAME_CHOICES, d.stream.keyframeSec),
       audioKbps: pick(Number(r.stream?.audioKbps), AUDIO_KBPS_CHOICES, d.stream.audioKbps),
       pipeline: normalizePipeline(r.stream?.pipeline),
+      delaySec: pick(Number(r.stream?.delaySec), STREAM_DELAY_CHOICES, d.stream.delaySec),
     },
     record: {
       enabled: bool(r.record?.enabled, d.record.enabled),

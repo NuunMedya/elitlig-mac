@@ -30,6 +30,10 @@
 //     bağlantı connectTimeoutMs içinde kurulamadıysa aktarıcı öldürülür.
 //   - Kodlayıcı yeniden başlarsa (yeni TCP bağlantısı, zaman damgaları sıfırdan)
 //     aktarıcı geri çekilme beklemeden yeniden kurulur.
+//   - YAYIN GECİKMESİ (delayMs, OBS "Stream Delay"): kodlayıcıdan gelen TS bir gecikme
+//     hattında bekletilir, süre dolunca yukarıdaki yola girer (GOP tamponu, yeniden bağlanma
+//     dahil her şey gecikmiş akışla çalışır). Kodlayıcı yeniden başlaması da hatta işaret
+//     olarak sıraya girer. Bellek: bit hızı × süre (6 Mbps × 30 sn ≈ 23 MB). Kayıt / tekrar anlık.
 //
 // Electron'a bağlı değildir; süreç başlatma, saat ve zamanlayıcılar dışarıdan
 // verilebilir (testler).
@@ -192,6 +196,46 @@ function createTsGopBuffer({ maxBytes = MAX_GOP_BYTES } = {}) {
   };
 }
 
+/* ------------------------------ gecikme hattı ------------------------------ */
+
+/**
+ * Zaman damgalı FIFO: push(veri) / mark() (akış başı işareti); süresi dolan öğeler
+ * sırayla onData / onMarker'a verilir. delayMs 0 ise etkin değildir.
+ */
+function createDelayLine({ delayMs = 0, now = () => Date.now(), timers = { setTimeout, clearTimeout }, tickMs = 40, onData, onMarker }) {
+  const ms = Math.max(0, Number(delayMs) || 0);
+  const queue = [];
+  let head = 0;
+  let bytes = 0;
+  let timer = null;
+  let stopped = false;
+  const schedule = () => {
+    if (timer || stopped || head >= queue.length) return;
+    timer = timers.setTimeout(tick, tickMs);
+  };
+  function tick() {
+    timer = null;
+    const t = now();
+    while (head < queue.length && t - queue[head].at >= ms) {
+      const it = queue[head];
+      queue[head] = null;
+      head += 1;
+      if (it.data) { bytes -= it.data.length; onData(it.data); } else onMarker();
+    }
+    if (head > 512 && head * 2 > queue.length) { queue.splice(0, head); head = 0; }
+    schedule();
+  }
+  return {
+    active: ms > 0,
+    delayMs: ms,
+    push(data) { if (stopped) return; queue.push({ at: now(), data }); bytes += data.length; schedule(); },
+    mark() { if (stopped) return; queue.push({ at: now(), data: null }); schedule(); },
+    pendingBytes: () => bytes,
+    pendingMs: () => (head < queue.length ? Math.max(0, now() - queue[head].at) : 0),
+    stop() { stopped = true; if (timer) timers.clearTimeout(timer); timer = null; queue.length = 0; head = 0; bytes = 0; },
+  };
+}
+
 /* --------------------------------- aktarıcı --------------------------------- */
 
 function createRelay({
@@ -219,8 +263,11 @@ function createRelay({
   stopTimeoutMs = 3000,
   note = () => {},
   log = () => {},
+  delayMs = 0,
+  delayTickMs = 40,
 } = {}) {
   const events = new EventEmitter();
+  const delay = createDelayLine({ delayMs, now, timers, tickMs: delayTickMs, onData: (d) => write(d), onMarker: () => newStream() });
   const gopBuf = createTsGopBuffer();
   const backup = backupUrl && backupUrl !== primaryUrl ? backupUrl : null;
   let server = null;
@@ -289,6 +336,8 @@ function createRelay({
       pendingBytes: pusher?.child?.stdin?.writableLength ?? 0,
       highWaterBytes: highWater(),
       inKbps: Math.round((inRate.bps * 8) / 1000),
+      delayMs: delay.delayMs,
+      delayBufferedBytes: delay.pendingBytes(),
       nextRetryInMs: nextRetryAt === null ? null : Math.max(0, nextRetryAt - now()),
       message: message(),
     };
@@ -335,10 +384,10 @@ function createRelay({
     if (socket) { try { socket.destroy(); } catch { /* yoksay */ } }
     socket = sock;
     try { sock.setNoDelay(true); } catch { /* yoksay */ }
-    sock.on("data", (d) => { if (socket === sock) write(d); });
+    sock.on("data", (d) => { if (socket === sock) { if (delay.active) delay.push(d); else write(d); } });
     sock.on("error", () => { /* kodlayıcı kapanıyor */ });
     sock.on("close", () => { if (socket === sock) socket = null; });
-    newStream();
+    if (delay.active) delay.mark(); else newStream();
   }
 
   /** Kodlayıcı yeni akış başlattı (ilk ya da yeniden başlatma). */
@@ -585,6 +634,7 @@ function createRelay({
   function stop() {
     if (stopped) return Promise.resolve(true);
     stopping = true;
+    delay.stop();
     for (const t of ["retryTimer", "watchTimer", "stableTimer"]) clear(t);
     closeServer();
     const p = pusher;
@@ -601,6 +651,7 @@ function createRelay({
   function dispose() {
     stopping = true;
     stopped = true;
+    delay.stop();
     for (const t of ["retryTimer", "watchTimer", "stableTimer"]) clear(t);
     closeServer();
     if (pusher) { const p = pusher; pusher = null; kill(p); }
@@ -620,4 +671,4 @@ function createRelay({
   };
 }
 
-module.exports = { createRelay, createTsGopBuffer, backoffFor, RELAY_BACKOFF_MS, RELAY_MESSAGES, TS_PACKET };
+module.exports = { createRelay, createDelayLine, createTsGopBuffer, backoffFor, RELAY_BACKOFF_MS, RELAY_MESSAGES, TS_PACKET };

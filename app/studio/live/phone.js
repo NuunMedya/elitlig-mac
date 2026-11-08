@@ -214,7 +214,7 @@ function createPhoneServer({ certFile, onSignal = () => {}, onPresence = () => {
     if (owner && owner.sourceId !== id) tok = newToken(); // çoğaltılmış kaynak aynı kodu alamaz
     const old = bySource.get(id);
     if (old && old !== tok) { tokens.delete(old); conns.get(old)?.conn.close(4002, "unpaired"); conns.delete(old); }
-    tokens.set(tok, { sourceId: id, name: String(name || "").slice(0, 60) });
+    tokens.set(tok, { sourceId: id, name: String(name || tokens.get(tok)?.name || "").slice(0, 60) });
     bySource.set(id, tok);
     const urls = info.addresses.map((a) => `https://${a}:${info.port}/p/${tok}`);
     presence(tok);

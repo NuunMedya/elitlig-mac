@@ -46,10 +46,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Icon, Kbd, Modal, useConfirm, useToast } from "../../components/ui";
 import { setLeaveGuard } from "../../lib/leaveGuard";
 import {
-  addLayer, addScene, addSource, duplicateLayer, duplicateScene, loadScenesConfig, moveLayerTo, moveSceneTo, multiviewTiles, readySceneOf,
+  addLayer, addScene, addSource, duplicateLayer, duplicateScene, duplicateSource, loadScenesConfig, moveLayerTo, moveSceneTo, multiviewTiles, readySceneOf,
   removeLayer, removeScene, removeSource, renameScene, replaceScene, resolveScene, saveScenesConfig, sceneAtHotkey, sceneFromSource, sceneFromTemplate,
   sceneTransitionOf, sourceUsage, startSceneCountdowns, updateLayer, updateScene, updateSource, updateSourceFx,
 } from "../../lib/studio/scenes";
+import { comboOf, hotkeyTarget, toggleSourceInScene } from "../../lib/studio/hotkeys";
+import { useLiveTally } from "./live/useLiveTally";
+import CollectionsDialog from "./live/CollectionsDialog";
 import FxFloat from "./fx/FxFloat";
 import { backupIngestUrl, encodingPreset, ingestUrl, keyAction, normalizeEncoding, reusableStream, statusPill } from "../../lib/studio/broadcast";
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../lib/studio/transitions";
@@ -369,6 +372,8 @@ export default function Studio({ auth, go }) {
   };
 
   const modesRef = useRef({ previewOverride: null, programOverride: null });
+  const [programFx, setProgramFx] = useState({ ftb: false, frozen: false }); // siyaha geç / dondur (düğme durumu)
+  const [collectionsOpen, setCollectionsOpen] = useState(false);
   const comp = useCompositor({ width: preset.width, height: preset.height, fps: preset.fps, configRef, runtimeRef: src.runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef, modesRef });
 
   /* ───────── kodlayıcı ve YouTube ───────── */
@@ -533,6 +538,8 @@ export default function Studio({ auth, go }) {
   /* ───────── program / önizleme ───────── */
   const ws = workspaceOf(prefs.workspace);
   const studioMode = Boolean(prefs.studioMode) && lay.has("pvw");
+  // Canlı kaynaklar: telefonlarda "yayında" ışığı, oynatma listesi "yayına gelince baştan".
+  useLiveTally(config, src.runtimeRef, src.version, studioMode);
   const tKind = transitionKind(prefs.transition);
   const tMs = transitionMs(tKind.key, prefs.transitionMs);
 
@@ -728,7 +735,7 @@ export default function Studio({ auth, go }) {
       return;
     }
     if (clean.id) {
-      setConfig((c) => updateSource(c, clean.id, { ...clean, nonce: clean.kind === "screen" || clean.kind === "window" ? Date.now() : clean.nonce }));
+      setConfig((c) => updateSource(c, clean.id, { ...clean, nonce: clean.kind === "screen" || clean.kind === "window" || clean.kind === "region" ? Date.now() : clean.nonce }));
       return;
     }
     // Kaynak eklemek sahne OLUŞTURMAZ: kitaplığa girer (düzenleyiciden açıldıysa o sahneye katman olur).
@@ -740,6 +747,8 @@ export default function Studio({ auth, go }) {
       return;
     }
     setConfig(c1);
+    // Telefon / RTMP girişi: eklenir eklenmez bağlantı bilgisi (QR, adres, anahtar) açılır.
+    if (source.kind === "phone" || source.kind === "ingest") setTimeout(() => setDialog({ initial: { ...source, angleOptions: recordable } }), 0);
     toast(`“${source.name}” kaynaklara eklendi. Yayına vermek için bir sahneye ekle.`, { tone: "success", timeout: 6000, action: { label: "Bu kaynaktan sahne oluştur", run: () => sceneActions.onSceneFromSource(source.id) } });
   });
   const deleteSource = useStable(async (s) => {
@@ -804,6 +813,7 @@ export default function Studio({ auth, go }) {
     onEditFull: (id) => { setInlineSceneId(id); setEditSceneId(id); },
     onEditInline: (id) => { setSelectedLayerId(null); setInlineSceneId(id); if (!prefsRef.current.sceneInline) setPref("sceneInline", true); openPanel("sahne"); },
     onUpdateScene: (id, patch) => setConfig((c) => updateScene(c, id, patch)),
+    onCollections: () => setCollectionsOpen(true),
     onReplaceScene: (id, scene) => setConfig((c) => replaceScene(c, id, scene)),
     onDuplicateLayer: (sceneId, layerId) => setConfig((c) => { const { config: next, layer } = duplicateLayer(c, sceneId, layerId); if (layer) setSelectedLayerId(layer.id); return next; }),
     onTemplate,
@@ -850,6 +860,7 @@ export default function Studio({ auth, go }) {
 
   const libActions = useMemo(() => ({
     onFx: (sourceId) => setFxPanel({ sourceId }),
+    onDuplicateSource: (sourceId) => setConfig((c) => duplicateSource(c, sourceId).config),
     onNewSource: () => newSource(),
     onEditSource: editSource,
     onRemoveSource: deleteSource,
@@ -966,6 +977,19 @@ export default function Studio({ auth, go }) {
     if (document.querySelector(".modal-backdrop, .st-pop")) return;
     if (settingsSection) return; // Ayarlar açıkken (tuş atama) stüdyo kısayolları çalışmaz
     if (e.target?.closest?.(".st-edit") && /^Arrow|^Delete$|^Backspace$/.test(e.key)) return;
+    // Sahne / kaynak kısayolları (F1–F12 ya da değiştiricili; kaynak ve sahne ayarlarında atanır).
+    const combo = !e.target?.closest?.("input, textarea, select, [contenteditable]") ? comboOf(e) : null;
+    const hk = combo ? hotkeyTarget(configRef.current, combo) : null;
+    if (hk && !editSceneId) {
+      e.preventDefault();
+      if (hk.type === "scene") toPreview(hk.id);
+      else {
+        const r = toggleSourceInScene(configRef.current, hk.id);
+        if (r.sceneId) { applyConfig(() => r.config); toast(`${configRef.current.sources.find((x) => x.id === hk.id)?.name || "Kaynak"} ${r.visible ? "gösterildi" : "gizlendi"}.`, { timeout: 1500 }); }
+        else toast("Bu kaynak programdaki / önizlemedeki sahnede yok.", { tone: "warn", timeout: 2500 });
+      }
+      return;
+    }
     const act = keyAction(e, { pendingGoal: goalArmed, hotkeys: settings.hotkeys });
     if (!act) return;
     if (act.type === "goalCancel") { setGoalArmed(false); return; }
@@ -1139,7 +1163,8 @@ export default function Studio({ auth, go }) {
   const transition = (layout) => (
     <TransitionPanel layout={layout} studioMode={studioMode} canTake={canTake} takeLabel={modes.previewOverride ? "YAYINA AL" : "GEÇİŞ"} onTake={() => toProgram()}
       lastSceneName={lastSceneId ? resolveScene(config, lastSceneId)?.name : null} onLastScene={backToLastScene}
-      tKind={tKind} tMs={tMs} onKind={(k) => setPref("transition", k)} onMore={() => setTab("gecis")} hints={hints} />
+      tKind={tKind} tMs={tMs} onKind={(k) => setPref("transition", k)} onMore={() => setTab("gecis")} hints={hints}
+      programFx={programFx} onFtb={() => { comp.setFtb(undefined, 700); setProgramFx(comp.programFx()); }} onFreeze={() => { comp.setFreeze(); setProgramFx(comp.programFx()); }} />
   );
   const tileProps = (t) => ({
     tile: t, register: registerTile, studioMode, onAir: t.id === programIdForTally, inPreview: studioMode && !modes.previewOverride && t.id === config.previewSceneId && t.id !== programIdForTally,
@@ -1559,8 +1584,11 @@ export default function Studio({ auth, go }) {
       )}
       {dialog && (
         <SourceDialog initial={dialog.initial} cameraCount={config.sources.filter((s) => s.kind === "camera").length} devices={src.devices} access={src.access}
-          onRequestAccess={src.requestAccess} onRefreshDevices={src.refreshDevices} onSave={saveSource} onClose={closeDialog} runtimeRef={src.runtimeRef} />
+          onRequestAccess={src.requestAccess} onRefreshDevices={src.refreshDevices} onSave={saveSource} onClose={closeDialog} runtimeRef={src.runtimeRef}
+          config={config} onPatchSource={onResolve} />
       )}
+      {collectionsOpen && <CollectionsDialog config={config} onAir={engine.active} ask={ask} onClose={() => setCollectionsOpen(false)}
+        onLoad={(cfg) => { const next = loadScenesConfig({ getItem: () => JSON.stringify(cfg) }); applyConfig(() => next); toast("Koleksiyon yüklendi.", { tone: "success", timeout: 2500 }); }} />}
       {fxPanel && (() => {
         const fxSource = config.sources.find((s) => s.id === fxPanel.sourceId);
         if (!fxSource) return null;

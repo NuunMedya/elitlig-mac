@@ -1,9 +1,13 @@
 // Yayın Stüdyosu — SES KARIŞTIRICI (WebAudio): kanal şeritleri, baralar, yönlendirme.
 //
-//   kaynak ─▶ [giriş] ─▶ kazanç(trim) ─▶ fader ─▶ sessiz ─┬─▶ sahne kapısı ─▶ grup barası ─▶ master ─▶ sınırlayıcı ─▶ tümünü kapat ─▶ YAYIN
+//   kaynak ─▶ [giriş] ─▶ gecikme ─▶ gürültü kapısı ─▶ EQ (bas / orta / tiz) ─▶ sıkıştırıcı ─▶ kazanç(trim) ─▶ fader ─▶ sessiz ─┬─▶ sahne kapısı ─▶ grup barası ─▶ master ─▶ sınırlayıcı ─▶ tümünü kapat ─▶ YAYIN
 //                                                         ├─▶ L/R ölçer
 //                                                         └─▶ solo ─▶ dinleme (kulaklık: ctx.destination)
 //   şeritler: mic · input:<id> (aygıt ya da ses / video DOSYASI) · media (tekrar / VAR / video kaynakları) · highlight (özet) · music (dosya çalar)
+//             · <kaynak kimliği> (ses taşıyan görüntü kaynakları: telefon, RTMP / SRT girişi, IP kamera,
+//               oynatma listesi — kaynak programdayken ya da "sesi her zaman yayında" ise açık)
+//   Filtreler (şerit başına, audioFilters.js): gecikme 0–2000 ms (ses / görüntü eşleme), gürültü
+//   kapısı (düzey 20 ms'de bir ölçülür), 3 bant EQ, sıkıştırıcı (ıslak / kuru: kapalıyken atlanır).
 // Sahne kapısı: şeridin `scenes` listesi (null = tüm sahneler) program sahnesini içermiyorsa
 // 0 (OBS'teki sahne başına ses: "Bu sahnede yayına ver"). Dosya kaynakları "kendiliğinden
 // çal" açıksa yalnız yayındaki sahnedeyken çalar. "Tüm sesleri kapat" (killAll) yayına giden
@@ -21,6 +25,8 @@ import {
   MASTER_CLIP_DB, STRIP_CLIP_DB, busGains, createProgramChain, dbToGain, inputGroup, liveInScene, normalizeAudio, patchStrip, playbackContext, programAudioChannels, resetRoute, routingFor,
   sceneGain, setStripAllScenes, setStripScene, stripAirState, stripGain, stripList, stripScenes, toggleRoute,
 } from "../../lib/studio/audio";
+import { EQ_BANDS, MAX_AUDIO_DELAY_MS, gateStep, peakDb, resolveFilters } from "../../lib/studio/audioFilters";
+import { AV_KINDS } from "../../lib/studio/liveSources";
 
 const stopStream = (stream) => stream?.getTracks?.().forEach((t) => { try { t.stop(); } catch { /* yoksay */ } });
 const RAMP = 0.015;
@@ -139,13 +145,27 @@ export function useStudioAudio({ sources, settings } = {}) {
     const solo = ctx.createGain();
     solo.gain.value = 0;
     const air = ctx.createGain(); // sahne kapısı
-    input.connect(trim); trim.connect(fader); fader.connect(mute);
+    // Filtre zinciri: gecikme → kapı → EQ → sıkıştırıcı (ıslak / kuru) → trim.
+    const delay = ctx.createDelay(MAX_AUDIO_DELAY_MS / 1000 + 0.5);
+    delay.delayTime.value = 0;
+    const gate = ctx.createGain();
+    const eq = EQ_BANDS.map((b) => { const f = ctx.createBiquadFilter(); f.type = b.type; f.frequency.value = b.freq; f.Q.value = b.q; f.gain.value = 0; return f; });
+    const comp = ctx.createDynamicsCompressor();
+    const compWet = ctx.createGain(); compWet.gain.value = 0;
+    const compDry = ctx.createGain(); compDry.gain.value = 1;
+    const makeup = ctx.createGain();
+    const gateTap = makeAnalyser(ctx);
+    input.connect(delay); delay.connect(gate); delay.connect(gateTap);
+    gate.connect(eq[0]); eq[0].connect(eq[1]); eq[1].connect(eq[2]);
+    eq[2].connect(comp); comp.connect(makeup); makeup.connect(compWet); compWet.connect(trim);
+    eq[2].connect(compDry); compDry.connect(trim);
+    trim.connect(fader); fader.connect(mute);
     mute.connect(air); air.connect(G.buses[group] || G.buses.live);
     mute.connect(solo); solo.connect(G.monitor);
     const pre = makeAnalyser(ctx);
     input.connect(pre);
     const tap = { ...stereoTap(ctx, mute), clipDb: STRIP_CLIP_DB };
-    s = { id, group, input, trim, fader, mute, air, solo, pre, tap };
+    s = { id, group, input, trim, fader, mute, air, solo, pre, tap, delay, gate, eq, comp, compWet, compDry, makeup, gateTap, gateState: { open: true, holdLeft: 0 } };
     G.strips.set(id, s);
     return s;
   }, []);
@@ -317,6 +337,46 @@ export function useStudioAudio({ sources, settings } = {}) {
     G.music.loop = value.music.loop;
   }, [value, micStatus.status, inputStatus]);
 
+  /* ───────── şerit filtreleri (gecikme, kapı, EQ, sıkıştırıcı) ───────── */
+  const filterKey = JSON.stringify(Object.fromEntries(Object.entries(value.strips).filter(([, st]) => st.filters).map(([id, st]) => [id, st.filters])));
+  const [stripTick, setStripTick] = useState(0);
+  useEffect(() => {
+    const G = g.current;
+    if (!G) return undefined;
+    const t = G.ctx.currentTime;
+    const set = (param, v) => { try { param.setTargetAtTime(v, t, 0.02); } catch { param.value = v; } };
+    let gated = false;
+    for (const [id, s] of G.strips) {
+      const f = resolveFilters(valueRef.current.strips[id]?.filters);
+      set(s.delay.delayTime, f.delayMs / 1000);
+      EQ_BANDS.forEach((b, i) => set(s.eq[i].gain, f.eq.on ? f.eq[b.key] : 0));
+      s.comp.threshold.value = f.comp.threshold;
+      s.comp.ratio.value = f.comp.ratio;
+      s.comp.attack.value = f.comp.attackMs / 1000;
+      s.comp.release.value = f.comp.releaseMs / 1000;
+      s.comp.knee.value = 6;
+      set(s.makeup.gain, dbToGain(f.comp.makeup));
+      set(s.compWet.gain, f.comp.on ? 1 : 0);
+      set(s.compDry.gain, f.comp.on ? 0 : 1);
+      s.gateCfg = f.gate;
+      if (!f.gate.on) { set(s.gate.gain, 1); s.gateState = { open: true, holdLeft: 0 }; } else gated = true;
+    }
+    if (!gated) return undefined;
+    // Gürültü kapısı: kapı öncesi düzey 20 ms'de bir ölçülür, kazanç atak / bırakma süresiyle.
+    const buf = new Float32Array(1024);
+    const timer = setInterval(() => {
+      for (const s of G.strips.values()) {
+        if (!s.gateCfg?.on) continue;
+        s.gateTap.getFloatTimeDomainData(buf);
+        const st = gateStep(s.gateState, peakDb(buf), s.gateCfg, 20);
+        if (st.open !== s.gateState.open || !s.gateInit) { try { s.gate.gain.setTargetAtTime(st.target, G.ctx.currentTime, Math.max(0.001, st.timeConstant)); } catch { /* yoksay */ } s.gateInit = true; }
+        s.gateState = st;
+      }
+    }, 20);
+    return () => clearInterval(timer);
+  }, [filterKey, stripTick, micStatus.status, inputStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+  const gateOpen = useCallback((id) => g.current?.strips.get(id)?.gateState?.open ?? true, []);
+
   /* ───────── sahne başına ses (sahne kapısı) ───────── */
   const programSceneId = sources?.programSceneId ?? null;
   useEffect(() => {
@@ -351,7 +411,7 @@ export function useStudioAudio({ sources, settings } = {}) {
 
   /* ───────── video öğeleri ───────── */
   /** Öğeyi şeride bağlar (bir kez); { setOn(bool) } döner. Kapı varsayılan kapalı. */
-  const attachMedia = useCallback((el, { strip = "media", on = false } = {}) => {
+  const attachMedia = useCallback((el, { strip = "media", on = false, group = null } = {}) => {
     const G = g.current;
     if (!G || !el) return { setOn: () => {}, ok: false };
     let n = mediaRef.current.get(el);
@@ -371,7 +431,7 @@ export function useStudioAudio({ sources, settings } = {}) {
     }
     if (n.strip !== strip) {
       try { n.gate.disconnect(); } catch { /* yoksay */ }
-      const s = stripNode(strip, strip === "music" ? "music" : "media");
+      const s = stripNode(strip, group || (strip === "music" ? "music" : "media"));
       if (s) n.gate.connect(s.input);
       n.strip = strip;
     }
@@ -380,23 +440,60 @@ export function useStudioAudio({ sources, settings } = {}) {
     return { ok: Boolean(node.source), setOn: (v) => setGain(G.ctx, node.gate, v ? 1 : 0) };
   }, [stripNode]);
 
-  // Sahnedeki video kaynakları: yalnız programdayken kapı açık.
+  /** Uzak akışı (telefon WebRTC sesi) şeride bağlar; { setOn } döner. */
+  const streamsRef = useRef(new Map()); // stream → { source, gate }
+  const attachStream = useCallback((stream, { strip, on = false } = {}) => {
+    const G = g.current;
+    if (!G || !stream || !stream.getAudioTracks().length) return null;
+    let n = streamsRef.current.get(stream);
+    if (!n || n.tracks !== stream.getAudioTracks().map((t) => t.id).join(",")) {
+      if (n) { try { n.source.disconnect(); } catch { /* yoksay */ } }
+      const gate = n?.gate || G.ctx.createGain();
+      let source = null;
+      try { source = G.ctx.createMediaStreamSource(stream); source.connect(gate); } catch { source = null; }
+      n = { source, gate, strip: n?.strip || null, tracks: stream.getAudioTracks().map((t) => t.id).join(",") };
+      streamsRef.current.set(stream, n);
+    }
+    if (n.strip !== strip) {
+      try { n.gate.disconnect(); } catch { /* yoksay */ }
+      const s = stripNode(strip, "live");
+      if (s) n.gate.connect(s.input);
+      n.strip = strip;
+    }
+    setGain(G.ctx, n.gate, on ? 1 : 0);
+    return n;
+  }, [stripNode]);
+
+  // Sahnedeki video kaynakları: yalnız programdayken kapı açık. Ses taşıyan canlı
+  // kaynaklar (telefon, RTMP / SRT, IP kamera, liste) kendi şeritlerine bağlanır.
   const runtimeRef = sources?.runtimeRef;
   const progKey = (programIds || []).join(",");
   useEffect(() => {
     if (!runtimeRef || !g.current) return undefined;
     const scan = () => {
       const ids = new Set(progKey ? progKey.split(",") : []);
+      let added = false;
       for (const s of list) {
+        const rt = runtimeRef.current?.get(s.id);
+        if (AV_KINDS.has(s.kind)) {
+          const had = g.current.strips.has(s.id);
+          const on = Boolean(s.audioAlways) || ids.has(s.id);
+          if (s.kind === "phone") { if (rt?.mediaStream) attachStream(rt.mediaStream, { strip: s.id, on }); else stripNode(s.id, "live"); }
+          else if (rt?.el instanceof HTMLVideoElement) attachMedia(rt.el, { strip: s.id, on, group: "live" });
+          else stripNode(s.id, "live");
+          if (!had) added = true;
+          continue;
+        }
         if (s.kind !== "video") continue;
-        const el = runtimeRef.current?.get(s.id)?.el;
+        const el = rt?.el;
         if (el instanceof HTMLVideoElement) attachMedia(el, { strip: "media", on: ids.has(s.id) });
       }
+      if (added) setStripTick((t) => t + 1);
     };
     scan();
     const t = setInterval(scan, 1500);
     return () => clearInterval(t);
-  }, [attachMedia, list, progKey, runtimeRef]);
+  }, [attachMedia, attachStream, list, progKey, runtimeRef, stripNode]);
 
   /* ───────── ayar güncelleme ───────── */
   const update = useCallback((fn) => {
@@ -449,6 +546,14 @@ export function useStudioAudio({ sources, settings } = {}) {
   }), [resume, update]);
 
   const audioTrack = useCallback(() => g.current?.dest.stream.getAudioTracks()[0] || null, []);
+  // Şerit listesi: sabitlerden önce ses taşıyan görüntü kaynakları (kaynak adıyla).
+  const avKey = list.filter((s) => AV_KINDS.has(s.kind)).map((s) => `${s.id}:${s.name}:${s.kind}`).join("|");
+  const stripsAll = useMemo(() => {
+    const base = stripList(value);
+    const av = list.filter((s) => AV_KINDS.has(s.kind)).map((s) => ({ id: s.id, kind: "source", group: "live", label: s.name, icon: s.kind === "phone" ? "phone" : s.kind === "playlist" ? "list" : s.kind === "stream" ? "link" : "broadcast" }));
+    const firstFixed = base.findIndex((x) => x.kind === "media" || x.kind === "highlight" || x.kind === "music");
+    return firstFixed < 0 ? [...base, ...av] : [...base.slice(0, firstFixed), ...av, ...base.slice(firstFixed)];
+  }, [value, avKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const filePlaying = useMemo(() => Object.fromEntries(Object.entries(fileState).map(([k, v]) => [k, Boolean(v?.playing)])), [fileState]);
   const channels = useMemo(() => programAudioChannels(value, {
     context, programSceneId, programIds: programIds || [], sources: list, musicPlaying: music.playing, filePlaying,
@@ -472,7 +577,8 @@ export function useStudioAudio({ sources, settings } = {}) {
     micMuted: Boolean(value.mic.muted),
     micStatus,
     inputStatus,
-    strips: stripList(value),
+    strips: stripsAll,
+    gateOpen,
     // yönlendirme
     playback: context,
     airMode,

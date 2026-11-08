@@ -8,6 +8,9 @@
 //      özel kipte yalnız override.graphics === true ise)
 //   3. tekrar rozeti
 //   4. marka logo geçişi (stinger) en üstte
+//   5. SİYAHA GEÇ (FTB, vMix "Fade to Black"): tüm çıkış (grafikler dahil) süreyle siyaha
+//      solar / geri açılır. DONDUR (freeze): program son karede kalır (önizleme sürer);
+//      donukken de siyaha geçilebilir. Kodlayıcı akışı kesilmez (aynı kare yollanır).
 // ÖNİZLEME tuvali önizlemedeki sahneyi (ya da modesRef.previewOverride'ı) daha
 // düşük çözünürlükte gösterir (grafikler isteğe bağlı, soluk); düzenleyicide
 // sürüklenen kutu yapılandırmaya yazılmadan (overrideRef) anında çizilir.
@@ -59,6 +62,15 @@ function blit(ctx, src, v, W, H, blurCanvas) {
   ctx.restore();
 }
 
+/** Siyaha geçişin o anki siyahlığı (0 = görüntü, 1 = tam siyah). */
+export function ftbLevel(ftb, now) {
+  if (!ftb) return 0;
+  const target = ftb.on ? 1 : 0;
+  if (!ftb.ms || now - ftb.at >= ftb.ms) return target;
+  const p = Math.max(0, (now - ftb.at) / ftb.ms);
+  return ftb.from + (target - ftb.from) * p;
+}
+
 /** Geçişte "özel kip" hedefi (sahne kimliği yerine). */
 export const MODE_TARGET = "mode:program";
 
@@ -74,6 +86,9 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
   const trackRef = useRef(null);
   // Kare aboneleri (WebCodecs kodlayıcısı): program karesi çizildikten hemen sonra çağrılır.
   const frameSubsRef = useRef(new Set());
+  const frozenC = useMemo(() => document.createElement("canvas"), []);
+  const ftbRef = useRef({ on: false, at: 0, ms: 600, from: 0 }); // from: geçişin başladığı siyahlık
+  const freezeRef = useRef(false);
 
   useEffect(() => {
     program.width = width; program.height = height;
@@ -122,13 +137,16 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       drawScene(c, sceneOf(id), cfg.sources, runtime, w, h, opts);
     };
 
+    // DONDUR: son kare (önizleme ve FTB sürer).
+    const frozen = freezeRef.current;
+    if (frozen) ctx.drawImage(frozenC, 0, 0, W, H);
     // 1. taban
-    const tr = transitionRef.current;
+    const tr = frozen ? null : transitionRef.current;
     let stingerP = null;
     let stingerKind = "stinger";
     let graphics = true;
     let gSceneId = cfg.programSceneId;
-    if (vr?.active) {
+    if (frozen) { /* donuk kare çizildi */ } else if (vr?.active) {
       const vsrc = vr.sourceId ? cfg.sources.find((x) => x.id === vr.sourceId) : null;
       drawVar(ctx, W, H, now, { ...vr, source: vsrc, sourceRt: vsrc ? runtime.get(vsrc.id) : null }, brand);
     } else if (pgmOv && !(tr && (tr.toId === MODE_TARGET || tr.fromId === MODE_TARGET))) {
@@ -182,14 +200,14 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
     }
 
     // 2. yayın grafikleri (sahneye göre süzülür)
-    if (graphics) {
+    if (graphics && !frozen) {
       try { overlayRef.current?.(ctx, { width: W, height: H, now, target: "program", sceneId: gSceneId, replay: Boolean(replay?.active), event: replay?.active ? replay.event : null }); } catch { /* grafik hatası yayını durdurmasın */ }
     }
     // 3. tekrar rozeti
-    if (replay?.active && !vr?.active) drawReplayBadge(ctx, W);
+    if (replay?.active && !vr?.active && !frozen) drawReplayBadge(ctx, W);
     // 4. logo geçişi
     if (stingerP != null && stingerP < 1) drawTransitionStinger(ctx, W, H, stingerKind, stingerP, brand.logo, brand.branding);
-    const sg = stingerRef.current;
+    const sg = frozen ? null : stingerRef.current;
     if (sg) {
       const p = Math.min(1, (now - sg.startedAt) / sg.ms);
       if (p >= 0.5 && !sg.midFired) {
@@ -201,6 +219,17 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
         stingerRef.current = null;
         try { sg.onEnd?.(); } catch { /* yoksay */ }
       }
+    }
+
+    // 5. siyaha geç
+    const ftb = ftbRef.current;
+    const k = ftbLevel(ftb, now);
+    if (k > 0.001) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, k);
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
     }
 
     // ÖNİZLEME (2 / 3 karede bir; yayına gitmez)
@@ -232,7 +261,7 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       f.drawMax = 0;
       f.stalls = 0;
     }
-  }, [blurC, brandRef, configRef, fps, matchClockRef, modesRef, overlayRef, overrideRef, preview, previewGraphicsRef, program, replayRef, runtimeRef, scratchA, scratchB, varRef]);
+  }, [blurC, brandRef, frozenC, configRef, fps, matchClockRef, modesRef, overlayRef, overrideRef, preview, previewGraphicsRef, program, replayRef, runtimeRef, scratchA, scratchB, varRef]);
 
   useEffect(() => {
     let raf = 0;
@@ -288,9 +317,29 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
   /** fn(now) her program karesinden sonra; dönüş: aboneliği kaldır. */
   const subscribeFrames = useCallback((fn) => { frameSubsRef.current.add(fn); return () => frameSubsRef.current.delete(fn); }, []);
   const busy = useCallback(() => Boolean(transitionRef.current || stingerRef.current), []);
+  /** Siyaha geç / geri aç (on: true | false | undefined = değiştir). */
+  const setFtb = useCallback((on, ms = 600) => {
+    const cur = ftbRef.current;
+    const want = typeof on === "boolean" ? on : !cur.on;
+    if (want === cur.on) return want;
+    const now = performance.now();
+    ftbRef.current = { on: want, at: now, ms: Math.max(0, ms), from: ftbLevel(cur, now) };
+    return want;
+  }, []);
+  /** Programı dondur / çöz. */
+  const setFreeze = useCallback((on) => {
+    const want = typeof on === "boolean" ? on : !freezeRef.current;
+    if (want && !freezeRef.current) {
+      frozenC.width = program.width; frozenC.height = program.height;
+      try { frozenC.getContext("2d").drawImage(program, 0, 0); } catch { /* yoksay */ }
+    }
+    freezeRef.current = want;
+    return want;
+  }, [frozenC, program]);
+  const programFx = useCallback(() => ({ ftb: ftbRef.current.on, frozen: freezeRef.current }), []);
   const transitionNow = useCallback(() => transitionRef.current, []);
 
-  return { program, preview, getStats, startTransition, playStinger, getVideoTrack, getCanvas, subscribeFrames, busy, transitionNow };
+  return { program, preview, getStats, startTransition, playStinger, getVideoTrack, getCanvas, subscribeFrames, busy, transitionNow, setFtb, setFreeze, programFx };
 }
 
 /**

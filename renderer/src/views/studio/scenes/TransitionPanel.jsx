@@ -1,5 +1,5 @@
 // Yayın Stüdyosu · GEÇİŞ paneli (önizleme ile program arasında) — yalın:
-//   GEÇİŞ (Boşluk) · hızlı geçiş türü · Son sahneye dön (L).
+//   GEÇİŞ (Boşluk) · hızlı geçiş türü · Son sahneye dön (L) · SİYAHA GEÇ (FTB) · DONDUR.
 // Süreler, logo geçişleri, özel kip geçişleri ve stüdyo modu tek yerde:
 // alt paneldeki "Geçişler" sekmesi (TransitionsTab). LED yönlendirmesi kısayol
 // şeridindeki "LED" parçacığında ve LED ekran sekmesinde.
@@ -7,7 +7,7 @@ import React, { memo } from "react";
 import { Icon, Kbd } from "../../../components/ui";
 import { TRANSITION_KINDS } from "../../../lib/studio/transitions";
 
-function TransitionPanel({ layout = "column", studioMode, canTake, takeLabel, onTake, lastSceneName, onLastScene, tKind, tMs, onKind, onMore, hints = true }) {
+function TransitionPanel({ layout = "column", studioMode, canTake, takeLabel, onTake, lastSceneName, onLastScene, tKind, tMs, onKind, onMore, hints = true, programFx = null, onFtb = null, onFreeze = null }) {
   return (
     <div className={`st-transition is-${layout}`}>
       {studioMode && (
@@ -25,6 +25,12 @@ function TransitionPanel({ layout = "column", studioMode, canTake, takeLabel, on
       <button type="button" className="st-transition__back" onClick={onLastScene} disabled={!lastSceneName} title={lastSceneName ? `Son sahneye dön: ${lastSceneName} (L)` : "Henüz önceki sahne yok"}>
         <Icon name="undo" size={12} /> <span>{lastSceneName ? `Son · ${lastSceneName}` : "Son sahne"}</span>
       </button>
+      {(onFtb || onFreeze) && (
+        <div className="pg-ctl">
+          {onFtb && <button type="button" className={`btn btn--xs is-ftb ${programFx?.ftb ? "is-on" : ""}`} onClick={onFtb} title="Siyaha geç (FTB): tüm yayın görüntüsü grafikler dahil siyaha solar; tekrar basınca geri açılır. Ses sürer.">{programFx?.ftb ? "SİYAH · AÇ" : "SİYAHA GEÇ"}</button>}
+          {onFreeze && <button type="button" className={`btn btn--xs is-freeze ${programFx?.frozen ? "is-on" : ""}`} onClick={onFreeze} title="Dondur: yayın son karede kalır (önizleme sürer); kamera / kablo değiştirirken.">{programFx?.frozen ? "DONUK · ÇÖZ" : "DONDUR"}</button>}
+        </div>
+      )}
     </div>
   );
 }

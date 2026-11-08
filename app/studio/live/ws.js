@@ -143,7 +143,8 @@ function acceptUpgrade(req, socket, head, { maxPayload = 1 << 20, pingMs = 10000
     write(encodeFrame(9, Buffer.alloc(0)));
   }, pingMs);
   pinger.unref?.();
-  if (head && head.length) socket.emit("data", head);
+  // İlk baytlar (el sıkışmayla gelen çerçeve) çağıran dinleyicisini bağladıktan sonra işlenir.
+  if (head && head.length) setImmediate(() => socket.emit("data", head));
   return conn;
 }
 

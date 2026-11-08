@@ -826,6 +826,8 @@ function createStudioEngine({
       const relay = relayFactory({
         ffmpegPath: info.path, primaryUrl: opts.url, backupUrl, spawnImpl, timers, now, platform, killImpl, log,
         note: (message, data) => note(message, data),
+        // Yayın gecikmesi: yalnız RTMP bacağı (kayıt / tekrar halkası anlık kalır).
+        delayMs: Math.round(Math.min(120, Math.max(0, Number(rawOpts.streamDelaySec) || 0)) * 1000),
         ...relayOptions,
       });
       try {
