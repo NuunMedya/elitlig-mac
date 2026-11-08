@@ -168,6 +168,10 @@ function createStudioEngine({
   adjustAfterFailure = null, // (opts, reason) => yeni seçenekler | null (ilk ilerlemeden önce; açılar: kopya → kodlama)
   remuxLocal = null, // async ({ parts, outFile, ffmpegPath }) => { ok, path }
   beforeCleanup = null, // async (session) => {} — parça klasörü silinmeden önce (röportajlar)
+  // Program kodlayıcısı: işlemci payı varsa daha kaliteli ön ayarla başla (ff.initialSpeedLevel;
+  // libx264 medium / faster, NVENC p5). Açılarda kapalı (birden çok kodlayıcı aynı anda çalışır).
+  qualityTuning = false,
+  cpuCount = () => (typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length),
   relay: useRelay = true, // RTMP'yi ayrı aktarıcı süreçle gönder (relay.js); false: eski tee/fifo yolu
   relayFactory = createRelay,
   relayOptions = {}, // createRelay'e ek seçenekler (testler: backoffMs, stallMs …)
@@ -213,6 +217,13 @@ function createStudioEngine({
   const rtmpUp = (s) => (s.relay ? s.relay.status().state === "up" : !s.rtmpDown);
   /** Görüntüyü kim kodluyor: tek kodlamada arayüz ("webcodecs"), aksi halde ffmpeg kodlayıcısı. */
   const encoderOf = (s) => (s.opts?.videoCopy ? ff.WEBCODECS_ENCODER : s.encoder || undefined);
+  /** Başlangıç hız düzeyi: qualityTuning açıksa işlemci payına göre (negatif = daha kaliteli ön ayar). */
+  const startSpeedLevel = (encoder, o = {}) => {
+    if (!qualityTuning || typeof ff.initialSpeedLevel !== "function") return 0;
+    let cores = 0;
+    try { cores = Number(cpuCount()) || 0; } catch { cores = 0; }
+    return ff.initialSpeedLevel(encoder, { width: o.width, height: o.height, fps: o.fps, cores });
+  };
 
   /** Aktarıcı ayrıntıları (arayüz: ağ sağlığı). */
   function networkFields(s) {
@@ -403,7 +414,7 @@ function createStudioEngine({
     // Aktarıcı: RTMP yerine yerel TCP'ye MPEG-TS (bağlantıyı aktarıcı süreç kurar).
     const net = s.relay ? { url: null, relayUrl: s.relay.url() } : {};
     if (s.relay) s.relay.arm();
-    const args = buildArgs({ ...s.opts, ...net, encoder: s.encoder, segmentSeconds, segmentStart: s.nextSegment, listFile: runInfo.listFile, fifo: s.fifo, localFile, ...(localEncode ? { localEncode } : {}), speedLevel: s.speedLevel, fpsMode: s.fpsMode, platform });
+    const args = buildArgs({ ...s.opts, ...net, encoder: s.encoder, audioEncoder: s.audioEncoder || "aac", segmentSeconds, segmentStart: s.nextSegment, listFile: runInfo.listFile, fifo: s.fifo, localFile, ...(localEncode ? { localEncode } : {}), speedLevel: s.speedLevel, fpsMode: s.fpsMode, platform });
     log("studio: ffmpeg başlıyor", { run: s.run, encoder: encoderOf(s), url: ff.maskUrl(s.opts.url) });
     note(`ffmpeg başlıyor (çalıştırma ${s.run})`, { encoder: encoderOf(s), pipeline: s.opts.videoCopy ? "webcodecs" : "legacy", speedLevel: s.speedLevel, fifo: s.fifo, relay: Boolean(s.relay), args: ff.maskSecrets(args.join(" ")) });
     let child;
@@ -653,7 +664,8 @@ function createStudioEngine({
       // stdin'de veri birikiyor (ffmpeg okuyamıyor). Giriş geç geliyorsa (arayüz takıldı,
       // kaydedici yavaş) speed yine < 1 görünür ama ön ayarı düşürmek yalnız kaliteyi bozar.
       const backlog = s.child?.stdin?.writableLength ?? 0;
-      const canLower = !s.opts.videoCopy && (s.encoder === ff.ENCODERS.libx264 || s.encoder === ff.ENCODERS.nvenc) && backlog >= SPEED_BACKLOG_BYTES;
+      const matters = typeof ff.speedLevelMatters === "function" ? ff.speedLevelMatters(s.encoder) : (s.encoder === ff.ENCODERS.libx264 || s.encoder === ff.ENCODERS.nvenc);
+      const canLower = !s.opts.videoCopy && matters && backlog >= SPEED_BACKLOG_BYTES;
       if (canLower && s.speedLevel < ff.MAX_SPEED_LEVEL) s.pendingSpeedLevel = s.speedLevel + 1;
       note("kodlayıcı yetişemiyor", { speed: p.speed, forMs: t - s.slowSince, encoder: encoderOf(s), pendingBytes: backlog, inputLimited: backlog < SPEED_BACKLOG_BYTES, nextSpeedLevel: s.pendingSpeedLevel ?? s.speedLevel });
       events.emit("slow", { sessionId: s.id, speed: p.speed });
@@ -712,6 +724,8 @@ function createStudioEngine({
     const next = reason.code === "ENCODER" && !runInfo.gotProgress ? fallbackEncoder(s.encoder, s.encoders) : null;
     if (next) {
       s.encoder = next;
+      s.speedLevel = startSpeedLevel(next, s.opts);
+      s.pendingSpeedLevel = null;
       s.notice = next === ff.ENCODERS.libx264 ? MSG.encoderFallback : `Donanım kodlayıcı açılamadı; ${next} deneniyor.`;
       s.lastCode = reason.code;
       spawnRun();
@@ -817,7 +831,8 @@ function createStudioEngine({
       id, dir, opts, encoder, encoders: { ...info.encoders }, ffmpegPath: info.path,
       run: 0, attempts: 0, nextSegment: 0, segments: [], runs: new Map(), totalOutMs: 0, progress: null,
       child: null, runInfo: null, stopping: false, failed: false, startedAt: now(),
-      fifo: Boolean(info.muxers?.fifo), fpsMode: ff.supportsFpsMode(info.version), speedLevel: 0, pendingSpeedLevel: null,
+      fifo: Boolean(info.muxers?.fifo), fpsMode: ff.supportsFpsMode(info.version), speedLevel: startSpeedLevel(encoder, opts), pendingSpeedLevel: null,
+      audioEncoder: info.audioEncoder || "aac",
       pins: new Map(), pinSeq: 0, retained: [], lastErrors: [], chunkCount: 0, lastChunkAt: null,
       local: local ? { ...local, parts: [], current: null, failed: false } : null,
     };

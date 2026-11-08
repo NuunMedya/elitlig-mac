@@ -123,7 +123,7 @@ describe("ses: Sesi düzelt ve çift aygıt", () => {
     const n = normalizeAudio(audio);
     expect(n.inputs.map((i) => i.id)).toEqual(["a2", "f1"]);
     for (const st of Object.values(n.strips)) { expect(st.trim).toBe(0); expect(st.fader).toBe(0); expect(st.solo).toBe(false); }
-    expect(n.master).toEqual({ fader: -3, limiter: true });
+    expect(n.master).toEqual({ fader: -3, limiter: true, loudness: false });
     expect(n.monitor.program).toBe(false);
     expect(n.mic.muted).toBe(true);
     expect(n.strips.mic.mute).toBe(true);

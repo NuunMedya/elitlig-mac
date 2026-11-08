@@ -213,6 +213,7 @@ export function MasterStrip({ audio, bind }) {
       </div>
       <div className="mx-strip__db">{dbText(m.fader)} dB</div>
       <button type="button" className={`mx-btn is-wide ${m.limiter ? "is-on is-lim" : ""}`} onClick={() => audio.setMaster({ limiter: !m.limiter })} title="Sınırlayıcı: −6 dB üstünü sıkıştırır (20:1). Kapalıyken bile −1 dBFS güvenlik kırpıcısı açıktır.">SINIRLAYICI</button>
+      <button type="button" className={`mx-btn is-wide ${m.loudness ? "is-on" : ""}`} onClick={() => audio.setMaster({ loudness: !m.loudness })} title="Ses seviyesi dengeleme: program sesini yavaşça −14 LUFS'e (YouTube hedefi) çeker; en çok +6 / −8 dB, sessizlikte yükseltmez. YouTube alçak yayını yükseltmez, yalnız yüksek yayını kısar.">−14 LUFS</button>
       <button type="button" className={`mx-btn is-wide ${mon.program ? "is-on" : ""}`} onClick={() => audio.setMonitor({ program: !mon.program })} title="Programı kulaklıktan dinle (solo yoksa)"><Phones /> DİNLE</button>
       <label className="mx-mon" title="Kulaklık düzeyi"><Phones /><input type="range" min={0} max={100} value={mon.volume} onChange={(e) => audio.setMonitor({ volume: Number(e.target.value) })} /></label>
     </div>

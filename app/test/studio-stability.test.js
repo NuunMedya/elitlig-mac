@@ -76,11 +76,42 @@ test("yerel kayıt: tee'ye Matroska çıkışı (onfail=ignore), yol kaçışı;
   assert.match(rec.at(-1), /^\[f=matroska:onfail=ignore\]\/r\/a\.mkv\|\[f=segment:/);
 });
 
-test("hız düzeyi: x264 veryfast → superfast → ultrafast, NVENC p4 → p2 → p1; diğerleri değişmez", () => {
+test("hız düzeyi: x264 medium → faster → veryfast → superfast → ultrafast, NVENC p6 → p5 → p4 → p2 → p1; VideoToolbox kalite önceliği", () => {
   const o = { videoBitrateKbps: 4500, fps: 30 };
-  assert.deepEqual([0, 1, 2, 5].map((l) => at(ff.videoEncoderArgs("libx264", { ...o, speedLevel: l }), "-preset")), ["veryfast", "superfast", "ultrafast", "ultrafast"]);
-  assert.deepEqual([0, 1, 2].map((l) => at(ff.videoEncoderArgs("h264_nvenc", { ...o, speedLevel: l }), "-preset")), ["p4", "p2", "p1"]);
-  assert.deepEqual(ff.videoEncoderArgs("h264_videotoolbox", { ...o, speedLevel: 2 }), ff.videoEncoderArgs("h264_videotoolbox", o));
+  assert.deepEqual([-3, -2, -1, 0, 1, 2, 5].map((l) => at(ff.videoEncoderArgs("libx264", { ...o, speedLevel: l }), "-preset")), ["medium", "medium", "faster", "veryfast", "superfast", "ultrafast", "ultrafast"]);
+  assert.deepEqual([-2, -1, 0, 1, 2].map((l) => at(ff.videoEncoderArgs("h264_nvenc", { ...o, speedLevel: l }), "-preset")), ["p6", "p5", "p4", "p2", "p1"]);
+  // VideoToolbox: ≤ 0 kalite öncelikli (prio_speed 0), ≥ 1 kodlayıcının varsayılanı.
+  assert.equal(at(ff.videoEncoderArgs("h264_videotoolbox", o), "-prio_speed"), "0");
+  assert.equal(ff.videoEncoderArgs("h264_videotoolbox", { ...o, speedLevel: 1 }).includes("-prio_speed"), false);
+  assert.deepEqual(ff.videoEncoderArgs("h264_qsv", { ...o, speedLevel: 2 }), ff.videoEncoderArgs("h264_qsv", o));
+  // medium: 3 B-kare, ileri bakış 30 kareyle sınırlı; diğerleri 2 B-kare.
+  const med = ff.videoEncoderArgs("libx264", { ...o, speedLevel: -2 });
+  assert.deepEqual([at(med, "-bf"), at(med, "-x264-params")], ["3", "nal-hrd=cbr:force-cfr=1:rc-lookahead=30"]);
+  assert.equal(at(ff.videoEncoderArgs("libx264", { ...o, speedLevel: -1 }), "-bf"), "2");
+  assert.equal(ff.MIN_SPEED_LEVEL, -2);
+  assert.equal(ff.MAX_SPEED_LEVEL, 2);
+  assert.deepEqual([ff.speedLevelMatters("libx264"), ff.speedLevelMatters("h264_nvenc"), ff.speedLevelMatters("h264_videotoolbox"), ff.speedLevelMatters("h264_qsv")], [true, true, true, false]);
+});
+
+test("başlangıç hız düzeyi: işlemci payına göre (libx264), NVENC p5, diğerleri 0", () => {
+  const L = (enc, o) => ff.initialSpeedLevel(enc, o);
+  // 1080p30 × 2,5 pay ≈ 155 Mpiksel/sn: 4 çekirdek veryfast, 8 çekirdek faster, 12 çekirdek medium.
+  assert.equal(L("libx264", { width: 1920, height: 1080, fps: 30, cores: 4 }), 0);
+  assert.equal(L("libx264", { width: 1920, height: 1080, fps: 30, cores: 8 }), -1);
+  assert.equal(L("libx264", { width: 1920, height: 1080, fps: 30, cores: 12 }), -2);
+  assert.equal(L("libx264", { width: 1920, height: 1080, fps: 60, cores: 8 }), 0);
+  assert.equal(L("libx264", { width: 1280, height: 720, fps: 30, cores: 4 }), -2);
+  assert.equal(L("libx264", { width: 1920, height: 1080, fps: 30, cores: 0 }), 0, "çekirdek bilinmiyorsa eski varsayılan");
+  assert.equal(L("h264_nvenc", { cores: 2 }), -1);
+  assert.equal(L("h264_videotoolbox", { cores: 16 }), 0);
+  assert.equal(L("h264_qsv", { cores: 16 }), 0);
+});
+
+test("çift kodlama (yerel kayıt ayrı kalitede) libx264'te en çok veryfast", () => {
+  const args = ff.buildStreamArgs({ url: null, width: 1280, height: 720, fps: 30, videoBitrateKbps: 3000, audioBitrateKbps: 192, encoder: "libx264", localFile: "/k/a.mkv", localEncode: { width: 1920, height: 1080, fps: 30, videoBitrateKbps: 8000 }, speedLevel: -2, platform: "darwin" });
+  assert.equal(at(args, "-preset:v:0"), "veryfast");
+  assert.equal(at(args, "-preset:v:1"), "veryfast");
+  assert.equal(at(args, "-colorspace:v:1"), "bt709");
 });
 
 test("anahtar gizleme: metindeki tüm RTMP adresleri (tee, ffmpeg satırları)", () => {

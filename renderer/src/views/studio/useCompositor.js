@@ -138,6 +138,10 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
     const W = program.width;
     const H = program.height;
     const ctx = program.getContext("2d", { alpha: false });
+    // Kaynaklar program boyutuna ölçeklenirken (ör. 4K / 720p kamera → 1080p) yüksek kaliteli
+    // süzme (varsayılan "low" çift doğrusal: küçültmede titreşim / tırtık). Tuval boyutu değişince
+    // bağlam durumu sıfırlandığından her karede yazılır (ucuz).
+    if (ctx.imageSmoothingQuality !== "high") { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; }
     const sceneOf = (id) => resolveScene(cfg, id);
     const modes = modesRef?.current || null;
     const pgmOv = modes?.programOverride || null;

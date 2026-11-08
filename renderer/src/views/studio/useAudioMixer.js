@@ -22,10 +22,10 @@
 // Hoparlöre yalnız dinleme (solo / program dinle) verilir; varsayılan kapalı.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  MASTER_CLIP_DB, STRIP_CLIP_DB, busGains, createProgramChain, dbToGain, inputGroup, liveInScene, normalizeAudio, patchStrip, playbackContext, programAudioChannels, resetRoute, routingFor,
+  HEADROOM_DB, K_WEIGHTING, LEVELER, MASTER_CLIP_DB, STRIP_CLIP_DB, busGains, createProgramChain, dbToGain, levelerStep, meanSquare, inputGroup, liveInScene, normalizeAudio, patchStrip, playbackContext, programAudioChannels, resetRoute, routingFor,
   sceneGain, setStripAllScenes, setStripScene, stripAirState, stripGain, stripList, stripScenes, toggleRoute,
 } from "../../lib/studio/audio";
-import { EQ_BANDS, MAX_AUDIO_DELAY_MS, gateStep, peakDb, resolveFilters } from "../../lib/studio/audioFilters";
+import { EQ_BANDS, HPF_BYPASS_HZ, MAX_AUDIO_DELAY_MS, gateStep, peakDb, resolveFilters } from "../../lib/studio/audioFilters";
 import { AV_KINDS } from "../../lib/studio/liveSources";
 
 const stopStream = (stream) => stream?.getTracks?.().forEach((t) => { try { t.stop(); } catch { /* yoksay */ } });
@@ -102,7 +102,17 @@ export function useStudioAudio({ sources, settings } = {}) {
       const master = ctx.createGain();
       // Pay (−3 dB) → sınırlayıcı (ıslak / kuru) → GÜVENLİK KIRPICISI (−1 dBFS, her zaman).
       const chain = createProgramChain(ctx, { limiter: true });
-      master.connect(chain.input);
+      // Ses seviyesi dengeleyici (−14 LUFS, isteğe bağlı): master → dengeleyici → zincir. Ölçüm
+      // dengeleyiciden ÖNCE, K süzgeciyle (BS.1770) → stereo analizör.
+      const leveler = ctx.createGain();
+      master.connect(leveler); leveler.connect(chain.input);
+      let kIn = master;
+      for (const k of K_WEIGHTING) {
+        const f = ctx.createBiquadFilter();
+        f.type = k.type; f.frequency.value = k.freq; f.Q.value = k.q; if (k.gain) f.gain.value = k.gain;
+        kIn.connect(f); kIn = f;
+      }
+      const loudTap = stereoTap(ctx, kIn);
       const { limiter, wet, dry, post } = chain;
       // "Tüm sesleri kapat": yayına (ve program dinlemeye) giden toplam.
       const kill = ctx.createGain();
@@ -125,7 +135,7 @@ export function useStudioAudio({ sources, settings } = {}) {
       music.loop = true;
       // Aygıt değişimi / uyku sonrası askıya alınan bağlam kendiliğinden sürdürülür.
       ctx.onstatechange = () => { if (ctx.state === "suspended" || ctx.state === "interrupted") ctx.resume().catch(() => {}); };
-      g.current = { ctx, dest, master, chain, limiter, wet, dry, post, kill, masterTap, monitor, programMon, buses, strips, music, musicSrc: null };
+      g.current = { ctx, dest, master, leveler, loudTap, levelState: null, chain, limiter, wet, dry, post, kill, masterTap, monitor, programMon, buses, strips, music, musicSrc: null };
     } catch {
       g.current = null;
     }
@@ -145,9 +155,12 @@ export function useStudioAudio({ sources, settings } = {}) {
     const solo = ctx.createGain();
     solo.gain.value = 0;
     const air = ctx.createGain(); // sahne kapısı
-    // Filtre zinciri: gecikme → kapı → EQ → sıkıştırıcı (ıslak / kuru) → trim.
+    // Filtre zinciri: gecikme → düşük kesme → kapı → EQ → sıkıştırıcı (ıslak / kuru) → trim.
     const delay = ctx.createDelay(MAX_AUDIO_DELAY_MS / 1000 + 0.5);
     delay.delayTime.value = 0;
+    // Düşük kesme (12 dB/oktav, Butterworth Q 0,707); kapalıyken 10 Hz (duyulur bantta etkisiz).
+    const hpf = ctx.createBiquadFilter();
+    hpf.type = "highpass"; hpf.frequency.value = HPF_BYPASS_HZ; hpf.Q.value = Math.SQRT1_2;
     const gate = ctx.createGain();
     const eq = EQ_BANDS.map((b) => { const f = ctx.createBiquadFilter(); f.type = b.type; f.frequency.value = b.freq; f.Q.value = b.q; f.gain.value = 0; return f; });
     const comp = ctx.createDynamicsCompressor();
@@ -155,7 +168,7 @@ export function useStudioAudio({ sources, settings } = {}) {
     const compDry = ctx.createGain(); compDry.gain.value = 1;
     const makeup = ctx.createGain();
     const gateTap = makeAnalyser(ctx);
-    input.connect(delay); delay.connect(gate); delay.connect(gateTap);
+    input.connect(delay); delay.connect(hpf); hpf.connect(gate); hpf.connect(gateTap);
     gate.connect(eq[0]); eq[0].connect(eq[1]); eq[1].connect(eq[2]);
     eq[2].connect(comp); comp.connect(makeup); makeup.connect(compWet); compWet.connect(trim);
     eq[2].connect(compDry); compDry.connect(trim);
@@ -165,7 +178,7 @@ export function useStudioAudio({ sources, settings } = {}) {
     const pre = makeAnalyser(ctx);
     input.connect(pre);
     const tap = { ...stereoTap(ctx, mute), clipDb: STRIP_CLIP_DB };
-    s = { id, group, input, trim, fader, mute, air, solo, pre, tap, delay, gate, eq, comp, compWet, compDry, makeup, gateTap, gateState: { open: true, holdLeft: 0 } };
+    s = { id, group, input, trim, fader, mute, air, solo, pre, tap, delay, hpf, gate, eq, comp, compWet, compDry, makeup, gateTap, gateState: { open: true, holdLeft: 0 } };
     G.strips.set(id, s);
     return s;
   }, []);
@@ -337,6 +350,35 @@ export function useStudioAudio({ sources, settings } = {}) {
     G.music.loop = value.music.loop;
   }, [value, micStatus.status, inputStatus]);
 
+  /* ───────── ses seviyesi dengeleme (−14 LUFS) ───────── */
+  const loudnessOn = Boolean(value.master.loudness);
+  useEffect(() => {
+    const G = g.current;
+    if (!G?.leveler) return undefined;
+    if (!loudnessOn) {
+      G.levelState = null;
+      G.levelInfo = null;
+      setGain(G.ctx, G.leveler, 1);
+      return undefined;
+    }
+    const buf = new Float32Array(G.loudTap.L.fftSize || 1024);
+    let last = performance.now();
+    const timer = setInterval(() => {
+      const t = performance.now();
+      G.loudTap.L.getFloatTimeDomainData(buf);
+      const l = meanSquare(buf);
+      G.loudTap.R.getFloatTimeDomainData(buf);
+      const r = meanSquare(buf);
+      const st = levelerStep(G.levelState, [l, r], t - last, LEVELER);
+      last = t;
+      G.levelState = st;
+      try { G.leveler.gain.setTargetAtTime(dbToGain(st.gainDb), G.ctx.currentTime, 0.3); } catch { G.leveler.gain.value = dbToGain(st.gainDb); }
+      // Tanılama / arayüz (durum yok: her 100 ms'de yeniden çizim olmasın; levelInfo() ile okunur).
+      G.levelInfo = { gainDb: Math.round(st.gainDb * 10) / 10, lufs: Number.isFinite(st.lufs) ? Math.round((st.lufs + st.gainDb + HEADROOM_DB) * 10) / 10 : null, gated: st.gated };
+    }, 100);
+    return () => clearInterval(timer);
+  }, [loudnessOn]);
+
   /* ───────── şerit filtreleri (gecikme, kapı, EQ, sıkıştırıcı) ───────── */
   const filterKey = JSON.stringify(Object.fromEntries(Object.entries(value.strips).filter(([, st]) => st.filters).map(([id, st]) => [id, st.filters])));
   const [stripTick, setStripTick] = useState(0);
@@ -349,6 +391,7 @@ export function useStudioAudio({ sources, settings } = {}) {
     for (const [id, s] of G.strips) {
       const f = resolveFilters(valueRef.current.strips[id]?.filters);
       set(s.delay.delayTime, f.delayMs / 1000);
+      set(s.hpf.frequency, f.hpf.on ? f.hpf.freq : HPF_BYPASS_HZ);
       EQ_BANDS.forEach((b, i) => set(s.eq[i].gain, f.eq.on ? f.eq[b.key] : 0));
       s.comp.threshold.value = f.comp.threshold;
       s.comp.ratio.value = f.comp.ratio;
@@ -588,6 +631,8 @@ export function useStudioAudio({ sources, settings } = {}) {
     setRoute,
     resetRoute: resetRouteFor,
     setMaster,
+    /** Ses seviyesi dengeleyicisi: () → { gainDb, lufs (çıkış, yaklaşık), gated } | null (kapalı). */
+    levelInfo: () => g.current?.levelInfo || null,
     setMonitor,
     attachMedia,
     // sahne başına ses, genel kapatma, yayındaki kanallar

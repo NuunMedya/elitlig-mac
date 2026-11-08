@@ -550,7 +550,7 @@ test("yayın seçenekleri: keyframeSec (1–4, parça sınırını aşmaz), enco
   const a1 = ff.buildStreamArgs({ ...ff.normalizeStreamOptions({ keyframeSec: 1, width: 1280, height: 720, fps: 30 }), encoder: "libx264" });
   assert.equal(at(a1, "-g"), "30");
   assert.equal(at(a1, "-force_key_frames"), "expr:gte(t,n_forced*1)");
-  assert.equal(at(a1, "-b:a"), "160k");
+  assert.equal(at(a1, "-b:a"), "192k"); // varsayılan ses 192 kbps
   const a4 = ff.buildStreamArgs({ ...ff.normalizeStreamOptions({ keyframeSec: 4, fps: 30 }), encoder: "libx264" });
   assert.equal(at(a4, "-force_key_frames"), "expr:gte(t,n_forced*2)", "2 sn'lik parça halkası için");
   assert.equal(ff.pickEncoderFor({ videotoolbox: true, libx264: true }, "software"), "libx264");

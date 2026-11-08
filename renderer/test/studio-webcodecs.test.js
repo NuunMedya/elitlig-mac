@@ -120,7 +120,7 @@ describe("kodlama yolu yardımcıları", () => {
 
 describe("yayın kalitesi", () => {
   it("hızlı ayarlar: Akıcı 720p60, Dengeli 1080p30, Yüksek 1080p60", () => {
-    expect(STREAM_QUALITY_PRESETS.map((p) => `${p.key}:${p.resolution}${p.fps}@${p.bitrateKbps}`)).toEqual(["smooth:720p60@4500", "balanced:1080p30@6000", "high:1080p60@9000"]);
+    expect(STREAM_QUALITY_PRESETS.map((p) => `${p.key}:${p.resolution}${p.fps}@${p.bitrateKbps}`)).toEqual(["smooth:720p60@4500", "balanced:1080p30@6000", "high:1080p60@9000", "ultra:1080p60@12000", "qhd:1440p60@18000"]);
     expect(qualityPresetKey({ resolution: "1080p", fps: 30, bitrateKbps: 6000 })).toBe("balanced");
     expect(qualityPresetKey({ resolution: "1080p", fps: 30, bitrateKbps: 5000 })).toBeNull();
   });

@@ -38,7 +38,9 @@ export const avcCodecString = (width, height, fps, profile = "high") => {
  * Profil: High → Main → Baseline (bazı donanımlar High vermez).
  */
 export function videoEncoderCandidates({ width, height, fps, videoBitrateKbps, allowSoftware = false }) {
-  const base = { width, height, framerate: fps, bitrate: Math.round(videoBitrateKbps * 1000), avc: { format: "avc" } };
+  // contentHint "motion": kamera / spor görüntüsü (kodlayıcı akıcılığı korur; desteklemeyen tarayıcı alanı yok sayar).
+  // scalabilityMode yok (tek katman: tüm bit hızı tek akışa).
+  const base = { width, height, framerate: fps, bitrate: Math.round(videoBitrateKbps * 1000), avc: { format: "avc" }, contentHint: "motion" };
   const out = [];
   const accel = allowSoftware ? ["prefer-hardware", "no-preference"] : ["prefer-hardware"];
   for (const hardwareAcceleration of accel) {
@@ -48,6 +50,50 @@ export function videoEncoderCandidates({ width, height, fps, videoBitrateKbps, a
       }
     }
   }
+  return out;
+}
+
+/**
+ * Ara ses kodlamasının bit hızı (kbps): tarayıcı sesi Opus olarak kodlar (WebCodecs
+ * AudioEncoder ya da MediaRecorder), ffmpeg onu yayın için AAC'ye çevirir — iki kayıplı
+ * kodlama. Ara Opus, AAC hedefinin ≈ 1,5 katında (en az 192, en çok 384 kbps; 32'nin
+ * katı): ikinci kodlamaya neredeyse kayıpsız girer. AAC 192 → Opus 288 kbps.
+ */
+export const intermediateAudioKbps = (aacKbps) => {
+  const a = Number(aacKbps) > 0 ? Number(aacKbps) : 192;
+  return Math.min(384, Math.max(192, Math.round((a * 1.5) / 32) * 32));
+};
+
+/**
+ * Opus kodlayıcı yapılandırması (WebCodecs AudioEncoder): en yüksek karmaşıklık (10),
+ * genel ses / müzik kipi (konuşma kipi tribün ve müzikte bant genişliğini daraltır),
+ * 20 ms çerçeve. Desteklenmeyen alanlar tarayıcıda yok sayılır.
+ */
+export function opusEncoderConfig({ sampleRate = 48000, numberOfChannels = 2, aacKbps = 192 } = {}) {
+  return {
+    codec: "opus", sampleRate, numberOfChannels,
+    bitrate: intermediateAudioKbps(aacKbps) * 1000,
+    bitrateMode: "variable",
+    opus: { complexity: 10, frameDuration: 20000, application: "audio", signal: "music" },
+  };
+}
+
+/**
+ * Kodlayıcının bildirdiği renk uzayı (VideoDecoderConfig.colorSpace) → ana sürece
+ * gidecek yalın nesne; yalnız YUV matrisli (bt709 / smpte170m / bt470bg) bilgi kabul
+ * edilir (giriş karesinin RGB / sRGB değerleri yazılmaz). Yoksa null.
+ */
+export function encodedColorSpace(cs) {
+  if (!cs || typeof cs !== "object") return null;
+  const ok = (v, list) => (list.includes(v) ? v : undefined);
+  const matrix = ok(cs.matrix, ["bt709", "smpte170m", "bt470bg"]);
+  if (!matrix) return null;
+  const out = { matrix };
+  const primaries = ok(cs.primaries, ["bt709", "smpte170m", "bt470bg"]);
+  const transfer = ok(cs.transfer, ["bt709", "smpte170m"]);
+  if (primaries) out.primaries = primaries;
+  if (transfer) out.transfer = transfer;
+  if (typeof cs.fullRange === "boolean") out.fullRange = cs.fullRange;
   return out;
 }
 

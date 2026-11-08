@@ -263,13 +263,13 @@ export function normalizeAudio(a) {
   // Sessiz bilgisi tek yerde: mikrofon / girişlerde mic.muted / input.muted.
   strips.mic.mute = Boolean(mic.muted);
   for (const i of inputs) strips[i.id].mute = Boolean(i.muted);
-  const master = { fader: 0, limiter: true, ...(x.master || {}) };
+  const master = { fader: 0, limiter: true, loudness: false, ...(x.master || {}) };
   return {
     mic,
     inputs,
     strips,
     routing: normalizeRouting(x.routing),
-    master: { fader: normalizeStrip({ fader: master.fader }).fader, limiter: master.limiter !== false },
+    master: { fader: normalizeStrip({ fader: master.fader }).fader, limiter: master.limiter !== false, loudness: master.loudness === true },
     music: { name: String(x.music?.name || ""), loop: x.music?.loop !== false },
     monitor: { volume: clamp(num(x.monitor?.volume, 80), 0, 100), program: Boolean(x.monitor?.program) },
     killAll: Boolean(x.killAll),
@@ -392,6 +392,61 @@ export function createProgramChain(ctx, { limiter: on = true } = {}) {
   headroom.connect(dry); dry.connect(post);
   post.connect(safety);
   return { input, output: safety, headroom, limiter, makeup, wet, dry, post, safety };
+}
+
+/* ───────────── ses seviyesi dengeleme (−14 LUFS) ───────────── */
+//
+//   master fader ─▶ DENGELEYİCİ (yavaş kazanç) ─▶ pay ─▶ sınırlayıcı ─▶ güvenlik kırpıcısı ─▶ yayın
+//        └─▶ K süzgeci (BS.1770) ─▶ ölçer (100 ms'de bir) ─▶ kısa dönem ses yüksekliği (3 sn)
+// YouTube oynatmada sesi −14 LUFS'e çeker: daha yüksek yayını kısar, daha alçak yayını
+// YÜKSELTMEZ (alçak yayın izleyicide kısık kalır). Dengeleyici programın kısa dönem ses
+// yüksekliğini yavaşça (yükseltme 0,5 dB/sn, kısma 2 dB/sn) hedefe çeker: ileri beslemeli
+// (giriş ölçülür, döngü yok), sessizlikte (−45 LUFS altı) kazanç donar → boşlukta uğultu /
+// tribün yükseltilmez, "pompalama" olmaz. Sınırlar +6 / −8 dB: operatörün faderi geçerli kalır.
+// Tepe: sınırlayıcı + −1 dBFS güvenlik kırpıcısı (AAC sonrası gerçek tepe ölçümü ≈ −2 dBTP).
+
+export const LEVELER = Object.freeze({ targetLufs: -14, maxBoostDb: 6, maxCutDb: 8, upDbPerSec: 0.5, downDbPerSec: 2, gateLufs: -45, windowMs: 3000 });
+/** BS.1770 K süzgeci (48 kHz katsayılarının biquad karşılığı): raf +4 dB @ 1682 Hz, yüksek geçiren 38 Hz. */
+export const K_WEIGHTING = Object.freeze([
+  Object.freeze({ type: "highshelf", freq: 1681.97, gain: 4, q: 0.7071 }),
+  Object.freeze({ type: "highpass", freq: 38.135, gain: 0, q: 0.5003 }),
+]);
+
+/** Kanal ortalama kareleri (K süzgeçli) → ses yüksekliği (LUFS; BS.1770: −0,691 + 10·log10 Σ). */
+export function lufsOf(meanSquares) {
+  const sum = (Array.isArray(meanSquares) ? meanSquares : [meanSquares]).reduce((a, b) => a + (Number(b) > 0 ? Number(b) : 0), 0);
+  return sum > 0 ? -0.691 + 10 * Math.log10(sum) : -Infinity;
+}
+/** Örneklerin ortalama karesi. */
+export function meanSquare(buf) {
+  if (!buf || !buf.length) return 0;
+  let s = 0;
+  for (let i = 0; i < buf.length; i += 1) s += buf[i] * buf[i];
+  return s / buf.length;
+}
+
+/**
+ * Dengeleyicinin bir adımı (saf). state: { power, gainDb } | null; meanSquares: K süzgeçli
+ * kanal ortalama kareleri (dengeleyiciden ÖNCE ölçülür); dtMs: geçen süre.
+ * Hedef: çıkış = giriş + kazanç + pay (HEADROOM_DB) = targetLufs.
+ * → { power, gainDb, lufs (kısa dönem, giriş), gated }
+ */
+export function levelerStep(state, meanSquares, dtMs, cfg = LEVELER) {
+  const c = { ...LEVELER, ...(cfg || {}) };
+  const dt = Math.max(0, Math.min(1000, Number(dtMs) || 0));
+  const p = (Array.isArray(meanSquares) ? meanSquares : [meanSquares]).reduce((a, b) => a + (Number(b) > 0 ? Number(b) : 0), 0);
+  const prev = state && Number.isFinite(state.power) ? state : { power: p, gainDb: 0 };
+  const a = 1 - Math.exp(-dt / c.windowMs);
+  const power = prev.power + (p - prev.power) * a;
+  const lufs = power > 0 ? -0.691 + 10 * Math.log10(power) : -Infinity;
+  let gainDb = Number.isFinite(prev.gainDb) ? prev.gainDb : 0;
+  const gated = !(lufs > c.gateLufs);
+  if (!gated) {
+    const want = clamp(c.targetLufs - HEADROOM_DB - lufs, -c.maxCutDb, c.maxBoostDb);
+    const step = ((want > gainDb ? c.upDbPerSec : c.downDbPerSec) * dt) / 1000;
+    gainDb = want > gainDb ? Math.min(want, gainDb + step) : Math.max(want, gainDb - step);
+  }
+  return { power, gainDb, lufs, gated };
 }
 
 /* ───────────── "Sesi düzelt" ve çift aygıt ───────────── */
