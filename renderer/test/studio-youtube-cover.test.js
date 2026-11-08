@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // YouTube kapağı: şablonlar ve ayarlar, kapak verisi (maç + armalar + marka),
-// takım rengi (arma baskın rengi), JPEG bütçesi (< 2 MB), altı şablonun çizimi
+// takım rengi (arma baskın rengi), JPEG bütçesi (< 2 MB), dokuz şablonun çizimi
 // (sahte tuvalle: hata yok, armalar / logo / zemin çizilir, yazılar Türkçe büyük
 // harf), yükleme gövdesi, otomatik yükleme (yayın başına bir kez) ve
 // Ayarlar › YouTube kapağı bölümü.
@@ -51,8 +51,8 @@ const joined = (texts) => texts.join("");
 const MATCH = { id: 7, first_team_name: "Şahinler SK", second_team_name: "Kurtlar", league_name: "Süper Lig", match_season: "2026 Güz", date: "2026-11-20", time: "21:00:00", match_field: "Arena Halı Saha", city: "Ankara" };
 
 describe("kapak modeli", () => {
-  it("altı şablon, varsayılanlar ve ayar doğrulama", () => {
-    expect(COVER_TEMPLATES.map((t) => t.key)).toEqual(["klasik", "stadyum", "capraz", "minimal", "neon", "poster"]);
+  it("dokuz şablon, varsayılanlar ve ayar doğrulama", () => {
+    expect(COVER_TEMPLATES.map((t) => t.key)).toEqual(["klasik", "stadyum", "capraz", "minimal", "neon", "poster", "macgunu", "bolme", "sinema"]);
     expect(Object.keys(TEMPLATE_DRAWERS).sort()).toEqual(COVER_TEMPLATES.map((t) => t.key).sort());
     expect(DEFAULT_COVER_SETTINGS.auto).toBe(true);
     const s = normalizeCoverSettings({ template: "yok", accentMode: "x", customColor: "zz", backgroundDim: 400, show: { venue: false, foo: true }, liveLabel: "   ", background: "javascript:alert(1)" });
