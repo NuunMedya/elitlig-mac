@@ -9,11 +9,12 @@
 import React, { memo, useEffect, useRef, useState } from "react";
 import { Icon } from "../../../components/ui";
 import { streamHealth } from "../../../lib/studio/broadcast";
+import { goalStressText } from "../../../lib/studio/goalStress";
 
 const kb = (n) => (Number.isFinite(Number(n)) ? `${Math.round(n)} kbps` : "—");
 const secOf = (bytes, kbps) => (bytes > 0 && kbps > 0 ? `${((bytes * 8) / (kbps * 1000)).toFixed(1).replace(".", ",")} sn` : "0 sn");
 
-function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encoding }) {
+function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encoding, goalStress = null, goalMeasuring = false }) {
   const [, setTick] = useState(0);
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -31,6 +32,7 @@ function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encodi
   const warnings = [...h.warnings];
   if (wc && wc.encodeDropped > 0 && wc.queue >= 3) warnings.push(`Kodlayıcı geride (kuyruk ${wc.queue}): kareler atlanıyor.`);
   if (enc?.fallback) warnings.push(`Tek kodlama durdu (${enc.fallback.reason}); eski yol kullanılıyor.`);
+  if (goalStress && !goalStress.ok && Date.now() - goalStress.at < 5 * 60_000) warnings.push(`Son golde yayın zorlandı: ${goalStressText(goalStress)}.`);
   const n = status.network || null;
   const fps = wc ? wc.encodedFps : h.fps;
   const label = encoding
@@ -57,6 +59,10 @@ function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encodi
               <dt>Kodlayıcı (ffmpeg)</dt><dd>{encoding && Number.isFinite(status.fps) ? `${Math.round(status.fps)} fps` : "—"}{h.speed != null ? ` · ${h.speed.toFixed(2)}×` : ""}</dd>
               <dt>Düşen kare</dt><dd>{encoding ? h.dropped : "—"}</dd>
             </>}
+            {wc?.audioPath && <>
+              <dt>Ses</dt><dd className={(wc.audioWorker?.gapMs || wc.audioGapMs) ? "text-red" : ""}>{wc.audioPath === "worker" ? "ayrı iş parçacığı" : "ana iş parçacığı"}{wc.audioWorker ? ` · boşluk ${wc.audioWorker.gapMs} ms` : ` · boşluk ${wc.audioGapMs || 0} ms · okuma gecikmesi en çok ${wc.audioReadLagMaxMs || 0} ms`}</dd>
+            </>}
+            <dt>Gol anı (son)</dt><dd className={goalStress && !goalStress.ok ? "text-red" : ""}>{goalMeasuring ? "ölçülüyor… (20 sn)" : goalStressText(goalStress)}</dd>
             <dt>Çıkış bit hızı</dt><dd>{h.bitrateKbps != null ? `${h.bitrateKbps} kbps` : "—"}</dd>
             <dt>Gönderim (RTMP)</dt><dd>{n ? `${kb(n.sentKbps)}${n.state !== "up" ? ` · ${n.state}` : ""}` : "—"}</dd>
             {n && <>

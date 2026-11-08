@@ -42,7 +42,9 @@ function readMeta() {
 /** Çok açılı tekrar API'si var mı (yoksa yalnız program klibi). */
 export const hasReplayApi = () => Boolean(studio()?.saveReplay);
 
-export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDelaySec = UPLOAD_DELAY_DEFAULT, getStatus = null } = {}) {
+export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDelaySec = UPLOAD_DELAY_DEFAULT, getStatus = null, onCapture = null } = {}) {
+  const onCaptureRef = useRef(onCapture); // [gol anı yükü] GOL yakalaması → tanılama ölçümü
+  onCaptureRef.current = onCapture;
   const [replays, setReplays] = useState([]);
   const [pending, setPending] = useState([]); // [{ key, kind, meta, status: "waiting" | "saving" | "error", saveAt, error }]
   const [uploads, setUploads] = useState({}); // replayId → { status: "uploading" | "uploaded" | "failed" | "cancelled", error }
@@ -119,6 +121,7 @@ export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDel
     const win = captureWindow(Number(secs) || REPLAY_SECONDS, post ?? postRef.current);
     const key = `rp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const t0 = Date.now();
+    try { onCaptureRef.current?.(kind); } catch { /* tanılama yakalamayı durdurmasın */ }
     const m = { ...info, matchId: Number(matchRef.current) || null, at: t0, ...(win.post ? { postSec: win.post } : {}) };
     setPending((list) => [{ key, kind, meta: m, status: win.saveDelayMs ? "waiting" : "saving", saveAt: t0 + win.saveDelayMs, createdAt: t0 }, ...list]);
     const s = studio();

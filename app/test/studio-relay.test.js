@@ -268,6 +268,45 @@ test("aktarıcı: ağ yetişemezse kuyruk büyümez, sonraki anahtar kareye kada
   await relay.stop();
 });
 
+test("aktarıcı (2.20.1): KISA yığılma görüntü attırmaz (gecikme büyüyüp erir); yalnız SÜREN darlık attırır, kuyruk yarıya inince ilk anahtar karede sürer", async () => {
+  const { relay, children, clock } = setupRelay({ highWaterBytes: 10000, lowWaterBytes: 1000, sustainMs: 4000 });
+  relay.write(gop(1));
+  sent(children[0], 100);
+  const child = children[0];
+  const before = child.written.length;
+  // Yerel takılma sonrası toplu gelen veri: kuyruk highWater'ı (ama 2 × highWater'ı değil) 2 sn aşar.
+  for (let i = 0; i < 4; i += 1) {
+    child.stdin.writableLength = 15000;
+    clock.t += 500;
+    relay.write(Buffer.concat([vid(1), aud()]));
+  }
+  assert.equal(relay.status().dropEvents, 0, "kısa yığılmada atlama olmamalı");
+  assert.equal(child.written.length, before + 4, "görüntü de gitmeli");
+  // Kuyruk eridi: süre sayacı sıfırlanır.
+  child.stdin.writableLength = 2000;
+  clock.t += 500;
+  relay.write(Buffer.concat([vid(1), aud()]));
+  // Süren darlık: 4 sn boyunca yarının üstünde, sonra highWater'ı aşıyor → atlama.
+  for (let i = 0; i < 9; i += 1) {
+    child.stdin.writableLength = i < 8 ? 7000 : 12000;
+    clock.t += 500;
+    relay.write(Buffer.concat([vid(1), aud()]));
+  }
+  assert.equal(relay.status().dropEvents, 1);
+  assert.equal(relay.status().dropping, true);
+  // Kuyruk highWater / 2'ye (5000) indi — lowWater'a (1000) inmesi BEKLENMEZ: ilk anahtar karede sürer.
+  child.stdin.writableLength = 4500;
+  const n = child.written.length;
+  relay.write(gop(2));
+  assert.equal(child.written.length, n + 1);
+  assert.equal(child.written.at(-1).length, gop(2).length, "anahtar kareden tüm GOP");
+  // 2 × highWater: beklemeden atlanır (bellek / gecikme sınırı).
+  child.stdin.writableLength = 20000;
+  relay.write(Buffer.concat([vid(2), aud()]));
+  assert.equal(relay.status().dropEvents, 2);
+  await relay.stop();
+});
+
 test("aktarıcı: kodlayıcı yeniden başlarsa (yeni akış) aktarıcı geri çekilmeden, hata saymadan yeniden kurulur", async () => {
   const { relay, children, timers } = setupRelay();
   relay.write(gop(1));

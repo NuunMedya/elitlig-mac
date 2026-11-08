@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createMkvMuxer, opusHead, vint, avcCInfo, sameBytes } from "../src/lib/studio/mkvmux";
-import { avcCodecString, avcLevelIdc, choosePipeline, createAudioClock, createFrameClock, createKeyframePlanner, normalizePipeline, videoEncoderCandidates } from "../src/lib/studio/encodepath";
+import { audioCaptureMs, audioGapMs, avcCodecString, avcLevelIdc, choosePipeline, createAudioClock, createAudioTimeline, createCaptureClock, createFrameClock, createKeyframePlanner, normalizePipeline, videoEncoderCandidates } from "../src/lib/studio/encodepath";
 import { STREAM_QUALITY_PRESETS, qualityPresetKey, recommendQuality } from "../src/lib/studio/broadcast";
 import { normalizeSettings } from "../src/views/studio/settings/settings";
 
@@ -274,3 +274,94 @@ describe.skipIf(!canRun)("uçtan uca (gerçek ffmpeg): mkvmux → ffmpeg -c:v co
   });
 });
 
+
+/* ---- 2.20.1: gol anında ses blokları atılınca yayın çıkışının durması (ölçüldü; bkz. encodepath) ---- */
+
+/**
+ * Chromium AudioEncoder (Opus) gibi: 10 ms'lik giriş blokları (bazıları atılmış), çıkış 20 ms'lik
+ * paketler; çıkış zaman damgası ilk girişten bu yana kodlanan ÖRNEK SAYISIDIR (boşlukları bilmez).
+ * dropped(t): t ms'deki blok atıldı mı. → { oldTs: [], newTs: [] } (ms; eski eşleme / yeni zaman çizelgesi)
+ */
+function simulateAudioDrops({ seconds, dropped }) {
+  const timeline = createAudioTimeline();
+  let encodedUs = 0;
+  for (let t = 0; t < seconds * 1000; t += 10) {
+    if (dropped(t)) continue;
+    timeline.input(10_000, t);
+    encodedUs += 10_000;
+  }
+  const n = Math.floor(encodedUs / 20_000);
+  const oldTs = [];
+  const newTs = [];
+  for (let i = 0; i < n; i += 1) {
+    oldTs.push(i * 20); // eski: chunk.timestamp (örnek sayısı) + sabit ofset
+    newTs.push(timeline.output(20_000));
+  }
+  return { oldTs, newTs };
+}
+const goalDrop = (t) => t >= 3000 && t < 6000 && (t / 10) % 5 !== 0; // 3–6 sn: blokların %80'i atılır (GOL akışında ölçülen oran)
+
+describe("ses zaman çizelgesi (2.20.1)", () => {
+  it("atılan bloklar ses zamanını GERİDE BIRAKMAZ: her paket kendi giriş bloğunun zamanını alır (eski eşleme atılan süre kadar geride kalıyordu)", () => {
+    const { oldTs, newTs } = simulateAudioDrops({ seconds: 10, dropped: goalDrop });
+    expect(newTs.at(-1)).toBeGreaterThan(9900); // son paket ≈ 9,98 sn
+    expect(oldTs.at(-1)).toBeLessThan(7700); // eski: ~2,4 sn geride
+    for (let i = 1; i < newTs.length; i += 1) expect(newTs[i]).toBeGreaterThan(newTs[i - 1]);
+    const gaps = newTs.slice(1).map((t, i) => t - newTs[i]).filter((d) => d > 25);
+    expect(gaps.length).toBeGreaterThan(0); // boşluk yalnız atılan bölgede (ffmpeg aresample doldurur)
+    expect(newTs.filter((t) => t < 2990 || t >= 6000).every((t) => Math.abs(t - Math.round(t / 10) * 10) < 0.01)).toBe(true);
+  });
+  it("yakalama zamanı: AudioData.timestamp performance.now() tabanındaysa o kullanılır (okuma gecikmesi saati itmez); değilse okuma anı − blok süresi", () => {
+    expect(audioCaptureMs({ dataTsUs: 105_000_000, nowMs: 107_500, t0Ms: 100_000, durMs: 10 })).toBe(5000); // 2,5 sn geç okundu
+    expect(audioCaptureMs({ dataTsUs: 5_000, nowMs: 107_500, t0Ms: 100_000, durMs: 10 })).toBe(7490);
+    expect(audioGapMs(null, 100)).toBe(0);
+    expect(audioGapMs(100, 110)).toBe(0);
+    expect(audioGapMs(100, 400)).toBe(300);
+  });
+  it("ses saati ofseti: ulaşma gecikmesinin titreşimi süzülür (en küçük), saat durup sürerse (aygıt) yeni ofsete geçilir", () => {
+    const c = createCaptureClock({ windowMs: 2000, jumpMs: 250, holdMs: 500 });
+    let off = 0;
+    for (let i = 0; i < 100; i += 1) off = c.push(i * 20, 1000 + i * 20 + (i % 7) * 3); // 0–18 ms titreşim
+    expect(off).toBe(1000);
+    for (let i = 100; i < 160; i += 1) off = c.push(i * 20, 4000 + i * 20); // bağlam 3 sn durdu
+    expect(off).toBe(4000);
+  });
+});
+
+describe.skipIf(!canRun)("uçtan uca (gerçek ffmpeg): GOL anında ses atılınca çıkış", () => {
+  it("eski eşlemede ffmpeg çıkışında ses görüntünün ~2,4 sn gerisinde kalır (harmanlama canlı yayını bu kadar bekletir); zaman çizelgesiyle hizalı", { timeout: 60000 }, () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "studio-wc-drop-"));
+    const fps = 30;
+    const seconds = 10;
+    const h264 = spawnSync(FFMPEG, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", `testsrc2=size=320x180:rate=${fps}`, "-t", String(seconds), "-c:v", "libx264", "-preset", "ultrafast", "-profile:v", "high", "-bf", "0", "-g", String(fps * 2), "-keyint_min", String(fps * 2), "-x264-params", "aud=1", "-pix_fmt", "yuv420p", "-f", "h264", "pipe:1"], { maxBuffer: 64 << 20 });
+    expect(h264.status).toBe(0);
+    const opus = spawnSync(FFMPEG, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-ac", "2", "-t", String(seconds), "-c:a", "libopus", "-b:a", "96k", "-frame_duration", "20", "-f", "ogg", "pipe:1"], { maxBuffer: 64 << 20 });
+    expect(opus.status).toBe(0);
+    const { aus, sps, pps } = annexbAccessUnits(h264.stdout);
+    const apk = oggPackets(opus.stdout);
+    const sim = simulateAudioDrops({ seconds, dropped: goalDrop });
+    const run = (audioTs, name) => {
+      const m = createMkvMuxer({ video: { width: 320, height: 180, codecPrivate: avcCOf(sps, pps), fps }, audio: { sampleRate: 48000, channels: 2, codecPrivate: apk[0] } });
+      const parts = [m.header()];
+      // Varış sırası: paket kodlandığı (yakalandığı) anda yazılır; iki durumda da aynı, yalnız zaman damgası farklı.
+      const events = [
+        ...aus.map((a, i) => ({ at: (i * 1000) / fps, kind: "v", a, ts: (i * 1000) / fps })),
+        ...audioTs.map((ts, i) => ({ at: sim.newTs[i], kind: "a", p: apk[2 + (i % (apk.length - 2))], ts })),
+      ].sort((x, y) => x.at - y.at || (x.kind === "v" ? -1 : 1));
+      for (const e of events) parts.push(e.kind === "v" ? m.block(1, e.ts, e.a.key, lengthPrefixed(e.a.nals)) : m.block(2, e.ts, true, e.p));
+      const mkv = Buffer.concat(parts.map((p) => Buffer.from(p.buffer, p.byteOffset, p.byteLength)));
+      const relayFile = path.join(dir, `${name}.ts`);
+      const args = ff.buildStreamArgs({ url: null, relayUrl: relayFile, width: 320, height: 180, fps, videoBitrateKbps: 800, audioBitrateKbps: 128, encoder: "libx264", videoCopy: true, listFile: `${name}.csv`, segmentSeconds: 2 });
+      const r = spawnSync(FFMPEG, args, { cwd: dir, input: mkv, maxBuffer: 64 << 20, encoding: "buffer" });
+      expect(r.status, String(r.stderr)).toBe(0);
+      const pk = JSON.parse(spawnSync(FFPROBE, ["-v", "error", "-of", "json", "-show_entries", "packet=stream_index,pts_time", relayFile], { encoding: "utf8", maxBuffer: 64 << 20 }).stdout).packets;
+      const last = (idx) => Math.max(...pk.filter((p) => p.stream_index === idx).map((p) => Number(p.pts_time)).filter(Number.isFinite));
+      return { lastV: last(0), lastA: last(1) };
+    };
+    const before = run(sim.oldTs, "old");
+    const after = run(sim.newTs, "new");
+    expect(before.lastV - before.lastA).toBeGreaterThan(1.5);
+    expect(Math.abs(after.lastV - after.lastA)).toBeLessThan(0.3);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});

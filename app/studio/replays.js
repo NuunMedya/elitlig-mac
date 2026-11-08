@@ -304,7 +304,7 @@ function createReplayStore({
   }
 
   async function probe(file) {
-    const res = await runImpl(getFfmpegPath(), ["-hide_banner", "-nostdin", "-i", file], { timeout: 15000 });
+    const res = await bgRun(getFfmpegPath(), ["-hide_banner", "-nostdin", "-i", file], { timeout: 15000 });
     return ffargs.parseVideoInfo(res.stderr);
   }
 
@@ -329,7 +329,8 @@ function createReplayStore({
     fs.writeFileSync(listFile, `${files.map(ff.concatLine).join("\n")}\n`);
     const src = await probe(files[0]);
     const out = path.join(dir, `${fileBase}.mp4`);
-    const res = await runImpl(getFfmpegPath(), ffargs.buildConcatLevelArgs(listFile, out, { ...src, durationSec: plan.durationMs / 1000 }), { timeout: 60000 });
+    // Gol anında yayın kodlayıcısıyla yarışmasın: birleştirme / kapak da düşük öncelikli (BG_NICE).
+    const res = await bgRun(getFfmpegPath(), ffargs.buildConcatLevelArgs(listFile, out, { ...src, durationSec: plan.durationMs / 1000 }), { timeout: 60000 });
     if (!res.ok || !fs.existsSync(out) || fs.statSync(out).size === 0) {
       try { fs.unlinkSync(out); } catch { /* yoksay */ }
       throw new Error(String(res.stderr || "").trim().split("\n").pop() || "ffmpeg");
@@ -337,7 +338,7 @@ function createReplayStore({
     const meta = await probe(out);
     const durationMs = meta.durationMs ?? plan.durationMs;
     const poster = `${fileBase}.jpg`;
-    const pres = await runImpl(getFfmpegPath(), ffargs.buildPosterArgs(out, path.join(dir, poster), { durationMs }), { timeout: 20000 });
+    const pres = await bgRun(getFfmpegPath(), ffargs.buildPosterArgs(out, path.join(dir, poster), { durationMs }), { timeout: 20000 });
     const hasPoster = pres.ok && fs.existsSync(path.join(dir, poster));
     return {
       angle: plan.angle,

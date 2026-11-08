@@ -598,8 +598,14 @@ function createStudioEngine({
   function clientStats(stats) {
     const s = session;
     if (!s || !stats || typeof stats !== "object") return false;
+    // Gol anı yükü (arayüz, GOL'den sonraki 20 sn'nin özeti): ayrı satır olarak günlüğe.
+    if (stats.goalStress && typeof stats.goalStress === "object") {
+      const g = Object.fromEntries(Object.entries(stats.goalStress).filter(([, v]) => typeof v === "number" || typeof v === "boolean" || v === null).slice(0, 20));
+      note("gol anı yükü", g);
+    }
     const pick = {};
     for (const [k, v] of Object.entries(stats)) {
+      if (k === "goalStress") continue;
       if (typeof v === "number" || typeof v === "boolean" || (typeof v === "string" && v.length <= 120) || v === null) pick[k] = v;
       else if (v && typeof v === "object" && !Array.isArray(v)) pick[k] = Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === "number" || typeof x === "string").slice(0, 12));
     }

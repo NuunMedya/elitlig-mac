@@ -100,6 +100,7 @@ import FullscreenView from "./scenes/FullscreenView";
 import { useRail } from "./shortcuts/ShortcutRail";
 import EventEntry from "./shortcuts/EventEntry";
 import HealthChip from "./scenes/HealthChip";
+import { useGoalStress } from "./useGoalStress";
 import { useChapters, useLowBitrate, useSilenceWatch } from "./scenes/useOperatorAlerts";
 import { goalScoreAfter, isOwnGoalCode } from "./youtube/chapters"; // [bölüm] gol bölümü: skor + golcü
 import { createGoalTaps } from "./youtube/goalTaps"; // [bölüm] GOL'e basılan anlar
@@ -313,7 +314,8 @@ export default function Studio({ auth, go }) {
   // [yayın öncelikli] gol klibi yüklemesi motor durumuna (aktarıcı kuyruğu, gönderim hızı,
   // kopmalar) bakarak ertelenir / kısılır; motor aşağıda kurulur, durum ref'ten okunur.
   const engineStatusRef = useRef(null);
-  const replays = useReplays(matchId, { postSeconds: settings.replay.postSeconds, uploadDelaySec: settings.replay.uploadDelaySec, getStatus: () => engineStatusRef.current });
+  const goalMarkRef = useRef(null); // [gol anı yükü] GOL'de tanılama ölçümü (useGoalStress)
+  const replays = useReplays(matchId, { postSeconds: settings.replay.postSeconds, uploadDelaySec: settings.replay.uploadDelaySec, getStatus: () => engineStatusRef.current, onCapture: (kind) => { if (kind === "goal") goalMarkRef.current?.(); } });
   /** [gol-klip] Yayına verilen tekrar yükü → tekrar başına açılar / bölümler (gecikmeli yükleme, özet). */
   const noteAired = useStable((payload) => {
     if (payload?.kind !== "replay") return;
@@ -412,6 +414,8 @@ export default function Studio({ auth, go }) {
   const onEngineError = useCallback((m) => toast(m, { tone: "error", timeout: 6000 }), [toast]);
   const engine = useEngine({ getVideoTrack: comp.getVideoTrack, getAudioTrack: mixer.audioTrack, getCanvas: comp.getCanvas, subscribeFrames: comp.subscribeFrames, getDrawStats: comp.getStats, onError: onEngineError });
   engineStatusRef.current = engine.status;
+  const goalStress = useGoalStress({ active: engine.active, getDrawStats: comp.getStats, getEncodeStats: engine.getEncodeStats, getStatus: () => engineStatusRef.current });
+  goalMarkRef.current = goalStress.mark;
   const yt = useYoutube(matchId, { encodingLive: engine.mode === "live" && engine.active });
   const hl = useHighlights(matchId);
   const [busy, setBusy] = useState(false);
@@ -1706,7 +1710,7 @@ export default function Studio({ auth, go }) {
           ? <button type="button" className="st-top__match" onClick={() => setTab("yonetim")} title={`${matchName} — Maç yönetimi`}><b>{live.score.home}–{live.score.away}</b><span>{matchName}</span>{live.match && <small>{live.minute}'</small>}</button>
           : <button type="button" className="st-top__match is-empty" onClick={() => setTab("yonetim")} title="Maç seçmek için Maç yönetimi">Maç seçilmedi</button>}
         <StatusPill state={st.state} since={engine.since} />
-        <HealthChip status={st} getStats={comp.getStats} getEncodeStats={engine.getEncodeStats} targetFps={preset.fps} encoding={onAir} />
+        <HealthChip status={st} getStats={comp.getStats} getEncodeStats={engine.getEncodeStats} targetFps={preset.fps} encoding={onAir} goalStress={goalStress.last} goalMeasuring={goalStress.measuring} />
         <span className="st-top__spacer" />
         <LayoutToolbar edit={lay.edit} setEdit={lay.setEdit} ctrlRef={lay.ctrlRef} preset={lay.layout.preset} onSettings={() => openSettings("yerlesim")} />
         {!railHasGoLive && (

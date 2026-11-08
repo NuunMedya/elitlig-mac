@@ -18,9 +18,11 @@
 //     giden akış her zaman çözülebilir bir kareyle başlar.
 //   - failoverAfter (3) ardışık hatadan sonra yedek giriş adresine
 //     (YouTube backup ingest) geçilir; orada da 3 hata olursa ana adrese döner.
-//   - Ağ yetişemezse (aktarıcının stdin'i highWater'ı aşarsa) gerçek zamanı
-//     korumak için sonraki anahtar kareye kadar GÖRÜNTÜ paketleri ATILIR (kuyruk
-//     büyümez); SES (görüntü dışı PID'ler: ses, PAT/PMT) kesilmeden gitmeye devam eder.
+//   - Ağ yetişemezse (aktarıcının stdin'i sustainMs — 4 sn — boyunca highWater'ın yarısının
+//     üstünde kalıp highWater'ı aşarsa ya da 2 × highWater'a varırsa) gerçek zamanı korumak
+//     için sonraki anahtar kareye kadar GÖRÜNTÜ paketleri ATILIR; kuyruk highWater'ın yarısına
+//     inince ilk anahtar karede sürer (2.20.1: kısa yığılma artık görüntü attırmaz, atlama
+//     kuyruğun tamamen boşalmasını beklemez — eskiden saniyelerce görüntü gitmiyordu); SES (görüntü dışı PID'ler: ses, PAT/PMT) kesilmeden gitmeye devam eder.
 //     Eskiden ses de birlikte atılıyordu: her atlamada YouTube'a 1–2 sn'lik ses boşluğu
 //     gidiyor, boşluğun iki ucu izleyicide "patlama / cızırtı" olarak duyuluyordu (yerel
 //     kayıtta aktarıcı olmadığından sorun yoktu). Kuyruk hardWater'ı da aşarsa (ağ tamamen
@@ -260,6 +262,7 @@ function createRelay({
   lowWaterBytes = null,
   highWaterSec = 8,
   hardWaterBytes = null, // bunu da aşarsa ses de atılır (varsayılan 4 × highWater)
+  sustainMs = 4000, // kuyruk bu kadar süre highWater / 2'nin üstünde kalmadıkça (ve 2 × highWater'a varmadıkça) görüntü atılmaz
   stopTimeoutMs = 3000,
   note = () => {},
   log = () => {},
@@ -292,6 +295,7 @@ function createRelay({
     reconnects: 0, // kopmadan sonra başarılı yeniden bağlanma
     everUp: false,
     lastError: null,
+    lastDropAt: null,
     upSince: null,
     sentBytes: 0,
     sentKbps: null,
@@ -307,6 +311,8 @@ function createRelay({
   const MAX_HIGH = 24 * 1024 * 1024;
   const highWater = () => highWaterBytes ?? Math.min(MAX_HIGH, Math.max(MIN_HIGH, Math.round(inRate.bps * highWaterSec)));
   const lowWater = () => lowWaterBytes ?? Math.min(2 * 1024 * 1024, Math.max(512 * 1024, Math.round(inRate.bps)));
+  const resumeWater = () => Math.max(lowWater(), Math.floor(highWater() / 2));
+  let overSince = null; // kuyruğun highWater / 2'yi aştığı an (süren darlık)
 
   const clear = (name) => {
     const t = { retryTimer, watchTimer, stableTimer }[name];
@@ -332,6 +338,7 @@ function createRelay({
       inBytes: st.inBytes,
       droppedBytes: st.droppedBytes,
       dropEvents: st.dropEvents,
+      lastDropAt: st.lastDropAt,
       dropping: st.dropping,
       pendingBytes: pusher?.child?.stdin?.writableLength ?? 0,
       highWaterBytes: highWater(),
@@ -396,6 +403,7 @@ function createRelay({
     gopBuf.reset();
     feeding = false;
     audioOnly = false;
+    overSince = null;
     if (streams > 1 && pusher && !pusher.stopping) {
       // Zaman damgaları sıfırlandı: aktarıcı geri çekilmeden yeniden kurulur.
       note("aktarıcı yeniden kuruluyor (kodlayıcı yeniden başladı)");
@@ -424,12 +432,23 @@ function createRelay({
     const stdin = pusher.child.stdin;
     if (!stdin || stdin.destroyed || !stdin.writable) return;
     if (feeding) {
-      if (stdin.writableLength > highWater()) {
+      const pend = stdin.writableLength;
+      const hw = highWater();
+      // Kısa bir yığılma (yerel takılma sonrası toplu gelen veri, birkaç saniyelik ağ dalgalanması)
+      // GÖRÜNTÜ ATTIRMAZ: gecikme kısa süre büyür, kuyruk erir. Yalnız kuyruk sustainMs boyunca
+      // highWater'ın yarısının üstünde kalıp highWater'ı aşarsa (ağ gerçekten yetişemiyor) ya da
+      // 2 × highWater'a ulaşırsa atlanır. (Eskiden highWater aşılır aşılmaz atlanıyor ve kuyruk
+      // ~1 sn'ye inene dek — saniyelerce — görüntü gitmiyordu.)
+      if (pend > hw / 2) { if (overSince === null) overSince = t; } else overSince = null;
+      const sustained = overSince !== null && t - overSince >= sustainMs;
+      if ((pend > hw && sustained) || pend >= hw * 2) {
         // Ağ yetişemiyor: kuyruk büyütülmez, sonraki anahtar kareye kadar GÖRÜNTÜ atlanır; ses sürer.
         feeding = false;
         audioOnly = true;
+        overSince = null;
         st.dropEvents += 1;
-        if (!st.dropping) { st.dropping = true; note("ağ yetişemiyor; anahtar kareye kadar görüntü atlanıyor (ses sürüyor)", { pendingBytes: stdin.writableLength, highWaterBytes: highWater(), inKbps: Math.round((inRate.bps * 8) / 1000), sentKbps: st.sentKbps }); emit(); }
+        st.lastDropAt = t;
+        if (!st.dropping) { st.dropping = true; note("ağ yetişemiyor; anahtar kareye kadar görüntü atlanıyor (ses sürüyor)", { pendingBytes: pend, highWaterBytes: hw, inKbps: Math.round((inRate.bps * 8) / 1000), sentKbps: st.sentKbps }); emit(); }
         writeAudioOnly(stdin, data);
         return;
       }
@@ -437,7 +456,9 @@ function createRelay({
       return;
     }
     if (audioOnly) {
-      if (keyframe && resumeAt >= 0 && stdin.writableLength <= lowWater()) {
+      // Kuyruk highWater'ın yarısına inince İLK anahtar karede sürer (eskiden ~1 sn'ye inmesi
+      // beklenirdi: kuyruk boşalana kadar gelen tüm görüntü — saniyelerce — atılıyordu).
+      if (keyframe && resumeAt >= 0 && stdin.writableLength <= resumeWater()) {
         // Aynı aktarıcı sürüyor (başlık zaten gitti): anahtar kareye dek yalnız ses, sonra hepsi.
         if (resumeAt > 0) writeAudioOnly(stdin, data.subarray(0, resumeAt));
         stdin.write(data.subarray(resumeAt));
