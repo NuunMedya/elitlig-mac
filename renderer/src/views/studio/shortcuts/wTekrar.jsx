@@ -113,7 +113,7 @@ function AnglePick({ ctx, w, h, preview }) {
   return (
     <Shell tone="violet" w={w} h={h} state={R.previewPos?.replayId === r.id ? "pvw" : null} className="wx-ap">
       <Head icon="video" label={titleOf(R, r)} right={<small className="wx-head__r">{n ? `${n} seçili` : "tık: seç"}</small>} />
-      <PosGrid R={R} r={r} w={w} preview={preview} max={w >= 4 ? 6 : w >= 3 ? 4 : h >= 2 ? 4 : 3} />
+      <PosGrid R={R} r={r} w={w} preview={preview} max={6} />
       {h >= 2 && (
         <div className="wx-row is-actions">
           <button type="button" className="wx-btn is-pvw" onClick={() => sendPos(R, r)}><Icon name="eye" size={12} /> Önizlemeye{n ? ` (${n})` : ""}</button>
@@ -138,7 +138,7 @@ function AngleSeq({ ctx, w, h, preview }) {
   return (
     <Shell tone="violet" w={w} h={h} state={R.airPos?.replayId === r.id ? "air" : R.previewPos?.replayId === r.id ? "pvw" : null} className="wx-seq">
       <Head icon="layers" label="POZİSYON" right={<span className="wx-pager"><button type="button" onClick={() => step(-1)} disabled={i <= 0} title="Daha yeni">‹</button><small>{titleOf(R, r)}</small><button type="button" onClick={() => step(1)} disabled={i >= list.length - 1} title="Daha eski">›</button></span>} />
-      <PosGrid R={R} r={r} w={w} preview={preview} max={w >= 4 ? 6 : 4} />
+      <PosGrid R={R} r={r} w={w} preview={preview} max={6} />
       {w >= 3 && chosen.length > 0 && (
         <div className="wx-seq__order">
           {chosen.map((a, k) => <span key={a} className="wx-seq__it"><b>{k + 1}</b>{angleLabel(haveAngles(r).find((x) => x.angle === a) || { angle: a }, R.sources)}</span>)}
@@ -498,14 +498,15 @@ function GoalsOptions({ ctx, item, onClose }) {
 }
 function PosListTile({ ctx, item, w, h, togglePop, goalsOnly = true }) {
   const R = ctx.replay;
-  const n = Number(item.opts?.n) || (h >= 2 ? 4 : 2);
-  const cap = h >= 2 ? (w >= 3 ? 8 : 5) : 2;
+  // Hücre yönü / boyutu CSS'te (wTekrar.css): liste kaydırılır, geniş hücrede sütunlar, alçakta tek sıra.
+  const n = Number(item.opts?.n) || 5;
+  const cap = 8;
   const list = goalsOnly ? goalReplays(R.list, Math.min(n, cap)) : playable(R).slice(0, cap);
   const opts = () => openPop(item, togglePop, { mode: "options" });
   return (
     <Shell tone="green" w={w} h={h} className="wx-gl" onContextMenu={(e) => { e.preventDefault(); if (goalsOnly) opts(); }}>
       <Head icon={goalsOnly ? "ball" : "list"} label={goalsOnly ? "GOL TEKRARLARI" : "POZİSYONLAR"} right={goalsOnly ? <button type="button" className="wx-gear" onClick={opts} title="Kaç gol"><Icon name="sliders" size={11} /></button> : null} />
-      <ul className={`wx-gl__list ${w >= 3 ? "is-cols" : ""}`}>
+      <ul className="wx-gl__list">
         {list.map((r) => {
           const k = picksOf(R.picks || {}, r).length;
           const st = R.airPos?.replayId === r.id ? "is-air" : R.previewPos?.replayId === r.id ? "is-pvw" : "";
