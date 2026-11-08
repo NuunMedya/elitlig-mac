@@ -20,7 +20,9 @@ const probe = spawnSync(FFMPEG, ["-hide_banner", "-protocols"], { encoding: "utf
 const HAVE = probe.status === 0;
 const HAVE_SRT = HAVE && /^\s*srt\s*$/m.test(probe.stdout.split(/Output:/)[0]);
 const SRC = path.join(__dirname, "..", "..", "renderer", "src");
-const mp4 = import(path.join(SRC, "lib", "studio", "mp4.js"));
+const { pathToFileURL } = require("node:url");
+const mp4 = import(pathToFileURL(path.join(SRC, "lib", "studio", "mp4.js")).href);
+mp4.catch(() => {}); // ffmpeg yokken testler atlanır; içe aktarma hatası yakalanmamış ret olmasın
 
 function loadPlaywright() {
   for (const p of ["playwright", "/opt/node-tools/node_modules/playwright", process.env.PLAYWRIGHT_PATH].filter(Boolean)) {
