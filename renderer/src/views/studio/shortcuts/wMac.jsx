@@ -36,7 +36,8 @@ async function run(ctx, fn, ok, fail = "Kaydedilemedi.") {
 
 /* ═════════════════════════ MAÇ SEÇİCİ ═════════════════════════ */
 
-function MatchFlow({ ctx, onClose }) {
+function MatchFlow({ ctx, onClose, setWide }) {
+  useEffect(() => { setWide?.(true); }, [setWide]);
   const [day, setDay] = useState(isoDay());
   const [list, setList] = useState(null);
   useEffect(() => {
@@ -365,7 +366,7 @@ function RatingQuick({ ctx, item, w, h, togglePop }) {
   const n = list.filter((p) => p.rating != null).length;
   return (
     <Shell tone="amber" w={w} h={h} className="wm-rt" {...optMenu(item, togglePop)}>
-      <Head icon="star" label={`PUAN · ${n}/${list.length}`} right={<span className="wx-seg">{["home", "away"].map((s) => <button key={s} type="button" className={side === s ? "is-on" : ""} onClick={() => setSide(s)}>{(name(ctx, s) || "").slice(0, w >= 3 ? 12 : 4)}</button>)}</span>} />
+      <Head icon="star" label={`PUAN · ${n}/${list.length}`} right={w === 1 ? <button type="button" className="wx-sw" onClick={() => setSide(side === "home" ? "away" : "home")} title="Takım değiştir">{side === "home" ? "EV" : "DEP"}</button> : <span className="wx-seg">{["home", "away"].map((s) => <button key={s} type="button" className={side === s ? "is-on" : ""} onClick={() => setSide(s)}>{(name(ctx, s) || "").slice(0, w >= 3 ? 12 : 4)}</button>)}</span>} />
       <div className={`wm-rt__g is-c${w >= 4 ? 4 : w >= 3 ? 3 : w === 1 ? 1 : 2}`}>
         {list.map((p) => (
           <button key={p.id} type="button" className={p.rating != null ? "is-rated" : ""} onClick={() => openPop(item, togglePop, { playerId: p.id })} title={`${p.name} — puan ver`}>

@@ -176,6 +176,12 @@ describe("katalog, hazır paneller ve düzenler", () => {
         expect(it.x + it.w, `${t.key} ${it.t}`).toBeLessThanOrEqual(t.cols);
       }
       expect(boardFromTemplate(t).items).toHaveLength(t.items.length);
+      // parçalar üst üste binmez
+      for (let i = 0; i < t.items.length; i += 1) for (let j = i + 1; j < t.items.length; j += 1) {
+        const a = t.items[i], b = t.items[j];
+        const hit = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+        expect(hit, `${t.key}: ${a.t} × ${b.t}`).toBe(false);
+      }
     }
     for (const k of ["reji-compact", "reji-mirror", "reji-grid", "reji-log", "reji-touch", "tekrar-operator", "tekrar-compact", "tekrar-evs", "sahne-grid", "sahne-list", "sahne-strip", "sahne-tally", "sahne-ab"]) expect(templateOf(k), k).toBeTruthy();
   });

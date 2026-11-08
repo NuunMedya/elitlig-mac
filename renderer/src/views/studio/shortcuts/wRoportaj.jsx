@@ -97,7 +97,7 @@ function IvGuest({ ctx, item, w, h, togglePop, popOpen }) {
   const isCur = (p) => person && p.name === person.name && (p.role || "") === (person.role || "");
   return (
     <Shell tone="blue" w={w} h={h} state={on ? "air" : popOpen ? "armed" : null} className="wi-gs">
-      <Head icon="user" label="KONUK" right={<><button type="button" className={`wx-sw ${on ? "is-on" : ""}`} onClick={() => g.setInterviewOnAir(!on)}>{on ? "YAYINDA" : "KAPALI"}</button><button type="button" className="wx-gear" onClick={() => openPop(item, togglePop, {})} title="Konuk ekle / seç"><Icon name="plus" size={11} /></button></>} />
+      <Head icon="user" label="KONUK" right={<><button type="button" className={`wx-sw ${on ? "is-on" : ""}`} onClick={() => g.setInterviewOnAir(!on)}>{on ? (w === 1 ? "AÇIK" : "YAYINDA") : (w === 1 ? "—" : "KAPALI")}</button>{w > 1 && <button type="button" className="wx-gear" onClick={() => openPop(item, togglePop, {})} title="Konuk ekle / seç"><Icon name="plus" size={11} /></button>}</>} />
       <div className={`wi-gs__g ${w >= 3 ? "is-c3" : w === 1 ? "is-c1" : "is-c2"}`}>
         {list.slice(0, n).map((p, i) => (
           <button key={`${p.name}${i}`} type="button" className={`wi-gs__b ${isCur(p) ? "is-on" : ""}`} onClick={() => (isCur(p) ? g.setInterviewOnAir(!on) : putPeople(ctx, [p], { setRecents, on: item.opts?.autoOn !== false }))} title={`${p.name}${who(p) ? ` · ${who(p)}` : ""} — tık: banda koy`}>
@@ -254,7 +254,7 @@ function IvReview({ ctx, w, h }) {
   const st = iv.status === "uploading" ? `YÜKLENİYOR %${iv.progress ?? 0}` : iv.status === "done" ? "YÜKLENDİ" : iv.status === "error" ? "HATA" : iv.recording ? "KAYITTA" : has ? "İNCELEMEDE" : "KAYIT YOK";
   return (
     <Shell tone="blue" w={w} h={h} state={iv.status === "error" ? "air" : has ? "armed" : null} className="wi-rv">
-      <Head icon="upload" label="RÖPORTAJ KAYDI" right={<Pill tone={iv.status === "done" ? "green" : iv.status === "error" ? "danger" : "plain"}>{st}</Pill>} />
+      <Head icon="upload" label={w === 1 ? "KAYIT" : "RÖPORTAJ KAYDI"} right={w === 1 ? null : <Pill tone={iv.status === "done" ? "green" : iv.status === "error" ? "danger" : "plain"}>{st}</Pill>} />
       {iv.status === "uploading" && <span className="wx-prog"><i style={{ width: `${iv.progress || 0}%` }} /></span>}
       {h >= 2 && <small className="wx-s">{has ? `${iv.file.name}${iv.file.durationMs ? ` · ${clock(iv.file.durationMs)}` : ""}` : iv.status === "done" ? "Maç sayfasında" : "Önce kayıt al"}</small>}
       <div className={`wx-row is-actions ${w === 1 ? "is-col" : ""}`}>

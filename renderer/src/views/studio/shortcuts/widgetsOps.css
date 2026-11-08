@@ -10,7 +10,7 @@
 .st-w.wx button { min-width: 0; }
 
 /* ═════════ seçenek paneli ═════════ */
-.wo { gap: 9px; min-width: 300px; }
+.wo { gap: 9px; }
 .wo-row { display: flex; flex-direction: column; gap: 5px; }
 .wo-row.is-bool, .wo-row.is-inline { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
 .wo-row strong, .wo-row__l strong { display: block; font-size: 12px; font-weight: 750; color: #fff; }
@@ -50,9 +50,9 @@
 .wl-big.is-on { background: var(--air); border-color: var(--air); box-shadow: 0 0 12px rgba(255, 45, 85, 0.4); }
 .wl-big.is-black { background: #000; }
 .wl-big.is-black.is-on { background: var(--air); }
-.wl-tk__run { flex: none; overflow: hidden; white-space: nowrap; border-radius: 6px; background: rgba(91, 33, 182, 0.45); padding: 2px 0; font-size: 10.5px; font-weight: 750; }
-.wl-tk__run span { display: inline-block; padding-left: 100%; }
-.wl-tk__run span.is-on { animation: wlRun 9s linear infinite; }
+.wl-tk__run { flex: none; overflow: auto; scrollbar-width: none; white-space: nowrap; border-radius: 6px; background: rgba(91, 33, 182, 0.45); padding: 2px 0; font-size: 10.5px; font-weight: 750; }
+.wl-tk__run span { display: inline-block; padding: 0 6px; }
+.wl-tk__run span.is-on { padding-left: 100%; animation: wlRun 9s linear infinite; }
 @keyframes wlRun { from { transform: translateX(0); } to { transform: translateX(-100%); } }
 .wl-pr__g { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
 .wl-pr__g.is-col { grid-template-columns: 1fr; grid-auto-rows: minmax(0, 1fr); }
@@ -127,7 +127,7 @@
 .st-hl__cards .st-row { justify-content: space-between; }
 
 /* ═════════ maç ═════════ */
-.wm-ml { display: flex; flex-direction: column; gap: 4px; max-height: 340px; overflow: auto; min-width: 320px; }
+.wm-ml { display: flex; flex-direction: column; gap: 4px; max-height: 340px; overflow: auto; }
 .wm-ml__r { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 10px; border-radius: 9px; border: 1px solid var(--border-strong); background: var(--surface-2); color: #fff; text-align: left; cursor: pointer; }
 .wm-ml__r em { flex: none; font: 800 12px var(--mono, monospace); font-style: normal; color: var(--muted); }
 .wm-ml__r span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -266,7 +266,8 @@
 .wg-bank__g button strong { font-size: 10.5px; } .wg-bank__g button small { font-size: 8.5px; color: rgba(255, 255, 255, 0.75); }
 .wg-bank__g button.is-run { box-shadow: 0 0 0 2px var(--air); }
 .wg-me { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 10px; min-width: 560px; }
-.wg-me.is-compact { min-width: 520px; }
+.wg-me.is-compact { min-width: 0; grid-template-columns: 140px minmax(0, 1fr); }
+.wg-me.is-compact .wg-me__steps select, .wg-me.is-compact .wg-me__steps input:not([type="checkbox"]) { max-width: 150px; }
 .wg-me__list { display: flex; flex-direction: column; gap: 3px; max-height: 420px; overflow: auto; }
 .wg-me__list button { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface-2); color: #fff; text-align: left; cursor: pointer; }
 .wg-me__list button i { flex: none; width: 10px; height: 10px; border-radius: 3px; }

@@ -288,7 +288,8 @@ async function fire(ctx, m) {
   const r = await runMacro(m, ctx, { delayMs: ctx.ops?.macro?.stepDelayMs ?? 300 });
   if (!r.ok && r.skipped.length) ctx.toast?.(`“${m.name}”: ${r.skipped.length} adım yapılamadı.`, { tone: "warn", timeout: 3000 });
 }
-function MacroFlow({ ctx, item, intent }) {
+function MacroFlow({ ctx, item, intent, setWide }) {
+  useEffect(() => { setWide?.(true); }, [setWide]);
   return <MacroEditor ctx={ctx} initialId={intent?.macroId || item?.opts?.macroId} compact />;
 }
 function MacroBtn({ ctx, item, w, h, togglePop }) {
