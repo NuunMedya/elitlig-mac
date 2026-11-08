@@ -553,6 +553,58 @@ export const LAYOUT_PRESETS = [
       { size: 45, row: [{ tabs: ["ses"], size: 2.6 }, { tabs: ["tekrar", "sahneSerit", "yonetim", "sahne", "yayin"], size: 1.4 }] },
     ] }] },
   },
+  // ── hazır panelleri birleştiren tam ekran düzenler (boards: kurulacak pano şablonları, ./boardTemplates) ──
+  {
+    key: "rejiMasa", label: "Reji masası · iki takım ayna", icon: "swap", boards: ["reji-mirror", "mac-masa"],
+    hint: "Monitörler üstte; ev sahibi | skor + saat + olaylar | deplasman; yanda maç masası (durum, devre, kadro, MVP…)",
+    spec: { row: [RAIL, { size: 88, col: [
+      { size: 32, row: [{ tabs: ["pvw"], size: 4 }, { tabs: ["pgm"], size: 4 }, { size: 2, col: [{ tabs: ["saat"], size: 1 }, { tabs: ["gecis"], size: 1.4 }] }] },
+      { size: 68, row: [{ tabs: ["board~tpl-reji-mirror", "yonetim"], size: 3 }, { tabs: ["board~tpl-mac-masa", "olaylar"], size: 2 }] },
+    ] }] },
+  },
+  {
+    key: "operator", label: "Operatör ızgarası", icon: "grid", boards: ["reji-grid", "sahne-ab"],
+    hint: "Monitörler; altta eşit kare reji düğmeleri ve A/B sahne veriyolu",
+    spec: { row: [RAIL, { size: 88, col: [MONITORS(40), { size: 60, row: [{ tabs: ["board~tpl-reji-grid"], size: 1 }, { tabs: ["board~tpl-sahne-ab", "sahne"], size: 1.1 }] }] }] },
+  },
+  {
+    key: "dokunmatik", label: "Dokunmatik reji", icon: "zap", boards: ["reji-touch", "sahne-list"],
+    hint: "Kısayol şeridi yok; büyük reji düğmeleri, sahne listesi, monitörler",
+    spec: { row: [{ size: 18, tabs: ["board~tpl-sahne-list"] }, { size: 82, col: [MONITORS(36), { tabs: ["board~tpl-reji-touch", "yonetim"], size: 64 }] }] },
+  },
+  {
+    key: "kompakt", label: "Kompakt reji sütunu", icon: "list", boards: ["reji-compact", "tekrar-compact"],
+    hint: "Solda tek sütun reji, sağda tek sütun tekrar; ortada monitörler, geçiş ve işletim panelleri",
+    spec: { row: [{ size: 15, tabs: ["board~tpl-reji-compact"] }, { size: 70, col: [MONITORS(46), TAKE_STRIP(15), { ...OPS("sahne"), size: 39 }] }, { size: 15, tabs: ["board~tpl-tekrar-compact"] }] },
+  },
+  {
+    key: "evs", label: "Tekrar · EVS tarzı", icon: "sliders", boards: ["tekrar-evs", "tekrar-operator"],
+    hint: "Büyük önizleme (düzenleyici), program + açılar; altta EVS tarzı tekrar panosu ve operatör panosu",
+    spec: { row: [RAIL, { size: 88, col: [
+      { size: 50, row: [{ tabs: ["pvw"], size: 6 }, { size: 4, col: [{ tabs: ["pgm"], size: 3 }, { tabs: ["acilar"], size: 2 }] }] },
+      { size: 50, row: [{ tabs: ["board~tpl-tekrar-evs"], size: 1.4 }, { tabs: ["board~tpl-tekrar-operator", "tekrar"], size: 1 }] },
+    ] }] },
+  },
+  {
+    key: "sahneAB", label: "Sahne · A/B ve tally", icon: "eye", boards: ["sahne-ab", "sahne-tally"],
+    hint: "Monitörler; A/B veriyolu, büyük tally'li sahne resimleri, otomatik dönüş",
+    spec: { row: [RAIL, { size: 88, col: [MONITORS(42), { size: 58, row: [{ tabs: ["board~tpl-sahne-ab"], size: 1.1 }, { tabs: ["board~tpl-sahne-tally", "sahne"], size: 1 }] }] }] },
+  },
+  {
+    key: "ledMasa", label: "LED masası", icon: "overview", boards: ["led-masa"],
+    hint: "LED önizleme ve program büyük; altta LED masası (ekran, içerik, ayar, kayan yazı, ayna…) ve LED sekmesi",
+    spec: { row: [RAIL, { size: 88, col: [{ size: 44, row: [{ tabs: ["ledPvw"], size: 1 }, { tabs: ["pgm"], size: 1 }] }, { size: 56, row: [{ tabs: ["board~tpl-led-masa"], size: 2 }, { tabs: ["led", "yonetim", "sahne"], size: 1 }] }] }] },
+  },
+  {
+    key: "roportajOzet", label: "Röportaj ve özet masası", icon: "users", boards: ["roportaj-masa", "ozet-masa"],
+    hint: "Monitörler; röportaj masası (konuk, bant, kayıt) ve özet masası (seçim, oluştur, yükle)",
+    spec: { row: [RAIL, { size: 88, col: [MONITORS(40), { size: 60, row: [{ tabs: ["board~tpl-roportaj-masa", "roportaj"], size: 1 }, { tabs: ["board~tpl-ozet-masa", "ozet"], size: 1 }] }] }] },
+  },
+  {
+    key: "yayinci", label: "Yayın sorumlusu", icon: "activity", boards: ["yayin-araclar", "mac-sonu"],
+    hint: "Program büyük; yayın araçları (sağlık, bit hızı, makrolar, istem kartları) ve maç sonu masası",
+    spec: { row: [RAIL, { size: 88, col: [MONITORS(44), { size: 56, row: [{ tabs: ["board~tpl-yayin-araclar", "yayin"], size: 1.3 }, { tabs: ["board~tpl-mac-sonu", "yonetim"], size: 1 }] }] }] },
+  },
 ];
 export const presetOf = (key) => LAYOUT_PRESETS.find((p) => p.key === key) || null;
 

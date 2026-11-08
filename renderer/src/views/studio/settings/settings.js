@@ -17,6 +17,7 @@
 // düzenler (tek doğruluk kaynağı).
 export const SETTINGS_KEY = "studio.settings.v1";
 import { PIPELINES, normalizePipeline } from "../../../lib/studio/encodepath";
+import { DEFAULT_OPS, normalizeOps } from "./opsSettings";
 export { PIPELINES };
 
 export const ENCODER_PREFS = [
@@ -77,6 +78,8 @@ export const DEFAULT_SETTINGS = {
   view: { hints: true, tooltips: true, scale: 100 },
   hotkeys: DEFAULT_HOTKEYS,
   notify: { micOpen: true, lowBitrate: true, silence: true, silenceSec: 30 },
+  // İşletim varsayılanları (LED, röportaj, özet, reji / maç, makrolar): ./opsSettings
+  ops: normalizeOps(DEFAULT_OPS),
 };
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -152,6 +155,7 @@ export function normalizeSettings(raw) {
       silence: bool(r.notify?.silence, d.notify.silence),
       silenceSec: clamp(Math.round(num(r.notify?.silenceSec, d.notify.silenceSec)), 10, 300),
     },
+    ops: normalizeOps(r.ops),
   };
 }
 

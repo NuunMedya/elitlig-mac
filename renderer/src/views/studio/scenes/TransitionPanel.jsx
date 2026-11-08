@@ -1,5 +1,5 @@
 // Yayın Stüdyosu · GEÇİŞ paneli (önizleme ile program arasında) — yalın:
-//   GEÇİŞ (Boşluk) · hızlı geçiş türü · Son sahneye dön (L) · SİYAHA GEÇ (FTB) · DONDUR.
+//   GEÇİŞ (Boşluk) · hızlı geçiş türü · Son sahneye dön (L) · SOLARAK SİYAH (FTB).
 // Süreler, logo geçişleri, özel kip geçişleri ve stüdyo modu tek yerde:
 // alt paneldeki "Geçişler" sekmesi (TransitionsTab). LED yönlendirmesi kısayol
 // şeridindeki "LED" parçacığında ve LED ekran sekmesinde.
@@ -27,7 +27,7 @@ function TransitionPanel({ layout = "column", studioMode, canTake, takeLabel, on
       </button>
       {(onFtb || onFreeze) && (
         <div className="pg-ctl">
-          {onFtb && <button type="button" className={`btn btn--xs is-ftb ${programFx?.ftb ? "is-on" : ""}`} onClick={onFtb} title="Siyaha geç (FTB): tüm yayın görüntüsü grafikler dahil siyaha solar; tekrar basınca geri açılır. Ses sürer.">{programFx?.ftb ? "SİYAH · AÇ" : "SİYAHA GEÇ"}</button>}
+          {onFtb && <button type="button" className={`btn btn--xs is-ftb ${programFx?.ftb ? "is-on" : ""}`} onClick={onFtb} title="Siyaha geç (FTB): tüm yayın görüntüsü grafikler dahil siyaha solar; tekrar basınca geri açılır. Ses sürer.">{programFx?.ftb ? "SİYAH · AÇ" : "SOLARAK SİYAH"}</button>}
           {onFreeze && <button type="button" className={`btn btn--xs is-freeze ${programFx?.frozen ? "is-on" : ""}`} onClick={onFreeze} title="Dondur: yayın son karede kalır (önizleme sürer); kamera / kablo değiştirirken.">{programFx?.frozen ? "DONUK · ÇÖZ" : "DONDUR"}</button>}
         </div>
       )}

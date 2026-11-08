@@ -19,13 +19,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveScene } from "../../../lib/studio/scenes";
 import { ledTargetScene, normalizeLedRoute, routeSceneToLed } from "./ledRouting";
+import { normalizeLedFx, patchLedFx } from "./ledFx";
 
 const PREFS_KEY = "studio.led.v2";
 function readPrefs(defaults) {
-  const base = { displayId: null, web: false, ...normalizeLedRoute(defaults) };
+  const base = { displayId: null, web: false, ...normalizeLedRoute(defaults), fx: normalizeLedFx(defaults?.fx) };
   try {
     const v2 = JSON.parse(localStorage.getItem(PREFS_KEY) || "null");
-    if (v2) return { ...base, displayId: v2.displayId ?? null, web: Boolean(v2.web), ...normalizeLedRoute(v2) };
+    // Anlık durumlar (dondur / karart) yeniden açılışta taşınmaz.
+    if (v2) return { ...base, displayId: v2.displayId ?? null, web: Boolean(v2.web), ...normalizeLedRoute(v2), fx: normalizeLedFx({ ...base.fx, ...(v2.fx || {}), freeze: false, black: false }) };
     // 2.11 kaydı: yalnız ekran seçimi taşınır; içerik varsayılanı artık Program.
     const v1 = JSON.parse(localStorage.getItem("studio.led.v1") || "null");
     if (v1) return { ...base, displayId: v1.displayId ?? null, ...(v1.content === "scene" && v1.sceneId ? { route: "scene", sceneId: v1.sceneId } : {}) };
@@ -49,16 +51,18 @@ export function ledStateKey(state) {
 export const shouldSendLed = (key, last, now, keepaliveMs = KEEPALIVE_MS) => !last || key !== last.key || now - last.at >= keepaliveMs;
 
 /** LED penceresine gidecek, JSON'a çevrilebilir durum. */
-export function ledState({ config, sceneId, graphics, branding, matchId, width = 1920, height = 1080, route = "program" }) {
+export function ledState({ config, sceneId, graphics, branding, matchId, width = 1920, height = 1080, route = "program", fx = null, frame = null }) {
   const scene = sceneId ? resolveScene(config, sceneId) : null;
   const used = new Set((scene?.layers || []).map((l) => l.sourceId));
   const sources = config.sources.filter((s) => used.has(s.id)).map((s) => ({ ...s, url: typeof s.url === "string" && s.url.startsWith("blob:") ? null : s.url }));
   let g = null;
   try { g = graphics == null ? null : JSON.parse(JSON.stringify(graphics)); } catch { g = null; }
-  return { v: 2, sentAt: Date.now(), matchId: matchId || null, width, height, route, sceneId: scene?.id || null, scene, sources, graphics: route === "off" ? null : g, branding: branding || null };
+  const f = normalizeLedFx(fx);
+  // Ayna: programın küçültülmüş karesi (tekrar / VAR / özel kipler LED'de de görünsün).
+  return { v: 2, sentAt: Date.now(), matchId: matchId || null, width, height, route, sceneId: scene?.id || null, scene, sources, graphics: route === "off" ? null : g, branding: branding || null, fx: f, frame: f.content === "mirror" && !f.freeze ? frame || null : null };
 }
 
-export function useLed({ configRef, programIdRef, previewIdRef, graphicsRef, brandingRef, matchId, ledMode, defaults = null, programId = null, previewId = null }) {
+export function useLed({ configRef, programIdRef, previewIdRef, graphicsRef, brandingRef, matchId, ledMode, defaults = null, programId = null, previewId = null, frameRef = null }) {
   const [displays, setDisplays] = useState([]);
   const [status, setStatus] = useState({ open: false });
   const [prefs, setPrefs] = useState(() => readPrefs(defaults));
@@ -99,18 +103,32 @@ export function useLed({ configRef, programIdRef, previewIdRef, graphicsRef, bra
   // Stüdyo kipinde durum yarım saniyede bir ve hedef değişince HEMEN gönderilir.
   const studioMode = status.open && (status.mode === "studio" || (status.mode == null && !prefs.web));
   const lastSentRef = useRef(null);
+  const lastFrameRef = useRef(null);
   const send = useCallback((force = false) => {
     const cfg = configRef.current;
     if (!cfg || !led()?.sendState) return;
     try {
-      const st = ledState({ config: cfg, sceneId: targetScene(), graphics: graphicsRef.current, branding: brandingRef.current, matchId, route: prefsRef.current.route });
+      const fx = normalizeLedFx(prefsRef.current.fx);
+      let frame = null;
+      if (fx.content === "mirror" && !fx.freeze) {
+        // Ayna kareleri saniyede mirrorFps kez (her denetimde değil).
+        const t0 = Date.now();
+        const lf = lastFrameRef.current;
+        if (!lf || t0 - lf.at >= 1000 / fx.mirrorFps) {
+          let url = null;
+          try { url = frameRef?.current?.() || null; } catch { url = null; }
+          lastFrameRef.current = { at: t0, url };
+        }
+        frame = lastFrameRef.current?.url || null;
+      }
+      const st = ledState({ config: cfg, sceneId: targetScene(), graphics: graphicsRef.current, branding: brandingRef.current, matchId, route: prefsRef.current.route, fx, frame });
       const key = ledStateKey(st);
       const t = Date.now();
       if (!force && !shouldSendLed(key, lastSentRef.current, t)) return;
       lastSentRef.current = { key, at: t };
       led().sendState(st);
     } catch { /* yoksay */ }
-  }, [brandingRef, configRef, graphicsRef, matchId, targetScene]);
+  }, [brandingRef, configRef, frameRef, graphicsRef, matchId, targetScene]);
   useEffect(() => {
     if (!studioMode) { lastSentRef.current = null; return undefined; }
     send(true);
@@ -118,7 +136,7 @@ export function useLed({ configRef, programIdRef, previewIdRef, graphicsRef, bra
     const t = setInterval(() => send(false), LED_SEND_MS);
     return () => clearInterval(t);
   }, [send, studioMode]);
-  useEffect(() => { if (studioMode) send(true); }, [targetId, prefs.route, send, studioMode]);
+  useEffect(() => { if (studioMode) send(true); }, [targetId, prefs.route, prefs.fx, send, studioMode]);
 
   const open = useCallback(async (override = null) => {
     setError(null);
@@ -145,7 +163,21 @@ export function useLed({ configRef, programIdRef, previewIdRef, graphicsRef, bra
     refreshStatus();
   }, [refreshStatus]);
 
-  const setPref = useCallback((patch) => setPrefs((p) => ({ ...p, ...patch })), []);
+  const setPref = useCallback((patch) => setPrefs((p) => { const next = { ...p, ...patch }; prefsRef.current = next; return next; }), []);
+  /** LED içeriği / görüntü ayarı yaması (ledFx.js): { content, brightness, ticker: { on } … } ya da fn(fx). */
+  const setFx = useCallback((patch) => setPrefs((p) => {
+    const cur = normalizeLedFx(p.fx);
+    const next = { ...p, fx: patchLedFx(cur, typeof patch === "function" ? patch(cur) : patch) };
+    prefsRef.current = next;
+    return next;
+  }), []);
+  /** Belirli ekranda aç (başka ekranda açıksa önce kapatılır: tek LED penceresi). */
+  const openOn = useCallback(async (displayId) => {
+    setPrefs((p) => ({ ...p, displayId }));
+    prefsRef.current = { ...prefsRef.current, displayId };
+    if (status.open) { try { await led()?.close?.(); } catch { /* yoksay */ } }
+    return open({ displayId });
+  }, [open, status.open]);
   /** Yönlendirme: { route, sceneId? }. Stüdyo kipinde açık değilse açılmaz (seçim hatırlanır). */
   const setRoute = useCallback((r) => setPrefs((p) => ({ ...p, ...normalizeLedRoute({ ...p, ...r }) })), []);
   /** Kutudaki "LED'e ver": sahneye sabitle (zaten oradaysa Program'a döner); kapalıysa aç. */
@@ -157,5 +189,5 @@ export function useLed({ configRef, programIdRef, previewIdRef, graphicsRef, bra
     return true;
   }, [open, programIdRef, status.open]);
 
-  return { available: ledAvailable(), displays, status, prefs, setPref, setRoute, toScene, targetId: studioMode || !status.open ? targetId : null, studioMode, refreshDisplays, open, close, error };
+  return { available: ledAvailable(), displays, status, prefs, fx: normalizeLedFx(prefs.fx), setPref, setFx, setRoute, toScene, openOn, targetId: studioMode || !status.open ? targetId : null, studioMode, refreshDisplays, open, close, error };
 }
