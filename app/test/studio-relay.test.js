@@ -268,6 +268,45 @@ test("aktarıcı: ağ yetişemezse kuyruk büyümez, sonraki anahtar kareye kada
   await relay.stop();
 });
 
+test("aktarıcı (2.20.1): KISA yığılma görüntü attırmaz (gecikme büyüyüp erir); yalnız SÜREN darlık attırır, kuyruk yarıya inince ilk anahtar karede sürer", async () => {
+  const { relay, children, clock } = setupRelay({ highWaterBytes: 10000, lowWaterBytes: 1000, sustainMs: 4000 });
+  relay.write(gop(1));
+  sent(children[0], 100);
+  const child = children[0];
+  const before = child.written.length;
+  // Yerel takılma sonrası toplu gelen veri: kuyruk highWater'ı (ama 2 × highWater'ı değil) 2 sn aşar.
+  for (let i = 0; i < 4; i += 1) {
+    child.stdin.writableLength = 15000;
+    clock.t += 500;
+    relay.write(Buffer.concat([vid(1), aud()]));
+  }
+  assert.equal(relay.status().dropEvents, 0, "kısa yığılmada atlama olmamalı");
+  assert.equal(child.written.length, before + 4, "görüntü de gitmeli");
+  // Kuyruk eridi: süre sayacı sıfırlanır.
+  child.stdin.writableLength = 2000;
+  clock.t += 500;
+  relay.write(Buffer.concat([vid(1), aud()]));
+  // Süren darlık: 4 sn boyunca yarının üstünde, sonra highWater'ı aşıyor → atlama.
+  for (let i = 0; i < 9; i += 1) {
+    child.stdin.writableLength = i < 8 ? 7000 : 12000;
+    clock.t += 500;
+    relay.write(Buffer.concat([vid(1), aud()]));
+  }
+  assert.equal(relay.status().dropEvents, 1);
+  assert.equal(relay.status().dropping, true);
+  // Kuyruk highWater / 2'ye (5000) indi — lowWater'a (1000) inmesi BEKLENMEZ: ilk anahtar karede sürer.
+  child.stdin.writableLength = 4500;
+  const n = child.written.length;
+  relay.write(gop(2));
+  assert.equal(child.written.length, n + 1);
+  assert.equal(child.written.at(-1).length, gop(2).length, "anahtar kareden tüm GOP");
+  // 2 × highWater: beklemeden atlanır (bellek / gecikme sınırı).
+  child.stdin.writableLength = 20000;
+  relay.write(Buffer.concat([vid(2), aud()]));
+  assert.equal(relay.status().dropEvents, 2);
+  await relay.stop();
+});
+
 test("aktarıcı: kodlayıcı yeniden başlarsa (yeni akış) aktarıcı geri çekilmeden, hata saymadan yeniden kurulur", async () => {
   const { relay, children, timers } = setupRelay();
   relay.write(gop(1));
@@ -304,7 +343,7 @@ test("aktarıcı TCP: yalnız beklenen (arm) bağlantı kabul edilir; gelen veri
 
 /* ------------------------------ komut satırları ------------------------------ */
 
-test("aktarıcı komutu: -c copy FLV, no_duration_filesize, rw_timeout + tcp_nodelay (yalnız RTMP)", () => {
+test("aktarıcı komutu: -c copy FLV, no_duration_filesize, rw_timeout (yalnız RTMP); tcp_nodelay YOK; küçük giriş kuyruğu; pipe: FLV stdout'a", () => {
   const a = ff.buildRelayArgs({ url: "rtmps://a.rtmps.youtube.com:443/live2/k" });
   assert.equal(at(a, "-f"), "mpegts");
   assert.equal(at(a, "-i"), "pipe:0");
@@ -312,13 +351,22 @@ test("aktarıcı komutu: -c copy FLV, no_duration_filesize, rw_timeout + tcp_nod
   assert.equal(at(a, "-flvflags"), "no_duration_filesize");
   assert.equal(at(a, "-bsf:a"), "aac_adtstoasc");
   assert.equal(at(a, "-rw_timeout"), "10000000");
-  assert.equal(at(a, "-tcp_nodelay"), "1");
+  // 2.21.0: Nagle açık (ffmpeg 128 B'lık parçaları ayrı send() ile yazar; nodelay her birini ayrı paket yapıyordu).
+  assert.equal(a.includes("-tcp_nodelay"), false);
+  assert.equal(at(a, "-thread_queue_size"), "64");
   assert.equal(at(a, "-progress"), "pipe:1");
   assert.equal(a.includes("-nostdin"), true);
   assert.equal(a.at(-1), "rtmps://a.rtmps.youtube.com:443/live2/k");
   const file = ff.buildRelayArgs({ url: "/tmp/x.flv" });
   assert.equal(file.includes("-rw_timeout"), false);
   assert.equal(file.includes("-tcp_nodelay"), false);
+  // Node yayıncısı için: FLV stdout'a, ilerleme yok (stdout FLV taşır).
+  const pipe = ff.buildRelayArgs({ url: "rtmp://a.rtmp.youtube.com/live2/k", output: "pipe" });
+  assert.equal(pipe.at(-1), "pipe:1");
+  assert.equal(pipe.includes("-progress"), false);
+  assert.equal(pipe.includes("-rw_timeout"), false);
+  assert.equal(pipe.join(" ").includes("live2/k"), false); // anahtar komut satırında yok
+  assert.equal(at(pipe, "-flvflags"), "no_duration_filesize");
 });
 
 test("yayın komutu (aktarıcı): RTMP yerine yerel TCP'ye MPEG-TS (fifo, taşmada atar); YouTube CBR, 2 sn GOP, CFR, AAC 48 kHz stereo", () => {
@@ -449,4 +497,134 @@ test("motor (aktarıcı): kodlayıcı hataları kullanıcı durdurana kadar dene
   assert.equal(restarts.length, 8);
   assert.equal(statuses.at(-1).attempt, attempts);
   await engine.stop();
+});
+
+/* ------------------------- Node ağ ucu (sahte yayıncı) ------------------------- */
+
+function fakePublisher() {
+  const made = [];
+  const factory = (opts) => {
+    const pub = {
+      opts, events: new EventEmitter(), flv: [], st: { sentBytes: 0, queuedBytes: 0, ackedBytes: 0, chunkSize: 4096 }, publishing: false, ended: false, destroyed: false,
+      start() { this.started = true; },
+      writeFlv(b) { this.flv.push(b); return this.st.queuedBytes < 1024 * 1024; },
+      stats() { return { ...this.st }; },
+      isPublishing() { return this.publishing; },
+      end() { this.ended = true; },
+      destroy() { this.destroyed = true; },
+      up() { this.publishing = true; this.st.sentBytes = 4000; this.events.emit("publishing"); },
+    };
+    made.push(pub);
+    return pub;
+  };
+  return { made, factory };
+}
+
+test("aktarıcı (Node ağ ucu): ffmpeg FLV'yi stdout'a yazar, yayıncı bağlanınca 'up'; soket kuyruğu atlama eşiğine sayılır; hata → yeniden dener", async () => {
+  const { made, factory } = fakePublisher();
+  const { relay, children, timers, statuses, clock } = setupRelay({ publisher: "node", publisherFactory: factory, highWaterBytes: 100 * 188, sustainMs: 0 });
+  relay.write(gop(1));
+  assert.equal(children.length, 1);
+  assert.equal(children[0].args.at(-1), "pipe:1");
+  assert.equal(children[0].args.includes("-progress"), false);
+  assert.equal(made.length, 1);
+  assert.equal(made[0].opts.url, "rtmp://a.rtmp.youtube.com/live2/ANA-ANAHTAR");
+  assert.equal(made[0].started, true);
+  children[0].stdout.emit("data", Buffer.from("FLV…"));
+  assert.equal(made[0].flv.length, 1);
+  made[0].up();
+  assert.equal(statuses.at(-1).state, "up");
+  assert.equal(relay.status().publisher, "node");
+  assert.equal(relay.status().chunkSize, 4096);
+  // Sunucu onayları → ackKbps.
+  made[0].events.emit("ack", 1_000_000); clock.t += 4000; made[0].events.emit("ack", 3_000_000);
+  assert.equal(relay.status().ackKbps, 4000);
+  // Soket kuyruğu doldu (ağ yetişmiyor): stdin boş olsa da görüntü atlanır, ses sürer.
+  made[0].st.queuedBytes = 300 * 188;
+  assert.equal(relay.status().pendingBytes, 300 * 188);
+  relay.write(Buffer.concat([vid(1), aud()]));
+  assert.equal(relay.status().dropping, true);
+  // Yayıncı hatası → süreç öldürülür, geri çekilmeyle yeniden kurulur.
+  made[0].events.emit("error", Object.assign(new Error("Connection reset by peer"), { code: "IO" }));
+  assert.equal(made[0].destroyed, true);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(statuses.at(-1).state, "down");
+  assert.equal(statuses.at(-1).lastError.code, "IO");
+  timers.runNext(1000);
+  assert.equal(made.length, 2);
+  await relay.stop();
+});
+
+test("aktarıcı (Node ağ ucu): bağlanmadan art arda protokol hatası → ffmpeg RTMP yoluna geçer; DNS hatası geçirmez", async () => {
+  const { made, factory } = fakePublisher();
+  const { relay, children, timers, notes } = setupRelay({ publisher: "node", publisherFactory: factory });
+  relay.write(gop(1));
+  const failNext = async (code, msg) => {
+    made.at(-1).events.emit("error", Object.assign(new Error(msg), { code }));
+    await new Promise((r) => setImmediate(r));
+    timers.runNext([...timers.pending.values()].find((t) => t.ms >= 1000 && t.ms <= 10000 && t.ms !== 3000)?.ms);
+  };
+  await failNext("DNS", "getaddrinfo ENOTFOUND a.rtmp.youtube.com");
+  await failNext("DNS", "getaddrinfo ENOTFOUND a.rtmp.youtube.com");
+  assert.equal(relay.status().publisher, "node");
+  await failNext("HANDSHAKE", "Yayın sunucusuyla RTMP el sıkışması tamamlanamadı.");
+  await failNext("HANDSHAKE", "Yayın sunucusuyla RTMP el sıkışması tamamlanamadı.");
+  assert.equal(relay.status().publisher, "ffmpeg");
+  assert.ok(notes.some((n) => /ffmpeg RTMP yoluna geçiliyor/.test(n.m)));
+  assert.equal(children.at(-1).args.at(-1), "rtmp://a.rtmp.youtube.com/live2/ANA-ANAHTAR");
+  await relay.stop();
+});
+
+test("aktarıcı (Node ağ ucu): sunucu Window Ack bildirip 15 sn onay göndermezse ffmpeg yoluna geçer; onay gelirse geçmez", async () => {
+  const { made, factory } = fakePublisher();
+  const { relay, children, timers, clock, notes } = setupRelay({ publisher: "node", publisherFactory: factory });
+  relay.write(gop(1));
+  made[0].up();
+  made[0].st.windowAnnounced = true;
+  made[0].st.windowAck = 2_500_000;
+  const tickWatch = (ms, bytes) => { clock.t += ms; made[0].st.sentBytes += bytes; made.at(-1).st.sentBytes = made[0].st.sentBytes; timers.runNext(1000); };
+  // Onaylar geliyor: 20 sn boyunca geçiş yok.
+  for (let i = 0; i < 20; i += 1) { tickWatch(1000, 1_500_000); made[0].st.ackedBytes = made[0].st.sentBytes - 100_000; }
+  assert.equal(relay.status().publisher, "node");
+  assert.equal(made[0].destroyed, false);
+  // Onay kesildi: 15 sn sonra (pencerenin 1,2 katından fazla veri gitmişken) ffmpeg'e geçer.
+  for (let i = 0; i < 15; i += 1) tickWatch(1000, 1_500_000); // ilk yoklama son onayı görür; 15 sn bundan sonra sayılır
+  assert.equal(relay.status().publisher, "node");
+  tickWatch(1000, 1_500_000);
+  assert.equal(relay.status().publisher, "ffmpeg");
+  assert.equal(made[0].destroyed, true);
+  assert.ok(notes.some((n) => /veri aldığını bildirmiyor/.test(n.m)));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(relay.status().lastError.code, "NO_ACK");
+  timers.runNext(1000);
+  assert.equal(children.at(-1).args.at(-1), "rtmp://a.rtmp.youtube.com/live2/ANA-ANAHTAR"); // ffmpeg RTMP
+  assert.equal(made.length, 1);
+  await relay.stop();
+});
+
+test("aktarıcı (Node ağ ucu): sunucu Window Ack bildirmiyorsa onay bekçisi devreye girmez", async () => {
+  const { made, factory } = fakePublisher();
+  const { relay, timers, clock } = setupRelay({ publisher: "node", publisherFactory: factory });
+  relay.write(gop(1));
+  made[0].up();
+  for (let i = 0; i < 40; i += 1) { clock.t += 1000; made[0].st.sentBytes += 1_500_000; timers.runNext(1000); }
+  assert.equal(relay.status().publisher, "node");
+  await relay.stop();
+});
+
+test("motor: start({ rtmpPublisher }) aktarıcının ağ ucunu seçer (Ayarlar › Gönderici); verilmezse motorun varsayılanı", async () => {
+  const seen = [];
+  const relayFactory = (o) => { seen.push(o.publisher); return { listen: () => Promise.reject(new Error("deneme")), dispose() {}, events: new EventEmitter() }; };
+  const { spawnImpl } = fakeSpawn();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "studio-pubopt-"));
+  try {
+    for (const rtmpPublisher of ["ffmpeg", "node", undefined]) {
+      const engine = createStudioEngine({ getFfmpeg: async () => ({ available: true, path: "/bin/ffmpeg", encoders: { libx264: true }, muxers: { fifo: true, matroska: true } }), tempRoot: tmp, spawnImpl, relayFactory, relayOptions: { publisher: "node" } });
+      await engine.start({ url: "rtmp://a.rtmp.youtube.com/live2/k", width: 1280, height: 720, fps: 30, videoBitrateKbps: 2500, ...(rtmpPublisher ? { rtmpPublisher } : {}) });
+      engine.dispose();
+    }
+    assert.deepEqual(seen, ["ffmpeg", "node", "node"]);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });

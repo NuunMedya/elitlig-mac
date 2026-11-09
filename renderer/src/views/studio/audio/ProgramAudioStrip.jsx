@@ -11,24 +11,22 @@
 //
 // Props: { mixer, config, programIds } — mixer: useStudioAudio sonucu.
 import React, { useEffect, useMemo, useRef } from "react";
+import { canvasLoop } from "../perf/renderLoad";
 import { Icon } from "../../../components/ui";
 import { meterFraction, programAudioChannels, samplesLevel } from "../../../lib/studio/audio";
 import "./audio.css";
 
 const HISTORY = 40;
-const FRAME_MS = 33;
+const FRAME_MS = 66; // ~15 fps (ölçer)
 
 /** Tek döngü: kayıtlı tuvallere seviye geçmişi (ayna dalga) çizer. */
 function useWaveBank() {
   const items = useRef(new Map()); // key → { canvas, get, muted, hist, i }
   useEffect(() => {
-    let raf = 0;
-    let last = 0;
     let buf = null;
+    let fadeAt = 0;
+    let faint = null;
     const loop = (now) => {
-      raf = requestAnimationFrame(loop);
-      if (now - last < FRAME_MS) return;
-      last = now;
       const cache = new Map();
       for (const it of items.current.values()) {
         const c = it.canvas;
@@ -58,11 +56,15 @@ function useWaveBank() {
         ctx.clearRect(0, 0, W, H);
         const bw = W / HISTORY;
         const mid = H / 2;
+        // Sessiz dalga: tema belirteci (açık temada koyu mürekkep; sabit beyaz açık zeminde kaybolur).
+        // getComputedStyle her karede stil hesabı yaptırır: 2 sn'de bir okunur.
+        if (it.muted && (!faint || now - fadeAt > 2000)) { fadeAt = now; faint = getComputedStyle(c).getPropertyValue("--faint").trim() || "rgba(255,255,255,0.22)"; }
+        const mutedFill = it.muted ? faint : null;
         for (let k = 0; k < HISTORY; k += 1) {
           const v = it.hist[(it.i + k) % HISTORY];
           if (v <= 0.01) continue;
           const h = Math.max(1, v * (H - 2));
-          ctx.fillStyle = it.muted ? "rgba(255,255,255,0.22)" : v > 0.93 ? "#ff3b5c" : v > 0.75 ? "#fbbf24" : "#34d399";
+          ctx.fillStyle = it.muted ? mutedFill : v > 0.93 ? "#ff3b5c" : v > 0.75 ? "#fbbf24" : "#34d399";
           ctx.fillRect(k * bw, mid - h / 2, Math.max(1, bw - 1), h);
         }
         if (it.muted) {
@@ -72,8 +74,7 @@ function useWaveBank() {
         }
       }
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return canvasLoop("Program ses şeridi", { fps: 1000 / FRAME_MS }, loop);
   }, []);
   return (key, get, muted) => (canvas) => {
     const prev = items.current.get(key);

@@ -1,0 +1,50 @@
+/* Yayın Stüdyosu · TEKRAR düğmeleri (wTekrar.jsx) — pozisyon başına açı seçimi ve deste düğmeleri. */
+.wx-th.is-picked { border-color: var(--acc) !important; box-shadow: 0 0 0 2px rgba(var(--acc-rgb), 0.4); }
+.wx-th.is-picked .wx-th__o { background: var(--acc); color: var(--acc-on); }
+.wx-mini { height: 18px; padding: 0 6px; border-radius: 5px; border: 1px solid rgba(var(--ink-rgb), 0.3); background: rgba(var(--shade-rgb), 0.35); color: var(--text); font: 800 9px var(--font); letter-spacing: 0.05em; cursor: pointer; }
+.wx-mini.is-on { background: var(--c); border-color: var(--c); color: var(--c-on, var(--on-strong)); }
+.wx-akeys__n { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: rgba(var(--ink-rgb), 0.18); font: 900 9px var(--mono, ui-monospace, monospace); }
+.wx-akeys .wx-chips button { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-height: 26px; }
+.wx-row.is-big > button { min-height: 30px; font-size: 12px; }
+.wx-pstep .wx-s, .wx-upl .wx-s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wx-wheel__c { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.wx-wheel__w { position: relative; flex: none; border-radius: 50%; cursor: grab; touch-action: none; background: radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0.6) 0 22%, transparent 23%), repeating-conic-gradient(rgba(255, 255, 255, 0.16) 0 6deg, rgba(255, 255, 255, 0.04) 6deg 12deg); border: 2px solid var(--c, var(--acc)); box-shadow: inset 0 0 12px rgba(var(--shade-rgb), 0.6); }
+.wx-wheel__w:active { cursor: grabbing; }
+.wx-wheel__w i { position: absolute; left: 50%; top: 6%; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: #fff; box-shadow: 0 0 6px var(--c, var(--acc)); }
+.wx-wheel__w.is-off { opacity: 0.35; cursor: default; }
+.wx-wheel__b { display: flex; flex-direction: column; gap: 3px; }
+.wx-wheel__b button { min-width: 34px; min-height: 22px; border-radius: 6px; border: 1px solid var(--border-strong); background: rgba(var(--shade-rgb), 0.28); color: var(--text); font-size: 10px; font-weight: 800; cursor: pointer; }
+.wx-wheel__b button:disabled { opacity: 0.4; }
+.wx-dtog.is-on { box-shadow: inset 0 0 0 2px #fbbf24; }
+.wx-upl__s { font: 900 13px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wx-upl__s.is-blue { color: var(--blue-text); }
+.wx-upl__s.is-amber { color: var(--amber-text); }
+.wx-upl__s.is-green { color: var(--green-text); }
+.wx-upl__s.is-red { color: var(--red-text); }
+.wx-upl__h { font-style: normal; font: 800 9px var(--font); padding: 0 5px; border-radius: 4px; background: rgba(34, 197, 94, 0.2); color: var(--green-text); }
+.wx-upl__h.is-warn, .wx-upl__h.is-risk { background: rgba(245, 158, 11, 0.22); color: var(--amber-text); }
+.wx-gl__k { margin-left: auto; font-style: normal; font: 800 9px var(--font); color: var(--text); padding-left: 4px; flex: none; }
+.wx-gl__list li.is-pvw .wx-gl__r { box-shadow: inset 2px 0 0 #22c55e; }
+.wx-gl__list li.is-air .wx-gl__r { box-shadow: inset 2px 0 0 #ff2d55; }
+
+/* ───────── hücre yönüne uyum (orient.css: .lw-ri.wo-tall | wo-wide, wn dar, ws alçak) ───────── */
+/* açı ızgarası: dikey hücrede tek sütun (küçük resimler büyür), yatayda soldan sağa tek sıra */
+.lw-ri.wo-tall .wx-ap__g { grid-template-columns: minmax(0, 1fr) !important; grid-auto-rows: minmax(0, 1fr); }
+.lw-ri.wo-wide .wx-ap__g { grid-template-columns: none !important; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) !important; }
+.wx-ap__g .wx-th { min-height: 34px; }
+/* pozisyon / gol listeleri: satırlar hücreyi doldurur; geniş hücrede sütunlar; alçak hücrede tek sıra kaydırmalı */
+.wx-gl .wx-gl__list { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.wx-gl .wx-gl__list li { flex: 0 0 auto; }
+.wx-gl .wx-gl__r { min-height: 26px; }
+.lw-ri.wo-tall:not(.ws) .wx-gl .wx-gl__list li { flex: 1 1 0; max-height: 44px; min-height: 26px; }
+.lw-ri.wo-tall:not(.ws) .wx-gl .wx-gl__list li > * { align-self: stretch; }
+.lw-ri.wo-wide:not(.ws) .wx-gl .wx-gl__list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); grid-auto-rows: minmax(26px, min-content); align-content: start; }
+.lw-ri.ws .wx-gl .wx-gl__list { flex-direction: row; overflow-x: auto; overflow-y: hidden; align-items: stretch; }
+.lw-ri.ws .wx-gl .wx-gl__list li { flex: 0 0 auto; max-width: 190px; }
+.lw-ri.ws .wx-gl .wx-gl__r span { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-ri.ws .wx-gl > .wx-head { display: none; }
+/* Yan yana tekrar / oyuncu takibi düğmeleri */
+.wx-split__go { flex: none; min-height: 28px; border-radius: 7px; border: 1px solid var(--border-strong); background: rgba(var(--shade-rgb), 0.28); color: var(--text); font: 900 11px var(--font); letter-spacing: 0.04em; cursor: pointer; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wx-split__go.is-on { background: var(--c, var(--acc)); border-color: var(--c, var(--acc)); color: var(--c-on, var(--on-strong)); }
+.wx-split__go:disabled { opacity: 0.45; cursor: default; }
+.wx-split .wx-s, .wx-track .wx-s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

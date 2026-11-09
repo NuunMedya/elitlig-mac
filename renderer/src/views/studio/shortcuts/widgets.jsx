@@ -13,6 +13,7 @@ import { TRANSITION_KINDS } from "../../../lib/studio/transitions";
 import { LevelMeter } from "../AudioPanel";
 import LedRouteControl from "../led/LedRouteControl";
 import { keyText } from "../settings/settings";
+import { ActionBar } from "../dock/PanelFrame";
 import ReplayPicker from "./ReplayPicker";
 import EventEntry from "./EventEntry";
 import { MORE_WIDGETS } from "./widgetsMore";
@@ -26,6 +27,10 @@ import { OZET_WIDGETS } from "./wOzet";
 import { MAC_WIDGETS } from "./wMac";
 import { SAHNE_WIDGETS } from "./wSahne";
 import { GENEL_WIDGETS } from "./wGenel";
+import { MUZIK_WIDGETS } from "./wMuzik";
+import { MUZIK_PRO_WIDGETS } from "./wMuzikPro";
+import { PANEL_WIDGETS } from "./wPanels";
+import { PAKET_WIDGETS } from "./wPaket";
 import "./widgetsOps.css";
 import "./widgetsPro.css";
 
@@ -298,6 +303,21 @@ const led = {
   },
 };
 
+/** Hazır ekranlar: önizlemeye yüklenen ekranı yayına alan / kipten canlıya dönen yapışkan eylem çubuğu. */
+function ReadyAirBar({ ctx }) {
+  const T = ctx.transition;
+  if (!T) return null;
+  const air = ctx.modes?.airMode || null;
+  const k = ctx.hotkeys?.transition?.[0];
+  return (
+    <div className="pf-mini">
+      <ActionBar
+        take={{ label: T.label || "GEÇİŞ", sub: null, k: k ? keyText(k) : null, disabled: !T.canTake, onClick: () => T.take() }}
+        back={air ? { label: "CANLIYA DÖN", onClick: () => ctx.modes.endOnAir?.() } : null} />
+    </div>
+  );
+}
+
 const READY = [{ key: "start", label: "Başlıyor", icon: "play" }, { key: "break", label: "Devre arası", icon: "clock" }, { key: "end", label: "Bitti", icon: "flag" }];
 const ready = {
   popTitle: "Hazır ekranlar",
@@ -311,6 +331,7 @@ const ready = {
           <button key={r.key} type="button" className={`st-w__cta is-ready ${ctx.ready.ids?.[r.key] ? "is-made" : ""}`} onClick={() => ctx.ready.go(r.key)} onDoubleClick={() => ctx.ready.go(r.key, true)}
             title="Tık: önizlemeye · çift tık: yayına"><Icon name={r.icon} size={13} /> {r.label}</button>
         ))}
+        <ReadyAirBar ctx={ctx} />
       </div>
     );
   },
@@ -349,5 +370,11 @@ export const WIDGET_IMPL = {
   ...REJI_WIDGETS, ...SES_WIDGETS, ...TEKRAR_WIDGETS, ...YAYIN_WIDGETS,
   // işletim düğmeleri (LED, röportaj, özet, maç yönetimi, sahne, araçlar · makro)
   ...LED_WIDGETS, ...ROPORTAJ_WIDGETS, ...OZET_WIDGETS, ...MAC_WIDGETS, ...SAHNE_WIDGETS, ...GENEL_WIDGETS,
+  // müzik çalar (./wMuzik): liste, parça düğmeleri, müziği kes, ses, yayına ver
+  ...MUZIK_WIDGETS,
+  ...MUZIK_PRO_WIDGETS,
+  // panel açma düğmeleri (./wPanels): yerleşimde yerine koy / Kontrol merkezinde aç
+  ...PANEL_WIDGETS,
+  ...PAKET_WIDGETS,
 };
 

@@ -1,0 +1,93 @@
+/* Yayın Stüdyosu · SEKME ŞERİDİ BİÇİMİ (grup başına): yer (üst / sol / sağ / gizli), boy,
+   yazı kalınlığı, renkler, simgeler. Sınıflar ve değişkenler grup öğesinde (Workspace.applyTabStyle):
+   lw-tp-<yer> · lw-ts-<s|m|l> · lw-ts-noicons · --lw-tab-weight / -accent / -accent-rgb / -bg / -active */
+
+.dockview-theme-studio :is(.lw-ts-s, .lw-ts-m, .lw-ts-l) { --lw-tab-h: calc(30px * var(--ui-z, 1)); --lw-tab-fs: 12.5px; --lw-side-w: calc(132px * var(--ui-z, 1)); }
+.dockview-theme-studio .lw-ts-s { --lw-tab-h: calc(24px * var(--ui-z, 1)); --lw-tab-fs: 11px; --lw-side-w: calc(104px * var(--ui-z, 1)); }
+.dockview-theme-studio .lw-ts-l { --lw-tab-h: calc(38px * var(--ui-z, 1)); --lw-tab-fs: 14px; --lw-side-w: calc(168px * var(--ui-z, 1)); }
+/* Arayüz ölçeği (Workspace: .lw-root zoom 1/ölçek): yazı .lw-tab'ın kendi zoom'uyla ölçeklenir,
+   şerit boyu / eni yukarıdaki --ui-z hesabıyla (dockview'un kendi öğelerine zoom verilmez). */
+
+/* ortak: boy, yazı, kalınlık, renkler */
+.dockview-theme-studio [class*="lw-ts-"] .dv-tabs-and-actions-container { height: var(--lw-tab-h); font-size: var(--lw-tab-fs); background: var(--lw-tab-bg, var(--dv-tabs-and-actions-container-background-color)); }
+.dockview-theme-studio [class*="lw-ts-"] .lw-tab { font-weight: var(--lw-tab-weight, 750); }
+.dockview-theme-studio [class*="lw-ts-"] .lw-tab .ic { color: var(--lw-tab-accent, var(--acc-text)); }
+.dockview-theme-studio [class*="lw-ts-"] .dv-tab.dv-active-tab { box-shadow: inset 0 -2px 0 var(--lw-tab-accent, var(--acc)); }
+.dockview-theme-studio .dv-groupview[class*="lw-ts-"].dv-active-group > .dv-tabs-and-actions-container .dv-tab.dv-active-tab,
+.dockview-theme-studio .dv-groupview[class*="lw-ts-"].dv-inactive-group > .dv-tabs-and-actions-container .dv-tab.dv-active-tab { background: var(--lw-tab-active, var(--dv-activegroup-visiblepanel-tab-background-color)); }
+.dockview-theme-studio .lw-ts-noicons .lw-tab > .ic { display: none; }
+.dockview-theme-studio .lw-ts-s .lw-tab { gap: 4px; }
+.dockview-theme-studio .lw-ts-l .lw-tab .ic { width: 15px; height: 15px; }
+
+/* ── yan sekmeler (sol / sağ): şerit dikey, sekmeler alt alta ── */
+.dockview-theme-studio .dv-groupview:is(.lw-tp-left, .lw-tp-right) { flex-direction: row; }
+.dockview-theme-studio .dv-groupview.lw-tp-right { flex-direction: row-reverse; }
+.dockview-theme-studio :is(.lw-tp-left, .lw-tp-right) .dv-tabs-and-actions-container {
+  flex-direction: column; height: auto; width: var(--lw-side-w); flex: none; border-bottom: 0; padding: 4px 0; overflow: hidden;
+}
+.dockview-theme-studio .lw-tp-left .dv-tabs-and-actions-container { border-right: 1px solid var(--border); }
+.dockview-theme-studio .lw-tp-right .dv-tabs-and-actions-container { border-left: 1px solid var(--border); }
+.dockview-theme-studio :is(.lw-tp-left, .lw-tp-right) .dv-scrollable { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.dockview-theme-studio :is(.lw-tp-left, .lw-tp-right) .dv-tabs-container { flex-direction: column; height: auto; overflow-x: hidden; overflow-y: auto; min-height: 0; gap: 2px; padding: 0 4px; }
+.dockview-theme-studio :is(.lw-tp-left, .lw-tp-right) .dv-tab { width: 100%; height: var(--lw-tab-h); min-height: var(--lw-tab-h); padding: 0 6px; border-radius: 7px; flex-shrink: 0; }
+.dockview-theme-studio :is(.lw-tp-left, .lw-tp-right) .dv-tab::before { display: none !important; }
+.dockview-theme-studio :is(.lw-tp-left, .lw-tp-right) .dv-tab.dv-active-tab { box-shadow: inset 3px 0 0 var(--lw-tab-accent, var(--acc)); }
+.dockview-theme-studio .lw-tp-right .dv-tab.dv-active-tab { box-shadow: inset -3px 0 0 var(--lw-tab-accent, var(--acc)); }
+.dockview-theme-studio :is(.lw-tp-left, .lw-tp-right) .lw-tab { width: 100%; min-width: 0; }
+.dockview-theme-studio :is(.lw-tp-left, .lw-tp-right) .lw-tab__t { flex: 1; min-width: 0; max-width: none; }
+.dockview-theme-studio :is(.lw-tp-left, .lw-tp-right) .dv-void-container { flex: 1 1 auto; min-height: 6px; }
+.dockview-theme-studio :is(.lw-tp-left, .lw-tp-right) .dv-right-actions-container { justify-content: center; padding: 2px 0; }
+.dockview-theme-studio :is(.lw-tp-left, .lw-tp-right) .lw-gact { flex-wrap: wrap; justify-content: center; height: auto; }
+.dockview-theme-studio :is(.lw-tp-left, .lw-tp-right) .lw-gact__b { opacity: 1; }
+.dockview-theme-studio :is(.lw-tp-left, .lw-tp-right) .dv-left-actions-container:empty { display: none; }
+/* simgesiz dar yan şerit yok: simgeler kapalıyken yalnız yazı */
+
+/* ── grup menüsü › Sekme biçimi penceresi ── */
+.lw-tsd { position: absolute; top: 46px; right: 16px; z-index: 40; width: 380px; max-height: calc(100% - 60px); overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 14px; background: var(--surface); border: 1px solid rgba(var(--acc-rgb), 0.45); box-shadow: 0 22px 60px rgba(var(--shade-rgb), 0.55); }
+.lw-tsd__head { display: flex; align-items: center; gap: 7px; }
+.lw-tsd__head small { color: var(--faint); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-tsd__foot { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; }
+
+/* alanlar (pencere ve Ayarlar › Yerleşim) */
+.lw-tsf { display: flex; flex-direction: column; gap: 7px; }
+.lw-tsf__row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lw-tsf__row > span { flex: none; width: 104px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.lw-tsf__row .st-seg { flex-wrap: wrap; }
+.lw-tsf__row .st-seg button { display: inline-flex; align-items: center; gap: 4px; }
+.lw-tsf__row.is-check { cursor: pointer; }
+.lw-tsf__colors { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.lw-tsf__sw { width: 20px; height: 20px; border-radius: 6px; border: 1px solid var(--border-strong); padding: 0; cursor: pointer; }
+.lw-tsf__sw.is-auto { width: auto; padding: 0 6px; font-size: 10.5px; font-weight: 700; color: var(--muted); background: var(--surface-2); }
+.lw-tsf__sw.is-on { outline: 2px solid var(--text); outline-offset: 1px; }
+.lw-tsf__colors input[type="color"] { width: 26px; height: 22px; padding: 0; border: 1px solid var(--border-strong); border-radius: 6px; background: none; cursor: pointer; }
+
+/* önizleme */
+.lw-tsp { --lw-tab-h: 26px; --lw-tab-fs: 12px; --lw-side-w: 108px; display: flex; flex-direction: column; height: 96px; border-radius: 10px; border: 1px solid var(--border); overflow: hidden; background: var(--bg-deep); }
+.lw-tsp.lw-ts-s { --lw-tab-h: 22px; --lw-tab-fs: 10.5px; --lw-side-w: 92px; }
+.lw-tsp.lw-ts-l { --lw-tab-h: 32px; --lw-tab-fs: 13.5px; --lw-side-w: 128px; }
+.lw-tsp.is-left { flex-direction: row; }
+.lw-tsp.is-right { flex-direction: row-reverse; }
+.lw-tsp__bar { flex: none; display: flex; gap: 2px; height: var(--lw-tab-h); padding: 0 4px; background: var(--lw-tab-bg, var(--bg-2)); border-bottom: 1px solid var(--border); }
+.lw-tsp:is(.is-left, .is-right) .lw-tsp__bar { flex-direction: column; height: auto; width: var(--lw-side-w); padding: 4px; border-bottom: 0; border-right: 1px solid var(--border); }
+.lw-tsp__tab { display: flex; align-items: center; gap: 5px; padding: 0 8px; height: var(--lw-tab-h); font-size: var(--lw-tab-fs); font-weight: var(--lw-tab-weight, 750); color: var(--muted); border-radius: 6px 6px 0 0; white-space: nowrap; }
+.lw-tsp__tab em { font-style: normal; }
+.lw-tsp__tab .ic { color: var(--lw-tab-accent, var(--acc-text)); }
+.lw-tsp__tab.is-on { color: var(--text); background: var(--lw-tab-active, var(--surface-2)); box-shadow: inset 0 -2px 0 var(--lw-tab-accent, var(--acc)); }
+.lw-tsp:is(.is-left, .is-right) .lw-tsp__tab { border-radius: 6px; flex: none; }
+.lw-tsp.is-left .lw-tsp__tab.is-on { box-shadow: inset 3px 0 0 var(--lw-tab-accent, var(--acc)); }
+.lw-tsp.is-right .lw-tsp__tab.is-on { box-shadow: inset -3px 0 0 var(--lw-tab-accent, var(--acc)); }
+.lw-tsp__body { flex: 1; margin: 6px; border-radius: 6px; background: repeating-linear-gradient(135deg, var(--surface), var(--surface) 8px, var(--surface-2) 8px, var(--surface-2) 16px); }
+
+/* Ayarlar › Yerleşim › Sekme şeritleri */
+.lw-tabset { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(300px, 1.3fr); gap: 14px; align-items: start; }
+@container (max-width: 700px) { .lw-tabset { grid-template-columns: 1fr; } }
+.lw-tabset__def { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.lw-tabset__groups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.lw-tabset__groups li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.lw-tabset__groups li.is-own { border-color: rgba(var(--acc-rgb), 0.5); }
+.lw-tabset__name { flex: 1 1 160px; min-width: 0; display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lw-tabset__groups .st-seg button { padding: 2px 7px; font-size: 11px; }
+.lw-tabset__edit { flex: 1 1 100%; display: flex; flex-direction: column; gap: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
+.lw-tsd .st-switch { width: 36px !important; height: 20px !important; min-width: 36px; margin: 0; background: var(--surface-3) !important; box-shadow: inset 0 0 0 1px var(--border-strong) !important; }
+.lw-tsd .st-switch:checked { background: var(--acc) !important; box-shadow: none !important; color: var(--acc-on); }
+.lw-tsd .st-switch::before { display: none; }

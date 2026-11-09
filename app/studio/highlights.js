@@ -114,7 +114,7 @@ function throttle(bytesPerSec, { sleep = (ms) => new Promise((r) => setTimeout(r
   });
 }
 
-function putFile(url, { file, size, headers = {}, contentType = "application/octet-stream", onProgress = () => {}, idleTimeoutMs = PUT_IDLE_TIMEOUT_MS, maxBytesPerSec = 0 } = {}) {
+function putFile(url, { file, size, headers = {}, contentType = "application/octet-stream", onProgress = () => {}, idleTimeoutMs = PUT_IDLE_TIMEOUT_MS, maxBytesPerSec = 0, throttleStream = null } = {}) {
   return new Promise((resolve) => {
     let u;
     try { u = new URL(url); } catch { resolve({ ok: false, status: 0, body: "geçersiz adres" }); return; }
@@ -145,7 +145,12 @@ function putFile(url, { file, size, headers = {}, contentType = "application/oct
       onProgress(loaded, size);
     });
     stream.on("error", () => { req.destroy(); done({ ok: false, status: 0, body: "dosya okunamadı" }); });
-    if (Number(maxBytesPerSec) > 0) stream.pipe(throttle(Number(maxBytesPerSec))).pipe(req);
+    // throttleStream: değişken hız / duraklatma (uploadgov.js; yayın sağlığına göre arayüzden).
+    const gov = typeof throttleStream === "function" ? throttleStream() : null;
+    if (gov) {
+      gov.on("error", () => { req.destroy(); done({ ok: false, status: 0, cancelled: true, body: "yükleme iptal edildi" }); });
+      stream.pipe(gov).pipe(req);
+    } else if (Number(maxBytesPerSec) > 0) stream.pipe(throttle(Number(maxBytesPerSec))).pipe(req);
     else stream.pipe(req);
   });
 }

@@ -33,14 +33,23 @@ export const goalEventSide = (side, code) => (String(code || "").toUpperCase() =
 export const goalAsksAssist = (code) => hasCode("ASSIST") && !["GOAL_OWN", "GOAL_PENALTY"].includes(String(code || "").toUpperCase());
 
 /**
- * Gol akışı: { step: "kind" | "scorer" | "assist" | "done", side (yararlanan), code, scorerId, assistId }.
- * Saf: her işlev yeni durum döner.
+ * Gol akışı: { step: "kind" | "scorer" | "assist" | "done", side (yararlanan), code, scorerId, assistId, askAssist }.
+ * askAssist false: golcüden sonra asist sorulmaz ("Hızlı gol" / "Gol (yalnız tür)" düğmeleri, düğmenin
+ * "Asist sorulsun mu?" seçeneği, Ayarlar › İşletim › Reji / Maç varsayılanı). Saf: her işlev yeni durum döner.
  */
-export const goalStart = (side, code = null) => ({ step: code ? "scorer" : "kind", side: side === "away" ? "away" : "home", code: code || null, scorerId: null, assistId: null });
+export const goalStart = (side, code = null, { askAssist = true } = {}) => ({ step: code ? "scorer" : "kind", side: side === "away" ? "away" : "home", code: code || null, scorerId: null, assistId: null, askAssist: askAssist !== false });
+/** Düğme seçeneği (item.opts.assist: "ask" | "skip" | varsayılan) + ayar (ops.mac.askAssist) → asist sorulsun mu. */
+export function assistWanted(opt, opsDefault = false) {
+  if (opt === "ask" || opt === true) return true;
+  if (opt === "skip" || opt === false) return false;
+  return Boolean(opsDefault);
+}
+/** Asist adımı bu akışta var mı. */
+export const goalHasAssistStep = (st) => Boolean(st && st.askAssist !== false && goalAsksAssist(st.code));
 export const goalPickKind = (st, code) => ({ ...st, code, step: "scorer", scorerId: null, assistId: null });
 export function goalPickScorer(st, playerId) {
   const scorerId = playerId ? String(playerId) : null;
-  return { ...st, scorerId, step: goalAsksAssist(st.code) && scorerId ? "assist" : "done" };
+  return { ...st, scorerId, step: goalHasAssistStep(st) && scorerId ? "assist" : "done" };
 }
 export const goalPickAssist = (st, playerId) => ({ ...st, assistId: playerId && String(playerId) !== st.scorerId ? String(playerId) : null, step: "done" });
 export function goalBack(st) {
@@ -53,7 +62,7 @@ export function goalForms(st) {
   if (!st?.code) return [];
   const goal = { side: goalEventSide(st.side, st.code), code: st.code, playerId: st.scorerId || "", note: "" };
   const out = [goal];
-  if (st.assistId && goalAsksAssist(st.code)) out.push({ side: st.side, code: "ASSIST", playerId: st.assistId, note: "" });
+  if (st.assistId && goalHasAssistStep(st)) out.push({ side: st.side, code: "ASSIST", playerId: st.assistId, note: "" });
   return out;
 }
 

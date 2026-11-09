@@ -94,15 +94,15 @@ describe("ayarlar kalıcılığı", () => {
     const s = patchSettings(normalizeSettings(null), "stream", { audioKbps: 192, encoder: "software" });
     expect(saveSettings(st, s)).toBe(true);
     expect(loadSettings(st).stream).toMatchObject({ audioKbps: 192, encoder: "software" });
-    expect(loadSettings(memStore({ [SETTINGS_KEY]: "{bozuk" })).stream.audioKbps).toBe(128);
+    expect(loadSettings(memStore({ [SETTINGS_KEY]: "{bozuk" })).stream.audioKbps).toBe(192);
     expect(loadSettings(memStore(), { localRec: { enabled: true, dir: "/Movies" } }).record).toMatchObject({ enabled: true, dir: "/Movies", quality: "stream" });
     const n = normalizeSettings({ stream: { audioKbps: 999, keyframeSec: 7 }, replay: { seconds: 99 }, view: { scale: 300 }, notify: { silenceSec: 2 } });
-    expect(n.stream).toMatchObject({ audioKbps: 128, keyframeSec: 2 });
+    expect(n.stream).toMatchObject({ audioKbps: 192, keyframeSec: 2 });
     expect(n.replay.seconds).toBe(30);
     expect(n.view.scale).toBe(100);
     expect(n.notify.silenceSec).toBe(10);
     const throwing = { getItem: () => { throw new Error("x"); }, setItem: () => { throw new Error("x"); } };
-    expect(loadSettings(throwing).v).toBe(2); // v2: tekrar süresi göçü (10 → 15 sn)
+    expect(loadSettings(throwing).v).toBe(3); // v2: tekrar süresi göçü (10 → 15 sn); v3: ses 128 → 192 kbps
     expect(saveSettings(throwing, n)).toBe(false);
   });
   it("kısayollar: yeniden atama çakışanı kaldırır, ayrılmış tuşlar atanamaz, keyAction yeni tuşu kullanır", () => {

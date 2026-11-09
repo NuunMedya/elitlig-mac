@@ -13,7 +13,8 @@ const POSITION_TAG = { gk: "KL", def: "DF", mid: "OS", fwd: "FV" };
 export const PANEL_W = 1240;
 
 /** Panel zemini: gölge, opak yüzey (168°), üstte menekşe ray. */
-export function drawPanelBase(ctx, w, h, P, { radius = 20, rail = true } = {}) {
+export function drawPanelBase(ctx, w, h, P, { radius: radius0 = 20, rail = true } = {}) {
+  const radius = radius0 * (Number.isFinite(P.radiusK) ? P.radiusK : 1); // grafik paketi: köşe yuvarlaklığı
   ctx.save();
   ctx.shadowColor = "rgba(9, 0, 10, 0.66)";
   ctx.shadowBlur = 68;

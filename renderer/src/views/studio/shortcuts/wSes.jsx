@@ -7,6 +7,7 @@
 // Hepsi karıştırıcının kendi işlevleriyle çalışır (ctx.mixer = useStudioAudio:
 // setStrip, setMaster, setKillAll, setRoute, setScene, music, update) — kopya kural yok.
 import React, { useEffect, useRef, useState } from "react";
+import { canvasLoop } from "../perf/renderLoad";
 import { Icon } from "../../../components/ui";
 import { FADER_MAX_DB, FADER_MIN_DB, PLAYBACK_CONTEXTS, ROUTE_GROUPS, dbText, patchStrip, routingFor } from "../../../lib/studio/audio";
 import { levelFromSamples } from "../../../lib/studio/compose";
@@ -23,17 +24,17 @@ export function Meter({ getAnalyser, muted, vertical = false }) {
   const get = useRef(getAnalyser);
   get.current = getAnalyser;
   useEffect(() => {
-    let raf = 0; let buf = null; let peak = 0;
-    const loop = () => {
+    let buf = null; let peak = 0; let last = performance.now();
+    const loop = (now) => {
+      const decay = Math.max(1.5, ((now - last) / 1000) * 90);
+      last = now;
       const a = get.current?.();
       let pct = 0;
       if (a) { if (!buf || buf.length !== a.fftSize) buf = new Float32Array(a.fftSize); a.getFloatTimeDomainData(buf); pct = levelFromSamples(buf).pct; }
-      peak = Math.max(pct, peak - 1.5);
+      peak = Math.max(pct, peak - decay);
       if (ref.current) { ref.current.style.setProperty("--lvl", `${pct.toFixed(1)}%`); ref.current.style.setProperty("--peak", `${peak.toFixed(1)}%`); }
-      raf = requestAnimationFrame(loop);
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return canvasLoop("Kısayol ses ölçeri", { fps: 15, el: () => ref.current }, loop);
   }, []);
   return <span ref={ref} className={`wx-meter ${vertical ? "is-v" : ""} ${muted ? "is-muted" : ""}`} aria-hidden="true"><i /><b /></span>;
 }
@@ -161,6 +162,58 @@ function MasterKill({ ctx, w, h }) {
       {h === 1 && <Meter getAnalyser={() => A.masterAnalyser?.()?.L || null} muted={kill} />}
       {killBtn}
     </Shell>
+  );
+}
+
+/* ═════════════════════════ DIŞ SES (dışarı giden tüm sesler) ═════════════════════════ */
+// Yerel çıkış (hoparlör / kulaklık): gol müziği, müzik çalar, dinleme, tekrar / video ve röportaj
+// gözden geçirme sesleri. Yayına giden karışım değişmez; "Yayın dahil hepsi" kapsamında o da kapanır.
+
+function OutMuteTile({ ctx, item, w, h, togglePop, meter = false }) {
+  const O = ctx.outMute;
+  const A = ctx.mixer;
+  if (!O?.set) return <Shell tone="danger" w={w} h={h}><Head icon="volumeX" label="DIŞ SES" /><span className="st-w__empty">Hazır değil.</span></Shell>;
+  const on = Boolean(O.on);
+  const all = O.scope === "all";
+  const opts = () => openPop(item, togglePop, {});
+  const press = usePress(() => O.set(!on), opts);
+  const label = on ? (all ? "TÜM SES KAPALI" : "DIŞ SES KAPALI") : "DIŞ SESİ KAPAT";
+  const sub = on ? "tık: aç" : all ? "hoparlör + yayın" : "hoparlör / kulaklık · yayın değişmez";
+  const getL = () => A?.masterAnalyser?.()?.L || null;
+  const getR = () => A?.masterAnalyser?.()?.R || null;
+  const btn = (
+    <button type="button" className={`wx-outmute ${on ? "is-on" : ""}`} data-outmute-w={on ? "on" : "off"} aria-pressed={on} {...press}
+      title={`${on ? "Dışarı giden sesi aç" : "Dışarı giden tüm sesleri kapat"} · ${all ? "yayın dahil hepsi" : "yalnız dışarı giden"} · sağ tık: kapsam`}>
+      <Kbd k={hk(ctx, "outMute")} />
+      <Icon name={on ? "volumeX" : "volume"} size={h >= 2 ? 26 : 18} strokeWidth={2.3} />
+      <strong>{label}</strong>
+      {(w >= 2 || h >= 2) && <small>{sub}</small>}
+    </button>
+  );
+  if (!meter) return <Shell tone="danger" w={w} h={h} state={on ? "air" : null} className="wx-om">{btn}</Shell>;
+  return (
+    <Shell tone="danger" w={w} h={h} state={on ? "air" : null} className={`wx-om is-meter ${h >= 2 && w === 1 ? "is-v" : "is-h"}`}>
+      <Head icon="volume" label="DIŞ SES" right={on ? <Pill tone="danger">{all ? "TÜMÜ" : "KAPALI"}</Pill> : <small className="wx-head__r">{all ? "yayın dahil" : "yalnız dışarı"}</small>} />
+      <span className="wx-om__mtr" title={on ? "Dinleme sesi hoparlöre gitmiyor" : "Dinleme (program) seviyesi"}>
+        <Meter getAnalyser={getL} muted={on} />
+        <Meter getAnalyser={getR} muted={on} />
+      </span>
+      {btn}
+    </Shell>
+  );
+}
+
+function OutMuteOptions({ ctx, onClose }) {
+  const O = ctx.outMute;
+  if (!O?.set) return <FlowNote tone="warn" icon="alert">Hazır değil.</FlowNote>;
+  return (
+    <div className="wx-flow">
+      <FlowNote icon="volumeX">Neyi kapatsın? Seçim hemen uygulanır.</FlowNote>
+      <div className="wx-grid is-2">
+        <Chip on={O.scope !== "all"} icon="volume" onClick={() => { O.set(O.on, { scope: "local" }); onClose(); }} sub="Hoparlör / kulaklık · yayın değişmez">Yalnız dışarı giden</Chip>
+        <Chip on={O.scope === "all"} icon="volumeX" tone="danger" onClick={() => { O.set(O.on, { scope: "all" }); onClose(); }} sub="Hoparlör + yayına giden bütün ses">Yayın dahil hepsi</Chip>
+      </div>
+    </div>
   );
 }
 
@@ -405,6 +458,8 @@ export const SES_WIDGETS = {
   fader: { popTitle: "Kanal seç", popover: (p) => <StripOptions {...p} />, render: (p) => <FaderTile {...p} /> },
   miniMixer: { popTitle: "Karıştırıcı kanalları", popover: (p) => <StripOptions {...p} multi />, render: (p) => <MiniMixer {...p} /> },
   masterKill: { render: (p) => <MasterKill {...p} /> },
+  outMute: { popTitle: "Dış ses · kapsam", popover: (p) => <OutMuteOptions {...p} />, render: (p) => <OutMuteTile {...p} /> },
+  outMuteMeter: { popTitle: "Dış ses · kapsam", popover: (p) => <OutMuteOptions {...p} />, render: (p) => <OutMuteTile {...p} meter /> },
   micDuck: { popTitle: "Müzik kısma miktarı", popover: (p) => <DuckOptions {...p} />, render: (p) => <MicDuck {...p} /> },
   audioRoute: { render: (p) => <RouteTile {...p} /> },
   audioPreset: { popTitle: "Ses ön ayarları", popover: (p) => <PresetOptions {...p} />, render: (p) => <PresetTile {...p} /> },

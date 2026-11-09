@@ -110,6 +110,7 @@ export function opsSection(section, { Section, Toggle, settings, set, led, railC
         </Section>
         <Section title="Davranış">
           <Toggle checked={o.mac.confirmFinish} onChange={(v) => M({ confirmFinish: v })} title="Maçı bitirmeden önce sor" />
+          <Toggle checked={o.mac.askAssist} onChange={(v) => M({ askAssist: v })} title="GOL düğmelerinde asist sorulsun (golcüden sonra)" />
           <Field label="Hızlı puan adımı"><Seg value={o.mac.ratingStep} onChange={(v) => M({ ratingStep: v })} choices={[[0.5, "Yarım"], [1, "Tam"]]} /></Field>
           <Toggle checked={o.mac.possessionToSubtitle} onChange={(v) => M({ possessionToSubtitle: v })} title="Topla oynamayı altyazıya verme düğmesi" />
           <Field label="Skorbord kısa ad uzunluğu"><Seg value={o.mac.codeLen} onChange={(v) => M({ codeLen: v })} choices={[[2, "2"], [3, "3"], [4, "4"], [5, "5"]]} /></Field>

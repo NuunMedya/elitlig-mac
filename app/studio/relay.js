@@ -18,9 +18,11 @@
 //     giden akış her zaman çözülebilir bir kareyle başlar.
 //   - failoverAfter (3) ardışık hatadan sonra yedek giriş adresine
 //     (YouTube backup ingest) geçilir; orada da 3 hata olursa ana adrese döner.
-//   - Ağ yetişemezse (aktarıcının stdin'i highWater'ı aşarsa) gerçek zamanı
-//     korumak için sonraki anahtar kareye kadar GÖRÜNTÜ paketleri ATILIR (kuyruk
-//     büyümez); SES (görüntü dışı PID'ler: ses, PAT/PMT) kesilmeden gitmeye devam eder.
+//   - Ağ yetişemezse (aktarıcının stdin'i sustainMs — 4 sn — boyunca highWater'ın yarısının
+//     üstünde kalıp highWater'ı aşarsa ya da 2 × highWater'a varırsa) gerçek zamanı korumak
+//     için sonraki anahtar kareye kadar GÖRÜNTÜ paketleri ATILIR; kuyruk highWater'ın yarısına
+//     inince ilk anahtar karede sürer (2.20.1: kısa yığılma artık görüntü attırmaz, atlama
+//     kuyruğun tamamen boşalmasını beklemez — eskiden saniyelerce görüntü gitmiyordu); SES (görüntü dışı PID'ler: ses, PAT/PMT) kesilmeden gitmeye devam eder.
 //     Eskiden ses de birlikte atılıyordu: her atlamada YouTube'a 1–2 sn'lik ses boşluğu
 //     gidiyor, boşluğun iki ucu izleyicide "patlama / cızırtı" olarak duyuluyordu (yerel
 //     kayıtta aktarıcı olmadığından sorun yoktu). Kuyruk hardWater'ı da aşarsa (ağ tamamen
@@ -43,6 +45,7 @@ const net = require("node:net");
 const { EventEmitter } = require("node:events");
 const ff = require("./ffmpeg");
 const { killProcess } = require("./proc");
+const { createRtmpPublisher } = require("./rtmppub");
 
 const TS_PACKET = 188;
 const RELAY_BACKOFF_MS = Object.freeze([1000, 2000, 4000, 8000, 10000]);
@@ -56,6 +59,7 @@ const RELAY_MESSAGES = {
   stalled: "Yayın sunucusuna veri gitmiyor (bağlantı askıda).",
   dropping: "Bağlantı yayına yetişemiyor; gerçek zamanda kalmak için bazı kareler atlandı (ses sürüyor). Bit hızını düşürmeyi deneyin.",
   unknown: "Yayın bağlantısı koptu.",
+  noAck: "Yayın sunucusu veri aldığını bildirmiyor; eski göndericiye (ffmpeg) geçiliyor.",
 };
 
 /** Geri çekilme: n. deneme (1'den) için bekleme; listenin sonu tavandır. */
@@ -260,11 +264,23 @@ function createRelay({
   lowWaterBytes = null,
   highWaterSec = 8,
   hardWaterBytes = null, // bunu da aşarsa ses de atılır (varsayılan 4 × highWater)
+  sustainMs = 4000, // kuyruk bu kadar süre highWater / 2'nin üstünde kalmadıkça (ve 2 × highWater'a varmadıkça) görüntü atılmaz
   stopTimeoutMs = 3000,
   note = () => {},
   log = () => {},
   delayMs = 0,
   delayTickMs = 40,
+  // Ağ ucu (2.21.0): "node" — ffmpeg yalnız TS → FLV (stdout), RTMP(S) Node yayıncısıyla
+  // (rtmppub.js: 4096 baytlık parçalar, tek yazma; sunucu onayı ölçülür). "ffmpeg" — eski yol
+  // (ffmpeg'in kendi RTMP istemcisi). Node yolu bağlanmadan (el sıkışma / TLS / sunucu reddi
+  // dışı protokol hatası) art arda fallbackAfter kez düşerse ffmpeg yoluna geçilir (yedek).
+  publisher = "ffmpeg",
+  publisherFactory = createRtmpPublisher,
+  publisherOptions = {},
+  fallbackAfter = 2,
+  // Node yolu bağlandı ama sunucu (Window Ack Size bildirdiği hâlde) noAckMs boyunca hiç onay
+  // göndermedi — veri gidiyor ama sunucuya ulaşmıyor / işlenmiyor: ffmpeg yoluna geçilir.
+  noAckMs = 15000,
 } = {}) {
   const events = new EventEmitter();
   const delay = createDelayLine({ delayMs, now, timers, tickMs: delayTickMs, onData: (d) => write(d), onMarker: () => newStream() });
@@ -292,6 +308,7 @@ function createRelay({
     reconnects: 0, // kopmadan sonra başarılı yeniden bağlanma
     everUp: false,
     lastError: null,
+    lastDropAt: null,
     upSince: null,
     sentBytes: 0,
     sentKbps: null,
@@ -307,6 +324,19 @@ function createRelay({
   const MAX_HIGH = 24 * 1024 * 1024;
   const highWater = () => highWaterBytes ?? Math.min(MAX_HIGH, Math.max(MIN_HIGH, Math.round(inRate.bps * highWaterSec)));
   const lowWater = () => lowWaterBytes ?? Math.min(2 * 1024 * 1024, Math.max(512 * 1024, Math.round(inRate.bps)));
+  const resumeWater = () => Math.max(lowWater(), Math.floor(highWater() / 2));
+  let overSince = null; // kuyruğun highWater / 2'yi aştığı an (süren darlık)
+  let mode = publisher === "node" ? "node" : "ffmpeg"; // o anki ağ ucu
+  let nodeFails = 0; // Node yolunda bağlanmadan art arda protokol hatası
+  const ackRate = []; // [{ at, bytes }] sunucu onayları (son ~10 sn)
+  const sentRate = []; // [{ at, bytes }] çekirdeğe verilen (son ~5 sn)
+  const pushRate = (list, t, bytes, keepMs) => { list.push({ at: t, bytes }); while (list.length > 2 && t - list[0].at > keepMs) list.shift(); };
+  const rateOf = (list, minSpanMs = 1500) => {
+    if (list.length < 2) return null;
+    const a = list[0];
+    const b = list[list.length - 1];
+    return b.at - a.at >= minSpanMs ? Math.round(((b.bytes - a.bytes) * 8) / (b.at - a.at)) : null;
+  };
 
   const clear = (name) => {
     const t = { retryTimer, watchTimer, stableTimer }[name];
@@ -332,8 +362,16 @@ function createRelay({
       inBytes: st.inBytes,
       droppedBytes: st.droppedBytes,
       dropEvents: st.dropEvents,
+      lastDropAt: st.lastDropAt,
       dropping: st.dropping,
-      pendingBytes: pusher?.child?.stdin?.writableLength ?? 0,
+      pendingBytes: (pusher?.child?.stdin?.writableLength ?? 0) + socketQueued(),
+      encoderQueueBytes: pusher?.child?.stdin?.writableLength ?? 0, // aktarıcı ffmpeg'e girmeyi bekleyen
+      socketQueuedBytes: socketQueued(), // Node yayıncısı: çekirdeğe verilemeyen (ağ yetişmiyor)
+      publisher: mode,
+      chunkSize: pusher?.pub ? pusher.pub.stats().chunkSize : mode === "ffmpeg" ? 128 : null,
+      uplinkKbps: rateOf(sentRate), // son ~5 sn'de çekirdeğe verilen (kbps)
+      ackKbps: rateOf(ackRate, 3000), // sunucunun aldığını bildirdiği (kbps; sunucu onay göndermiyorsa null)
+      ackedBytes: pusher?.pub ? pusher.pub.stats().ackedBytes : null,
       highWaterBytes: highWater(),
       inKbps: Math.round((inRate.bps * 8) / 1000),
       delayMs: delay.delayMs,
@@ -354,6 +392,7 @@ function createRelay({
     return null;
   }
 
+  const socketQueued = () => (pusher?.pub ? pusher.pub.stats().queuedBytes : 0);
   const emit = () => events.emit("status", status());
   const setState = (state) => { st.state = state; emit(); };
 
@@ -396,6 +435,7 @@ function createRelay({
     gopBuf.reset();
     feeding = false;
     audioOnly = false;
+    overSince = null;
     if (streams > 1 && pusher && !pusher.stopping) {
       // Zaman damgaları sıfırlandı: aktarıcı geri çekilmeden yeniden kurulur.
       note("aktarıcı yeniden kuruluyor (kodlayıcı yeniden başladı)");
@@ -424,12 +464,25 @@ function createRelay({
     const stdin = pusher.child.stdin;
     if (!stdin || stdin.destroyed || !stdin.writable) return;
     if (feeding) {
-      if (stdin.writableLength > highWater()) {
+      // Toplam kuyruk: aktarıcı ffmpeg'in girişi + Node yayıncısının soket kuyruğu (ağ ucu
+      // geri basıncı stdout'u durdurur, ffmpeg'in iş parçacığı kuyruğu küçük: 64 paket).
+      const pend = stdin.writableLength + socketQueued();
+      const hw = highWater();
+      // Kısa bir yığılma (yerel takılma sonrası toplu gelen veri, birkaç saniyelik ağ dalgalanması)
+      // GÖRÜNTÜ ATTIRMAZ: gecikme kısa süre büyür, kuyruk erir. Yalnız kuyruk sustainMs boyunca
+      // highWater'ın yarısının üstünde kalıp highWater'ı aşarsa (ağ gerçekten yetişemiyor) ya da
+      // 2 × highWater'a ulaşırsa atlanır. (Eskiden highWater aşılır aşılmaz atlanıyor ve kuyruk
+      // ~1 sn'ye inene dek — saniyelerce — görüntü gitmiyordu.)
+      if (pend > hw / 2) { if (overSince === null) overSince = t; } else overSince = null;
+      const sustained = overSince !== null && t - overSince >= sustainMs;
+      if ((pend > hw && sustained) || pend >= hw * 2) {
         // Ağ yetişemiyor: kuyruk büyütülmez, sonraki anahtar kareye kadar GÖRÜNTÜ atlanır; ses sürer.
         feeding = false;
         audioOnly = true;
+        overSince = null;
         st.dropEvents += 1;
-        if (!st.dropping) { st.dropping = true; note("ağ yetişemiyor; anahtar kareye kadar görüntü atlanıyor (ses sürüyor)", { pendingBytes: stdin.writableLength, highWaterBytes: highWater(), inKbps: Math.round((inRate.bps * 8) / 1000), sentKbps: st.sentKbps }); emit(); }
+        st.lastDropAt = t;
+        if (!st.dropping) { st.dropping = true; note("ağ yetişemiyor; anahtar kareye kadar görüntü atlanıyor (ses sürüyor)", { pendingBytes: pend, highWaterBytes: hw, inKbps: Math.round((inRate.bps * 8) / 1000), sentKbps: st.sentKbps }); emit(); }
         writeAudioOnly(stdin, data);
         return;
       }
@@ -437,7 +490,9 @@ function createRelay({
       return;
     }
     if (audioOnly) {
-      if (keyframe && resumeAt >= 0 && stdin.writableLength <= lowWater()) {
+      // Kuyruk highWater'ın yarısına inince İLK anahtar karede sürer (eskiden ~1 sn'ye inmesi
+      // beklenirdi: kuyruk boşalana kadar gelen tüm görüntü — saniyelerce — atılıyordu).
+      if (keyframe && resumeAt >= 0 && stdin.writableLength + socketQueued() <= resumeWater()) {
         // Aynı aktarıcı sürüyor (başlık zaten gitti): anahtar kareye dek yalnız ses, sonra hepsi.
         if (resumeAt > 0) writeAudioOnly(stdin, data.subarray(0, resumeAt));
         stdin.write(data.subarray(resumeAt));
@@ -448,7 +503,7 @@ function createRelay({
       writeAudioOnly(stdin, data);
       return;
     }
-    if (keyframe && stdin.writableLength <= lowWater()) {
+    if (keyframe && stdin.writableLength + socketQueued() <= lowWater()) {
       stdin.write(gopBuf.snapshot());
       feeding = true;
       return;
@@ -458,7 +513,7 @@ function createRelay({
 
   /** Atlama sırasında: görüntü paketleri atılır, ses (görüntü dışı PID) yazılır; ağ tamamen tıkalıysa o da atılır. */
   function writeAudioOnly(stdin, data) {
-    const keep = stdin.writableLength > (hardWaterBytes ?? highWater() * 4) ? null : gopBuf.nonVideo(data);
+    const keep = stdin.writableLength + socketQueued() > (hardWaterBytes ?? highWater() * 4) ? null : gopBuf.nonVideo(data);
     st.droppedBytes += data.length - (keep ? keep.length : 0);
     if (keep && keep.length) stdin.write(keep);
   }
@@ -471,9 +526,10 @@ function createRelay({
     nextRetryAt = null;
     const target = st.target;
     const dest = target === "backup" ? backup : primaryUrl;
-    const args = buildArgs({ url: dest });
+    const viaNode = mode === "node";
+    const args = buildArgs(viaNode ? { url: dest, output: "pipe" } : { url: dest });
     st.starts += 1;
-    note(`RTMP aktarıcısı başlıyor (${target === "backup" ? "yedek" : "ana"} adres, deneme ${st.attempt})`, { url: ff.maskUrl(dest), args: ff.maskSecrets(args.join(" ")) });
+    note(`RTMP aktarıcısı başlıyor (${target === "backup" ? "yedek" : "ana"} adres, deneme ${st.attempt}, ${viaNode ? "Node yayıncısı" : "ffmpeg RTMP"})`, { url: ff.maskUrl(dest), publisher: mode, args: ff.maskSecrets(args.join(" ")) });
     let child;
     try {
       child = spawnImpl(ffmpegPath, args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
@@ -482,13 +538,16 @@ function createRelay({
       onPusherExit(pusher, -1, null);
       return;
     }
-    const p = { child, target, startedAt: now(), connected: false, lastSize: 0, lastSizeAt: now(), stderrTail: [], failReason: null, restartNow: false, stopping: false };
+    const p = { child, target, startedAt: now(), connected: false, lastSize: 0, lastSizeAt: now(), stderrTail: [], failReason: null, restartNow: false, stopping: false, pub: null, mode };
     pusher = p;
     feeding = false;
     audioOnly = false;
-    const parser = ff.createProgressParser((prog) => onPusherProgress(p, prog));
-    child.stdout?.setEncoding?.("utf8");
-    child.stdout?.on("data", (d) => parser.feed(d));
+    if (viaNode) attachPublisher(p, dest);
+    else {
+      const parser = ff.createProgressParser((prog) => onPusherProgress(p, prog));
+      child.stdout?.setEncoding?.("utf8");
+      child.stdout?.on("data", (d) => parser.feed(d));
+    }
     let errBuf = "";
     child.stderr?.setEncoding?.("utf8");
     child.stderr?.on("data", (d) => {
@@ -513,13 +572,76 @@ function createRelay({
     scheduleWatch(p);
   }
 
+  /** Node yayıncısı: ffmpeg'in FLV çıktısı → RTMP(S). Geri basınç: soket kuyruğu dolunca stdout durur. */
+  function attachPublisher(p, dest) {
+    let pub;
+    try {
+      pub = publisherFactory({ url: dest, now, connectTimeoutMs, ...publisherOptions });
+    } catch (error) {
+      p.failReason = { code: "PUBLISHER", message: error.message, publisherCode: "PUBLISHER" };
+      kill(p);
+      return;
+    }
+    p.pub = pub;
+    let paused = false;
+    const out = p.child.stdout;
+    out?.on("data", (d) => {
+      if (pusher !== p && !p.stopping) return;
+      if (!pub.writeFlv(d) && !paused) { paused = true; out.pause(); }
+    });
+    out?.on("end", () => { if (p.stopping) pub.end(); });
+    pub.events.on("drain", () => { if (paused) { paused = false; out?.resume(); } });
+    pub.events.on("publishing", () => {
+      if (pusher !== p) return;
+      nodeFails = 0;
+      const s = pub.stats();
+      pushRate(sentRate, now(), s.sentBytes, 5000);
+      onPusherProgress(p, { totalSize: Math.max(1, s.sentBytes) });
+    });
+    pub.events.on("ack", (bytes) => { if (pusher === p) pushRate(ackRate, now(), bytes, 10000); });
+    pub.events.on("error", (e) => {
+      if (pusher !== p || p.exited) return;
+      const mapped = ff.mapFfmpegError(e.message || "");
+      const message = e.code === "AUTH" ? ff.mapFfmpegError("NetStream.Publish.BadName").message : mapped.code !== "UNKNOWN" ? mapped.message : e.message;
+      p.failReason = p.failReason || { code: e.code === "AUTH" ? "AUTH" : mapped.code !== "UNKNOWN" ? mapped.code : e.code || "IO", message, publisherCode: e.code || null };
+      note("Node RTMP yayıncısı durdu", { code: e.code || null, message: ff.maskSecrets(e.message || ""), connected: p.connected });
+      if (!p.stopping) kill(p);
+    });
+    pub.start();
+  }
+
+  /** Node yolunda saniyelik sayaç: çekirdeğe verilen bayt (askı ve gönderim hızı buradan). */
+  function pollPublisher(p) {
+    if (!p.pub || !p.pub.isPublishing()) return;
+    const s = p.pub.stats();
+    const t = now();
+    pushRate(sentRate, t, s.sentBytes, 5000);
+    onPusherProgress(p, { totalSize: s.sentBytes });
+    if (pusher !== p || !s.windowAnnounced || !(noAckMs > 0)) return;
+    // Onay bekçisi: son onaydan (ya da yayın başından) bu yana pencerenin 1,2 katından fazla
+    // veri gitti ve noAckMs geçti, sunucu hâlâ onaylamıyor → ffmpeg yolu.
+    if (!p.ackMark || s.ackedBytes > p.ackMark.acked) p.ackMark = { at: t, acked: s.ackedBytes, sent: s.sentBytes };
+    else if (t - p.ackMark.at >= noAckMs && s.sentBytes - p.ackMark.sent > s.windowAck * 1.2) {
+      mode = "ffmpeg";
+      nodeFails = 0;
+      p.failReason = { code: "NO_ACK", message: RELAY_MESSAGES.noAck, publisherCode: "NO_ACK" };
+      note("Node RTMP yayıncısı: sunucu veri aldığını bildirmiyor; ffmpeg RTMP yoluna geçiliyor (yedek)", { sinceMs: t - p.ackMark.at, sentSinceAck: s.sentBytes - p.ackMark.sent, windowAck: s.windowAck, ackedBytes: s.ackedBytes });
+      log("studio: RTMP sunucu onayı yok, ffmpeg yoluna geçiliyor", {});
+      kill(p);
+    }
+  }
+
   function onPusherProgress(p, prog) {
     if (pusher !== p) return;
     const size = prog.totalSize;
     if (!(size > p.lastSize)) return;
     const t = now();
     st.sentBytes += size - p.lastSize;
-    if (rate.at !== null && t > rate.at) st.sentKbps = Math.round(((st.sentBytes - rate.bytes) * 8) / (t - rate.at));
+    if (!p.pub) pushRate(sentRate, t, st.sentBytes, 5000);
+    // Gönderim hızı son ~5 sn üzerinden (Node yolunda çekirdeğe verilen; ffmpeg yolunda muxer'ın yazdığı).
+    const smooth = p.pub ? rateOf(sentRate) : null;
+    if (smooth !== null) st.sentKbps = smooth;
+    else if (rate.at !== null && t > rate.at) st.sentKbps = Math.round(((st.sentBytes - rate.bytes) * 8) / (t - rate.at));
     rate = { at: t, bytes: st.sentBytes };
     p.lastSize = size;
     p.lastSizeAt = t;
@@ -547,6 +669,8 @@ function createRelay({
     watchTimer = timers.setTimeout(() => {
       watchTimer = null;
       if (pusher !== p || p.exited || p.stopping) return;
+      pollPublisher(p);
+      if (p.failReason?.code === "NO_ACK") return; // ffmpeg yoluna geçiliyor (süreç öldürüldü)
       const t = now();
       if (!p.connected && t - p.startedAt >= connectTimeoutMs) {
         p.failReason = { code: "TIMEOUT", message: RELAY_MESSAGES.connectTimeout };
@@ -565,6 +689,7 @@ function createRelay({
   }
 
   function kill(p) {
+    try { p?.pub?.destroy(); } catch { /* yoksay */ }
     if (!p?.child) return;
     try { p.child.stdin?.destroy?.(); } catch { /* yoksay */ }
     killImpl(p.child);
@@ -583,6 +708,11 @@ function createRelay({
     if (p.exited) return;
     p.exited = true;
     if (p.killTimer) timers.clearTimeout(p.killTimer);
+    // Node yayıncısı: durdururken kalan veri gönderilsin (stdout bitince end()); aksi halde kapat.
+    if (p.pub && !p.stopping) { try { p.pub.destroy(); } catch { /* yoksay */ } } else if (p.pub) {
+      const pub = p.pub;
+      timers.setTimeout(() => { try { pub.destroy(); } catch { /* yoksay */ } }, stopTimeoutMs);
+    }
     if (pusher !== p) return;
     pusher = null;
     feeding = false;
@@ -602,6 +732,16 @@ function createRelay({
     st.lastError = { code: reason.code, message: reason.code === "UNKNOWN" ? RELAY_MESSAGES.unknown : reason.message, at: now() };
     st.attempt += 1;
     st.failures += 1;
+    // Node yolu protokol düzeyinde (el sıkışma, TLS, beklenmedik kapanma; ağ / DNS / anahtar
+    // hatası değil) bağlanmadan art arda düşerse ffmpeg'in kendi RTMP istemcisine geçilir.
+    if (p.mode === "node" && !p.connected && ["HANDSHAKE", "TLS", "REJECTED", "IO", "PUBLISHER", "UNKNOWN"].includes(p.failReason?.publisherCode || reason.code)) {
+      nodeFails += 1;
+      if (nodeFails >= fallbackAfter) {
+        mode = "ffmpeg";
+        nodeFails = 0;
+        note("Node RTMP yayıncısı bağlanamadı; ffmpeg RTMP yoluna geçiliyor (yedek)", { reason: reason.code });
+      }
+    }
     log("studio: RTMP aktarıcısı durdu", { code, signal, reason: reason.code });
     note("RTMP aktarıcısı durdu", { code, signal, reason: reason.code, connected: p.connected, attempt: st.attempt, tail: p.stderrTail.slice(-6).map(ff.maskSecrets) });
     if (backup && st.failures >= failoverAfter) {

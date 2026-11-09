@@ -61,7 +61,7 @@ test("yalnız kayıt (url yok): tek çıkış parça halkası; libx264 ayarları
 
 test("seçenekler sınırlanır, boyutlar çift sayıya yuvarlanır", () => {
   const o = ff.normalizeStreamOptions({ width: 1279, height: 9999, fps: 240, videoBitrateKbps: 10, audioBitrateKbps: "abc" });
-  assert.deepEqual([o.width, o.height, o.fps, o.videoBitrateKbps, o.audioBitrateKbps], [1278, 2160, 60, 300, 160]);
+  assert.deepEqual([o.width, o.height, o.fps, o.videoBitrateKbps, o.audioBitrateKbps], [1278, 2160, 60, 300, 192]);
 });
 
 test("RTMP adresi doğrulama ve anahtar gizleme", () => {

@@ -12,8 +12,10 @@ import React, { useMemo, useState } from "react";
 import { Icon } from "../../../components/ui";
 import { RAIL_SIZES, boardWidgetSize, sizesOf } from "../shortcuts/railModel";
 import { WIDGET_IMPL } from "../shortcuts/widgets";
+import { WStyleEditor } from "../shortcuts/wOptions";
+import { resolveWStyle, wStyleAttrs } from "../shortcuts/wStyle";
 import {
-  COMPONENT_GROUPS, LAYOUT_COMPONENTS, addItem, LAYOUT_PANELS, PANEL_GROUPS, boardPanelId, componentOf, dockPanelIds, panelMeta, parseId, widgetSize,
+  COMPONENT_GROUPS, LAYOUT_COMPONENTS, addItem, setGroupWStyle, LAYOUT_PANELS, PANEL_GROUPS, boardPanelId, componentOf, dockPanelIds, panelMeta, parseId, widgetSize,
 } from "./layoutModel";
 import { dynamicEntries } from "./components";
 import { endDrag, startDrag } from "./Board";
@@ -38,9 +40,11 @@ function WidgetThumb({ comp, ctx }) {
   // Gerçek hücre boyunda çizilir, karta sığacak kadar küçültülür (canlı önizleme).
   const W = 84 * sz.w + 6 * (sz.w - 1), H = 86 * sz.h + 6 * (sz.h - 1);
   const pv = Math.min(1, 124 / W, 84 / H);
+  // Grubun rengi (Kutu ekle › grup başlığındaki "Grup rengi") önizlemede de görünür.
+  const ws = wStyleAttrs(resolveWStyle(null, ctx?.layout?.wstyle?.[comp.group.replace(/^w-/, "")]));
   return (
     <div className={`lw-thumb is-w is-s${sk}`} aria-hidden="true" inert="">
-      <div className={`st-ri lw-ri is-s${sk} is-preview`} style={{ "--w": sz.w, "--h": sz.h, width: W, height: H, transform: `translate(-50%, -50%) scale(${pv})` }}>{body}</div>
+      <div className={`st-ri lw-ri is-s${sk} is-preview ${ws.className}`} style={{ "--w": sz.w, "--h": sz.h, width: W, height: H, transform: `translate(-50%, -50%) scale(${pv})`, ...ws.style }}>{body}</div>
     </div>
   );
 }
@@ -54,6 +58,26 @@ function Card({ icon, title, hint, state, onAdd, addLabel = "Ekle", drag, thumb,
       {state === "on" && <em className="lw-card__on"><Icon name="check" size={11} /> ekranda</em>}
       <button type="button" className={`btn btn--xs ${state === "on" ? "" : "btn--primary"}`} onClick={onAdd}>{state === "on" ? "Göster" : addLabel}</button>
     </div>
+  );
+}
+
+/** Düğme grubunun varsayılan rengi / biçimi (grubun tüm düğmeleri; öğe kendi rengini seçebilir). */
+function GroupColor({ ctx, group, label }) {
+  const [open, setOpen] = useState(false);
+  const v = ctx.layout.wstyle?.[group] || {};
+  const ws = wStyleAttrs(resolveWStyle(null, v));
+  return (
+    <>
+      <button type="button" className={`lw-gcol ${open ? "is-open" : ""}`} style={ws.style} onClick={() => setOpen((x) => !x)} aria-expanded={open} title={`${label} düğmelerinin rengi ve biçimi`}>
+        <i /> Grup rengi{v.c || v.s ? "" : ": yok"}
+      </button>
+      {open && (
+        <div className="lw-gcol__pop" onClick={(e) => e.stopPropagation()}>
+          <WStyleEditor value={v} noneLabel="Düğmenin kendi rengi" onChange={(p) => ctx.setLayout((l) => setGroupWStyle(l, group, p))}
+            hint="Bu gruptaki tüm düğmeler (panodakiler dahil) bu renkle çizilir; tek düğmeyi sağ tık › Renk ve biçim ile ayrıca boyayabilirsin." />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -224,7 +248,7 @@ export default function Catalog({ ctx, target = {}, onClose }) {
           if (!list.length && !scenes.length) return null;
           return (
             <section key={g.key} className="lw-cat__sec">
-              <h6>{g.label}</h6>
+              <h6 className="lw-cat__gh">{g.label}<GroupColor ctx={ctx} group={g.key.slice(2)} label={g.label} /></h6>
               <div className="lw-cat__grid is-widgets">
                 {list.map((m) => (
                   <Card key={m.key} thumb={<WidgetThumb comp={m} ctx={ctx} />} title={m.label} hint={m.hint} drag={{ t: m.key }}

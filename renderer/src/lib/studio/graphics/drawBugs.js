@@ -31,7 +31,7 @@ const bugImages = (E, snap) => ({ logo: E.B.logoPosition === "off" ? null : E.im
 export function drawPremier(ctx, E, snap) {
   return drawScoreBug(ctx, bugState(snap, E.now), {
     x: BUG.left, y: BUG.top, scale: E.B.fontScale, images: bugImages(E, snap),
-    colors: bugColors(E.B), family: E.B.fontFamily, logoScale: E.B.logoScale, measure: E.M,
+    colors: bugColors(E.B), family: E.B.fontFamily, logoScale: E.B.logoScale, measure: E.M, radiusK: E.P.radiusK,
   });
 }
 
@@ -39,7 +39,7 @@ export function drawBottom(ctx, E, snap, { lift = 0 } = {}) {
   const state = { ...bugState(snap, E.now), scorers: snap.scorers };
   return drawBottomBoard(ctx, state, {
     outW: E.W, outH: E.H - lift, images: bugImages(E, snap), colors: boardColors(E.B), family: E.B.fontFamily,
-    logoScale: E.B.logoScale, measure: E.M, homeColor: E.B.palette.homeBright, awayColor: E.B.palette.awayBright,
+    logoScale: E.B.logoScale, measure: E.M, homeColor: E.B.palette.homeBright, awayColor: E.B.palette.awayBright, radiusK: E.P.radiusK,
   });
 }
 
@@ -80,15 +80,16 @@ export function drawMiniBoard(ctx, E, snap) {
   const state = bugState(snap, E.now);
   const L = miniLayout(state, E.M, F);
   const { x, y, w, h } = L.box;
+  const R = MINI.radius * (Number.isFinite(P.radiusK) ? P.radiusK : 1);
   ctx.save();
   ctx.save();
   ctx.shadowColor = "rgba(9, 0, 10, 0.52)";
   ctx.shadowBlur = 34;
   ctx.shadowOffsetY = 14;
-  fillRound(ctx, x, y, w, h, MINI.radius, vGrad(ctx, y, y + h, [[0, P.barTop], [1, P.barBottom]]));
+  fillRound(ctx, x, y, w, h, R, vGrad(ctx, y, y + h, [[0, P.barTop], [1, P.barBottom]]));
   ctx.restore();
   ctx.save();
-  roundRect(ctx, x, y, w, h, MINI.radius);
+  roundRect(ctx, x, y, w, h, R);
   ctx.clip();
   for (const r of L.rows) {
     ctx.fillStyle = r.side === "home" ? P.homeBright : P.awayBright;
@@ -116,8 +117,9 @@ export function drawMiniBoard(ctx, E, snap) {
     drawContain(ctx, E.img(B.logoUrl), fx + 13 - d / 2, f.y + f.h / 2 - d / 2, d, d);
     fx += 26 + 12;
   }
-  drawText(ctx, f.clock, fx, f.y + f.h / 2 + 1, { font: F(22, 800), color: B.text, spacing: 0.6 });
-  if (f.period) drawText(ctx, f.period, f.x + f.w - 18, f.y + f.h / 2 + 1, { font: F(10, 800), color: P.lilac, align: "right", spacing: 2.6 });
+  // Açık pakette alt şerit aksan renginde: yazı beyaz.
+  drawText(ctx, f.clock, fx, f.y + f.h / 2 + 1, { font: F(22, 800), color: B.light && !f.finished ? "#ffffff" : B.text, spacing: 0.6 });
+  if (f.period) drawText(ctx, f.period, f.x + f.w - 18, f.y + f.h / 2 + 1, { font: F(10, 800), color: B.light ? "rgba(255,255,255,0.82)" : P.lilac, align: "right", spacing: 2.6 });
   ctx.restore();
   if (L.lower) {
     const lw = L.lower;

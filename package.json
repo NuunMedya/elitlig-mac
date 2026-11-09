@@ -1,7 +1,7 @@
 {
   "name": "elitlig-araclar",
   "productName": "Elitlig Araclar",
-  "version": "2.19.0",
+  "version": "2.24.2",
   "description": "Elitlig Araçlar — Mac ve Windows için bağımsız masaüstü uygulaması: Yayın Stüdyosu (kamera, ekran ve skorbordla YouTube/RTMP canlı yayın, gol klipleri), Mesajlar (üye mesajları dahil), Talepler, Yapılacaklar, Ajanda, Not Defteri, Projeler, Saha ve maç planlama, Ön Muhasebe, Tablolar, Rehber, Hesap Araçları ve Odak Sayacı.",
   "main": "app/main.js",
   "author": "Nuun Medya <nuunmedya@gmail.com>",
@@ -11,7 +11,7 @@
     "dev": "vite --config renderer/vite.config.mjs",
     "build": "vite build --config renderer/vite.config.mjs",
     "start": "npm run build && electron .",
-    "test": "vitest run --config renderer/vite.config.mjs && node --test app/test/*.test.js",
+    "test": "vitest run --config renderer/vite.config.mjs && node --test --test-timeout=240000 app/test/*.test.js",
     "dist": "npm run build && npm run ffmpeg && electron-builder --mac dmg zip --universal --publish never",
     "ffmpeg": "node build/fetch-ffmpeg.js",
     "dist:win": "npm run build && npm run ffmpeg:win && electron-builder --win nsis zip --x64 --publish never",
@@ -115,8 +115,13 @@
             "ffmpeg.exe",
             "LICENSE.txt"
           ]
+        },
+        {
+          "from": "build/icon.ico",
+          "to": "icon.ico"
         }
-      ]
+      ],
+      "signAndEditExecutable": true
     },
     "nsis": {
       "oneClick": false,
@@ -134,7 +139,10 @@
       "multiLanguageInstaller": false,
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false,
-      "artifactName": "Elitlig-Araclar-Setup-${version}.exe"
+      "artifactName": "Elitlig-Araclar-Setup-${version}.exe",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
     },
     "afterPack": "build/afterPack.js",
     "executableName": "Elitlig Araclar"

@@ -6,6 +6,7 @@
 // "YouTube'da canlı yayını başlat" önce YouTube ayarları penceresini açar (youtube/);
 // açık yayında "YouTube ayarlarını düzenle" (başlık, açıklama, gizlilik, etiketler).
 // YouTube bölümleri yayındayken açıklamaya kendiliğinden yazılır.
+import { LinksInline } from "./links/LinkButtons";
 import React, { memo, useEffect, useState } from "react";
 import { Field, Icon } from "../../components/ui";
 import * as api from "./studioApi";
@@ -264,7 +265,7 @@ function ChaptersCard({ chapters: ch, onAir, toast, hasBroadcast }) {
   );
 }
 
-function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVia, encoding, onEncoding, onStartYoutube, onStartManual, onRehearsal, onStop, onEndYoutube, toast, ask, localRec, onLocalRec, recordInfo, onOpenSettings, chapters }) {
+function BroadcastPanel({ links = null, yt, engine, busy, matchId, matchName, match, startedVia, encoding, onEncoding, onStartYoutube, onStartManual, onRehearsal, onStop, onEndYoutube, toast, ask, localRec, onLocalRec, recordInfo, onOpenSettings, chapters }) {
   const [rtmpUrl, setRtmpUrl] = useState("rtmp://a.rtmp.youtube.com/live2");
   const [rtmpKey, setRtmpKey] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
@@ -324,6 +325,7 @@ function BroadcastPanel({ yt, engine, busy, matchId, matchName, match, startedVi
               {!matchId && <p className="st-hint">Önce Maç yönetimi sekmesinden maç aç.</p>}
             </>
           )}
+          {links && <LinksInline links={links} />}{/* [bağlantılar] YouTube / YouTube Studio / maç sayfası · kopyala · QR */}
         </section>
         </Part>
       </div>

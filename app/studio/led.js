@@ -229,6 +229,7 @@ function createLedManager({
     const b = display.bounds;
     const wb = windowed ? windowedBounds(display) : b;
     const w = new BrowserWindow({
+      ...(process.platform === "win32" ? { icon: require("../appIcon").appIconPath() } : {}),
       x: wb.x, y: wb.y, width: wb.width, height: wb.height,
       ...(windowed
         // Normal pencere: çerçeve + kapat düğmesi, boyutlanabilir, istenirse tam ekran yapılabilir.

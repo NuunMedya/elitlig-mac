@@ -153,7 +153,9 @@ describe("tekrar ve sahne yardımcıları", () => {
 
 describe("katalog ve pano boyutları", () => {
   it("her çeşidin parçacığı ve kategorisi var; dokuz kategori", () => {
-    expect(RAIL_GROUPS.map((g) => g.key)).toEqual(["reji", "ses", "tekrar", "grafik", "sahne", "yayin", "var", "roportaj", "muzik", "led", "ozet", "mac", "genel"]);
+    // "go-*": panel açma hedefi grupları (layoutModel.OPEN_TARGETS'tan üretilir)
+    expect(RAIL_GROUPS.map((g) => g.key).filter((k) => !k.startsWith("go-"))).toEqual(["reji", "ses", "tekrar", "grafik", "sahne", "yayin", "var", "roportaj", "muzik", "led", "ozet", "mac", "genel", "panel"]);
+    expect(RAIL_GROUPS.filter((g) => g.key.startsWith("go-")).length).toBeGreaterThanOrEqual(8);
     const groups = new Set(RAIL_GROUPS.map((g) => g.key));
     for (const w of RAIL_WIDGETS) {
       expect(WIDGET_IMPL[w.type], w.type).toBeTruthy();

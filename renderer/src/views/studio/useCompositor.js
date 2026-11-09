@@ -1,32 +1,37 @@
 // Yayın Stüdyosu — karıştırıcı: PROGRAM ve ÖNİZLEME tuvalleri.
 //
-// PROGRAM tuvali (çıkış boyutunda, ör. 1920×1080) yayına giden görüntüdür;
-// captureStream(fps) ile kaydediciye verilir. Her karede sırayla:
-//   1. taban: VAR çerçevesi | özel kip (modesRef.programOverride: tekrar / VAR /
-//      röportaj / özet kipleri) | tekrar videosu | geçiş | program sahnesi
-//   2. yayın grafikleri (grafik modülü; sceneId ile sahneye göre süzülür —
-//      özel kipte yalnız override.graphics === true ise)
-//   3. tekrar rozeti
-//   4. marka logo geçişi (stinger) en üstte
-//   5. SİYAHA GEÇ (FTB, vMix "Fade to Black"): tüm çıkış (grafikler, donuk kare / bekleme
-//      kartı dahil) süreyle siyaha solar / geri açılır (anlık siyah / dondur: pgmFxRef).
-// ÖNİZLEME tuvali önizlemedeki sahneyi (ya da modesRef.previewOverride'ı) daha
-// düşük çözünürlükte gösterir (grafikler isteğe bağlı, soluk); düzenleyicide
-// sürüklenen kutu yapılandırmaya yazılmadan (overrideRef) anında çizilir.
+// İKİ ÇİZİM MOTORU (Ayarlar › Yayın › Çizim motoru; stüdyo açılırken seçilir):
 //
-// Sabit kare hızı: rAF + yedek setInterval; React durumu kare başına
-// GÜNCELLENMEZ (istatistik ref'te), önizleme 2–3 karede bir çizilir, geçiş
-// dışında ara tuval kullanılmaz. Uzun kareler (takılma) sayılır: Yayın sağlığı.
+//  • AYRI İŞ PARÇACIĞI (varsayılan, destekleniyorsa): program karesi compositor/program.worker.js
+//    içinde OffscreenCanvas'ta, kendi sabit kare ızgarasında çizilir ve aynı işçide
+//    VideoEncoder'a verilir. Kaynak kareleri ana iş parçacığına uğramadan işçiye akar
+//    (compositor/workerHost.js). Arayüz (dock, panolar, küçük resimler, ölçerler) ne kadar
+//    meşgul olursa olsun yayın fps'i düşmez. Program ekranı işçinin küçültülmüş aynasıdır.
+//    Kip tabanı (tekrar / VAR / röportaj / özet; React durumuna bağlı çizimler) ana iş
+//    parçacığında çizilir, VideoFrame olarak işçiye gider; grafik / rozet / geçiş / FTB ve
+//    kodlama yine işçide. Önizleme ana iş parçacığında ≤20 fps (görünürken).
+//  • ANA İŞ PARÇACIĞI (eski yol / yedek): her şey burada, rAF + yedek setInterval.
+//    İşçi çökerse ya da kare vermezse oturum boyunca buna dönülür.
 //
+// PROGRAM katmanları (compositor/composeProgram.js, iki motorda aynı kod):
+//   0. anlık durum (siyah / bekleme kartı / dondur) · 1. taban: VAR | özel kip | tekrar |
+//   geçiş | program sahnesi · 2. yayın grafikleri · 3. tekrar rozeti · 4. logo geçişleri ·
+//   5. SİYAHA GEÇ (FTB).
 // Tuval asla "kirletilmez" (taint): uzak görseller yalnız CORS'la yüklenir.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { bugPlacement, drawBottomBoard, drawReplayBadge, drawScoreBug } from "../../lib/studio/scorebug";
+import { bugPlacement, drawBottomBoard, drawScoreBug } from "../../lib/studio/scorebug";
 import { fallbackDue, previewSize } from "../../lib/studio/compose";
-import { drawStinger, STINGER_MS } from "../../lib/studio/stinger";
-import { drawTransitionStinger, isStingerKind, progressAt, transitionFrame } from "../../lib/studio/transitions";
+import { STINGER_MS } from "../../lib/studio/stinger";
+import { progressAt } from "../../lib/studio/transitions";
 import { resolveScene } from "../../lib/studio/scenes";
-import { drawScene, drawVideoFull } from "./draw";
+import { SECONDARY_FPS, chooseCompositorEngine } from "../../lib/studio/renderBudget";
+import { drawScene } from "./draw";
 import { drawVar } from "./var/drawVar";
+import { MODE_TARGET, composeBase, composeTop, drawFtb, drawProgramFx, ftbLevel, needsMainBase, transitionTouchesMode } from "./compositor/composeProgram";
+import { createWorkerCompositor, softwareGpu, workerCompositorSupported } from "./compositor/workerHost";
+import { canvasLoop, startRenderLoadMonitor, trackDraw } from "./perf/renderLoad";
+
+export { MODE_TARGET, ftbLevel, drawSlate } from "./compositor/composeProgram";
 
 /** Skorbord türü (grafik modülü yokken yedek). */
 export const bugVariantOf = (cfg) => cfg?.overlay?.variant || (cfg?.overlay?.scorebug === false ? "off" : "small");
@@ -38,79 +43,31 @@ export function drawBug(ctx, variant, state, W, H, images) {
   else drawScoreBug(ctx, state, { ...bugPlacement(W), images });
 }
 
-/** Bir görünümü (from / to) dönüşümüyle hedef tuvale basar. */
-function blit(ctx, src, v, W, H, blurCanvas) {
-  if (v.alpha <= 0.001) return;
-  ctx.save();
-  ctx.globalAlpha = Math.min(1, v.alpha);
-  if (v.scale !== 1 || v.dx || v.dy) {
-    ctx.translate(W / 2 + v.dx * W, H / 2 + v.dy * H);
-    ctx.scale(v.scale, v.scale);
-    ctx.translate(-W / 2, -H / 2);
-  }
-  ctx.drawImage(src, 0, 0, W, H);
-  if (v.blur > 0.01 && blurCanvas) {
-    // Ucuz bulanıklık: küçült-büyüt (filter: blur 1080p'de pahalı).
-    const b = blurCanvas.getContext("2d");
-    b.imageSmoothingEnabled = true;
-    b.drawImage(src, 0, 0, blurCanvas.width, blurCanvas.height);
-    ctx.globalAlpha = Math.min(1, v.alpha) * Math.min(1, v.blur * 1.15);
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(blurCanvas, 0, 0, W, H);
-  }
-  ctx.restore();
-}
+const WATCHDOG_MS = 4000; // işçiden bu kadar süre sayaç / kare gelmezse ana iş parçacığına dön
 
-/** Siyaha geçişin o anki siyahlığı (0 = görüntü, 1 = tam siyah). */
-export function ftbLevel(ftb, now) {
-  if (!ftb) return 0;
-  const target = ftb.on ? 1 : 0;
-  if (!ftb.ms || now - ftb.at >= ftb.ms) return target;
-  const p = Math.max(0, (now - ftb.at) / ftb.ms);
-  return ftb.from + (target - ftb.from) * p;
-}
-
-/** Geçişte "özel kip" hedefi (sahne kimliği yerine). */
-export const MODE_TARGET = "mode:program";
-
-/** Bekleme kartı: markalı koyu zemin, logo, yazı (Sahne › Siyah / bekleme kartı). */
-export function drawSlate(ctx, W, H, text, brand = {}) {
-  const b = brand.branding || {};
-  const g = ctx.createLinearGradient(0, 0, W, H);
-  g.addColorStop(0, "#07040d");
-  g.addColorStop(0.55, b.primary || "#2e1065");
-  g.addColorStop(1, "#07040d");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
-  const logo = brand.logo;
-  if (logo && logo.naturalWidth) {
-    const k = Math.min((W * 0.22) / logo.naturalWidth, (H * 0.22) / logo.naturalHeight);
-    ctx.drawImage(logo, (W - logo.naturalWidth * k) / 2, H * 0.3 - (logo.naturalHeight * k) / 2, logo.naturalWidth * k, logo.naturalHeight * k);
-  }
-  ctx.fillStyle = "#fff";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = `900 ${Math.round(H * 0.07)}px ${b.fontFamily || "-apple-system, sans-serif"}`;
-  ctx.fillText(String(text || "YAYIN BİRAZDAN DEVAM EDECEK").toLocaleUpperCase("tr-TR"), W / 2, H * 0.6);
-  ctx.globalAlpha = 0.6;
-  ctx.font = `700 ${Math.round(H * 0.03)}px ${b.fontFamily || "-apple-system, sans-serif"}`;
-  ctx.fillText(b.brandName || "", W / 2, H * 0.7);
-  ctx.globalAlpha = 1;
-}
-
-export function useCompositor({ width, height, fps, configRef, runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef, modesRef, pgmFxRef = null }) {
+export function useCompositor({ width, height, fps, configRef, runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef, modesRef, pgmFxRef = null, engine: engineSetting = "auto", snapshotRef = null, timerRef = null, workerGraphics = true }) {
   const program = useMemo(() => document.createElement("canvas"), []);
+  const mirror = useMemo(() => document.createElement("canvas"), []);
   const preview = useMemo(() => document.createElement("canvas"), []);
   const scratchA = useMemo(() => document.createElement("canvas"), []);
   const scratchB = useMemo(() => document.createElement("canvas"), []);
   const blurC = useMemo(() => document.createElement("canvas"), []);
   const transitionRef = useRef(null); // { kind, fromId, toId, startedAt, ms }
   const stingerRef = useRef(null); // { startedAt, ms, onMid, onEnd, midFired }
-  const statsRef = useRef({ fps: 0, drawMs: 0, stalls: 0, totalStalls: 0 });
+  const statsRef = useRef({ fps: 0, drawMs: 0, stalls: 0, totalStalls: 0, engine: "main" });
   const trackRef = useRef(null);
-  // Kare aboneleri (WebCodecs kodlayıcısı): program karesi çizildikten hemen sonra çağrılır.
+  // Kare aboneleri (ana motorda WebCodecs kodlayıcısı): program karesi çizildikten hemen sonra çağrılır.
   const frameSubsRef = useRef(new Set());
   const ftbRef = useRef({ on: false, at: 0, ms: 600, from: 0 }); // from: geçişin başladığı siyahlık
+  const hostRef = useRef(null);
+  // Motor stüdyo açılırken seçilir (yayın sırasında değişmez); işçi çökerse ana yola dönülür.
+  const [failed, setFailed] = useState(false);
+  const [setting] = useState(engineSetting);
+  const engine = useMemo(() => chooseCompositorEngine(setting, { supported: workerGraphics && workerCompositorSupported(), failed, software: setting === "auto" && softwareGpu() }), [setting, workerGraphics, failed]);
+  const engineRef = useRef(engine);
+  engineRef.current = engine;
+
+  useEffect(() => { startRenderLoadMonitor(); }, []);
 
   useEffect(() => {
     program.width = width; program.height = height;
@@ -121,178 +78,103 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
     preview.width = p.width; preview.height = p.height;
   }, [width, height, program, preview, scratchA, scratchB, blurC]);
 
+  // Ana motorda kaydedici izi: tuvalin captureStream'i (işçi motorunda getVideoTrack işçi karelerini verir).
   useEffect(() => {
+    if (engine !== "main") return undefined;
     let stream = null;
     try { stream = program.captureStream(fps); } catch { stream = null; }
     trackRef.current = stream?.getVideoTracks()[0] || null;
     return () => { stream?.getTracks().forEach((t) => t.stop()); trackRef.current = null; };
-  }, [program, fps]);
+  }, [program, fps, engine]);
 
-  const frame = useRef({ last: 0, count: 0, statAt: 0, previewSkip: 0, drawMax: 0, stalls: 0, total: 0 });
+  const frame = useRef({ last: 0, count: 0, statAt: 0, previewSkip: 0, drawMax: 0, drawSum: 0, stalls: 0, total: 0 });
 
+  /** Kip / VAR / tekrar ortamı (yalnız ana iş parçacığı). */
+  const baseEnv = useCallback((now, W, H, tr) => {
+    const cfg = configRef.current;
+    const modes = modesRef?.current || null;
+    const vr = varRef?.current;
+    const brand = brandRef?.current || {};
+    const clock = matchClockRef?.current?.() ?? null;
+    return {
+      W, H, now, cfg, runtime: runtimeRef.current, tr,
+      opts: { now, matchClockMs: clock, override: overrideRef?.current || null },
+      scratch: { a: scratchA, b: scratchB, blur: blurC },
+      vr, pgmOv: modes?.programOverride || null, pvwOv: modes?.previewOverride || null, replay: replayRef.current, brand,
+      modeDraw: {
+        varDraw: (ctx, w, h, t) => {
+          const vsrc = vr.sourceId ? cfg.sources.find((x) => x.id === vr.sourceId) : null;
+          drawVar(ctx, w, h, t, { ...vr, source: vsrc, sourceRt: vsrc ? runtimeRef.current.get(vsrc.id) : null }, brand);
+        },
+      },
+    };
+  }, [blurC, brandRef, configRef, matchClockRef, modesRef, overrideRef, replayRef, runtimeRef, scratchA, scratchB, varRef]);
+
+  const endStinger = useCallback((sg) => {
+    if (stingerRef.current !== sg) return;
+    stingerRef.current = null;
+    try { sg.onEnd?.(); } catch { /* yoksay */ }
+  }, []);
+
+  /** ÖNİZLEME (yayına gitmez). */
+  const drawPreview = useCallback((now) => {
+    const cfg = configRef.current;
+    if (!cfg) return;
+    const modes = modesRef?.current || null;
+    const pvwOv = modes?.previewOverride || null;
+    const pw = preview.width;
+    const ph = preview.height;
+    const pctx = preview.getContext("2d", { alpha: false });
+    const opts = { now, matchClockMs: matchClockRef?.current?.() ?? null, override: overrideRef?.current || null, placeholders: true };
+    if (pvwOv) {
+      pctx.fillStyle = "#000"; pctx.fillRect(0, 0, pw, ph);
+      try { pvwOv.draw(pctx, { width: pw, height: ph, now }); } catch { /* yoksay */ }
+    } else drawScene(pctx, resolveScene(cfg, cfg.previewSceneId), cfg.sources, runtimeRef.current, pw, ph, opts);
+    if (previewGraphicsRef?.current && (!pvwOv || pvwOv.graphics === true)) {
+      pctx.save();
+      pctx.globalAlpha = 0.55;
+      try { overlayRef.current?.(pctx, { width: pw, height: ph, now, target: "preview", sceneId: pvwOv ? pvwOv.id || null : cfg.previewSceneId }); } catch { /* yoksay */ }
+      pctx.restore();
+    }
+  }, [configRef, matchClockRef, modesRef, overlayRef, overrideRef, preview, previewGraphicsRef, runtimeRef]);
+
+  /** Ana motor: tam program karesi (+ 2/3 karede bir önizleme). */
   const draw = useCallback((now) => {
     const cfg = configRef.current;
-    const runtime = runtimeRef.current;
     if (!cfg) return;
     const t0 = performance.now();
     const W = program.width;
     const H = program.height;
     const ctx = program.getContext("2d", { alpha: false });
-    const sceneOf = (id) => resolveScene(cfg, id);
-    const modes = modesRef?.current || null;
-    const pgmOv = modes?.programOverride || null;
-    const pvwOv = modes?.previewOverride || null;
-    const replay = replayRef.current;
-    const vr = varRef?.current;
+    // Kaynaklar program boyutuna ölçeklenirken yüksek kaliteli süzme (bağlam sıfırlanınca yeniden).
+    if (ctx.imageSmoothingQuality !== "high") { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; }
     const brand = brandRef?.current || {};
-    const clock = matchClockRef?.current?.() ?? null;
-    // Düzenleyicide sürüklenen kutu (stüdyo modu kapalıyken program da düzenlenir).
-    const opts = { now, matchClockMs: clock, override: overrideRef?.current || null };
-    // Sahne ya da özel kip (geçişte MODE_TARGET): hedef tuvale çizer.
-    const drawTarget = (c, id, w, h) => {
-      if (id === MODE_TARGET) {
-        const ov = pgmOv || pvwOv;
-        c.fillStyle = "#000"; c.fillRect(0, 0, w, h);
-        if (ov) { try { ov.draw(c, { width: w, height: h, now }); } catch { /* kip hatası yayını durdurmasın */ } }
-        return;
-      }
-      drawScene(c, sceneOf(id), cfg.sources, runtime, w, h, opts);
-    };
-
-    // 0. programın anlık durumu (Sahne düğmeleri): siyah · bekleme kartı · dondur (son kare kalır).
-    const pfx = pgmFxRef?.current || null;
-    pgm: {
-    if (pfx?.kind) {
-      if (pfx.kind === "black") { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
-      else if (pfx.kind === "slate") drawSlate(ctx, W, H, pfx.text, brand);
-      break pgm; // freeze: hiç çizilmez
+    const fxr = drawProgramFx(ctx, W, H, pgmFxRef?.current || null, brand);
+    if (!fxr) {
+      const env = baseEnv(now, W, H, transitionRef.current);
+      const base = composeBase(ctx, env);
+      if (base.done) transitionRef.current = null;
+      const sg = stingerRef.current;
+      const top = composeTop(ctx, { W, H, now, overlay: overlayRef.current, replay: env.replay, vr: env.vr, brand, stinger: sg, onStingerMid: (s) => s.onMid?.() }, base);
+      if (top.stingerDone && sg) endStinger(sg);
     }
-    // 1. taban
-    const tr = transitionRef.current;
-    let stingerP = null;
-    let stingerKind = "stinger";
-    let graphics = true;
-    let gSceneId = cfg.programSceneId;
-    if (vr?.active) {
-      const vsrc = vr.sourceId ? cfg.sources.find((x) => x.id === vr.sourceId) : null;
-      drawVar(ctx, W, H, now, { ...vr, source: vsrc, sourceRt: vsrc ? runtime.get(vsrc.id) : null }, brand);
-    } else if (pgmOv && !(tr && (tr.toId === MODE_TARGET || tr.fromId === MODE_TARGET))) {
-      ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H);
-      // drawBase: program SAHNESİ grafiksiz (kipin giriş / çıkış geçişinin öbür ucu).
-      try { pgmOv.draw(ctx, { width: W, height: H, now, drawBase: (c) => drawScene(c, sceneOf(cfg.programSceneId), cfg.sources, runtime, W, H, opts) }); } catch { /* yoksay */ }
-      graphics = pgmOv.graphics === true;
-      gSceneId = pgmOv.id || null;
-    } else if (replay?.active && replay.el) {
-      drawVideoFull(ctx, replay.el, W, H);
-    } else if (tr) {
-      const p = progressAt(tr, now);
-      const f = transitionFrame(tr.kind, p);
-      if (isStingerKind(tr.kind)) {
-        drawTarget(ctx, f.switched ? tr.toId : tr.fromId, W, H);
-        stingerP = p;
-        stingerKind = tr.kind;
-      } else if (tr.kind === "fade") {
-        drawTarget(ctx, tr.fromId, W, H);
-        const b = scratchB.getContext("2d", { alpha: false });
-        drawTarget(b, tr.toId, W, H);
-        blit(ctx, scratchB, f.to, W, H, null);
-      } else {
-        const a = scratchA.getContext("2d", { alpha: false });
-        const b = scratchB.getContext("2d", { alpha: false });
-        drawTarget(a, tr.fromId, W, H);
-        drawTarget(b, tr.toId, W, H);
-        ctx.fillStyle = "#000";
-        ctx.fillRect(0, 0, W, H);
-        blit(ctx, scratchA, f.from, W, H, blurC);
-        if (f.wipe != null) {
-          // Silme: yumuşak kenarlı, soldan sağa açılır.
-          const edge = f.wipe * (W * 1.1) - W * 0.05;
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(0, 0, Math.max(0, edge), H);
-          ctx.clip();
-          ctx.drawImage(scratchB, 0, 0, W, H);
-          ctx.restore();
-          ctx.fillStyle = "rgba(255,255,255,0.85)";
-          ctx.fillRect(edge - Math.max(2, W / 480), 0, Math.max(2, W / 240), H);
-        } else blit(ctx, scratchB, f.to, W, H, blurC);
-      }
-      const toMode = tr.toId === MODE_TARGET;
-      if (toMode) { graphics = (pgmOv || pvwOv)?.graphics === true || p < 0.5; gSceneId = p < 0.5 ? tr.fromId : (pgmOv || pvwOv)?.id || null; }
-      else if (tr.fromId === MODE_TARGET) { gSceneId = tr.toId; graphics = p >= 0.5 || (pgmOv || pvwOv)?.graphics === true; }
-      else gSceneId = p < 0.5 ? tr.fromId : tr.toId;
-      if (p >= 1) transitionRef.current = null;
-    } else {
-      drawScene(ctx, sceneOf(cfg.programSceneId), cfg.sources, runtime, W, H, opts);
-    }
-
-    // 2. yayın grafikleri (sahneye göre süzülür)
-    if (graphics) {
-      try { overlayRef.current?.(ctx, { width: W, height: H, now, target: "program", sceneId: gSceneId, replay: Boolean(replay?.active), event: replay?.active ? replay.event : null }); } catch { /* grafik hatası yayını durdurmasın */ }
-    }
-    // 3. tekrar rozeti
-    if (replay?.active && !vr?.active) drawReplayBadge(ctx, W);
-    // 4. logo geçişi
-    if (stingerP != null && stingerP < 1) drawTransitionStinger(ctx, W, H, stingerKind, stingerP, brand.logo, brand.branding);
-    const sg = stingerRef.current;
-    if (sg) {
-      const p = Math.min(1, (now - sg.startedAt) / sg.ms);
-      if (p >= 0.5 && !sg.midFired) {
-        sg.midFired = true;
-        try { sg.onMid?.(); } catch { /* yoksay */ }
-      }
-      if (p < 1) drawStinger(ctx, W, H, p, brand.logo, brand.branding);
-      else {
-        stingerRef.current = null;
-        try { sg.onEnd?.(); } catch { /* yoksay */ }
-      }
-    }
-
-    } // pgm
-
-    // 5. siyaha geç (solarak, vMix FTB): her şeyin üstünde (donuk / bekleme kartı dahil).
-    const ftb = ftbRef.current;
-    const k = ftbLevel(ftb, now);
-    if (k > 0.001) {
-      ctx.save();
-      ctx.globalAlpha = Math.min(1, k);
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, W, H);
-      ctx.restore();
-    }
-
-    // ÖNİZLEME (2 / 3 karede bir; yayına gitmez)
+    drawFtb(ctx, W, H, ftbRef.current, now);
     const f = frame.current;
     f.previewSkip = (f.previewSkip + 1) % (fps > 40 ? 3 : 2);
-    if (f.previewSkip === 0) {
-      const pw = preview.width;
-      const ph = preview.height;
-      const pctx = preview.getContext("2d", { alpha: false });
-      if (pvwOv) {
-        pctx.fillStyle = "#000"; pctx.fillRect(0, 0, pw, ph);
-        try { pvwOv.draw(pctx, { width: pw, height: ph, now }); } catch { /* yoksay */ }
-      } else drawScene(pctx, sceneOf(cfg.previewSceneId), cfg.sources, runtime, pw, ph, { ...opts, placeholders: true });
-      if (previewGraphicsRef?.current && (!pvwOv || pvwOv.graphics === true)) {
-        pctx.save();
-        pctx.globalAlpha = 0.55;
-        try { overlayRef.current?.(pctx, { width: pw, height: ph, now, target: "preview", sceneId: pvwOv ? pvwOv.id || null : cfg.previewSceneId }); } catch { /* yoksay */ }
-        pctx.restore();
-      }
-    }
-
+    if (f.previewSkip === 0) drawPreview(now);
     const dt = performance.now() - t0;
     if (dt > f.drawMax) f.drawMax = dt;
+    f.drawSum += dt;
     f.count += 1;
     if (now - f.statAt >= 1000) {
-      statsRef.current = { fps: Math.round((f.count * 1000) / (now - f.statAt || 1)), drawMs: Math.round(f.drawMax * 10) / 10, stalls: f.stalls, totalStalls: f.total };
-      f.count = 0;
-      f.statAt = now;
-      f.drawMax = 0;
-      f.stalls = 0;
+      statsRef.current = { fps: Math.round((f.count * 1000) / (now - f.statAt || 1)), drawMs: Math.round(f.drawMax * 10) / 10, avgMs: Math.round((f.drawSum / Math.max(1, f.count)) * 10) / 10, stalls: f.stalls, totalStalls: f.total, engine: "main" };
+      f.count = 0; f.statAt = now; f.drawMax = 0; f.drawSum = 0; f.stalls = 0;
     }
-  }, [blurC, brandRef, configRef, fps, matchClockRef, modesRef, overlayRef, overrideRef, pgmFxRef, preview, previewGraphicsRef, program, replayRef, runtimeRef, scratchA, scratchB, varRef]);
+  }, [baseEnv, brandRef, configRef, drawPreview, endStinger, fps, overlayRef, pgmFxRef, program]);
 
+  // ── ANA MOTOR döngüsü ──
   useEffect(() => {
+    if (engine !== "main") return undefined;
     let raf = 0;
     let alive = true;
     const interval = 1000 / Math.max(1, fps);
@@ -301,8 +183,10 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       // Takılma: iki kare süresinden uzun boşluk (ana iş parçacığı meşgul).
       if (f.last && now - f.last > interval * 2.5) { f.stalls += 1; f.total += 1; }
       f.last = now;
+      const t0 = performance.now();
       draw(now);
       for (const fn of frameSubsRef.current) { try { fn(now); } catch { /* kodlayıcı hatası çizimi durdurmasın */ } }
+      trackDraw("Program (ana iş parçacığı)", performance.now() - t0);
     };
     const loop = () => {
       if (!alive) return;
@@ -316,36 +200,152 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       if (fallbackDue(frame.current.last, now, fps)) run(now);
     }, Math.max(8, Math.floor(interval / 2)));
     return () => { alive = false; cancelAnimationFrame(raf); clearInterval(timer); };
-  }, [draw, fps]);
+  }, [draw, fps, engine]);
+
+  // ── İŞÇİ MOTORU ──
+  useEffect(() => {
+    if (engine !== "worker") return undefined;
+    let host;
+    try {
+      host = createWorkerCompositor({ width, height, fps, mirrorCanvas: mirror, onFail: () => setFailed(true) });
+    } catch {
+      setFailed(true);
+      return undefined;
+    }
+    hostRef.current = host;
+    const startedAt = performance.now();
+    const replayMemo = { active: false, event: null, obj: null };
+    const replayState = () => {
+      const r = replayRef.current;
+      const active = Boolean(r?.active);
+      const event = active ? r.event || null : null;
+      if (active !== replayMemo.active || event !== replayMemo.event) { replayMemo.active = active; replayMemo.event = event; replayMemo.obj = active ? { active: true, event } : null; }
+      return replayMemo.obj;
+    };
+    // Durum eşleme (20 Hz; yalnız değişen alan gönderilir) + kaynak beslemesi + gözcü.
+    const sync = () => {
+      const cfg = configRef.current;
+      if (!cfg || !host.alive()) return;
+      const now = performance.now();
+      let tr = transitionRef.current;
+      if (tr && !transitionTouchesMode(tr) && progressAt(tr, now) >= 1) { transitionRef.current = null; tr = null; }
+      host.setState({
+        cfg,
+        snapshot: snapshotRef?.current ?? null,
+        pgmFx: pgmFxRef?.current || null,
+        override: overrideRef?.current || null,
+        timer: timerRef?.current ?? null,
+        replay: replayState(),
+        ftb: ftbRef.current,
+        tr: tr && !transitionTouchesMode(tr) ? tr : null,
+        stinger: stingerRef.current,
+      });
+      host.setBrand(brandRef?.current || null);
+      host.syncImages(snapshotRef?.current ?? null);
+      host.syncSources(cfg, runtimeRef.current, tr ? [tr.fromId, tr.toId] : []);
+      const s = host.stats();
+      if (now - startedAt > WATCHDOG_MS + 2000 && (s.ageMs == null || s.ageMs > WATCHDOG_MS)) {
+        console.warn("çizim işçisi yanıt vermiyor: ana iş parçacığına dönülüyor");
+        setFailed(true);
+      }
+    };
+    sync();
+    const syncTimer = setInterval(sync, 50);
+    hostRef.current.sync = sync;
+
+    // Kip tabanı: tekrar / VAR / röportaj / özet ana iş parçacığında çizilir (React durumuna bağlı).
+    let raf = 0;
+    let alive = true;
+    const interval = 1000 / Math.max(1, fps);
+    const base = { last: 0, on: false, oc: null };
+    const runBase = (now) => {
+      const modes = modesRef?.current || null;
+      const tr = transitionRef.current;
+      const want = needsMainBase({ vr: varRef?.current, pgmOv: modes?.programOverride || null, replay: replayRef.current, tr });
+      if (!want) { if (base.on) { base.on = false; host.baseOff(); } return; }
+      base.on = true;
+      base.last = now;
+      const t0 = performance.now();
+      const W = program.width; const H = program.height;
+      // Kip tabanı ekran dışı tuvale çizilir; transferToImageBitmap kopyasız aktarır (VideoFrame
+      // okuması gibi ana iş parçacığını bekletmez; işçide de ana iş parçacığına bağlı değildir).
+      if (!base.oc || base.oc.width !== W || base.oc.height !== H) base.oc = typeof OffscreenCanvas === "function" ? new OffscreenCanvas(W, H) : null;
+      const ctx = (base.oc || program).getContext("2d", { alpha: false });
+      if (ctx.imageSmoothingQuality !== "high") { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; }
+      const out = composeBase(ctx, baseEnv(now, W, H, tr));
+      if (out.done) { transitionRef.current = null; sync(); }
+      host.pushBase(base.oc || program, { graphics: out.graphics, gSceneId: out.gSceneId, stingerP: out.stingerP, stingerKind: out.stingerKind }, now);
+      trackDraw("Kip tabanı (ana iş parçacığı)", performance.now() - t0);
+    };
+    const loop = () => {
+      if (!alive) return;
+      const now = performance.now();
+      if (now - base.last >= interval - 2) runBase(now);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    const baseTimer = setInterval(() => { const now = performance.now(); if (fallbackDue(base.last, now, fps)) runBase(now); }, Math.max(8, Math.floor(interval / 2)));
+    const stopPreview = canvasLoop("Önizleme ekranı", { fps: SECONDARY_FPS.preview, el: preview }, drawPreview);
+    const statTimer = setInterval(() => {
+      const s = host.stats();
+      statsRef.current = { fps: s.fps || 0, drawMs: s.drawMs || 0, avgMs: s.avgMs || 0, stalls: s.late || 0, totalStalls: (statsRef.current.totalStalls || 0) + (s.late || 0), engine: "worker", unique: s.unique, mainBase: s.mainBase, basesIn: s.basesIn, baseMs: s.baseMs, gfxMs: s.gfxMs, encSubmitMs: s.encSubmitMs, srcFps: s.srcFps, sources: s.sources, mirrorAgeMs: s.mirrorAgeMs };
+    }, 1000);
+    return () => {
+      alive = false;
+      cancelAnimationFrame(raf);
+      clearInterval(baseTimer); clearInterval(syncTimer); clearInterval(statTimer);
+      stopPreview();
+      host.stop();
+      if (hostRef.current === host) hostRef.current = null;
+      trackRef.current = null;
+    };
+  }, [engine, width, height, fps, mirror, program, preview, drawPreview, baseEnv, brandRef, configRef, modesRef, overrideRef, pgmFxRef, replayRef, runtimeRef, snapshotRef, timerRef, varRef]);
+
+  const syncNow = () => { try { hostRef.current?.sync?.(); } catch { /* yoksay */ } };
+  // Her stüdyo çiziminden sonra (yapılandırma / kesme anında değişir): işçi 50 ms beklemeden güncellenir.
+  useEffect(() => { syncNow(); });
 
   /** Önizlemedeki sahneyi programa al. kind: transitions.js türü. */
   const startTransition = useCallback((fromId, toId, kind, ms) => {
-    if (!ms || kind === "cut" || fromId === toId) { transitionRef.current = null; return; }
+    if (!ms || kind === "cut" || fromId === toId) { transitionRef.current = null; syncNow(); return; }
     transitionRef.current = { kind, fromId, toId, startedAt: performance.now(), ms };
+    syncNow();
   }, []);
 
   /**
-   * Bağımsız logo geçişi (tekrar / VAR giriş-çıkışı): onMid ekran tam
-   * örtülüyken çağrılır. Çizim döngüsü durmuşsa yedek zamanlayıcı onMid'i yine çağırır.
+   * Bağımsız logo geçişi (tekrar / VAR giriş-çıkışı): onMid ekran tam örtülüyken çağrılır.
+   * Ana motorda çizim döngüsü çağırır (durmuşsa yedek zamanlayıcı); işçi motorunda zamanlayıcı.
    */
   const playStinger = useCallback(({ onMid, onEnd, ms = STINGER_MS } = {}) => {
     const prev = stingerRef.current;
-    if (prev && !prev.midFired) { try { prev.onMid?.(); } catch { /* yoksay */ } }
-    if (prev) { try { prev.onEnd?.(); } catch { /* yoksay */ } }
+    if (prev && !prev.midFired) { prev.midFired = true; try { prev.onMid?.(); } catch { /* yoksay */ } }
+    if (prev) { stingerRef.current = null; try { prev.onEnd?.(); } catch { /* yoksay */ } }
     const sg = { startedAt: performance.now(), ms, onMid, onEnd, midFired: false };
     stingerRef.current = sg;
+    syncNow();
+    const worker = engineRef.current === "worker";
     setTimeout(() => {
       if (stingerRef.current !== sg) return;
       if (!sg.midFired) { sg.midFired = true; try { sg.onMid?.(); } catch { /* yoksay */ } }
-    }, ms * 0.5 + 250);
-  }, []);
+    }, worker ? ms * 0.5 : ms * 0.5 + 250);
+    if (worker) setTimeout(() => { endStinger(sg); syncNow(); }, ms);
+  }, [endStinger]);
 
-  const getVideoTrack = useCallback(() => trackRef.current, []);
+  const getVideoTrack = useCallback(() => {
+    if (engineRef.current === "worker") return hostRef.current?.videoTrack() || null;
+    return trackRef.current;
+  }, []);
   const getStats = useCallback(() => statsRef.current, []);
   const getCanvas = useCallback(() => program, [program]);
-  /** fn(now) her program karesinden sonra; dönüş: aboneliği kaldır. */
+  /** İşçi motorunda görüntü işçide kodlanır (webcodecs.js remoteEncoder); ana motorda null. */
+  const getRemoteEncoder = useCallback(() => (engineRef.current === "worker" && hostRef.current?.alive() ? hostRef.current.encoder : null), []);
+  /** fn(now) her program karesinden sonra (yalnız ana motor); dönüş: aboneliği kaldır. */
   const subscribeFrames = useCallback((fn) => { frameSubsRef.current.add(fn); return () => frameSubsRef.current.delete(fn); }, []);
-  const busy = useCallback(() => Boolean(transitionRef.current || stingerRef.current), []);
+  const busy = useCallback(() => {
+    const tr = transitionRef.current;
+    if (tr && engineRef.current === "worker" && !transitionTouchesMode(tr) && progressAt(tr, performance.now()) >= 1) transitionRef.current = null;
+    return Boolean(transitionRef.current || stingerRef.current);
+  }, []);
   /** Siyaha geç / geri aç (on: true | false | undefined = değiştir). */
   const setFtb = useCallback((on, ms = 600) => {
     const cur = ftbRef.current;
@@ -353,12 +353,15 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
     if (want === cur.on) return want;
     const now = performance.now();
     ftbRef.current = { on: want, at: now, ms: Math.max(0, ms), from: ftbLevel(cur, now) };
+    syncNow();
     return want;
   }, []);
   const programFx = useCallback(() => ({ ftb: ftbRef.current.on }), []);
-  const transitionNow = useCallback(() => transitionRef.current, []);
+  const transitionNow = useCallback(() => { busy(); return transitionRef.current; }, [busy]);
 
-  return { program, preview, getStats, startTransition, playStinger, getVideoTrack, getCanvas, subscribeFrames, busy, transitionNow, setFtb, programFx };
+  // Ekranda gösterilen program tuvali: işçi motorunda ayna.
+  const shown = engine === "worker" ? mirror : program;
+  return { program: shown, preview, engine, getStats, startTransition, playStinger, getVideoTrack, getCanvas, getRemoteEncoder, subscribeFrames, busy, transitionNow, setFtb, programFx };
 }
 
 /**

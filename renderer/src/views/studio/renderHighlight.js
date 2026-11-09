@@ -37,6 +37,9 @@ import { drawBottomBoard, bugFont } from "../../lib/studio/scorebug";
 import { drawStingerKind, stingerPalette, darken } from "../../lib/studio/stinger";
 import { MIME_PREFERENCE, pickMimeType, recorderBitsPerSecond } from "../../lib/studio/broadcast";
 import { drawVideoFull } from "./draw";
+import { tracksOf } from "../../lib/studio/trackStore";
+import { singleSource } from "../../lib/studio/replaySplit";
+import { drawTracksOn } from "./modes/splitSync";
 
 const studio = () => window.elitlig?.studio;
 /** İlk gönderilen parçanın en küçük boyutu (tam kapsayıcı başlığı). */
@@ -518,6 +521,9 @@ async function renderOnce({ plan, info, images, boardOf, signal, onProgress, onP
       if (seg?.type === "clip") {
         const el = videos.get(seg);
         if (el) drawVideoFull(ctx, el, W, H); else { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); }
+        // Oyuncu takibi: tekrarda işaretlenen oyuncunun vurgusu özette de (tekrar + açı başına kalıcı iz).
+        const trs = el?.videoWidth ? tracksOf(seg.replayId, seg.angle) : [];
+        if (trs.length) drawTracksOn(ctx, el, singleSource(el.videoWidth, el.videoHeight, null, W, H), trs, el.currentTime || 0, { now: t, W, H });
         const board = boardOf?.(seg);
         if (board) drawBottomBoard(ctx, board, { outW: W, outH: H, images });
       } else if (seg) {

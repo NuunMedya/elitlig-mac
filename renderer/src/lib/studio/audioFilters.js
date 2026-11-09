@@ -1,8 +1,10 @@
 // Yayın Stüdyosu — şerit başına SES FİLTRELERİ ve SES GECİKMESİ (OBS "Filtreler" + "Senkron kayması").
 //
-//   giriş ─▶ gecikme (0–2000 ms) ─▶ gürültü kapısı ─▶ EQ (bas / orta / tiz) ─▶ sıkıştırıcı ─▶ kazanç (trim) ─▶ fader …
+//   giriş ─▶ gecikme (0–2000 ms) ─▶ düşük kesme ─▶ gürültü kapısı ─▶ EQ (bas / orta / tiz) ─▶ sıkıştırıcı ─▶ kazanç (trim) ─▶ fader …
 //
 //   delayMs   ses / görüntü eşleme: kamera görüntüsü sesten geç geliyorsa sesi geciktir
+//   hpf       düşük kesme (yüksek geçiren, 12 dB/oktav; spiker mikrofonu 80 Hz): rüzgâr, uğultu,
+//             masa / stand titreşimi; sesin gövdesine dokunmaz, kapı ve sıkıştırıcı uğultuyla tetiklenmez
 //   gate      gürültü kapısı: eşik altı (fan, uğultu, uzak tribün) kesilir; açılış / kapanış süresi, bekleme
 //   eq        3 bant: bas 120 Hz (raf), orta 1,2 kHz (tepe), tiz 6 kHz (raf); ±15 dB
 //   comp      sıkıştırıcı: eşik, oran, atak, bırakma, telafi kazancı
@@ -16,6 +18,9 @@ export const MAX_AUDIO_DELAY_MS = 2000;
 export const GATE_DEFAULT = Object.freeze({ on: false, threshold: -45, attackMs: 5, holdMs: 150, releaseMs: 200 });
 export const EQ_DEFAULT = Object.freeze({ on: false, low: 0, mid: 0, high: 0 });
 export const COMP_DEFAULT = Object.freeze({ on: false, threshold: -20, ratio: 4, attackMs: 6, releaseMs: 150, makeup: 0 });
+export const HPF_DEFAULT = Object.freeze({ on: false, freq: 80 });
+/** Düşük kesme kapalıyken süzgecin frekansı (Hz): duyulur bantta etkisiz (yalnız DC / altses). */
+export const HPF_BYPASS_HZ = 10;
 export const EQ_BANDS = Object.freeze([
   { key: "low", label: "Bas", type: "lowshelf", freq: 120, q: 0.7 },
   { key: "mid", label: "Orta", type: "peaking", freq: 1200, q: 0.9 },
@@ -24,9 +29,9 @@ export const EQ_BANDS = Object.freeze([
 
 /** Hazır ayarlar (tek tık). */
 export const FILTER_PRESETS = [
-  { key: "voice", label: "Spiker sesi", filters: { gate: { on: true, threshold: -48 }, eq: { on: true, low: -3, mid: 2, high: 3 }, comp: { on: true, threshold: -22, ratio: 3, makeup: 3 } } },
+  { key: "voice", label: "Spiker sesi", filters: { hpf: { on: true, freq: 80 }, gate: { on: true, threshold: -48 }, eq: { on: true, low: -3, mid: 2, high: 3 }, comp: { on: true, threshold: -22, ratio: 3, makeup: 3 } } },
   { key: "crowd", label: "Saha / tribün", filters: { eq: { on: true, low: -6, mid: 0, high: 1 }, comp: { on: true, threshold: -16, ratio: 2.5, makeup: 1 } } },
-  { key: "phone", label: "Telefon mikrofonu", filters: { gate: { on: true, threshold: -42 }, eq: { on: true, low: -8, mid: 3, high: 2 }, comp: { on: true, threshold: -24, ratio: 4, makeup: 4 } } },
+  { key: "phone", label: "Telefon mikrofonu", filters: { hpf: { on: true, freq: 100 }, gate: { on: true, threshold: -42 }, eq: { on: true, low: -8, mid: 3, high: 2 }, comp: { on: true, threshold: -24, ratio: 4, makeup: 4 } } },
   { key: "music", label: "Müzik (hafif)", filters: { comp: { on: true, threshold: -14, ratio: 2, makeup: 0 } } },
 ];
 
@@ -38,6 +43,10 @@ function normEq(e) {
   const x = { ...EQ_DEFAULT, ...(e || {}) };
   return { on: Boolean(x.on), low: r1(clamp(num(x.low, 0), -15, 15)), mid: r1(clamp(num(x.mid, 0), -15, 15)), high: r1(clamp(num(x.high, 0), -15, 15)) };
 }
+function normHpf(h) {
+  const x = { ...HPF_DEFAULT, ...(h || {}) };
+  return { on: Boolean(x.on), freq: Math.round(clamp(num(x.freq, 80), 20, 300)) };
+}
 function normComp(c) {
   const x = { ...COMP_DEFAULT, ...(c || {}) };
   return { on: Boolean(x.on), threshold: r1(clamp(num(x.threshold, -20), -60, 0)), ratio: r1(clamp(num(x.ratio, 4), 1, 20)), attackMs: Math.round(clamp(num(x.attackMs, 6), 0, 1000)), releaseMs: Math.round(clamp(num(x.releaseMs, 150), 10, 1000)), makeup: r1(clamp(num(x.makeup, 0), 0, 24)) };
@@ -48,7 +57,7 @@ const same = (a, b) => Object.keys(b).every((k) => a[k] === b[k]);
 /** Tam biçim (her alan dolu). */
 export function resolveFilters(f) {
   const x = f && typeof f === "object" ? f : {};
-  return { delayMs: Math.round(clamp(num(x.delayMs, 0), 0, MAX_AUDIO_DELAY_MS)), gate: normGate(x.gate), eq: normEq(x.eq), comp: normComp(x.comp) };
+  return { delayMs: Math.round(clamp(num(x.delayMs, 0), 0, MAX_AUDIO_DELAY_MS)), hpf: normHpf(x.hpf), gate: normGate(x.gate), eq: normEq(x.eq), comp: normComp(x.comp) };
 }
 
 /** Kayıt biçimi: yalnız varsayılandan farklı bölümler; hepsi varsayılansa null. */
@@ -56,6 +65,7 @@ export function compactFilters(f) {
   const r = resolveFilters(f);
   const out = {};
   if (r.delayMs) out.delayMs = r.delayMs;
+  if (!same(r.hpf, HPF_DEFAULT)) out.hpf = r.hpf;
   if (!same(r.gate, GATE_DEFAULT)) out.gate = r.gate;
   if (!same(r.eq, EQ_DEFAULT)) out.eq = r.eq;
   if (!same(r.comp, COMP_DEFAULT)) out.comp = r.comp;
@@ -66,6 +76,7 @@ export function compactFilters(f) {
 export function filtersSummary(f) {
   const r = resolveFilters(f);
   const parts = [];
+  if (r.hpf.on) parts.push(`${r.hpf.freq} Hz kesme`);
   if (r.gate.on) parts.push("Kapı");
   if (r.eq.on) parts.push("EQ");
   if (r.comp.on) parts.push("Sık.");
@@ -82,6 +93,7 @@ export function applyPreset(f, key) {
   if (!p) return compactFilters(cur);
   return compactFilters({
     delayMs: cur.delayMs,
+    hpf: { ...HPF_DEFAULT, ...(p.filters.hpf || { on: false }) },
     gate: { ...GATE_DEFAULT, ...(p.filters.gate || { on: false }) },
     eq: { ...EQ_DEFAULT, ...(p.filters.eq || { on: false }) },
     comp: { ...COMP_DEFAULT, ...(p.filters.comp || { on: false }) },

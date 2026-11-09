@@ -109,6 +109,7 @@ export function bugPlacement(outW) {
  */
 export function bugLayout(state, scale, measure, opts = {}) {
   const family = opts.family || null;
+  const radiusK = Number.isFinite(opts.radiusK) ? Math.max(0, opts.radiusK) : 1;
   const logoK = Number(opts.logoScale) > 0 ? Number(opts.logoScale) : 1;
   const s = Number(scale) || 1;
   const rowH = BUG.rowH * s;
@@ -169,7 +170,7 @@ export function bugLayout(state, scale, measure, opts = {}) {
   x += clock.w;
 
   const width = x;
-  const row = { x: 0, y: 0, w: width, h: rowH, r: BUG.radius * s };
+  const row = { x: 0, y: 0, w: width, h: rowH, r: BUG.radius * s * radiusK };
   const strip = { y: rowH - 2 * s, h: 2 * s, half: width / 2 };
   const cap = { x: 0, y: 0, w: 3 * s, h: rowH - 2 * s };
 
@@ -224,10 +225,10 @@ const ready = (img) => Boolean(img && (img.complete === undefined || img.complet
  * Skorbordu çizer. images: { logo, home, away } (yüklenmiş HTMLImageElement).
  * Dönüş: çizilen kutunun sahnedeki sınırı.
  */
-export function drawScoreBug(ctx, state, { x = 0, y = 0, scale = 1, images = {}, homeColor, awayColor, colors = null, family = null, logoScale = 1, measure: measureOpt = null } = {}) {
+export function drawScoreBug(ctx, state, { x = 0, y = 0, scale = 1, images = {}, homeColor, awayColor, colors = null, family = null, logoScale = 1, measure: measureOpt = null, radiusK = 1 } = {}) {
   const C = colors ? { ...BUG.colors, ...colors } : BUG.colors;
   const measure = measureOpt || ((text, font) => { ctx.font = font; return ctx.measureText(text).width; });
-  const L = bugLayout(state, scale, measure, { family, logoScale });
+  const L = bugLayout(state, scale, measure, { family, logoScale, radiusK });
   const s = L.scale;
   const rowH = L.row.h;
   const midY = rowH / 2;
@@ -455,6 +456,7 @@ const upper = (v) => String(v ?? "").toLocaleUpperCase("tr-TR");
  */
 export function bottomBoardLayout(state, outW, outH, measure, opts = {}) {
   const family = opts.family || null;
+  const rk = Number.isFinite(opts.radiusK) ? Math.max(0, opts.radiusK) : 1;
   const logoK = Number(opts.logoScale) > 0 ? Number(opts.logoScale) : 1;
   const W = Number(outW) || BUG.stageW;
   const H = Number(outH) || BUG.stageH;
@@ -503,7 +505,7 @@ export function bottomBoardLayout(state, outW, outH, measure, opts = {}) {
   const dot = 7 * s;
   const innerW = dot + 10 * s + textW;
   const clockW = innerW + B.clockPad * 2 * s;
-  const clock = { x: (W - clockW) / 2, y: clockY, w: clockW, h: clockH, r: B.radius * s, text: clockStr, font: clockFont, spacing, finished, dot: { cx: (W - clockW) / 2 + B.clockPad * s + dot / 2, cy: clockY + clockH / 2, r: dot / 2 } };
+  const clock = { x: (W - clockW) / 2, y: clockY, w: clockW, h: clockH, r: B.radius * s * rk, text: clockStr, font: clockFont, spacing, finished, dot: { cx: (W - clockW) / 2 + B.clockPad * s + dot / 2, cy: clockY + clockH / 2, r: dot / 2 } };
   clock.textX = clock.dot.cx + dot / 2 + 10 * s;
 
   // Golcüler: iki ayrı kutu (boş taraf çizilmez), bandın 6 px üstünde.
@@ -551,7 +553,7 @@ export function bottomBoardLayout(state, outW, outH, measure, opts = {}) {
     top = ey;
   }
 
-  const band = { x, y: bandY, w, h: bandH, r: B.radius * s };
+  const band = { x, y: bandY, w, h: bandH, r: B.radius * s * rk };
   return { s, W, H, x, w, band, home, homeScore, medal, awayScore, away, clock, scorers, event, top, bottom: clockY + clockH };
 }
 
@@ -559,12 +561,12 @@ export function bottomBoardLayout(state, outW, outH, measure, opts = {}) {
  * Orta-alt skorbordu çizer. opts: { outW, outH, images: { logo, home, away },
  * homeColor, awayColor }. Dönüş: çizilen alanın sınırı.
  */
-export function drawBottomBoard(ctx, state, { outW, outH, images = {}, homeColor, awayColor, colors = null, family = null, logoScale = 1, measure: measureOpt = null } = {}) {
+export function drawBottomBoard(ctx, state, { outW, outH, images = {}, homeColor, awayColor, colors = null, family = null, logoScale = 1, measure: measureOpt = null, radiusK = 1 } = {}) {
   const C = colors ? { ...BOARD.colors, ...colors } : BOARD.colors;
   const measure = measureOpt || ((text, font) => { ctx.font = font; return ctx.measureText(text).width; });
   const W = outW || ctx.canvas?.width || BUG.stageW;
   const H = outH || ctx.canvas?.height || BUG.stageH;
-  const L = bottomBoardLayout(state, W, H, measure, { family, logoScale });
+  const L = bottomBoardLayout(state, W, H, measure, { family, logoScale, radiusK });
   const s = L.s;
   const b = L.band;
   const mid = b.y + b.h / 2;

@@ -1,7 +1,7 @@
 // Yayın Stüdyosu — TEKRAR DESTESİ (saf model): anlık tekrar iş akışı (vMix Instant Replay / EVS gibi).
 //
 // İş akışı: SEÇİLİ → ÖNİZLEMEDE → YAYINDA
-//   SEÇİLİ      tekrar / açı oynatma listesinde (sırayla yayına gidecek)
+//   SEÇİLİ      pozisyonun (gol / an) açısı seçili (pozisyon başına, tıklama sırası)
 //   ÖNİZLEMEDE  önizleme destesinde oynuyor (düzenlenen klip)
 //   YAYINDA     program destesinde oynuyor
 // İki deste vardır: ÖNİZLEME ve PROGRAM. "YAYINA AL" önizleme destesinin durumunu
@@ -10,8 +10,8 @@
 // işlem (hız, duraklat, sar, kare kare, yakınlaştır, açı değiştir, döngü) YALNIZ program
 // destesine ve ANINDA yayına uygulanır; önizleme destesi bağımsız kalır.
 //
-// Oynatma listesi: [{ replayId, angle }] — açık sıra (sürükle bırak), öğe başına açı / giriş /
-// çıkış / hız. Eski "seçim" ({ replayId: [açı] }) listeden türetilir (geri uyumluluk).
+// Pozisyonlar arası oynatma listesi YOKTUR: önizlemeye her zaman TEK pozisyon (seçili
+// açıları sırayla) gider; seçim { replayId: [açı] } (picks) pozisyon başınadır.
 
 export const DECK_RATES = Object.freeze([0.25, 0.5, 0.75, 1, 1.5, 2]);
 export const MIN_RATE = 0.25;
@@ -59,79 +59,107 @@ export const STAGE = Object.freeze({ idle: "idle", selected: "selected", preview
 export const STAGE_LABEL = Object.freeze({ idle: "", selected: "SEÇİLİ", preview: "ÖNİZLEMEDE", air: "YAYINDA" });
 
 /**
- * Tekrarın (angle verilirse açının) durumu: YAYINDA > ÖNİZLEMEDE > SEÇİLİ > boşta.
- *   playlist: [{ replayId, angle }] · cursor: { replayId, angle } (önizleme) · air: { replayId, angle } | null
+ * Pozisyonun (angle verilirse açının) durumu: YAYINDA > ÖNİZLEMEDE > SEÇİLİ > boşta.
+ *   picks: { replayId: [açı] } (pozisyon başına seçim) · cursor: { replayId, angle } | { replayId, angles }
+ *   (önizlemedeki pozisyon) · air: { replayId, angle, angles? } | null (yayındaki)
  */
-export function stageOf({ replayId, angle = null, playlist = [], cursor = null, air = null } = {}) {
-  const hit = (x) => x && x.replayId === replayId && (angle == null || x.angle === angle);
+export function stageOf({ replayId, angle = null, picks = {}, cursor = null, air = null } = {}) {
+  const hit = (x) => x && x.replayId === replayId && (angle == null || x.angle === angle || (Array.isArray(x.angles) && x.angles.includes(angle)));
   if (hit(air)) return STAGE.air;
   if (hit(cursor)) return STAGE.preview;
-  if ((playlist || []).some(hit)) return STAGE.selected;
+  const p = picks?.[replayId] || [];
+  if (angle == null ? p.length > 0 : p.includes(angle)) return STAGE.selected;
   return STAGE.idle;
 }
 
-/* ───────────────────────── oynatma listesi ───────────────────────── */
+/* ───────────────────────── pozisyon başına açı seçimi ─────────────────────────
+ * Oynatma listesi YOK: her pozisyonun (gol / an) kendi seçili açıları vardır, tıklama
+ * sırasıyla (numaralı rozet). "ÖNİZLEMEYE GÖNDER" YALNIZ o pozisyonun seçili açılarını
+ * sırayla önizlemeye yükler (seçim yoksa program açısı); GEÇİŞ aynen onu yayına verir.
+ * Aynı seçim 1 dk sonra oyuncunun profiline gol klibi olarak yüklenir (useReplays). */
 
-const sameEntry = (a, b) => a.replayId === b.replayId && a.angle === b.angle;
-const hasUrl = (list, e) => {
-  const r = (list || []).find((x) => x.id === e.replayId);
-  return Boolean(r?.angles?.some((a) => a.angle === e.angle && a.url));
-};
+const playableIds = (replay) => (replay?.angles || []).filter((a) => a && a.url).map((a) => String(a.angle));
 
-/** Listeden eski biçim seçim: { replayId: [açı, …] } (liste sırasıyla). */
-export function selectionOf(playlist) {
+/** Pozisyonun seçili açıları (yalnız oynatılabilir olanlar, tıklama sırası). */
+export function picksOf(picks, replay) {
+  const have = playableIds(replay);
+  return ((replay && picks?.[replay.id]) || []).filter((a, i, l) => have.includes(a) && l.indexOf(a) === i);
+}
+
+/** Açıyı seç / bırak (sıra = tıklama sırası). Boş kalan pozisyon silinir. */
+export function togglePick(picks, replayId, angle) {
+  const cur = (picks || {})[replayId] || [];
+  const next = cur.includes(angle) ? cur.filter((a) => a !== angle) : [...cur, angle];
+  return setPicks(picks, replayId, next);
+}
+
+/** Pozisyonun seçimini değiştir (boş → silinir). */
+export function setPicks(picks, replayId, angles) {
+  const out = { ...(picks || {}) };
+  const list = (angles || []).filter((a, i, l) => typeof a === "string" && a && l.indexOf(a) === i);
+  if (list.length) out[replayId] = list; else delete out[replayId];
+  return out;
+}
+
+/** "Tümü": kayıt sırasıyla tüm açılar (önceden seçilenler başta, sıraları korunur). */
+export function pickAll(picks, replay) {
+  if (!replay?.id) return picks || {};
+  const cur = picksOf(picks, replay);
+  return setPicks(picks, replay.id, [...cur, ...playableIds(replay).filter((a) => !cur.includes(a))]);
+}
+
+/** Açı → sıra numarası (1…n). */
+export function pickNumbers(picks, replayId) {
   const out = {};
-  for (const e of playlist || []) (out[e.replayId] ||= []).push(e.angle);
+  ((picks || {})[replayId] || []).forEach((a, i) => { out[a] = i + 1; });
   return out;
 }
 
 /**
- * Seçimden (eski biçim) liste: önceki listenin sırası korunur, yeni girişler sona eklenir
- * (tekrarlar order ya da eskiden yeniye; açılar seçimdeki sırayla).
+ * Önizlemeye / yayına gidecek açılar: o pozisyonun seçili açıları (sırayla); seçim yoksa
+ * program açısı, o da yoksa ilk açı. → [açı] (boş: oynatılabilir açı yok)
  */
-export function playlistFromSelection(list, selection, { order = null, prev = [] } = {}) {
-  const want = [];
-  const byId = new Map((list || []).map((r) => [r.id, r]));
-  const rank = (id) => { const i = order ? order.indexOf(id) : -1; return i >= 0 ? i : Infinity; };
-  const ids = Object.keys(selection || {}).filter((id) => byId.has(id)).sort((a, b) => (rank(a) - rank(b)) || (num(byId.get(a).createdAt) - num(byId.get(b).createdAt)));
-  for (const id of ids) for (const angle of selection[id] || []) want.push({ replayId: id, angle });
-  const keep = (prev || []).filter((e) => want.some((w) => sameEntry(w, e)));
-  const add = want.filter((w) => !keep.some((e) => sameEntry(w, e)));
-  return [...keep, ...add].filter((e) => hasUrl(list, e));
+export function positionAngles(picks, replay, fallback = "program") {
+  const p = picksOf(picks, replay);
+  if (p.length) return p;
+  const have = playableIds(replay);
+  if (have.includes(fallback)) return [fallback];
+  return have.slice(0, 1);
 }
 
-/** Listede öğeyi taşı (sürükle bırak). */
-export function movePlaylist(playlist, from, to) {
-  const pl = [...(playlist || [])];
-  if (from < 0 || from >= pl.length) return pl;
-  const t = clamp(to, 0, pl.length - 1);
-  const [x] = pl.splice(from, 1);
-  pl.splice(t, 0, x);
-  return pl;
+/** Önizleme sırasında sıradaki açı (son açıdan sonra: döngüdeyse ilki, değilse null). */
+export function nextInSequence(angles, current, { loop = true } = {}) {
+  const l = angles || [];
+  if (!l.length) return null;
+  const i = l.indexOf(current);
+  if (i < 0) return l[0];
+  if (i + 1 < l.length) return l[i + 1];
+  return loop ? l[0] : null;
 }
 
-/** Listeye ekle / çıkar (aynı tekrar + açı bir kez). */
-export function togglePlaylist(playlist, entry) {
-  const pl = playlist || [];
-  return pl.some((e) => sameEntry(e, entry)) ? pl.filter((e) => !sameEntry(e, entry)) : [...pl, { replayId: entry.replayId, angle: entry.angle }];
+/** Pozisyonlar arasında önceki / sonraki (liste en yeni önce: dir +1 → daha eski). */
+export function positionStep(list, currentId, dir, { kind = null } = {}) {
+  const l = (list || []).filter((r) => playableIds(r).length && (!kind || r.kind === kind));
+  if (!l.length) return null;
+  const i = l.findIndex((r) => r.id === currentId);
+  if (i < 0) return l[0];
+  return l[Math.max(0, Math.min(l.length - 1, i + (dir > 0 ? 1 : -1)))];
 }
 
-/** Öğenin açısını değiştir (listede zaten varsa yer değiştirmez, eskisi çıkar). */
-export function setPlaylistAngle(playlist, index, angle) {
-  const pl = [...(playlist || [])];
-  const e = pl[index];
-  if (!e || e.angle === angle) return pl;
-  const next = { ...e, angle };
-  const dup = pl.findIndex((x, i) => i !== index && sameEntry(x, next));
-  pl[index] = next;
-  if (dup >= 0) pl.splice(dup, 1);
-  return pl;
-}
-
-/** Tekrarın listedeki sıra numaraları (açı → 1…n). */
-export function sequenceOf(playlist, replayId) {
-  const out = {};
-  (playlist || []).forEach((e, i) => { if (e.replayId === replayId) out[e.angle] = i + 1; });
+/**
+ * Ağır çekim rampası: from → to hız basamakları (ms süresince, stepMs aralıkla; son
+ * basamak tam to). → [{ at, rate }]
+ */
+export function rampSteps(from, to, ms = 800, stepMs = 80) {
+  const a = clampRate(from);
+  const b = clampRate(to);
+  const n = Math.max(1, Math.round(num(ms, 800) / Math.max(16, num(stepMs, 80))));
+  const out = [];
+  for (let i = 1; i <= n; i += 1) {
+    const p = i / n;
+    const e = p < 0.5 ? 2 * p * p : 1 - ((-2 * p + 2) ** 2) / 2; // yumuşak giriş / çıkış
+    out.push({ at: Math.round((ms * i) / n), rate: i === n ? b : Math.round((a + (b - a) * e) * 100) / 100 });
+  }
   return out;
 }
 

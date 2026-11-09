@@ -13,12 +13,14 @@ import { clockText } from "../../../lib/studio/scorebug";
 import { eventToForm, manageEventLabel, pitchState, rejiEventRows } from "../../../lib/studio/manage";
 import { flowButtons } from "../manage/rejiLogic";
 import {
-  CARD_REASONS, GOAL_KINDS, PENALTY_RESULTS, STAT_CODES, cardBack, cardForm, cardPickColor, cardPickPlayer, cardPickReason, cardPickTeam, cardStart,
+  CARD_REASONS, GOAL_KINDS, assistWanted, goalHasAssistStep, PENALTY_RESULTS, STAT_CODES, cardBack, cardForm, cardPickColor, cardPickPlayer, cardPickReason, cardPickTeam, cardStart,
   evBack, evForm, evPickPlayer, evPickTeam, evPickType, evStart, eventTypeGroups, goalBack, goalEventSide, goalForms, goalPickAssist, goalPickKind,
   goalPickScorer, goalStart, other, penBack, penForm, penPickPlayer, penPickResult, penPickTeam, penPlayerSide, penStart, shareOf, subBack, subForm,
   subPickIn, subPickOut, subPickTeam, subStart, teamStats,
 } from "./flowLogic";
 import { Chip, FlowBar, FlowNote, Head, Kbd, PlayerGrid, Shell, TeamPick, hk, openPop, useIntent, useNow, usePress } from "./wkit";
+import { addPending, pendingForm, resolvePending, usePendingGoals } from "./goalPending";
+import { withOptions } from "./wOptions";
 
 const nameOf = (ctx, s) => (s === "home" ? ctx.event?.homeName || "Ev sahibi" : ctx.event?.awayName || "Deplasman");
 const scoreOf = (ctx, s) => (ctx.score ? ctx.score[s] : null);
@@ -34,36 +36,80 @@ async function save(ctx, forms, opts, setBusy, onDone) {
 }
 
 /* ═════════════════════════ GOL ═════════════════════════ */
+// Akış biçimleri (mode):
+//   "full"   tür → golcü → asist (asist düğme seçeneği "Asist sorulsun mu?" / Ayarlar › Reji / Maç'a göre;
+//            varsayılan: sorulmaz)
+//   "quick"  HIZLI GOL (tür): tür → golcü, asist hiç sorulmaz
+//   "kind"   GOL (yalnız tür): tür seçilir; golcü isteğe bağlı — "Golcü sonra" golü bekletir (sunucu
+//            golcüsüz gol kaydetmez), düğmedeki "golcü bekliyor" rozetiyle sonra seçilir.
 
-function GoalFlow({ ctx, item, onClose, setWide }) {
-  const it = useIntent(item);
-  const [st, setSt] = useState(() => goalStart(it.side || "home", it.code || null));
+/** Bu düğmede asist sorulur mu. */
+const asksAssist = (ctx, item, mode) => mode === "full" && assistWanted(item?.opts?.assist, ctx.ops?.mac?.askAssist);
+
+/** Bekleyen golün golcüsünü seç (golün kendi dakikasıyla kaydedilir). */
+function PendingPick({ ctx, pending, onClose }) {
+  const [busy, setBusy] = useState(false);
+  const evSide = goalEventSide(pending.side, pending.code);
+  const kind = GOAL_KINDS.find((k) => k.code === pending.code);
+  const pick = (id) => {
+    if (!id) return;
+    save(ctx, [pendingForm(pending, id, evSide)], { clipKey: pending.clipKey, side: pending.side }, setBusy, () => { resolvePending(pending.id); onClose(); });
+  };
+  const drop = () => { ctx.flow?.cancel?.(pending.clipKey, pending.side); resolvePending(pending.id); onClose(); };
+  return (
+    <div className={`wx-flow is-${pending.side}`} data-goal-pending={pending.id}>
+      <div className="wx-flow__top">
+        <span className={`wx-flow__team is-${pending.side}`}><i /> {nameOf(ctx, pending.side)} <b>GOL</b></span>
+        <small>{pending.minute != null ? `${pending.minute}'` : ""} · {kind?.label || manageEventLabel(pending.code)} · golcü bekliyor</small>
+      </div>
+      <PlayerGrid players={squadOf(ctx, evSide)} side={evSide} busy={busy} allowEmpty={false} skipLabel="Golü sil" onSkip={drop} onPick={pick} />
+    </div>
+  );
+}
+
+function GoalFlow({ ctx, item, onClose, setWide, mode = "full", intent = null }) {
+  // withOptions (seçenek paneli) niyeti önce okur ve intent olarak verir.
+  const own = useIntent(item);
+  const it = intent || own;
+  const pendingAll = usePendingGoals();
+  const pending = it.pendingId ? pendingAll.find((p) => p.id === it.pendingId) : null;
+  const [st, setSt] = useState(() => goalStart(it.side || "home", it.code || null, { askAssist: asksAssist(ctx, item, mode) }));
   const [busy, setBusy] = useState(false);
   const clip = useRef(it.clipKey ?? null);
-  const done = useRef(false);
-  const begun = useRef(Boolean(it.begun));
+  const done = useRef(Boolean(it.pendingId));
+  const begun = useRef(Boolean(it.begun) || Boolean(it.pendingId));
   useEffect(() => {
     // Akış çip / takım düğmesi olmadan açıldıysa (kısayol) klip şimdi başlar.
     if (!begun.current && liveOk(ctx)) { clip.current = ctx.flow?.begin?.(st.side) ?? null; begun.current = true; }
     return () => { if (!done.current) ctx.flow?.cancel?.(clip.current, st.side); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { setWide?.(st.step !== "kind"); }, [st.step, setWide]);
+  useEffect(() => { setWide?.(Boolean(pending) || st.step !== "kind"); }, [st.step, setWide, pending]);
   useEffect(() => {
-    if (st.step !== "done" || busy) return;
+    if (pending || st.step !== "done" || busy) return;
     save(ctx, goalForms(st), { clipKey: clip.current, side: st.side }, setBusy, () => { done.current = true; onClose(); });
   }, [st.step]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (pending) return <PendingPick ctx={ctx} pending={pending} onClose={onClose} />;
   if (!liveOk(ctx)) return <FlowNote tone="warn" icon="alert">{notLive}</FlowNote>;
   const evSide = goalEventSide(st.side, st.code);
   const kind = GOAL_KINDS.find((k) => k.code === st.code);
+  /** Golcü sonra: gol bekletilir (müzik + klip zaten başladı), rozetten golcü seçilir. */
+  const later = () => {
+    if (!st.code) return;
+    addPending({ matchId: ctx.match?.match?.id ?? null, side: st.side, code: st.code, minute: ctx.match?.minute ?? ctx.event?.minute ?? null, period: ctx.match?.period ?? null, clipKey: clip.current });
+    done.current = true;
+    ctx.toast?.(`${nameOf(ctx, st.side)} golü bekletildi (${kind?.label || "gol"}): golcüyü düğmedeki “golcü bekliyor” rozetinden seç; skor o an yazılır.`, { tone: "info", timeout: 6000 });
+    onClose();
+  };
   const steps = [
     { key: "kind", label: "Tür", value: kind?.label },
-    { key: "scorer", label: st.code === "GOAL_OWN" ? `Golü atan (${nameOf(ctx, evSide)})` : "Golcü", value: st.scorerId ? ctx.match?.nameOf?.(st.scorerId) : null },
-    ...(st.code !== "GOAL_OWN" && st.code !== "GOAL_PENALTY" ? [{ key: "assist", label: "Asist" }] : []),
+    { key: "scorer", label: st.code === "GOAL_OWN" ? `Golü atan (${nameOf(ctx, evSide)})` : mode === "kind" ? "Golcü (isteğe bağlı)" : "Golcü", value: st.scorerId ? ctx.match?.nameOf?.(st.scorerId) : null },
+    ...(goalHasAssistStep(st) ? [{ key: "assist", label: "Asist" }] : []),
   ];
+  const title = mode === "quick" ? "HIZLI GOL" : "GOL";
   return (
-    <div className={`wx-flow is-${st.side}`}>
+    <div className={`wx-flow is-${st.side}`} data-goal-mode={mode}>
       <div className="wx-flow__top">
-        <span className={`wx-flow__team is-${st.side}`}><i /> {nameOf(ctx, st.side)} <b>GOL</b></span>
+        <span className={`wx-flow__team is-${st.side}`}><i /> {nameOf(ctx, st.side)} <b>{title}</b></span>
         <small>{minute(ctx)}{clip.current ? " · klip kaydedildi" : ""}</small>
       </div>
       <FlowBar steps={steps} step={st.step === "done" ? steps[steps.length - 1].key : st.step} onBack={() => setSt(goalBack)} busy={busy} />
@@ -72,7 +118,13 @@ function GoalFlow({ ctx, item, onClose, setWide }) {
           {GOAL_KINDS.map((k) => <Chip key={k.code} tone={k.tone} icon={k.icon} onClick={() => setSt((s) => goalPickKind(s, k.code))} sub={k.code === "GOAL_OWN" ? `${nameOf(ctx, other(st.side))} oyuncusu` : null}>{k.label}</Chip>)}
         </div>
       )}
-      {st.step === "scorer" && <PlayerGrid players={squadOf(ctx, evSide)} side={evSide} busy={busy} emptyLabel="Golcüsüz kaydet" onPick={(id) => setSt((s) => goalPickScorer(s, id))} />}
+      {st.step === "scorer" && (
+        <>
+          {mode === "kind" && <button type="button" className="wx-primary wx-later" data-goal-later="" disabled={busy} onClick={later}><Icon name="clock" size={14} /> Golcü sonra · golü beklet</button>}
+          <PlayerGrid players={squadOf(ctx, evSide)} side={evSide} busy={busy} emptyLabel="Golcü sonra (beklet)" allowEmpty={mode !== "kind"}
+            onPick={(id) => (id ? setSt((s) => goalPickScorer(s, id)) : later())} />
+        </>
+      )}
       {st.step === "assist" && (
         <PlayerGrid players={squadOf(ctx, st.side)} side={st.side} busy={busy} exclude={[st.scorerId]} allowEmpty={false} skipLabel="Asist yok, kaydet" onSkip={() => setSt((s) => goalPickAssist(s, null))}
           onPick={(id) => setSt((s) => goalPickAssist(s, id))} />
@@ -89,44 +141,84 @@ function tapGoal(ctx, item, togglePop, side, code = null) {
   openPop(item, togglePop, { side, code, clipKey, begun: true });
 }
 
-function GoalSide({ ctx, item, w, h, togglePop, popOpen, side }) {
-  const press = usePress(() => tapGoal(ctx, item, togglePop, side), () => tapGoal(ctx, item, togglePop, side));
+/** "Golcü bekliyor" rozeti (tık: bekleyen golün golcüsünü seç). */
+function PendingBadge({ ctx, item, togglePop, side = null }) {
+  const all = usePendingGoals();
+  const mid = ctx.match?.match?.id ?? null;
+  const list = all.filter((p) => (side ? p.side === side : true) && (mid == null || p.matchId == null || String(p.matchId) === String(mid)));
+  if (!list.length) return null;
+  const stop = (e) => { e.stopPropagation(); };
+  return (
+    <span role="button" tabIndex={0} className="wx-pending" data-goal-pending-badge="" title="Golcüsü seçilmemiş gol: tıkla, golcüyü seç"
+      onPointerDown={stop} onPointerUp={stop} onContextMenu={stop}
+      onClick={(e) => { e.stopPropagation(); e.preventDefault(); openPop(item, togglePop, { pendingId: list[0].id }); }}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); openPop(item, togglePop, { pendingId: list[0].id }); } }}>
+      <Icon name="clock" size={10} /> {list.length} golcü bekliyor
+    </span>
+  );
+}
+
+const GOAL_LABEL = { full: "GOL", quick: "HIZLI GOL", kind: "GOL · TÜR" };
+const GOAL_HINT = {
+  full: (ask) => (ask ? "tür → golcü → asist" : "tür → golcü"),
+  quick: () => "tür → golcü (asist yok)",
+  kind: () => "tür → golcü sonra da seçilebilir",
+};
+
+function GoalSide({ ctx, item, w, h, togglePop, popOpen, side, mode = "full" }) {
+  const options = () => openPop(item, togglePop, { mode: "options" });
+  const press = usePress(() => tapGoal(ctx, item, togglePop, side), options);
   const sc = scoreOf(ctx, side);
   const big = h >= 2;
   return (
-    <Shell as="button" tone={side} w={w} h={h} state={popOpen ? "armed" : null} className="wx-goal" disabled={!liveOk(ctx)} {...press}
-      title={liveOk(ctx) ? `${nameOf(ctx, side)} golü: tür → golcü → asist (tekrar klibi hemen başlar)` : notLive}>
+    <Shell as="button" tone={side} w={w} h={h} state={popOpen ? "armed" : null} className={`wx-goal is-m-${mode}`} disabled={!liveOk(ctx)} {...press}
+      title={liveOk(ctx) ? `${nameOf(ctx, side)} golü: ${GOAL_HINT[mode](asksAssist(ctx, item, mode))} (tekrar klibi hemen başlar) · sağ tık: seçenekler` : notLive}>
       <Kbd k={hk(ctx, side === "home" ? "goalHome" : "goalAway")} />
-      <span className="wx-goal__ball"><Icon name="ball" size={big ? 30 : 20} strokeWidth={2.2} /></span>
-      <strong className="wx-goal__t">GOL</strong>
+      <span className="wx-goal__ball"><Icon name={mode === "quick" ? "zap" : "ball"} size={big ? 30 : 20} strokeWidth={2.2} /></span>
+      <strong className="wx-goal__t">{GOAL_LABEL[mode]}</strong>
       <small className="wx-goal__n">{nameOf(ctx, side)}</small>
       {(big || w >= 2) && sc != null && <b className="wx-goal__sc">{sc}</b>}
+      <PendingBadge ctx={ctx} item={item} togglePop={togglePop} side={side} />
     </Shell>
   );
 }
 
-function GoalBoth({ ctx, item, w, h, togglePop, popOpen }) {
-  const quick = w >= 3 ? GOAL_KINDS.filter((k) => ["GOAL_RIGHT_FOOT", "GOAL_LEFT_FOOT", "GOAL_HEADER", "GOAL_PENALTY"].includes(k.code)) : [];
+function GoalBoth({ ctx, item, w, h, togglePop, popOpen, mode = "full" }) {
+  // Yalnız tür düğmesinde tür çipleri her genişlikte (2+): tık = o türde gol, golcü isteğe bağlı.
+  const quick = mode === "kind" ? (w >= 3 ? GOAL_KINDS : GOAL_KINDS.filter((k) => ["GOAL_RIGHT_FOOT", "GOAL_LEFT_FOOT", "GOAL_HEADER", "GOAL_PENALTY"].includes(k.code)))
+    : w >= 3 ? GOAL_KINDS.filter((k) => ["GOAL_RIGHT_FOOT", "GOAL_LEFT_FOOT", "GOAL_HEADER", "GOAL_PENALTY"].includes(k.code)) : [];
+  const options = (e) => { e.preventDefault(); openPop(item, togglePop, { mode: "options" }); };
   const half = (s) => (
     <div key={s} className={`wx-gb__half is-${s}`}>
-      <button type="button" className="wx-gb__btn" disabled={!liveOk(ctx)} onClick={() => tapGoal(ctx, item, togglePop, s)} onContextMenu={(e) => { e.preventDefault(); tapGoal(ctx, item, togglePop, s); }}
-        title={`${nameOf(ctx, s)} golü`}>
+      <button type="button" className="wx-gb__btn" disabled={!liveOk(ctx)} onClick={() => tapGoal(ctx, item, togglePop, s)} onContextMenu={options}
+        title={`${nameOf(ctx, s)} golü: ${GOAL_HINT[mode](asksAssist(ctx, item, mode))} · sağ tık: seçenekler`}>
         <Kbd k={hk(ctx, s === "home" ? "goalHome" : "goalAway")} />
-        <Icon name="ball" size={h >= 2 ? 24 : 16} strokeWidth={2.2} />
-        <strong>GOL</strong>
+        <Icon name={mode === "quick" ? "zap" : "ball"} size={h >= 2 ? 24 : 16} strokeWidth={2.2} />
+        <strong>{GOAL_LABEL[mode]}</strong>
         <small>{nameOf(ctx, s)}</small>
       </button>
       {quick.length > 0 && <div className="wx-gb__kinds">{quick.map((k) => <button key={k.code} type="button" disabled={!liveOk(ctx)} onClick={() => tapGoal(ctx, item, togglePop, s, k.code)} title={`${k.label} gol · golcüyü seç`}>{k.label}</button>)}</div>}
+      <PendingBadge ctx={ctx} item={item} togglePop={togglePop} side={s} />
     </div>
   );
   return (
-    <Shell tone="plain" w={w} h={h} state={popOpen ? "armed" : null} className="wx-gb">
+    <Shell tone="plain" w={w} h={h} state={popOpen ? "armed" : null} className={`wx-gb is-m-${mode}`}>
       {half("home")}
       {h >= 2 && ctx.score && <span className="wx-gb__score"><b>{ctx.score.home}</b><i>–</i><b>{ctx.score.away}</b><small>{minute(ctx)}</small></span>}
       {half("away")}
     </Shell>
   );
 }
+
+/** Gol düğmelerinin seçenekleri. */
+const GOAL_OPTIONS = [
+  { key: "assist", label: "Asist sorulsun mu?", hint: "Golcüden sonra asist adımı · varsayılan: Ayarlar › İşletim › Reji / Maç (kapalı)", type: "select", def: "default", choices: [["default", "Ayarlardaki gibi"], ["ask", "Sor"], ["skip", "Sorma"]] },
+];
+const goalWidget = (popTitle, render, mode = "full") => withOptions(
+  { popTitle, popover: (p) => <GoalFlow {...p} mode={mode} />, render },
+  mode === "full" ? GOAL_OPTIONS : [],
+  { note: mode === "full" ? null : mode === "quick" ? "Hızlı gol: tür → golcü; asist sorulmaz." : "Yalnız tür: golcü seçmeden “Golcü sonra” ile beklet, sonra rozetten seç." },
+);
 
 /* ═════════════════════════ KART ═════════════════════════ */
 
@@ -623,15 +715,23 @@ function StatsTile({ ctx, w, h }) {
 }
 
 export const REJI_WIDGETS = {
-  goalProHome: { popTitle: "GOL · tür → golcü → asist", popover: (p) => <GoalFlow {...p} />, render: (p) => <GoalSide {...p} side="home" /> },
-  goalProAway: { popTitle: "GOL · tür → golcü → asist", popover: (p) => <GoalFlow {...p} />, render: (p) => <GoalSide {...p} side="away" /> },
-  goalProBoth: { popTitle: "GOL · tür → golcü → asist", popover: (p) => <GoalFlow {...p} />, render: (p) => <GoalBoth {...p} /> },
+  goalProHome: goalWidget("GOL · tür → golcü (→ asist)", (p) => <GoalSide {...p} side="home" />),
+  goalProAway: goalWidget("GOL · tür → golcü (→ asist)", (p) => <GoalSide {...p} side="away" />),
+  goalProBoth: goalWidget("GOL · tür → golcü (→ asist)", (p) => <GoalBoth {...p} />),
+  // Hızlı gol (tür): tür → golcü, asist hiç sorulmaz
+  goalQuickHome: goalWidget("HIZLI GOL · tür → golcü", (p) => <GoalSide {...p} side="home" mode="quick" />, "quick"),
+  goalQuickAway: goalWidget("HIZLI GOL · tür → golcü", (p) => <GoalSide {...p} side="away" mode="quick" />, "quick"),
+  goalQuickBoth: goalWidget("HIZLI GOL · tür → golcü", (p) => <GoalBoth {...p} mode="quick" />, "quick"),
+  // Gol (yalnız tür): tür seçilir, golcü sonra
+  goalKindHome: goalWidget("GOL · yalnız tür (golcü sonra)", (p) => <GoalSide {...p} side="home" mode="kind" />, "kind"),
+  goalKindAway: goalWidget("GOL · yalnız tür (golcü sonra)", (p) => <GoalSide {...p} side="away" mode="kind" />, "kind"),
+  goalKindBoth: goalWidget("GOL · yalnız tür (golcü sonra)", (p) => <GoalBoth {...p} mode="kind" />, "kind"),
   cardPro: { popTitle: "Kart · renk → takım → oyuncu → neden", popover: (p) => <CardFlow {...p} />, render: (p) => <CardTile {...p} /> },
   subPro: { popTitle: "Oyuncu değişikliği", popover: (p) => <SubFlow {...p} />, render: (p) => <SubTile {...p} /> },
   penaltyPro: { popTitle: "Penaltı", popover: (p) => <PenFlow {...p} />, render: (p) => <PenTile {...p} /> },
   statPro: { popTitle: "Olay · takım → oyuncu", popover: (p) => <EventFlow {...p} />, render: (p) => <StatTile {...p} /> },
   eventPro: { popTitle: "Olay gir · tür → takım → oyuncu", popover: (p) => <EventFlow {...p} />, render: (p) => <EventTile {...p} /> },
-  scorePro: { popTitle: "GOL · tür → golcü → asist", popover: (p) => <GoalFlow {...p} />, render: (p) => <ScoreTile {...p} /> },
+  scorePro: { popTitle: "GOL · tür → golcü (→ asist)", popover: (p) => <GoalFlow {...p} />, render: (p) => <ScoreTile {...p} /> },
   clockPro: { render: (p) => <ClockPro {...p} /> },
   periodPro: { render: (p) => <PeriodTile {...p} /> },
   eventLog: { popTitle: "Olayı düzenle", popover: (p) => <EventEdit {...p} />, render: (p) => <LogTile {...p} /> },

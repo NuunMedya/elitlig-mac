@@ -14,7 +14,7 @@
 //           studio:listScreens, studio:selectScreen, studio:start, studio:stop,
 //           studio:restartEncoder (reason, { videoCopy? }), studio:health, studio:network (RTMP aktarıcısı, relay.js),
 //           studio:saveClip, studio:listClips, studio:deleteClip,
-//           studio:uploadClip, studio:revealClip,
+//           studio:uploadClip, studio:uploadThrottle (yayın öncelikli hız / duraklat / iptal), studio:revealClip,
 //           studio:angles:start, studio:angles:stop, studio:angles:status,
 //           studio:saveReplay, studio:listReplays, studio:getReplay,
 //           studio:updateReplay, studio:deleteReplay, studio:revealReplay,
@@ -54,15 +54,19 @@ const { createAngles } = require("./angles");
 const { createReplayStore } = require("./replays");
 const { createRenderer, pruneHighlights } = require("./render");
 const { uploadHighlight, deleteHighlight, putFile } = require("./highlights");
+const { createUploadGovernor } = require("./uploadgov");
 const { createUploadLog, withUploadLog } = require("./uploadlog");
 const { serveStudio, REPLAY_ID } = require("./scheme");
 const { createDiagnostics } = require("./diag");
+const { runUplinkTest } = require("./speedtest");
 const { remuxParts, defaultRecordDir, createSettings } = require("./localrecord");
 const { createInterviews } = require("./interview");
 const { createLedManager } = require("./led");
 const { createMediaLibrary, dialogFilters } = require("./media");
 const ff = require("./ffmpeg");
 const { registerLive } = require("./live");
+const { createOutMute } = require("./outmute");
+const { createMusicHost } = require("./musichost");
 
 const DAY_MS = 24 * 3600 * 1000;
 const LIVE_UPLOAD_BYTES_PER_SEC = 250 * 1024; // ≈ 2 Mbit/sn: yayın sürerken gol klibi yüklemesi
@@ -124,6 +128,8 @@ function registerStudio({
   });
   const uploadApi = withUploadLog(api, uploadLog);
   const loggedPut = withUploadLog.put(putFile, uploadLog);
+  // [gol-klip] Yayın öncelikli yükleme: arayüz yayın sağlığına göre hız / duraklatma gönderir.
+  const uploadGov = createUploadGovernor();
   /** Sunucuya hiç gitmeden düşen deneme (maç / olay yok, dosya yok, oturum kapalı …) da günlüğe. */
   const trackUpload = async (kind, endpoint, payload, fn) => {
     const before = uploadLog.size();
@@ -158,6 +164,9 @@ function registerStudio({
   const ffmpegPath = () => lastFfmpegPath || "ffmpeg";
   const engine = createStudioEngine({
     getFfmpeg, tempRoot: path.join(tempRoot, "program"), log, diag: diagnostics,
+    qualityTuning: true,
+    // 2.21.0: RTMP(S) Node yayıncısıyla (rtmppub.js; 4096 baytlık parçalar, tek yazma). Bağlanamazsa ffmpeg'e döner.
+    relayOptions: { publisher: "node" },
     remuxLocal: ({ parts, outFile, ffmpegPath: bin }) => remuxParts({ parts, outFile, ffmpegPath: bin || ffmpegPath() }),
   });
   const angles = createAngles({ getFfmpeg, tempRoot: path.join(tempRoot, "angles"), log, diag: diagnostics });
@@ -259,9 +268,24 @@ function registerStudio({
 
   // getDisplayMedia: arayüz kaynağı kendisi seçer (studio.selectScreen), sistem seçicisi açılmaz.
   let selectedSource = null;
+  // Müzik çalar "Yayına da ver" (musichost.js): gizli müzik penceresinin sesi (sekme sesi
+  // yakalama, Windows + macOS) ya da yalnız Windows'ta bütün sistem sesi (loopback).
+  const musicHost = createMusicHost({ BrowserWindow, ipcMain, log: (...a) => log(...a) });
+  musicHost.register();
+  // Dışarı giden tüm sesleri kapat (yerel hoparlör / kulaklık; yayın karışımı etkilenmez): outmute.js
+  const outMute = createOutMute({ BrowserWindow, ipcMain, app, log: (...x) => log(...x) });
+  outMute.register();
   ses.setDisplayMediaRequestHandler((request, callback) => {
     const origin = request.securityOrigin || request.frame?.url || "";
     if (!isOwnUrl(origin) && !isOwnUrl(request.frame?.url || "")) { callback({}); return; }
+    const music = musicHost.takeCapture();
+    if (music?.mode === "frame") { callback({ video: music.frame, audio: music.frame, enableLocalEcho: true }); return; }
+    if (music?.mode === "loopback") {
+      desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } })
+        .then((sources) => (sources[0] ? callback({ video: sources[0], audio: "loopback" }) : callback({})))
+        .catch(() => callback({}));
+      return;
+    }
     desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 0, height: 0 } })
       .then((sources) => {
         const source = sources.find((s) => s.id === selectedSource) || sources.find((s) => s.id.startsWith("screen:")) || sources[0];
@@ -385,6 +409,18 @@ function registerStudio({
   ipcMain.handle("studio:health", () => engine.health());
   // RTMP aktarıcısının ayrıntılı durumu (status.network ile aynı) | null.
   ipcMain.handle("studio:network", () => engine.network());
+  // Bağlantı testi (speedtest.js): YouTube giriş sunucusuna gecikme + tek bağlantılı yükleme hızı.
+  let speedTestRun = null;
+  ipcMain.handle("studio:speedTest", async (_e, opts = {}) => {
+    if (speedTestRun) return speedTestRun;
+    const endpoint = typeof opts?.endpoint === "string" && /^https?:\/\//i.test(opts.endpoint) ? opts.endpoint : undefined;
+    const ingestHost = typeof opts?.ingestHost === "string" && /^[a-z0-9.-]{1,253}$/i.test(opts.ingestHost) ? opts.ingestHost : undefined;
+    speedTestRun = runUplinkTest({ endpoint, ingestHost, ingestPort: Number(opts?.ingestPort) > 0 ? Number(opts.ingestPort) : undefined })
+      .then((r) => { try { diagnostics.write("program", "bağlantı testi", { uploadKbps: r.uploadKbps, rttMs: r.rttMs, samples: r.samples.length, error: r.error?.code || null }); } catch { /* yoksay */ } return r; })
+      .catch((e) => ({ ok: false, error: { code: "NETWORK", message: e.message } }))
+      .finally(() => { speedTestRun = null; });
+    return speedTestRun;
+  });
 
   /* --------------------------------- açılar --------------------------------- */
 
@@ -471,14 +507,19 @@ function registerStudio({
       // eski sunucuda çok parçalı yola düşer. Her adım yükleme günlüğüne yazılır.
       // [gol-klip] Canlı yayın sürerken klip ~2 Mbit/sn ile gönderilir: tam hızda PUT, yayınla
       // aynı yükleme hattını doldurup RTMP kuyruğunu taşırıyordu (gol anlarında kare atlama / kopma).
-      const onAirNow = engine.active() && engine.status()?.recordOnly === false;
-      const putImpl = onAirNow ? (url, o = {}) => loggedPut(url, { ...o, maxBytesPerSec: LIVE_UPLOAD_BYTES_PER_SEC }) : loggedPut;
+      // [yayın öncelikli] Hız her an değişebilir: arayüz (useReplays › uploadGuard) yayın
+      // sağlığına göre studio:uploadThrottle ile sınır / duraklatma gönderir; arayüz sessizse
+      // yayın sürerken güvenli sabit hız, yayın yoksa sınırsız.
+      const onAirNow = () => engine.active() && engine.status()?.recordOnly === false;
+      const putImpl = (url, o = {}) => loggedPut(url, { ...o, throttleStream: () => uploadGov.stream(() => (onAirNow() ? LIVE_UPLOAD_BYTES_PER_SEC : 0)) });
       return uploadGoalClip(uploadApi, p, {
         replays, clips, putImpl, isReplayId: (v) => REPLAY_ID.test(String(v || "")),
         emitProgress: (pr) => broadcast("studio:uploadProgress", pr),
       });
     });
   });
+  /** [gol-klip] Yükleme hız sınırı: { kbps, paused } · { reset } · { cancel } · null → durum. */
+  ipcMain.handle("studio:uploadThrottle", (_e, opts = null) => uploadGov.set(opts || null));
   ipcMain.handle("studio:revealClip", (_e, name) => {
     const file = REPLAY_ID.test(String(name || "")) ? replayAsClip(replays.get(name))?.path : clips.resolve(name);
     if (!file || !fs.existsSync(file)) return false;

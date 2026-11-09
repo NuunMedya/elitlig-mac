@@ -19,8 +19,11 @@ import {
 import {
   VISIBILITY_KEYS, buildGraphicsSnapshot, normalizeVisibility, normalizeVisibilityValue, patchMatchGraphics, preloadImages, readMatchGraphics, snapshotImageUrls,
 } from "../../../lib/studio/graphics";
-import { LED_MODES, SCOREBOARD_VARIANTS, isWebVariant, normalizeLedMode, normalizeVariant } from "../../../lib/studio/graphics/variants";
+import { LED_MODES, SCOREBOARD_VARIANTS, initialViewFor, isWebVariant, normalizeLedMode, normalizeVariant } from "../../../lib/studio/graphics/variants";
+import { applyPackageToSnapshot, findPackage, materializePackage } from "../../../lib/studio/graphics/packages";
+import { qrOverlay } from "../../../lib/studio/links";
 import { useDesk } from "../manage/useDesk";
+import { usePackageStore } from "./packageStore";
 import * as api from "./graphicsApi";
 import { useBranding } from "./useBranding";
 
@@ -59,6 +62,25 @@ export function useGraphics({ matchId, live } = {}) {
     }
     lastServer.current = serverOverlay;
   }, [serverOverlay]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* -------------- ilk açılış: skorboard ve LED "Maç öncesi" kartıyla başlar -------------- */
+  // Maç bu bilgisayarda ilk kez açılınca (kayıtta initView yok) ve maç başlamamışsa program grafiği ve
+  // LED "Maç öncesi" görünümüyle başlar; eşitleme açıksa web kaplaması / LED de aynı moda alınır.
+  // Operatör skorboarda geçince seçim maç başına saklanır (yeniden açılışta korunur).
+  const initDone = useRef(null);
+  useEffect(() => {
+    if (!id || !match || initDone.current === id) return;
+    initDone.current = id;
+    const cur = readMatchGraphics(id);
+    if (cur.initView) return;
+    const view = cur.variant || cur.ledMode ? null : initialViewFor(match);
+    patchLocal({ initView: Date.now(), ...(view ? { variant: view, ledMode: view } : {}) });
+    if (!view) return;
+    setVariantSince(Date.now());
+    if (cur.syncWeb === false) return;
+    lastServer.current = view;
+    Promise.all([api.setOverlayStatus(id, view), api.setLedStatus(id, view)]).then(() => live?.refresh?.()).catch(() => {});
+  }, [id, match]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ------------------------------ skorboard / LED ------------------------------ */
   const setScorebugVariant = useCallback(async (key, { web = syncWeb } = {}) => {
@@ -143,8 +165,45 @@ export function useGraphics({ matchId, live } = {}) {
   const teamCodes = useMemo(() => ({ home: local.teamCodes?.home || null, away: local.teamCodes?.away || null }), [local.teamCodes?.home, local.teamCodes?.away]);
   const setTeamCodes = useCallback((codes) => patchLocal({ teamCodes: { home: codes?.home || null, away: codes?.away || null } }), [patchLocal]);
 
+  /* ------------------------- grafik paketi (maç başına) ------------------------- */
+  // Etkin paket studio.gfxPackages.v1 deposunda (maç başına kimlik + takım renkleri);
+  // masaüstü ekleri (gömülü yazı tipi, açık palet, köşe, öğe renkleri, geçiş renkleri)
+  // anlık görüntüye girer — ana çizim ve program işçisi aynı görünümü çizer.
+  const [pkgStore] = usePackageStore();
+  const pkgRec = pkgStore.active[String(id || 0)] || null;
+  const pkgBase = pkgRec ? findPackage(pkgStore, pkgRec.id) : null;
+  const pkg = useMemo(() => (pkgBase ? materializePackage(pkgBase, { teams: pkgRec?.teams || null }) : null), [pkgBase, pkgRec?.teams?.home, pkgRec?.teams?.away]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Paket değişince eski görünüm yenisine karışır (0,7 sn): beginFade() değişiklikten hemen önce çağrılır.
+  const [fade, setFade] = useState(null);
+  const fadeTimer = useRef(null);
+  const beginFade = useCallback((ms = 700) => {
+    const cur = snapshotRef.current;
+    if (!cur?.branding) return;
+    setFade({ branding: cur.branding, brandingFor: cur.brandingFor || null, at: Date.now(), ms });
+    clearTimeout(fadeTimer.current);
+    fadeTimer.current = setTimeout(() => setFade(null), ms + 250);
+  }, []);
+  useEffect(() => () => clearTimeout(fadeTimer.current), []);
+  // Programda QR kartı (YouTube / maç sayfası bağlantısı), isteğe bağlı N sn.
+  const [qr, setQr] = useState(null);
+  const qrTimer = useRef(null);
+  const showQr = useCallback((url, opts = {}) => {
+    const v = qrOverlay(url, opts);
+    setQr(v);
+    clearTimeout(qrTimer.current);
+    if (v?.until) qrTimer.current = setTimeout(() => setQr((cur) => (cur === v ? null : cur)), v.until - Date.now() + 500);
+    return Boolean(v);
+  }, []);
+  const hideQr = useCallback(() => {
+    clearTimeout(qrTimer.current);
+    // Kısa çıkış hareketi için bitişi şimdiye çek.
+    setQr((cur) => (cur ? { ...cur, until: Date.now() + 380 } : null));
+    qrTimer.current = setTimeout(() => setQr(null), 600);
+  }, []);
+  useEffect(() => () => clearTimeout(qrTimer.current), []);
+
   /* --------------------------------- snapshot --------------------------------- */
-  const snapshot = useMemo(() => buildGraphicsSnapshot(live, {
+  const baseSnapshot = useMemo(() => buildGraphicsSnapshot(live, {
     branding: brand.branding,
     defaultLogo: logoInline,
     variant,
@@ -155,6 +214,10 @@ export function useGraphics({ matchId, live } = {}) {
     interview: { onAir: Boolean(local.interviewOnAir), style: interviewStyle, title: iv.title, people: iv.people, sponsorId: iv.sponsorId, since: interviewSince },
     teamCodes,
   }), [live, brand.branding, variant, variantSince, visibility, desk.sponsors, local.subtitleOnAir, local.interviewOnAir, subtitleSettings, subtitleEpoch, interviewStyle, iv, interviewSince, teamCodes]);
+  const snapshot = useMemo(() => {
+    const s = applyPackageToSnapshot(baseSnapshot, pkg);
+    return fade || qr ? { ...s, ...(fade ? { fade } : {}), ...(qr ? { qr } : {}) } : s;
+  }, [baseSnapshot, pkg, fade, qr]);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   useEffect(() => { preloadImages(snapshotImageUrls(snapshot)); }, [snapshot]);
@@ -187,6 +250,11 @@ export function useGraphics({ matchId, live } = {}) {
     presets: brand.presets, presetsRemote: brand.presetsRemote,
     applyPreset: brand.applyPreset, savePreset: brand.savePreset, renamePreset: brand.renamePreset,
     deletePreset: brand.deletePreset, overwritePreset: brand.overwritePreset,
+    baseSnapshot, // paketsiz (galeri önizlemeleri paketi bunun üstüne uygular)
+    // grafik paketi (maç başına; uygulama Studio'daki usePackageControl ile)
+    package: pkg, packageId: pkg?.id || null, beginFade,
+    // programda QR kartı
+    qr, showQr, hideQr,
     // çizim
     snapshot, snapshotRef,
   };

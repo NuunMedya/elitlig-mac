@@ -38,7 +38,9 @@ export const avcCodecString = (width, height, fps, profile = "high") => {
  * Profil: High → Main → Baseline (bazı donanımlar High vermez).
  */
 export function videoEncoderCandidates({ width, height, fps, videoBitrateKbps, allowSoftware = false }) {
-  const base = { width, height, framerate: fps, bitrate: Math.round(videoBitrateKbps * 1000), avc: { format: "avc" } };
+  // contentHint "motion": kamera / spor görüntüsü (kodlayıcı akıcılığı korur; desteklemeyen tarayıcı alanı yok sayar).
+  // scalabilityMode yok (tek katman: tüm bit hızı tek akışa).
+  const base = { width, height, framerate: fps, bitrate: Math.round(videoBitrateKbps * 1000), avc: { format: "avc" }, contentHint: "motion" };
   const out = [];
   const accel = allowSoftware ? ["prefer-hardware", "no-preference"] : ["prefer-hardware"];
   for (const hardwareAcceleration of accel) {
@@ -48,6 +50,50 @@ export function videoEncoderCandidates({ width, height, fps, videoBitrateKbps, a
       }
     }
   }
+  return out;
+}
+
+/**
+ * Ara ses kodlamasının bit hızı (kbps): tarayıcı sesi Opus olarak kodlar (WebCodecs
+ * AudioEncoder ya da MediaRecorder), ffmpeg onu yayın için AAC'ye çevirir — iki kayıplı
+ * kodlama. Ara Opus, AAC hedefinin ≈ 1,5 katında (en az 192, en çok 384 kbps; 32'nin
+ * katı): ikinci kodlamaya neredeyse kayıpsız girer. AAC 192 → Opus 288 kbps.
+ */
+export const intermediateAudioKbps = (aacKbps) => {
+  const a = Number(aacKbps) > 0 ? Number(aacKbps) : 192;
+  return Math.min(384, Math.max(192, Math.round((a * 1.5) / 32) * 32));
+};
+
+/**
+ * Opus kodlayıcı yapılandırması (WebCodecs AudioEncoder): en yüksek karmaşıklık (10),
+ * genel ses / müzik kipi (konuşma kipi tribün ve müzikte bant genişliğini daraltır),
+ * 20 ms çerçeve. Desteklenmeyen alanlar tarayıcıda yok sayılır.
+ */
+export function opusEncoderConfig({ sampleRate = 48000, numberOfChannels = 2, aacKbps = 192 } = {}) {
+  return {
+    codec: "opus", sampleRate, numberOfChannels,
+    bitrate: intermediateAudioKbps(aacKbps) * 1000,
+    bitrateMode: "variable",
+    opus: { complexity: 10, frameDuration: 20000, application: "audio", signal: "music" },
+  };
+}
+
+/**
+ * Kodlayıcının bildirdiği renk uzayı (VideoDecoderConfig.colorSpace) → ana sürece
+ * gidecek yalın nesne; yalnız YUV matrisli (bt709 / smpte170m / bt470bg) bilgi kabul
+ * edilir (giriş karesinin RGB / sRGB değerleri yazılmaz). Yoksa null.
+ */
+export function encodedColorSpace(cs) {
+  if (!cs || typeof cs !== "object") return null;
+  const ok = (v, list) => (list.includes(v) ? v : undefined);
+  const matrix = ok(cs.matrix, ["bt709", "smpte170m", "bt470bg"]);
+  if (!matrix) return null;
+  const out = { matrix };
+  const primaries = ok(cs.primaries, ["bt709", "smpte170m", "bt470bg"]);
+  const transfer = ok(cs.transfer, ["bt709", "smpte170m"]);
+  if (primaries) out.primaries = primaries;
+  if (transfer) out.transfer = transfer;
+  if (typeof cs.fullRange === "boolean") out.fullRange = cs.fullRange;
   return out;
 }
 
@@ -128,6 +174,93 @@ export function createAudioClock(sampleRate, { maxDriftMs = 80 } = {}) {
     stats: () => ({ resyncs, driftMs: Math.round(drift) }),
   };
 }
+
+/**
+ * Ses bloğunun YAKALANDIĞI an (kare saatinin ms'si). AudioData.timestamp Chromium'da
+ * performance.now() ile aynı zaman tabanındadır (µs): okuma ana iş parçacığında geciktiğinde
+ * (gol anı: arayüz yoğun) "şimdi"yi kullanmak saati okuma gecikmesi kadar ileri itip sonra
+ * geri çekiyordu (sesin zaman damgasında boşluk + geriye gidiş). Zaman damgası bu tabanda
+ * değilse (fark > 10 sn) eski yol: okuma anı − blok süresi.
+ */
+export function audioCaptureMs({ dataTsUs, nowMs, t0Ms, durMs }) {
+  const cap = Number(dataTsUs) / 1000;
+  if (Number.isFinite(cap) && Math.abs(nowMs - cap) <= 10_000) return cap - t0Ms;
+  return nowMs - t0Ms - durMs;
+}
+
+/**
+ * Ses zaman çizelgesi (giriş blokları → kodlanmış paketler).
+ *
+ * NEDEN: Chromium'un AudioEncoder'ı (Opus) çıkış paketlerine GİRİŞ ZAMAN DAMGASINI değil,
+ * ilk girişten bu yana kodlanan ÖRNEK SAYISINI verir. Ana iş parçacığı birkaç saniye meşgul
+ * kaldığında (gol akışı) MediaStreamTrackProcessor ses bloklarını atar; kodlayıcının saati
+ * atılan süre kadar GERİDE kalır ve bir daha yetişmez. Ölçüldü (gerçek arayüz, xvfb): GOL'den
+ * sonra ses görüntünün ~6 sn gerisine düştü; ffmpeg ses / görüntüyü zamana göre harmanladığı
+ * için tüm çıkışı (RTMP, tekrar halkası) bu süre kadar bekletti → YouTube'a ~5 sn veri gitmedi,
+ * izleyicide gol anı atlandı. Burada her çıkış paketi kodlayıcıya giren örneklerin SIRASINDAN
+ * kendi giriş bloğuna eşlenir: zaman damgası o bloğun akış zamanıdır (atılan blok = boşluk,
+ * ffmpeg aresample doldurur; kayma birikmez).
+ *   input(durUs, streamMs)  kodlayıcıya verilen blok (süre µs, akış zamanı ms)
+ *   output(durUs)            sıradaki çıkış paketinin akış zamanı (ms) | null (eşlenemedi)
+ */
+export function createAudioTimeline({ maxSegments = 4000 } = {}) {
+  const segs = []; // { startUs (kodlanan örnek konumu), durUs, streamMs }
+  let head = 0;
+  let inUs = 0; // kodlayıcıya giren toplam süre
+  let outUs = 0; // çıkan paketlerin toplam süresi
+  return {
+    input(durUs, streamMs) {
+      const d = Math.max(0, Number(durUs) || 0);
+      if (!d) return;
+      segs.push({ startUs: inUs, durUs: d, streamMs });
+      inUs += d;
+      if (segs.length - head > maxSegments) head = segs.length - maxSegments;
+      if (head > 1024 && head * 2 > segs.length) { segs.splice(0, head); head = 0; }
+    },
+    output(durUs) {
+      const at = outUs;
+      outUs += Math.max(0, Number(durUs) || 0);
+      while (head < segs.length - 1 && segs[head].startUs + segs[head].durUs <= at) head += 1;
+      const s = segs[head];
+      if (!s || at < s.startUs - 1) return null;
+      return s.streamMs + Math.max(0, at - s.startUs) / 1000;
+    },
+    stats: () => ({ inMs: Math.round(inUs / 1000), outMs: Math.round(outUs / 1000) }),
+  };
+}
+
+/**
+ * Ses saati → duvar saati eşlemesi (ses işçisi). Blok, ses iş parçacığından işçiye birkaç ms
+ * içinde ulaşır; ulaşma anı − blok konumu = ofset. Gecikme titreşimi hep POZİTİF olduğundan
+ * son windowMs içindeki EN KÜÇÜK ofset gerçek ofsete en yakın olandır (saat kayması da izlenir).
+ * Ses bağlamı durup sürerse (aygıt değişimi) ofset kalıcı büyür: jumpMs'yi aşan yeni ofset
+ * holdMs boyunca sürerse pencere sıfırlanır.
+ *   push(frameMs, arrivalMs) → ofset (ms): akış zamanı = frameMs + ofset
+ */
+export function createCaptureClock({ windowMs = 8000, jumpMs = 250, holdMs = 1000 } = {}) {
+  let win = []; // { at, off }
+  let jumpSince = null;
+  return {
+    push(frameMs, arrivalMs) {
+      const off = arrivalMs - frameMs;
+      win.push({ at: arrivalMs, off });
+      while (win.length && arrivalMs - win[0].at > windowMs) win.shift();
+      let min = Infinity;
+      for (const x of win) if (x.off < min) min = x.off;
+      if (off - min > jumpMs) {
+        if (jumpSince === null) jumpSince = arrivalMs;
+        else if (arrivalMs - jumpSince >= holdMs) { win = win.filter((x) => x.at >= jumpSince); jumpSince = null; min = Infinity; for (const x of win) if (x.off < min) min = x.off; }
+      } else jumpSince = null;
+      return min;
+    },
+  };
+}
+
+/**
+ * Giriş blokları arasındaki boşluk (atılan ses): beklenen başlangıçtan bu kadar sonra geldiyse
+ * boşluk sayılır. → boşluk ms (0: yok).
+ */
+export const audioGapMs = (prevEndMs, startMs, toleranceMs = 25) => (prevEndMs == null ? 0 : startMs - prevEndMs > toleranceMs ? startMs - prevEndMs : 0);
 
 /** Kodlama yolu seçimi: ayar + destek → "webcodecs" | "legacy". */
 export function choosePipeline(setting, { webcodecs = false, hardware = false } = {}) {

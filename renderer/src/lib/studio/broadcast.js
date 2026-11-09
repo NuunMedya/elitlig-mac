@@ -7,7 +7,8 @@ export const QUALITY_PRESETS = [
   { key: "1080p30", label: "1080p · 30 fps", hint: "Güçlü bağlantı (≥ 8 Mbps)", width: 1920, height: 1080, fps: 30, videoBitrateKbps: 4500 },
   { key: "1080p60", label: "1080p · 60 fps", hint: "Fiber / kablolu (≥ 10 Mbps), güçlü Mac", width: 1920, height: 1080, fps: 60, videoBitrateKbps: 6000 },
 ];
-export const AUDIO_BITRATE_KBPS = 128;
+/** Yayın sesi (AAC-LC 48 kHz stereo): 192 kbps (128 kbps'de 16 kHz üstü belirgin kesilir; YouTube ≥ 128 ister). */
+export const AUDIO_BITRATE_KBPS = 192;
 export const presetOf = (key) => QUALITY_PRESETS.find((p) => p.key === key) || QUALITY_PRESETS[0];
 
 /* ------------------- kodlama: çözünürlük · fps · bit hızı (elle) ------------------- */
@@ -15,6 +16,7 @@ export const presetOf = (key) => QUALITY_PRESETS.find((p) => p.key === key) || Q
 export const RESOLUTION_CHOICES = [
   { key: "720p", label: "720p", width: 1280, height: 720 },
   { key: "1080p", label: "1080p", width: 1920, height: 1080 },
+  { key: "1440p", label: "1440p", width: 2560, height: 1440 },
 ];
 export const FPS_CHOICES = [30, 60];
 export const BITRATE_MIN_KBPS = 800;
@@ -25,26 +27,44 @@ export const BITRATE_PRESETS = [
   { kbps: 4500, label: "4,5 Mbps", hint: "1080p30 için iyi" },
   { kbps: 6000, label: "6 Mbps", hint: "1080p60 için iyi" },
   { kbps: 9000, label: "9 Mbps", hint: "Fiber, en net görüntü" },
+  { kbps: 12000, label: "12 Mbps", hint: "1080p60 üst sınırı (YouTube)" },
+  { kbps: 18000, label: "18 Mbps", hint: "1440p60 (YouTube 9–18 Mbps)" },
 ];
 
 /**
  * Çözünürlük + fps için önerilen bit hızı (kbps). YouTube önerisi (H.264):
- * 720p30 1,5–4, 720p60 2,25–6, 1080p30 4,5–9, 1080p60 6–9+ Mbps; hareketli
- * (futbol) görüntüde aralığın üst yarısı: blok blok görüntü olmasın.
+ * 720p30 1,5–4, 720p60 2,25–6, 1080p30 4,5–9, 1080p60 6–9+ (en çok 12),
+ * 1440p30 6–13, 1440p60 9–18 Mbps; hareketli (futbol) görüntüde aralığın üst
+ * yarısı: blok blok görüntü olmasın.
  */
 export function recommendedBitrate(resolution, fps) {
-  const hd = resolution === "1080p";
   const hi = Number(fps) >= 60;
-  if (hd) return hi ? 9000 : 6000;
+  if (resolution === "1440p") return hi ? 18000 : 12000;
+  if (resolution === "1080p") return hi ? 9000 : 6000;
   return hi ? 4500 : 3000;
 }
+
+/** Çözünürlüğe göre anlamlı üst bit hızı (kbps): üstü YouTube'da fark yaratmaz, bağlantıyı zorlar. */
+export const maxUsefulBitrate = (resolution) => (resolution === "1440p" ? 20000 : resolution === "1080p" ? 12000 : 7500);
 
 /** "Yayın kalitesi" hızlı ayarları (Yayın sekmesi ve Ayarlar › Yayın). */
 export const STREAM_QUALITY_PRESETS = [
   { key: "smooth", label: "Akıcı", detail: "720p · 60 fps · 4,5 Mbps", hint: "Hızlı hareket akıcı; ≥ 7 Mbps yükleme", resolution: "720p", fps: 60, bitrateKbps: 4500 },
   { key: "balanced", label: "Dengeli", detail: "1080p · 30 fps · 6 Mbps", hint: "Önerilen; ≥ 9 Mbps yükleme", resolution: "1080p", fps: 30, bitrateKbps: 6000 },
   { key: "high", label: "Yüksek", detail: "1080p · 60 fps · 9 Mbps", hint: "Fiber / kablolu; ≥ 14 Mbps yükleme", resolution: "1080p", fps: 60, bitrateKbps: 9000 },
+  { key: "ultra", label: "Çok yüksek", detail: "1080p · 60 fps · 12 Mbps", hint: "YouTube'un 1080p60 üst sınırı; ≥ 18 Mbps kararlı yükleme", resolution: "1080p", fps: 60, bitrateKbps: 12000, heavy: true },
+  { key: "qhd", label: "1440p", detail: "1440p · 60 fps · 18 Mbps", hint: "YouTube 1440p60 (9–18 Mbps); ≥ 27 Mbps kararlı yükleme, güçlü bilgisayar (donanım kodlayıcı)", resolution: "1440p", fps: 60, bitrateKbps: 18000, heavy: true },
 ];
+
+/**
+ * Ağır hızlı ayar uyarısı (yükleme hızı): ≥ 12 Mbps görüntüde, bağlantının kararlı
+ * olarak taşıması gereken hız ve ne olacağı. Ağır değilse null.
+ */
+export function heavyPresetWarning(enc) {
+  const v = Number(enc?.bitrateKbps) || 0;
+  if (v < 12000 && enc?.resolution !== "1440p") return null;
+  return `Bu kalite ≈ ${String(uploadNeedMbps(v)).replace(".", ",")} Mbps kararlı yükleme ister. Bağlantı yetmezse yayın takılır ve tekrar bağlanır; yayından önce hız testi yapın (kablolu bağlantı önerilir).`;
+}
 /** Kodlama ayarı bir hızlı ayara denk geliyorsa anahtarı, değilse null. */
 export const qualityPresetKey = (enc) => STREAM_QUALITY_PRESETS.find((p) => p.resolution === enc?.resolution && p.fps === Number(enc?.fps) && p.bitrateKbps === Number(enc?.bitrateKbps))?.key || null;
 
@@ -100,7 +120,8 @@ export function bitrateAdvice(enc) {
   const rec = recommendedBitrate(enc.resolution, enc.fps);
   const v = Number(enc.bitrateKbps) || 0;
   if (v < rec * 0.6) return `Bu çözünürlük için düşük: görüntü bloklanabilir (önerilen ≈ ${rec} kbps).`;
-  if (v > 12000) return "YouTube 1080p için 12 Mbps'ın üstü gereksiz; bağlantı zorlanabilir.";
+  const max = maxUsefulBitrate(enc.resolution);
+  if (v > max) return `YouTube ${enc.resolution || "720p"} için ${String(Math.round(max / 100) / 10).replace(".", ",")} Mbps'ın üstü gereksiz; bağlantı zorlanabilir.`;
   return null;
 }
 
@@ -368,6 +389,85 @@ export function streamHealth({ status = {}, draw = {}, targetFps = 30, encoding 
     sentKbps: Number.isFinite(network?.sentKbps) ? network.sentKbps : null,
     reconnects: Number(network?.reconnects) || 0,
     lastError: network?.lastError?.message || null,
+  };
+}
+
+const mbpsText = (kbps) => `${(Number(kbps) / 1000).toFixed(1).replace(".", ",")} Mbps`;
+
+/**
+ * Ağ kuyruğu (sn): aktarıcıda bekleyen veri / gelen bit hızı. Node yayıncısında
+ * pendingBytes = aktarıcı ffmpeg girişi + soket kuyruğu (çekirdeğe verilemeyen).
+ */
+export function networkQueueSec(network) {
+  const n = network || null;
+  const kbps = Number(n?.inKbps) || Number(n?.sentKbps) || 0;
+  const bytes = Number(n?.pendingBytes) || 0;
+  return kbps > 0 ? Math.round(((bytes * 8) / (kbps * 1000)) * 10) / 10 : 0;
+}
+
+/**
+ * Darboğaz sınıflaması (Yayın tanılama): sorun nerede?
+ *   network  "Ağ yetmiyor"          — aktarıcı kare atlıyor / ağ kuyruğu büyüyor / sunucuya ulaşan < üretilen
+ *   encoder  "Kodlayıcı yetişmiyor" — WebCodecs kuyruğu ≥ 3 kare ya da kodlanan fps < çizilen; eski yolda ffmpeg hızı < 0,95×
+ *   busy     "Bilgisayar meşgul"     — ana iş parçacığı takılıyor (çizim takılması)
+ *   draw     "Çizim yetişmiyor"      — program çizimi hedef fps'in altında
+ *   ok       "Sorun yok"
+ * Sıra önemlidir: ağ yetmezse kodlayıcı / çizim normal görünür; kodlayıcı takılırsa ağ boş kalır.
+ * → { key, label, detail, tone }
+ */
+export function bottleneckCause({ status = {}, draw = {}, enc = null, targetFps = 30, encoding = false } = {}) {
+  if (!encoding) return { key: "idle", label: "Yayın kapalı", detail: "", tone: "idle" };
+  const n = status.network || null;
+  const fps = Number(targetFps) || 30;
+  if (n && (n.state === "down" || n.state === "connecting" || status.state === "reconnecting")) {
+    return { key: "network", label: "Ağ yetmiyor", detail: n.lastError?.message || "Yayın sunucusuna yeniden bağlanılıyor.", tone: "bad" };
+  }
+  if (n && n.state === "up") {
+    const q = networkQueueSec(n);
+    const produced = Number(n.inKbps) || 0;
+    const reach = Number.isFinite(n.ackKbps) ? n.ackKbps : Number.isFinite(n.uplinkKbps) ? n.uplinkKbps : Number(n.sentKbps) || 0;
+    const behind = produced > 300 && reach > 0 && reach < produced * 0.85;
+    if (n.dropping || q >= 2 || (behind && q >= 1)) {
+      const parts = [];
+      if (reach > 0) parts.push(`bağlantı ≈ ${mbpsText(reach)} taşıyor`);
+      if (produced > 0) parts.push(`yayın ${mbpsText(produced)}`);
+      parts.push(`kuyruk ${String(q).replace(".", ",")} sn`);
+      return { key: "network", label: "Ağ yetmiyor", detail: `${parts.join(", ")}${n.dropping ? "; kareler atlanıyor" : ""}. Bit hızını düşürün ya da kablolu bağlantı kullanın.`, tone: n.dropping || q >= 4 ? "bad" : "warn" };
+    }
+  }
+  const drawFps = Number(draw.fps) || 0;
+  if (enc && enc.pipeline === "webcodecs") {
+    const encFps = Number(enc.encodedFps) || 0;
+    if (Number(enc.queue) >= 3 || (drawFps >= fps * 0.9 && encFps > 0 && encFps < Math.min(drawFps, fps) * 0.9)) {
+      return { key: "encoder", label: "Kodlayıcı yetişmiyor", detail: `kodlanan ${encFps} fps (çizilen ${drawFps}), kuyruk ${enc.queue || 0} kare. Bit hızını / çözünürlüğü düşürün${enc.hardware ? "" : " ya da donanım kodlayıcıyı açın"}.`, tone: "warn" };
+    }
+  } else if (Number.isFinite(Number(status.speed)) && Number(status.speed) < 0.95) {
+    return { key: "encoder", label: "Kodlayıcı yetişmiyor", detail: `ffmpeg hızı ${Number(status.speed).toFixed(2)}× (gerçek zaman 1,00×).`, tone: "warn" };
+  }
+  if (Number(draw.stalls) > 0) return { key: "busy", label: "Bilgisayar meşgul", detail: `son saniyede ${draw.stalls} takılma (en uzun çizim ${Number(draw.drawMs) || 0} ms). Başka uygulamaları kapatın.`, tone: "warn" };
+  if (drawFps && drawFps < fps * 0.85) return { key: "draw", label: "Çizim yetişmiyor", detail: `program ${drawFps} / ${fps} fps. Katman / efekt sayısını azaltın.`, tone: "warn" };
+  return { key: "ok", label: "Sorun yok", detail: "", tone: "ok" };
+}
+
+/**
+ * Bağlantı testi sonucu → öneri (OBS otomatik yapılandırması gibi): tek bağlantının ölçülen
+ * yükleme hızının ≈ %75'i kullanılır (dalgalanma + ses + RTMP payı); ona sığan en yüksek
+ * hızlı ayar, sığmıyorsa doğrudan bit hızı. → { key, label, bitrateKbps, usableKbps, text } | null
+ */
+export function speedTestAdvice(result, audioKbps = AUDIO_BITRATE_KBPS) {
+  const up = Number(result?.uploadKbps) || 0;
+  if (!result?.ok || up <= 0) return null;
+  const usable = Math.round(up * 0.75);
+  const fits = [...STREAM_QUALITY_PRESETS].reverse().find((p) => p.bitrateKbps + audioKbps <= usable);
+  const lower = Math.max(BITRATE_MIN_KBPS, Math.floor((usable - audioKbps) / 100) * 100);
+  const pick = fits || STREAM_QUALITY_PRESETS[0];
+  const rtt = Number.isFinite(result.rttMs) ? ` · YouTube'a gecikme ${result.rttMs} ms` : "";
+  return {
+    key: pick.key,
+    label: fits ? `${pick.label} (${pick.detail})` : `${pick.label}, bit hızı ≈ ${lower} kbps`,
+    bitrateKbps: fits ? pick.bitrateKbps : Math.min(pick.bitrateKbps, lower),
+    usableKbps: usable,
+    text: `Yükleme ≈ ${mbpsText(up)} (tek bağlantı)${rtt}. Önerilen: ${fits ? `${pick.label} · ${pick.detail}` : `${pick.label} · ${lower} kbps`}.`,
   };
 }
 

@@ -1,14 +1,14 @@
 /* Hazır panel kartları (./TemplateCards): Kutu ekle › Hazır panel ve Ayarlar › Yerleşim. */
 .lw-cat__grid.is-tpl { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 .lw-card.is-tpl { position: relative; grid-template-columns: 96px minmax(0, 1fr); grid-template-areas: "pic t" "pic btn"; cursor: default; align-items: start; }
-.lw-card.is-tpl .lw-tpic { grid-area: pic; width: 96px; height: auto; max-height: 86px; border-radius: 6px; background: rgba(0, 0, 0, 0.35); }
+.lw-card.is-tpl .lw-tpic { grid-area: pic; width: 96px; height: auto; max-height: 86px; border-radius: 6px; background: rgba(var(--shade-rgb), 0.35); }
 .lw-card.is-tpl > button { grid-area: btn; justify-self: start; }
 .lw-card.is-tpl .lw-card__on { position: absolute; top: 6px; right: 8px; }
-.lw-tpic rect { fill: rgba(255, 255, 255, 0.18); }
-.lw-tpic rect.is-reji { fill: rgba(138, 108, 240, 0.75); }
-.lw-tpic rect.is-tekrar { fill: rgba(192, 38, 211, 0.7); }
-.lw-tpic rect.is-sahne { fill: rgba(34, 197, 94, 0.65); }
-.lw-tpic rect.is-led { fill: rgba(59, 130, 246, 0.75); }
-.lw-tpic rect.is-mac { fill: rgba(245, 197, 24, 0.7); }
+.lw-tpic rect { fill: var(--faint); }
+.lw-tpic rect.is-reji { fill: var(--acc); }
+.lw-tpic rect.is-tekrar { fill: var(--acc); }
+.lw-tpic rect.is-sahne { fill: var(--green-ink); }
+.lw-tpic rect.is-led { fill: var(--blue-ink); }
+.lw-tpic rect.is-mac { fill: var(--amber-text); }
 .lw-tplset { display: flex; flex-direction: column; gap: 10px; }
 .lw-tplset .lw-cat__sec h6 { margin: 0 0 6px; }

@@ -1,52 +1,71 @@
-// Yayın Stüdyosu · TEKRAR paneli — anlık tekrar iş akışı (vMix Instant Replay / EVS gibi).
+// Yayın Stüdyosu · TEKRAR paneli — POZİSYON BAŞINA açı seçimi (oynatma listesi YOK).
 //
-//   ┌ başlık: durum göstergesi SEÇİLİ → ÖNİZLEMEDE → YAYINDA · süzgeç · ÖNEMLİ AN (B) · Ayarlar ┐
-//   │ OLAYLAR (sol)        │ AÇILAR (orta)                  │ OYNATMA LİSTESİ (sağ)          │
-//   │ goller / anlar:      │ seçili tekrarın tüm açıları    │ sürükle bırak sıra; öğe başına │
-//   │ küçük resim, dakika, │ canlı küçük resim; tık: önizle │ açı, giriş / çıkış, hız;       │
-//   │ golcü, etiket, ★     │ ⌘ / ⇧ tık ya da +: listeye     │ büyük YAYINA AL / CANLIYA DÖN  │
-//   ├──────────────────────┴────────────────────────────────┴────────────────────────────────┤
-//   │ DESTE: ÖNİZLEME | YAYIN · büyük süre çubuğu (giriş / çıkış, işaretler, hareket) ·        │
-//   │ taşıma (J K L, kare, ±1 sn, döngü) · hız 0,25…2× + T-bar · yakınlaştırma 1 / 1,5 / 2 / 3 │
-//   └─────────────────────────────────────────────────────────────────────────────────────────┘
-// Alt şerit "denetlenen desteye" uygulanır: tekrar yayındayken YAYIN (anında yayına), değilse
-// ÖNİZLEME. Her bölüm ayrı parçadır (<Part>): Ayarlar'da gizlenebilir, panoya tek başına konur
-// (layoutModel › part:tekrar:list / grid / queue / timeline / transport / rate / zoom …).
-// [önizleme-geçiş] YAYINA AL Studio'nun tek GEÇİŞ yolunu çağırır: önizlemede ne varsa o gider.
-import React, { memo, useMemo, useState } from "react";
+//   ┌ başlık: SEÇİLİ → ÖNİZLEMEDE → YAYINDA · süzgeç · yayın sağlığı · ÖNEMLİ AN (B) · Ayarlar ┐
+//   │ POZİSYONLAR (alt alta; goller önce)               │ ÖNİZLEME / YAYIN                     │
+//   │ ┌ 12' GOL · Can Aydın · [Profile 0:42]  Tümü ✕ ★ 🗑 │ önizlemedeki pozisyonun açıları       │
+//   │ │ [①Kale arkası] [ Program ] [②Tribün]             │ (büyük) · dizi 1 ▸ 2 · GEÇİŞ /        │
+//   │ └ 2 açı seçili → profile · ÖNİZLEMEYE GÖNDER · …  │ CANLIYA DÖN · tek dokunuş düğmeleri   │
+//   ├────────────────────────────────────────────────────┴───────────────────────────────────────┤
+//   │ DESTE: ÖNİZLEME | YAYIN · süre çubuğu · taşıma · dondur / rampa · hız · yakınlaştırma       │
+//   └────────────────────────────────────────────────────────────────────────────────────────────┘
+// Her pozisyonun açılarına tıkla → seçilir (tıklama sırası, numaralı). "ÖNİZLEMEYE GÖNDER"
+// YALNIZ o pozisyonun seçili açılarını (yoksa program açısını) sırayla önizlemeye yükler;
+// GEÇİŞ aynen onu yayına verir. "Yan yana" / "YAN YANA ÖNİZLE (n)": pozisyonun seçili açıları
+// (≥ 2; yoksa ilk iki açı) aynı anda, zamanda eşli bölünmüş ekranda önizlemeye (rm.openSplit). Seçim 1 dk sonra (Ayarlar › Tekrar) o golün klibi olarak
+// oyuncunun profiline yüklenir; yüklemeye kadar değiştirilebilir. Canlı yayın riskteyse
+// yükleme bekler ("Yayın öncelikli"). Parçalar (<Part>) panoya ayrı konabilir:
+// part:tekrar:list (pozisyonlar) / grid (önizlemedeki pozisyonun açıları) / queue (önizleme /
+// yayın kutusu) / timeline / transport / rate / zoom / moment / angles / between / uploads.
+import React, { memo, useMemo, useRef, useState } from "react";
 import { Icon, Kbd } from "../../components/ui";
-import { PROGRAM_ANGLE, angleLabel, anglesOf, defaultAngles, recordableSources, metaFor, replayOfMatch, replayTitle, secondsText, toggleIn } from "../../lib/studio/replays";
-import { DECK_RATES, STAGE_LABEL, movePlaylist, rateText, sequenceOf, setPlaylistAngle, stageOf, togglePlaylist } from "../../lib/studio/replayDeck";
+import { angleLabel, anglesOf, recordableSources, metaFor, replayOfMatch, replayTitle, secondsText, toggleIn } from "../../lib/studio/replays";
+import { STAGE_LABEL, pickNumbers, picksOf, positionAngles, stageOf } from "../../lib/studio/replayDeck";
+import { countdownText, uploadPlanOf } from "../../lib/studio/goalClips";
+import { healthText } from "../../lib/studio/uploadGuard";
 import { TRANSITIONS } from "../../lib/studio/transitions";
 import UploadLog from "./modes/UploadLog";
-import { PendingNote, UploadControls } from "./replayUploadUi"; // [gol-klip]
-import { DeckAngles, DeckSpeed, DeckTarget, DeckTime, DeckTimeline, DeckTransport, DeckZoom, angleShort, useDeckClock } from "./modes/replayDeckUi";
-import { clipTime, viewKey } from "./modes/replayView";
+import { PendingNote } from "./replayUploadUi"; // [gol-klip]
+import { DeckAngles, DeckExtras, DeckSeq, DeckSpeed, DeckTarget, DeckTime, DeckTimeline, DeckTransport, DeckZoom, angleShort, useDeckClock } from "./modes/replayDeckUi";
 import "./modes/replayEditor.css";
 import { Part, usePanelParts } from "./dock/parts";
+import { Splitter } from "./dock/PanelFrame";
 
 const STINGERS = [{ key: "cut", label: "Kesme" }, ...TRANSITIONS.filter((t) => t.stinger)];
 const FILTERS = [{ key: "all", label: "Tümü" }, { key: "goal", label: "Goller" }, { key: "moment", label: "Anlar" }, { key: "star", label: "★" }];
 const timeText = (ms) => (ms ? new Date(ms).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "");
 
-function uploadPill(u, replay, meta) {
-  if (replay.kind !== "goal") return null;
-  if (u?.status === "uploading") return { tone: "blue", text: "Profile yükleniyor…" };
-  if (u?.status === "scheduled") return { tone: "blue", text: "Yükleme bekliyor" }; // [gol-klip]
-  if (u?.status === "cancelled") return { tone: "", text: "Yükleme iptal" };
-  if (u?.status === "uploaded") return { tone: "green", text: "Profilde" };
-  if (u?.status === "failed") return { tone: "red", text: "Yüklenemedi" };
-  if (replay.eventId || meta?.eventId) return { tone: "blue", text: "Yüklemeye hazır" };
-  if (meta?.settled) return { tone: "", text: "Yalnız bu bilgisayarda" };
-  return { tone: "amber", text: "Golcü bekleniyor" };
+/**
+ * Yükleme durumu çipi (yalnız goller): { tone, text, title }.
+ *   planlandı → "Profile 0:42" · yayın riskte → "Yayın öncelikli · 0:20" · yükleniyor (hız sınırı)
+ *   · duraklatıldı · profilde · yüklenemedi · iptal · golcü bekleniyor.
+ */
+export function uploadChip(u, replay, meta, now = Date.now()) {
+  if (replay?.kind !== "goal") return null;
+  if (u?.status === "scheduled") {
+    const left = countdownText(Math.max(0, (u.dueAt || 0) - now));
+    if (u.deferred) return { tone: "amber", text: `Yayın öncelikli · ${left}`, title: `Yayın öncelikli: yükleme bekliyor (${u.reason || "yayın riskte"}) · ${left} sonra yeniden denenecek` };
+    return { tone: "blue", text: `Profile ${left}`, title: `${left} sonra oyuncunun profiline yüklenecek (seçili açılar) — seçimi o zamana dek değiştirebilirsin` };
+  }
+  if (u?.status === "uploading") {
+    if (u.throttle?.paused) return { tone: "amber", text: "Yayın öncelikli · duraklatıldı", title: u.reason || "Canlı yayın riskte: yükleme duraklatıldı, yayın toparlanınca sürer" };
+    const lim = u.throttle?.kbps ? ` · ≤ ${Math.round(u.throttle.kbps)} kbit/sn` : "";
+    return { tone: "blue", text: `Yükleniyor…${lim}`, title: `Profile yükleniyor${lim ? ` (yayını korumak için hız sınırı${lim})` : ""}` };
+  }
+  if (u?.status === "cancelled") return { tone: "", text: "Yükleme iptal", title: "Yükleme iptal edildi — “Şimdi yükle” ile yeniden" };
+  if (u?.status === "uploaded") return { tone: "green", text: "Profilde ✓", title: u.plan?.mode === "angles" ? `Seçilen ${u.plan.count} açı birleştirilip yüklendi` : "Oyuncunun profilinde" };
+  if (u?.status === "failed") return { tone: "red", text: "Yüklenemedi", title: u.error || "" };
+  if (replay.eventId || meta?.eventId) return { tone: "blue", text: "Yüklemeye hazır", title: "Olay bağlı: “Şimdi yükle” ile profile" };
+  if (meta?.settled) return { tone: "", text: "Yalnız bu bilgisayarda", title: "Olaya bağlı değil: profile yüklenmez" };
+  return { tone: "amber", text: "Golcü bekleniyor", title: "Golcü seçilince yükleme planlanır" };
 }
 
 const StageBadge = ({ stage, small = false }) => (stage && stage !== "idle" ? <span className={`rpx-stage is-${stage} ${small ? "is-sm" : ""}`}>{stage === "air" && <i />}{STAGE_LABEL[stage]}</span> : null);
 
 /**
- * api: modes (BroadcastModes) — api.rm (tekrar modu: playlist, cursor, decks …), api.replays ({ replays, pending,
- * meta, uploadOf, update, retry, dismissPending, recordAngles, anglePref, onAnglePref, angleStatus, angleAvailable,
- * multiAngle, encoding, onMoment, onRemove }), api.cfg / api.setCfg, api.takeMode, api.endOnAir.
+ * api: modes (BroadcastModes) — api.rm (tekrar modu: picks, pick, sendToPreview, previewPos, airPos, decks …),
+ * api.replays ({ replays, pending, meta, uploadOf, uploadNow, cancelUpload, health, update, retry, dismissPending,
+ * recordAngles, anglePref, onAnglePref, angleStatus, angleAvailable, multiAngle, encoding, onMoment, onRemove }),
+ * api.cfg / api.setCfg, api.takeMode, api.endOnAir.
  */
 function ReplayPanel(props) {
   if (!props.api) return <p className="st-hint st-pad">Tekrarlar artık “Tekrar” sekmesinde (yayın modları).</p>;
@@ -60,7 +79,6 @@ function ReplayPanelInner({ api }) {
   const replays = R.replays || [];
   const pending = R.pending || [];
   const meta = R.meta || {};
-  const recordAngles = R.recordAngles || [PROGRAM_ANGLE];
   const encoding = Boolean(R.encoding ?? api.engine?.active);
   const parts = usePanelParts("tekrar");
   const [onlyMatch, setOnlyMatch] = useState(true);
@@ -69,12 +87,10 @@ function ReplayPanelInner({ api }) {
   const onAir = api.airMode === "tekrar";
   const previewing = api.previewMode === "tekrar";
   const decks = rm.decks || null;
-  const pgm = decks?.program;
-  const air = pgm?.active ? { replayId: pgm.replayId, angle: pgm.angle } : null;
-  const cursor = rm.cursor;
-  const cur = cursor ? { replayId: cursor.replayId, angle: cursor.angle } : null;
-  const playlist = rm.playlist || [];
-  const setPlaylist = rm.setPlaylist || (() => {});
+  const picks = rm.picks || {};
+  const pvPos = previewing ? rm.previewPos || null : null;
+  const airPos = onAir ? rm.airPos || null : null;
+  const cursor = pvPos ? { replayId: pvPos.replayId, angle: pvPos.angle, angles: pvPos.angles } : null;
 
   const list = useMemo(() => replays.filter((r) => {
     if (onlyMatch && !replayOfMatch(r, meta[r.id], api.matchId)) return false;
@@ -83,12 +99,14 @@ function ReplayPanelInner({ api }) {
     if (filter === "star") return r.inSummary || r.kind === "goal";
     return true;
   }), [replays, onlyMatch, meta, api.matchId, filter]);
-  const selected = (cursor?.replay && replays.find((x) => x.id === cursor.replay.id)) || list[0] || null;
-  const preview = (r, angle) => rm.setCursor({ replayId: r.id, angle: angle || (playlist.find((e) => e.replayId === r.id)?.angle) || defaultAngles(r, recordAngles)[0] || PROGRAM_ANGLE });
-  const addAll = (r) => setPlaylist((pl) => { let x = pl; for (const a of anglesOf(r)) if (!x.some((e) => e.replayId === r.id && e.angle === a)) x = [...x, { replayId: r.id, angle: a }]; return x; });
-  const addDefault = (r) => setPlaylist((pl) => { let x = pl; for (const a of defaultAngles(r, recordAngles)) if (!x.some((e) => e.replayId === r.id && e.angle === a)) x = [...x, { replayId: r.id, angle: a }]; return x; });
+  // Goller birinci sınıf: önce goller (en yeni önce), sonra anlar.
+  const ordered = useMemo(() => [...list.filter((r) => r.kind === "goal"), ...list.filter((r) => r.kind !== "goal")], [list]);
+  const nPicked = Object.values(picks).reduce((n, a) => n + (a?.length || 0), 0);
+  const send = (r, o) => (rm.sendToPreview ? rm.sendToPreview(r, o) : rm.load?.(r, { angles: positionAngles(picks, r) }));
   const take = () => (api.takeMode ? api.takeMode("tekrar") : api.takeToAir?.(api.cfg.transition, "tekrar"));
   const live = () => api.endOnAir?.(api.cfg.transition);
+  const health = R.health || null;
+  const hText = healthText(health);
 
   const showList = parts.visible("list");
   const showGrid = parts.visible("grid");
@@ -108,9 +126,9 @@ function ReplayPanelInner({ api }) {
         <header className="rpx-head">
           <h4><Icon name="repeat" size={14} /> Tekrar</h4>
           <span className="rpx-flow" aria-label="Tekrar akışı">
-            <span className={`rpx-flow__s is-selected ${playlist.length ? "is-on" : ""}`}>SEÇİLİ <b>{playlist.length}</b></span>
+            <span className={`rpx-flow__s is-selected ${nPicked ? "is-on" : ""}`} title="Seçili açı sayısı (tüm pozisyonlar)">SEÇİLİ <b>{nPicked}</b></span>
             <Icon name="chevronRight" size={11} />
-            <span className={`rpx-flow__s is-preview ${previewing && cursor ? "is-on" : ""}`}>ÖNİZLEMEDE</span>
+            <span className={`rpx-flow__s is-preview ${pvPos ? "is-on" : ""}`}>ÖNİZLEMEDE</span>
             <Icon name="chevronRight" size={11} />
             <span className={`rpx-flow__s is-air ${onAir ? "is-on" : ""}`}>{onAir && <i />}YAYINDA</span>
           </span>
@@ -119,6 +137,11 @@ function ReplayPanelInner({ api }) {
           </span>
           <label className="toggle small"><input type="checkbox" checked={onlyMatch} onChange={(e) => setOnlyMatch(e.target.checked)} /> Bu maç</label>
           <span className="st-top__spacer" />
+          {health?.live && (
+            <span className={`rpx-health is-${health.level}`} title={hText || "Canlı yayın sağlıklı: gol klipleri profile yüklenebilir (hız sınırlı)"}>
+              <i />{health.level === "ok" ? "Yayın sağlıklı" : "Yayın öncelikli"}
+            </span>
+          )}
           <Part id="moment" label="ÖNEMLİ AN düğmesi">{momentBtn}</Part>
           <button type="button" className={`btn btn--sm btn--soft ${drawer ? "is-on" : ""}`} onClick={() => { setDrawer((d) => !d); api.toggleSide?.(); }} aria-expanded={drawer} title="Kaydedilecek açılar, aradaki geçiş, yükleme günlüğü"><Icon name="sliders" size={13} /> Ayarlar</button>
         </header>
@@ -126,24 +149,28 @@ function ReplayPanelInner({ api }) {
 
       {!showHead && parts.visible("moment") && <Part id="moment" label="ÖNEMLİ AN düğmesi"><div className="rpx-solo-moment">{momentBtn}</div></Part>}
       {(showList || showGrid || showQueue) && (
-        <div className={`rpx-body ${showList ? "" : "no-list"} ${showGrid ? "" : "no-grid"} ${showQueue ? "" : "no-queue"}`}>
+        <div className={`rpx-body2 ${showList ? "" : "no-list"} ${showGrid || showQueue ? "" : "no-side"}`}>
           {showList && (
-            <Part id="list" label="Olay listesi (goller / anlar)">
-              <EventList list={list} pending={pending} R={R} meta={meta} playlist={playlist} cursor={cur} air={air} selectedId={selected?.id}
-                onPick={(r) => preview(r)} onAdd={addDefault} onToggleList={(r) => (playlist.some((e) => e.replayId === r.id) ? setPlaylist((pl) => pl.filter((e) => e.replayId !== r.id)) : addDefault(r))} solo={!showHead} />
+            <Part id="list" label="Pozisyonlar (goller / anlar ve açıları)">
+              <PositionList list={ordered} pending={pending} R={R} meta={meta} picks={picks} pick={rm.pick} cursor={cursor} air={airPos} sources={sources}
+                onSend={send} onSplit={rm.openSplit ? (r, a) => rm.openSplit(r, a) : null} splitId={previewing && rm.split?.active ? pvPos?.replayId : null} solo={!showHead} live={api.live} />
             </Part>
           )}
-          {showGrid && (
-            <Part id="grid" label="Açı ızgarası (seçili tekrar)">
-              <AngleGrid replay={selected} meta={meta} sources={sources} playlist={playlist} cursor={cur} air={air} pgm={pgm}
-                onPreview={(a) => preview(selected, a)} onToggle={(a) => setPlaylist((pl) => togglePlaylist(pl, { replayId: selected.id, angle: a }))} onAll={() => addAll(selected)} />
-            </Part>
-          )}
-          {showQueue && (
-            <Part id="queue" label="Oynatma listesi ve YAYINA AL">
-              <Playlist rm={rm} api={api} sources={sources} meta={meta} playlist={playlist} setPlaylist={setPlaylist} cursor={cur} air={air} pgm={pgm}
-                previewing={previewing} onAir={onAir} onTake={take} onLive={live} />
-            </Part>
+          {showList && (showGrid || showQueue) && <Splitter id="tekrar:side" side="after" label="Pozisyonlar ↔ önizleme sütunu" />}
+          {(showGrid || showQueue) && (
+            <div className="rpx-side">
+              {showGrid && (
+                <Part id="grid" label="Önizlemedeki pozisyonun açıları">
+                  <FocusGrid rm={rm} R={R} meta={meta} sources={sources} picks={picks} cursor={cursor} air={airPos} replays={replays} />
+                </Part>
+              )}
+              {showQueue && (
+                <Part id="queue" label="Önizleme / yayın: GEÇİŞ, CANLIYA DÖN">
+                  <GoBox rm={rm} R={R} meta={meta} sources={sources} picks={picks} pvPos={pvPos} airPos={airPos} decks={decks} replays={replays}
+                    previewing={previewing} onAir={onAir} onTake={take} onLive={live} onSend={send} />
+                </Part>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -155,7 +182,7 @@ function ReplayPanelInner({ api }) {
           <Part id="angles" label="Kaydedilecek açılar"><RecordAngles R={R} sources={sources} encoding={encoding} /></Part>
           <Part id="between" label="Aradaki geçiş">
             <section className="rpx-card">
-              <h5 className="st-group">Klipler arası geçiş</h5>
+              <h5 className="st-group">Açılar arası geçiş</h5>
               <label className="st-transition__ms md-between">
                 Aradaki geçiş
                 <select className="select-xs" value={api.cfg.between.kind} onChange={(e) => api.setCfg((c) => ({ ...c, between: { kind: e.target.value } }))}>
@@ -164,6 +191,7 @@ function ReplayPanelInner({ api }) {
               </label>
               <label className="toggle small"><input type="checkbox" checked={Boolean(rm.blend)} onChange={(e) => rm.setBlend?.(e.target.checked)} /> Ağır çekimde kare harmanlama (&lt; 0,5×)</label>
               <label className="toggle small"><input type="checkbox" checked={Boolean(rm.keysOn)} onChange={(e) => rm.setKeysOn?.(e.target.checked)} /> Tekrar tuşları (J K L, 1–6 hız, A / S açı…)</label>
+              <p className="st-hint">Gol klibi: seçili açılar {R.uploadDelaySec ?? 60} sn sonra profile (Ayarlar › Tekrar). Canlı yayın riskteyse yükleme bekler, sürerken hız yayının boş kapasitesine göre kısılır.</p>
             </section>
           </Part>
           <Part id="uploads" label="Yükleme günlüğü"><section className="rpx-card"><UploadLog /></section></Part>
@@ -173,94 +201,153 @@ function ReplayPanelInner({ api }) {
   );
 }
 
-/* ───────────────────────── sol: olaylar ───────────────────────── */
+/* ───────────────────────── açı küçük resmi ───────────────────────── */
 
-function EventList({ list, pending, R, meta, playlist, cursor, air, selectedId, onPick, onToggleList, solo }) {
+function AngleThumb({ a, sources, no, stage, live, onClick, onDoubleClick, title, size = "md" }) {
+  const ref = useRef(null);
+  const hover = (on) => { const v = ref.current; if (!v || live) return; try { if (on) v.play().catch(() => {}); else { v.pause(); v.currentTime = 0.5; } } catch { /* yoksay */ } };
   return (
-    <section className="rpx-col rpx-list" aria-label="Olaylar">
-      <h5 className="rpx-col__h">Olaylar <span className="muted">({list.length})</span>{solo && <span className="st-top__spacer" />}</h5>
-      <ul className="rpx-evs">
+    <button type="button" className={`rpx-pa is-${size} ${no ? "is-on" : ""} is-${stage || "idle"}`} onClick={onClick} onDoubleClick={onDoubleClick}
+      onMouseEnter={() => hover(true)} onMouseLeave={() => hover(false)} title={title} aria-pressed={Boolean(no)}>
+      <video ref={ref} src={live ? a.url : `${a.url}#t=0.5`} poster={a.posterUrl || undefined} muted loop playsInline autoPlay={live} preload="metadata" />
+      <span className="rpx-pa__l">{angleShort(a, sources)}</span>
+      {no ? <b className="rpx-pa__no">{no}</b> : <span className="rpx-pa__add"><Icon name="plus" size={11} /></span>}
+      {stage === "preview" || stage === "air" ? <StageBadge stage={stage} small /> : null}
+    </button>
+  );
+}
+
+/* ───────────────────────── pozisyon listesi ───────────────────────── */
+
+function PositionList({ list, pending, R, meta, picks, pick, cursor, air, sources, onSend, onSplit, splitId, solo, live }) {
+  return (
+    <section className="rpx-col rpx-poss" aria-label="Pozisyonlar">
+      <h5 className="rpx-col__h">Pozisyonlar <span className="muted">({list.length}) · açılara tıkla → seç (sıra numaralı) · ÖNİZLEMEYE GÖNDER</span>{solo && <span className="st-top__spacer" />}</h5>
+      <ul className="rpx-poslist">
         {pending.map((p) => (
-          <li key={p.key} className={`rpx-ev is-pending ${p.status === "error" ? "is-error" : ""}`}>
-            <span className="rpx-ev__thumb is-ph"><Icon name={p.status === "error" ? "alert" : "clock"} size={16} /></span>
-            <span className="rpx-ev__main"><strong>{p.kind === "goal" ? "GOL" : "Önemli an"}{p.meta?.minute != null ? ` · ${p.meta.minute}'` : ""}</strong><PendingNote p={p} now={R.now} /></span>
-            {p.status === "error" && <button type="button" className="icon-btn icon-btn--xs" onClick={() => R.dismissPending?.(p.key)} title="Kapat"><Icon name="x" size={13} /></button>}
+          <li key={p.key} className={`rpx-pos is-pending ${p.status === "error" ? "is-error" : ""}`}>
+            <div className="rpx-pos__head">
+              <span className="rpx-pos__min"><Icon name={p.status === "error" ? "alert" : "clock"} size={12} /></span>
+              <strong>{p.kind === "goal" ? "GOL" : "Önemli an"}{p.meta?.minute != null ? ` · ${p.meta.minute}'` : ""}</strong>
+              <PendingNote p={p} now={R.now} />
+              <span className="st-top__spacer" />
+              {p.status === "error" && <button type="button" className="icon-btn icon-btn--xs" onClick={() => R.dismissPending?.(p.key)} title="Kapat"><Icon name="x" size={13} /></button>}
+            </div>
           </li>
         ))}
-        {list.map((r) => {
-          const m = metaFor(r, meta);
-          const u = R.uploadOf?.(r.id);
-          const pill = uploadPill(u, r, m);
-          const stage = stageOf({ replayId: r.id, playlist, cursor, air });
-          const inList = playlist.some((e) => e.replayId === r.id);
-          const a0 = r.angles.find((a) => a.angle === PROGRAM_ANGLE && a.url) || r.angles.find((a) => a.url);
-          const who = r.playerName || m.scorer;
-          return (
-            <li key={r.id} className={`rpx-ev ${r.kind === "goal" ? "is-goal" : ""} is-${stage} ${selectedId === r.id ? "is-sel" : ""}`}
-              onClick={(e) => { if (!e.target.closest("button, input, label")) onPick(r); }}>
-              <button type="button" className="rpx-ev__thumb" onClick={() => onPick(r)} title="Önizlemeye al">
-                {a0 ? <video src={`${a0.url}#t=0.5`} poster={a0.posterUrl || undefined} preload="metadata" muted playsInline /> : <Icon name="video" size={16} />}
-                <b className="rpx-ev__min">{m.minute != null ? `${m.minute}'` : "—"}</b>
-              </button>
-              <span className="rpx-ev__main">
-                <strong>{r.kind === "goal" ? (String(m.code || "").toUpperCase() === "GOAL_OWN" ? "Kendi kalesine" : "GOL") : r.label && !/^önemli an$/i.test(r.label) ? r.label : "Önemli an"}{who ? <em> · {who}</em> : null}</strong>
-                <small>{timeText(r.createdAt)} · {secondsText(r.durationMs)} · {anglesOf(r).length} açı</small>
-                <span className="rpx-ev__tags">
-                  <span className={`rpx-tag ${r.kind === "goal" ? "is-goal" : ""}`}>{r.kind === "goal" ? "GOL" : "AN"}</span>
-                  {pill && <span className={`pill pill--xs ${pill.tone ? `pill--${pill.tone}` : ""}`}>{pill.text}</span>}
-                  <StageBadge stage={stage} small />
-                </span>
-                <UploadControls u={u} replay={r} R={R} />
-                {u?.status === "failed" && <small className="text-red">{u.error} <button type="button" className="btn btn--xs" onClick={() => R.retry?.(r.id)}>Yeniden dene</button></small>}
-              </span>
-              <span className="rpx-ev__tools">
-                <button type="button" className={`icon-btn icon-btn--xs rpx-star ${r.inSummary || r.kind === "goal" ? "is-on" : ""}`} disabled={r.kind === "goal"} title={r.kind === "goal" ? "Goller özete kendiliğinden girer" : r.inSummary ? "Yıldızı kaldır (özetten çıkar)" : "Yıldızla (özete ekle)"} onClick={() => R.update?.(r.id, { inSummary: !r.inSummary })}>
-                  <Icon name="star" size={13} />
-                </button>
-                <button type="button" className={`icon-btn icon-btn--xs ${inList ? "is-on" : ""}`} onClick={() => onToggleList(r)} title={inList ? "Oynatma listesinden çıkar" : "Oynatma listesine ekle (varsayılan açılar)"} aria-label={inList ? "Listeden çıkar" : "Listeye ekle"}>
-                  <Icon name={inList ? "check" : "plus"} size={13} />
-                </button>
-                <button type="button" className="icon-btn icon-btn--xs" title="Tekrarı sil" onClick={() => R.onRemove?.(r)} disabled={stage === "air"}><Icon name="trash" size={13} /></button>
-              </span>
-            </li>
-          );
-        })}
+        {list.map((r, i) => (
+          <PositionRow key={r.id} r={r} R={R} meta={meta} picks={picks} pick={pick} cursor={cursor} air={air} sources={sources} onSend={onSend} onSplit={onSplit} isSplit={splitId === r.id} liveThumbs={i < 2} live={live} />
+        ))}
         {!list.length && !pending.length && <li className="st-hint st-pad">Henüz tekrar yok. GOL'e bas ya da <strong>ÖNEMLİ AN</strong> (<Kbd>B</Kbd>) ile kaydet.</li>}
       </ul>
     </section>
   );
 }
 
-/* ───────────────────────── orta: açı ızgarası ───────────────────────── */
-
-function AngleGrid({ replay, meta, sources, playlist, cursor, air, pgm, onPreview, onToggle, onAll }) {
-  if (!replay) return <section className="rpx-col rpx-grid"><h5 className="rpx-col__h">Açılar</h5><p className="st-hint st-pad">Soldan bir olay seç: tüm açıları burada.</p></section>;
-  const angles = replay.angles.filter((a) => a.url);
-  const seq = sequenceOf(playlist, replay.id);
-  const n = angles.length;
+function PositionRow({ r, R, meta, picks, pick, cursor, air, sources, onSend, onSplit, isSplit, liveThumbs, live }) {
+  const m = metaFor(r, meta);
+  const u = R.uploadOf?.(r.id);
+  const chip = uploadChip(u, r, m, R.now || Date.now());
+  const stage = stageOf({ replayId: r.id, picks, cursor, air });
+  const angles = r.angles.filter((a) => a.url);
+  const nums = pickNumbers(picks, r.id);
+  const chosen = picksOf(picks, r);
+  const who = r.playerName || m.scorer;
+  const own = String(m.code || "").toUpperCase() === "GOAL_OWN";
+  const side = m.side === "home" || m.side === "away" ? m.side : null;
+  const team = side === "home" ? live?.homeName : side === "away" ? live?.awayName : null;
+  const plan = r.kind === "goal" ? uploadPlanOf(r, R.selectionOf?.(r.id) || m.selection || null) : null;
+  const goTo = chosen.length ? chosen : positionAngles(picks, r);
+  const isPvw = cursor?.replayId === r.id;
+  const isAir = air?.replayId === r.id;
+  const canUpload = r.kind === "goal" && (r.eventId || m.eventId);
+  const toggle = (a) => pick?.toggle(r.id, a);
   return (
-    <section className="rpx-col rpx-grid" aria-label="Açılar">
-      <h5 className="rpx-col__h">
-        <span className="rpx-col__t">{replayTitle(replay, metaFor(replay, meta))}</span>
-        <span className="muted">· {n} açı</span>
+    <li className={`rpx-pos ${r.kind === "goal" ? "is-goal" : "is-moment"} is-${stage} ${side ? `is-${side}` : ""}`} data-replay={r.id}>
+      <div className="rpx-pos__head">
+        <span className="rpx-pos__min" title={side ? `${team || (side === "home" ? "Ev sahibi" : "Deplasman")}` : undefined}>{m.minute != null ? `${m.minute}'` : "—"}</span>
+        <span className={`rpx-tag ${r.kind === "goal" ? "is-goal" : ""}`}>{r.kind === "goal" ? (own ? "K.K." : "GOL") : "AN"}</span>
+        <strong className="rpx-pos__who">{r.kind === "goal" ? (who || (own ? "Kendi kalesine" : "Golcü bekleniyor")) : (r.label && !/^önemli an$/i.test(r.label) ? r.label : "Önemli an")}</strong>
+        {team && <small className="rpx-pos__team"><i />{team}</small>}
+        <small className="rpx-pos__meta">{timeText(r.createdAt)} · {secondsText(r.durationMs)} · {angles.length} açı</small>
+        {chip && <span className={`pill pill--xs rpx-chip ${chip.tone ? `pill--${chip.tone}` : ""}`} title={chip.title}>{chip.text}</span>}
+        <StageBadge stage={stage === "selected" ? null : stage} small />
         <span className="st-top__spacer" />
-        {n > 1 && <button type="button" className="btn btn--xs" onClick={onAll} title="Bu tekrarın tüm açıları sırayla listeye">Tümü sırayla</button>}
-      </h5>
-      <div className={`rpx-angles is-n${Math.min(n, 6)}`}>
+        <span className="rpx-pos__tools">
+          {angles.length > 1 && <button type="button" className="btn btn--xs" onClick={() => pick?.all(r)} title="Tüm açıları kayıt sırasıyla seç">Tümü</button>}
+          <button type="button" className="btn btn--xs btn--ghost" onClick={() => pick?.clear(r.id)} disabled={!chosen.length} title="Seçimi temizle (profile program açısı gider)">Temizle</button>
+          <button type="button" className={`icon-btn icon-btn--xs rpx-star ${r.inSummary || r.kind === "goal" ? "is-on" : ""}`} disabled={r.kind === "goal"} title={r.kind === "goal" ? "Goller özete kendiliğinden girer" : r.inSummary ? "Yıldızı kaldır (özetten çıkar)" : "Yıldızla (özete ekle)"} onClick={() => R.update?.(r.id, { inSummary: !r.inSummary })}>
+            <Icon name="star" size={13} />
+          </button>
+          <button type="button" className="icon-btn icon-btn--xs" title="Tekrarı sil" onClick={() => R.onRemove?.(r)} disabled={isAir}><Icon name="trash" size={13} /></button>
+        </span>
+      </div>
+      <div className={`rpx-pos__angles is-n${Math.min(angles.length, 6)}`}>
         {angles.map((a) => {
-          const stage = stageOf({ replayId: replay.id, angle: a.angle, playlist, cursor, air });
-          const no = seq[a.angle];
+          const st = isAir && (air.angle === a.angle) ? "air" : isPvw && cursor.angle === a.angle ? "preview" : null;
+          return (
+            <AngleThumb key={a.angle} a={a} sources={sources} no={nums[a.angle]} stage={st} live={liveThumbs}
+              onClick={() => toggle(a.angle)} onDoubleClick={() => onSend(r)}
+              title={`${angleLabel(a, sources)} — tık: ${nums[a.angle] ? `seçimden çıkar (${nums[a.angle]}. sırada)` : "seç"} · çift tık: önizlemeye gönder`} />
+          );
+        })}
+      </div>
+      <div className="rpx-pos__foot">
+        <span className="rpx-pos__plan">
+          {chosen.length ? <><b>{chosen.length} açı seçili</b>: {chosen.map((a) => angleShort(r.angles.find((x) => x.angle === a) || { angle: a }, sources)).join(" → ")}</>
+            : <span className="muted">Seçim yok: önizlemeye / profile program açısı gider</span>}
+          {plan && u?.status !== "uploaded" && <em> · profile: {plan.mode === "angles" ? `${plan.count} açı birleşik` : "program açısı"}</em>}
+        </span>
+        <span className="st-top__spacer" />
+        {r.kind === "goal" && u?.status === "scheduled" && <button type="button" className="btn btn--xs" onClick={() => R.uploadNow?.(r.id)} title="Geri sayımı beklemeden yükle (hız yine yayına göre sınırlı)"><Icon name="upload" size={11} /> Şimdi yükle</button>}
+        {r.kind === "goal" && (u?.status === "scheduled" || u?.status === "uploading") && <button type="button" className="btn btn--xs btn--ghost" onClick={() => R.cancelUpload?.(r.id)} title="Profile yüklemeyi iptal et">Yüklemeyi iptal</button>}
+        {r.kind === "goal" && canUpload && u?.status === "cancelled" && R.reschedule && <button type="button" className="btn btn--xs btn--ghost" onClick={() => R.reschedule(r.id)} title="İptali geri al: gecikmeyle yeniden planla (seçim o zamana dek değişebilir)"><Icon name="clock" size={11} /> {R.uploadDelaySec ?? 60} sn sonra</button>}
+        {r.kind === "goal" && canUpload && (u?.status === "cancelled" || u?.status === "failed" || (!u && !m.uploaded) || u?.status === "uploaded") && (
+          <button type="button" className="btn btn--xs" onClick={() => (u?.status === "failed" ? R.retry?.(r.id) : R.uploadNow?.(r.id))} title={u?.status === "uploaded" ? "Seçili açılarla yeniden yükle (öncekinin yerine)" : "Seçili açıları şimdi profile yükle"}>
+            <Icon name="upload" size={11} /> {u?.status === "uploaded" ? "Yeniden yükle" : u?.status === "failed" ? "Yeniden dene" : "Şimdi yükle"}
+          </button>
+        )}
+        {onSplit && angles.length > 1 && (
+          <button type="button" className={`btn btn--sm rpx-split ${isSplit ? "is-on" : ""}`} onClick={() => onSplit(r, chosen.length >= 2 ? chosen : null)}
+            title={chosen.length >= 2 ? `Seçili ${Math.min(4, chosen.length)} açı aynı anda, zamanda eşli bölünmüş ekranda önizlemeye (yayına GEÇİŞ ile)` : "İlk iki açı yan yana önizlemeye (açıları seçerek 3–4 açı)"}>
+            <Icon name="grid" size={13} /> {chosen.length >= 2 ? `YAN YANA ÖNİZLE (${Math.min(4, chosen.length)})` : "Yan yana"}
+          </button>
+        )}
+        <button type="button" className={`btn btn--sm rpx-send ${isPvw && !isSplit ? "is-on" : ""}`} onClick={() => onSend(r)} disabled={!goTo.length}
+          title={`Bu pozisyonun ${chosen.length ? `seçili ${chosen.length} açısını` : "program açısını"} sırayla önizlemeye yükle (yayına GEÇİŞ ile)`}>
+          <Icon name="eye" size={13} /> ÖNİZLEMEYE GÖNDER{chosen.length > 1 ? ` (${chosen.length})` : ""}
+        </button>
+      </div>
+      {u?.status === "failed" && u.error && <small className="rpx-pos__err text-red">{u.error}</small>}
+    </li>
+  );
+}
+
+/* ───────────────────────── sağ: önizlemedeki pozisyonun açıları ───────────────────────── */
+
+function FocusGrid({ rm, meta, sources, picks, cursor, air, replays }) {
+  const id = cursor?.replayId || air?.replayId || null;
+  const r = id ? replays.find((x) => x.id === id) : null;
+  if (!r) return <section className="rpx-col rpx-grid"><h5 className="rpx-col__h">Açılar</h5><p className="st-hint st-pad">Bir pozisyonun açılarını seç ve <b>ÖNİZLEMEYE GÖNDER</b>: açıları burada büyük görünür.</p></section>;
+  const angles = r.angles.filter((a) => a.url);
+  const nums = pickNumbers(picks, r.id);
+  const pvw = rm.decks?.preview;
+  return (
+    <section className="rpx-col rpx-grid" aria-label="Önizlemedeki pozisyonun açıları">
+      <h5 className="rpx-col__h"><span className="rpx-col__t">{replayTitle(r, metaFor(r, meta))}</span><span className="muted">· {angles.length} açı</span></h5>
+      <div className={`rpx-angles is-n${Math.min(angles.length, 6)}`}>
+        {angles.map((a) => {
+          const stage = stageOf({ replayId: r.id, angle: a.angle, picks, cursor: cursor ? { replayId: cursor.replayId, angle: cursor.angle } : null, air });
           return (
             <div key={a.angle} className={`rpx-ang is-${stage}`}>
-              <button type="button" className="rpx-ang__hit" onClick={(e) => (e.metaKey || e.ctrlKey || e.shiftKey ? onToggle(a.angle) : onPreview(a.angle))}
-                onDoubleClick={() => (pgm?.active && pgm.replayId === replay.id ? pgm.setAngle(a.angle) : null)}
-                title={`${angleLabel(a, sources)} — tık: önizle · ⌘/⇧ tık: listeye ekle / çıkar${pgm?.active && pgm.replayId === replay.id ? " · çift tık: yayında bu açıya geç" : ""}`}>
+              <button type="button" className="rpx-ang__hit" onClick={() => rm.pick?.toggle(r.id, a.angle)} onDoubleClick={() => (pvw?.active && pvw.replayId === r.id ? pvw.setAngle(a.angle) : null)}
+                title={`${angleLabel(a, sources)} — tık: seç / bırak · çift tık: önizlemede bu açıya geç`}>
                 <video src={a.url} poster={a.posterUrl || undefined} muted loop autoPlay playsInline preload="metadata" />
                 <span className="rpx-ang__l">{angleShort(a, sources)}</span>
                 <StageBadge stage={stage === "selected" ? null : stage} small />
               </button>
-              <button type="button" className={`rpx-ang__no ${no ? "is-on" : ""}`} onClick={() => onToggle(a.angle)} title={no ? `Listede ${no}. sırada — çıkar` : "Oynatma listesine ekle"} aria-label={no ? `Sıra ${no}` : "Listeye ekle"}>
-                {no || <Icon name="plus" size={11} />}
+              <button type="button" className={`rpx-ang__no ${nums[a.angle] ? "is-on" : ""}`} onClick={() => rm.pick?.toggle(r.id, a.angle)} aria-label={nums[a.angle] ? `Sıra ${nums[a.angle]}` : "Seç"}>
+                {nums[a.angle] || <Icon name="plus" size={11} />}
               </button>
             </div>
           );
@@ -270,77 +357,40 @@ function AngleGrid({ replay, meta, sources, playlist, cursor, air, pgm, onPrevie
   );
 }
 
-/* ───────────────────────── sağ: oynatma listesi ───────────────────────── */
+/* ───────────────────────── sağ: önizleme / yayın kutusu ───────────────────────── */
 
-function Playlist({ rm, api, sources, meta, playlist, setPlaylist, cursor, air, pgm, previewing, onAir, onTake, onLive }) {
-  const [drag, setDrag] = useState(null);
-  const [over, setOver] = useState(null);
-  void rm.viewTick;
-  const byId = (id) => (api.replays?.replays || []).find((r) => r.id === id);
-  const items = playlist.map((e, i) => ({ ...e, i, replay: byId(e.replayId) })).filter((x) => x.replay);
-  const totalSec = items.reduce((t, x) => {
-    const k = viewKey(x.replayId, x.angle);
-    const a = x.replay.angles.find((y) => y.angle === x.angle);
-    const d = (a?.durationMs || x.replay.durationMs || 0) / 1000;
-    const inS = rm.inPointOf?.(k) || 0;
-    const outS = rm.outPointOf?.(k) || 0;
-    const r = rm.rateOf?.(k) || api.cfg.rate || 1;
-    return t + Math.max(0, (outS || d) - inS) / r;
-  }, 0);
-  const curTitle = rm.cursor ? `${replayTitle(rm.cursor.replay, metaFor(rm.cursor.replay, meta))} · ${angleLabel(rm.cursor.angle, sources)}` : null;
-  const pgmTitle = pgm?.active && pgm.replay ? `${replayTitle(pgm.replay, metaFor(pgm.replay, meta))} · ${angleLabel(pgm.angle, sources)}` : null;
-  const drop = (to) => { if (drag != null && drag !== to) setPlaylist((pl) => movePlaylist(pl, drag, to)); setDrag(null); setOver(null); };
+function GoBox({ meta, sources, pvPos, airPos, decks, replays, previewing, onAir, onTake, onLive, onSend }) {
+  const pvR = pvPos ? replays.find((x) => x.id === pvPos.replayId) : null;
+  const airR = airPos ? replays.find((x) => x.id === airPos.replayId) : null;
+  const names = (r, ids) => (ids || []).map((a) => angleShort(r.angles.find((x) => x.angle === a) || { angle: a }, sources)).join(" → ");
+  const lastGoal = replays.find((r) => r.kind === "goal" && anglesOf(r).length) || null;
+  const pgm = decks?.program;
   return (
-    <section className="rpx-col rpx-queue" aria-label="Oynatma listesi">
-      <h5 className="rpx-col__h">Oynatma listesi <span className="muted">{items.length ? `· ${items.length} klip · ≈ ${Math.round(totalSec)} sn` : ""}</span><span className="st-top__spacer" />
-        {items.length > 0 && <button type="button" className="btn btn--xs" onClick={() => setPlaylist([])} title="Listeyi temizle">Temizle</button>}
-      </h5>
-      <ol className="rpx-pl">
-        {items.map((x) => {
-          const k = viewKey(x.replayId, x.angle);
-          const stage = stageOf({ replayId: x.replayId, angle: x.angle, playlist: [], cursor, air });
-          const inS = rm.inPointOf?.(k) || 0;
-          const outS = rm.outPointOf?.(k) || 0;
-          const own = rm.rateOf?.(k) || null;
-          const m = metaFor(x.replay, meta);
-          return (
-            <li key={`${x.replayId}/${x.angle}`} className={`rpx-pi is-${stage} ${over === x.i ? "is-over" : ""} ${drag === x.i ? "is-drag" : ""}`}
-              draggable onDragStart={(e) => { setDrag(x.i); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", String(x.i)); } catch { /* yoksay */ } }}
-              onDragOver={(e) => { e.preventDefault(); setOver(x.i); }} onDragLeave={() => setOver((o) => (o === x.i ? null : o))} onDrop={(e) => { e.preventDefault(); drop(x.i); }} onDragEnd={() => { setDrag(null); setOver(null); }}
-              onClick={(e) => { if (!e.target.closest("button, select, input")) rm.setCursor({ replayId: x.replayId, angle: x.angle }); }}>
-              <span className="rpx-pi__grip" title="Sürükle: sırayı değiştir"><Icon name="grip" size={12} /></span>
-              <b className="rpx-pi__no">{x.i + 1}</b>
-              <span className="rpx-pi__main">
-                <strong>{m.minute != null ? `${m.minute}' ` : ""}{x.replay.kind === "goal" ? "GOL" : x.replay.label || "Önemli an"}{x.replay.playerName || m.scorer ? ` · ${x.replay.playerName || m.scorer}` : ""}</strong>
-                <span className="rpx-pi__ctl">
-                  <select className="select-xs" value={x.angle} onChange={(e) => setPlaylist((pl) => setPlaylistAngle(pl, x.i, e.target.value))} aria-label="Açı">
-                    {x.replay.angles.filter((a) => a.url).map((a) => <option key={a.angle} value={a.angle}>{angleShort(a, sources)}</option>)}
-                  </select>
-                  <span className={`rpx-pi__io ${inS || outS ? "is-on" : ""}`} title="Giriş – çıkış (önizlemede I / O ya da süre çubuğundaki tutamaklar)">{inS || outS ? `${clipTime(inS)}–${outS ? clipTime(outS) : "son"}` : "tüm klip"}</span>
-                  <select className="select-xs" value={own ? String(own) : ""} onChange={(e) => rm.setRateOf?.(k, e.target.value ? Number(e.target.value) : null)} aria-label="Hız">
-                    <option value="">{rateText(api.cfg.rate)} (vars.)</option>
-                    {DECK_RATES.map((v) => <option key={v} value={String(v)}>{rateText(v)}</option>)}
-                  </select>
-                </span>
-              </span>
-              <StageBadge stage={stage} small />
-              <button type="button" className="icon-btn icon-btn--xs" onClick={() => setPlaylist((pl) => pl.filter((_, j) => j !== x.i))} title="Listeden çıkar" aria-label="Listeden çıkar"><Icon name="x" size={12} /></button>
-            </li>
-          );
-        })}
-        {!items.length && <li className="st-hint rpx-pl__empty">Liste boş: yayına önizlenen klip gider. Açıların <b>+</b> düğmesi ya da ⌘ tık ile sırayla ekle.</li>}
-      </ol>
-      <div className={`rpx-go ${onAir ? "is-air" : previewing ? "is-pvw" : ""}`}>
-        <div className="rpx-go__state">
-          {onAir ? <span className="rpx-stage is-air"><i />YAYINDA</span> : previewing && curTitle ? <span className="rpx-stage is-preview">ÖNİZLEMEDE</span> : <span className="rpx-stage is-idle">HAZIR DEĞİL</span>}
-          <small>{onAir ? `${pgmTitle || ""}${pgm?.total > 1 ? ` · ${pgm.index + 1}/${pgm.total}` : ""}` : curTitle || "Önce bir olay / açı seç"}</small>
-        </div>
-        <button type="button" className="btn rpx-take" onClick={onTake} disabled={!rm.cursor} title="Önizlemedekini yayına al (Enter): açı(lar), hız, yakınlaştırma, giriş / çıkış aynen gider">
-          <Icon name="broadcast" size={15} /> {onAir ? "ÖNİZLEMEDEKİNİ YAYINA AL" : "YAYINA AL"} <Kbd>Enter</Kbd>
-        </button>
-        {onAir && <button type="button" className="btn rpx-live" onClick={onLive} title="Canlıya dön (Esc)"><Icon name="stop" size={14} /> CANLIYA DÖN <Kbd>Esc</Kbd></button>}
-        {onAir && pgm?.total > 1 && pgm.index + 1 < pgm.total && <button type="button" className="btn btn--sm btn--soft" onClick={pgm.skip}><Icon name="skip" size={12} /> Sıradakine geç</button>}
+    <section className="rpx-col rpx-go2" aria-label="Önizleme ve yayın">
+      <h5 className="rpx-col__h">Önizleme → Yayın</h5>
+      <div className={`rpx-go2__card is-pvw ${pvR ? "is-on" : ""}`}>
+        <span className="rpx-stage is-preview">ÖNİZLEMEDE</span>
+        {pvR ? <><strong>{replayTitle(pvR, metaFor(pvR, meta))}</strong><small>{names(pvR, pvPos.angles)}{pvPos.angles.length > 1 ? " · sırayla" : ""}</small></>
+          : <small className="muted">Bir pozisyonda <b>ÖNİZLEMEYE GÖNDER</b>’e bas.</small>}
       </div>
+      <button type="button" className="btn rpx-take" onClick={onTake} disabled={!pvR} title="GEÇİŞ: önizlemedeki pozisyonun seçili açıları aynen yayına (Enter)">
+        <Icon name="broadcast" size={15} /> GEÇİŞ · YAYINA AL <Kbd>Enter</Kbd>
+      </button>
+      <div className={`rpx-go2__card is-air ${airR ? "is-on" : ""}`}>
+        <span className="rpx-stage is-air">{onAir && <i />}YAYINDA</span>
+        {airR ? <><strong>{replayTitle(airR, metaFor(airR, meta))}</strong><small>{names(airR, airPos.angles)}{pgm?.total > 1 ? ` · ${pgm.index + 1}/${pgm.total}` : ""}</small></> : <small className="muted">Yayında tekrar yok.</small>}
+      </div>
+      {onAir && <button type="button" className="btn rpx-live" onClick={onLive} title="Canlıya dön (Esc)"><Icon name="stop" size={14} /> CANLIYA DÖN <Kbd>Esc</Kbd></button>}
+      {onAir && pgm?.total > 1 && pgm.index + 1 < pgm.total && <button type="button" className="btn btn--sm btn--soft" onClick={pgm.skip}><Icon name="skip" size={12} /> Sıradaki açıya geç</button>}
+      <div className="rpx-go2__quick">
+        <button type="button" className="btn btn--sm" disabled={!lastGoal} onClick={() => onSend(lastGoal)} title="Son golün seçili açıları önizlemeye">
+          <Icon name="ball" size={12} /> Son gol → önizleme
+        </button>
+        <button type="button" className="btn btn--sm" disabled={!lastGoal} onClick={() => { if (onSend(lastGoal, { rate: 0.5 })) onTake(); }} title="Son golün seçili açıları 0,5× ağır çekimle yayına (tek dokunuş)">
+          <Icon name="repeat" size={12} /> Tekrar + ağır çekim
+        </button>
+      </div>
+      {previewing && !pvR && <p className="st-hint">Önizleme tekrara hazır.</p>}
     </section>
   );
 }
@@ -358,8 +408,9 @@ function DeckStrip({ rm, decks, sources, parts }) {
         <DeckTarget decks={decks} focus={deck.target} setFocus={rm.setFocus} />
         {deck.target === "program" && <span className="rpx-deck__live">değişiklikler anında yayında</span>}
         <DeckTime deck={deck} t={t} />
-        {v("transport") && <Part id="transport" label="Taşıma (oynat, kare kare, J K L)"><DeckTransport deck={deck} t={t} /></Part>}
-        <DeckAngles deck={deck} sources={sources} />
+        {v("transport") && <Part id="transport" label="Taşıma (oynat, kare kare, J K L, dondur, rampa)"><DeckTransport deck={deck} t={t} /><DeckExtras deck={deck} t={t} /></Part>}
+        <DeckSeq deck={deck} sources={sources} />
+        {(deck.seq || []).length < 2 && <DeckAngles deck={deck} sources={sources} />}
       </div>
       {v("timeline") && <Part id="timeline" label="Süre çubuğu (giriş / çıkış, işaretler)"><DeckTimeline deck={deck} t={t} size="big" activity /></Part>}
       {(v("rate") || v("zoom")) && (

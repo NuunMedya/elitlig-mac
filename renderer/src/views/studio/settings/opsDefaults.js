@@ -34,7 +34,7 @@ export const DEFAULT_OPS = Object.freeze({
   led: { content: "scene", brightness: 100, tickerText: "Elit Lig canlı yayında · elitlig.com", tickerSpeed: 120, mirrorFps: 10, sponsorSec: 8, countdownMin: 5, countdownLabel: "MAÇ BAŞLIYOR", mirrorOnReplay: false },
   iv: { title: "RÖPORTAJ", style: "classic", bandWithRecord: true, targetMin: 3, markSeconds: 15, micStrip: "mic", muteOthers: false, confirmDelete: true, recentLimit: 8 },
   hl: { intro: "long", outro: "long", includeMoments: true, musicDb: -12, duckDb: -14, confirmUpload: true, previewWhenDone: false },
-  mac: { halfMin: 25, periods: 2, injuryMax: 10, confirmFinish: true, ratingStep: 0.5, possessionToSubtitle: true, statKeys: ["shots", "onTarget", "corners", "offsides", "fouls", "saves"], codeLen: 3 },
+  mac: { halfMin: 25, periods: 2, injuryMax: 10, confirmFinish: true, ratingStep: 0.5, possessionToSubtitle: true, statKeys: ["shots", "onTarget", "corners", "offsides", "fouls", "saves"], codeLen: 3, askAssist: false },
   macro: { confirmRun: false, stepDelayMs: 300 },
 });
 
@@ -89,6 +89,8 @@ export function normalizeOps(raw) {
       possessionToSubtitle: bool(M.possessionToSubtitle, d.mac.possessionToSubtitle),
       statKeys: Array.isArray(M.statKeys) ? [...new Set(M.statKeys.filter((k) => STAT_KEYS.includes(k)))] : [...d.mac.statKeys],
       codeLen: pick(Number(M.codeLen), [2, 3, 4, 5], d.mac.codeLen),
+      // GOL düğmelerinde golcüden sonra asist sorulsun mu (düğme seçeneği "Ayarlardaki gibi" iken).
+      askAssist: bool(M.askAssist, d.mac.askAssist),
     },
     macro: {
       confirmRun: bool(Mc.confirmRun, d.macro.confirmRun),

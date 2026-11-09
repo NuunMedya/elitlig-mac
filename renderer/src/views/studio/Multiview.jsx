@@ -9,6 +9,8 @@
 // çizilir; görünmeyen kutu ve gizli pencere atlanır. React durumu kare başına
 // değişmez — program tuvalinin kare hızını bozmaz.
 import React, { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { canvasLoop, onScreen } from "./perf/renderLoad";
+import { SECONDARY_FPS } from "../../lib/studio/renderBudget";
 import { createPortal } from "react-dom";
 import { Icon, MenuButton } from "../../components/ui";
 import { resolveScene } from "../../lib/studio/scenes";
@@ -17,26 +19,24 @@ import { BAD, STATUS_TEXT } from "./SourcesPanel";
 
 const TILE_W = 256;
 const TILE_H = 144;
-const TILE_MS = 166;
+const TILE_MS = 1000 / SECONDARY_FPS.sceneThumb; // ~6 fps
 
 /** Tüm kutu tuvallerini çizen tek zamanlayıcı. register(id, canvas | null). */
 export function useTileRenderer(configRef, runtimeRef, { ms = TILE_MS } = {}) {
   const canvases = useRef(new Map()); // canvas → id
   useEffect(() => {
     const draw = () => {
-      if (document.hidden) return;
       const cfg = configRef.current;
       if (!cfg) return;
       const now = performance.now();
       for (const [c, id] of canvases.current) {
-        if (!c.isConnected || c.offsetParent === null) continue;
+        if (!c.isConnected || c.offsetParent === null || !onScreen(c)) continue;
         const ctx = c.getContext("2d", { alpha: false });
-        drawScene(ctx, resolveScene(cfg, id), cfg.sources, runtimeRef.current, c.width, c.height, { placeholders: true, now });
+        // noFx: küçük resimde WebGL görüntü ayarı yapılmaz (yalnız çevirme).
+        drawScene(ctx, resolveScene(cfg, id), cfg.sources, runtimeRef.current, c.width, c.height, { placeholders: true, now, noFx: true });
       }
     };
-    draw();
-    const t = setInterval(draw, ms);
-    return () => clearInterval(t);
+    return canvasLoop("Sahne kutuları (küçük resim)", { fps: 1000 / ms }, draw);
   }, [configRef, runtimeRef, ms]);
   return useCallback((id, canvas, prev) => {
     if (prev && prev !== canvas) canvases.current.delete(prev);

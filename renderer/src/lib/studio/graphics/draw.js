@@ -21,6 +21,8 @@ import { TICKER_LIFT, drawTicker } from "./drawTicker";
 import { getImage } from "./images";
 import { isFullPanel, normalizeVariant } from "./variants";
 import { isVisibleIn } from "./visibility";
+import { drawQrCard } from "./drawQr";
+import { qrVisible } from "../links";
 
 const STAGE_W = 1920;
 const MARGIN = 110; // panel gölgesi için katman payı
@@ -36,7 +38,7 @@ function stateFor(ctx) {
 export function makeEnv(ctx, { width, height, now }, snap, overrides = {}) {
   const st = stateFor(ctx);
   const k = (Number(width) || STAGE_W) / STAGE_W;
-  const B = snap.branding;
+  const B = overrides.B || snap.branding;
   const images = snap.images || {};
   return {
     ctx, k, W: STAGE_W, H: (Number(height) || 1080) / k, now: now ?? Date.now(),
@@ -46,6 +48,9 @@ export function makeEnv(ctx, { width, height, now }, snap, overrides = {}) {
     ...overrides,
   };
 }
+
+/** Öğenin markası (grafik paketi öğe başına renk verdiyse o; yoksa genel). */
+export const elementBranding = (snap, element) => snap?.brandingFor?.[element] || snap?.branding;
 
 /** Önbellekli panel: ortada (ya da y verilirse orada), giriş hareketiyle. */
 function panel(ctx, E, key, size, paint, { since = 0, y = null } = {}) {
@@ -158,21 +163,59 @@ export function graphicsLayers(snap, sceneId) {
   return { variant, subtitle, interviewBand };
 }
 
-/**
- * Tüm yayın grafiklerini program tuvaline çizer.
- * frame: { width, height, now, sceneId? }   snapshot: buildGraphicsSnapshot() çıktısı.
- */
-export function drawGraphics(ctx, frame, snap) {
-  if (!ctx || !snap || !snap.branding) return;
-  const layers = graphicsLayers(snap, frame?.sceneId);
-  if (!layers.variant && !layers.subtitle && !layers.interviewBand) return;
+/** Ortamı başka bir markayla (öğe başına paket rengi) kopyalar. */
+const envFor = (E, B) => (B === E.B ? E : { ...E, B, P: B.palette, F: (px, weight = 800) => fontOf(px * (B.fontScale || 1), weight, B.fontFamily) });
+
+const FADE_EASE = (t) => (t < 0.5 ? 2 * t * t : 1 - ((-2 * t + 2) ** 2) / 2);
+
+/** Katmanları çizer (paket geçişinde eski ve yeni görünüm için iki kez). */
+function drawLayers(ctx, frame, snap, layers) {
   const E = makeEnv(ctx, frame, snap);
   const lift = layers.subtitle ? TICKER_LIFT : 0;
   ctx.save();
   ctx.scale(E.k, E.k);
   ctx.textBaseline = "middle";
-  if (layers.variant) drawVariant(ctx, E, snap, { lift });
-  if (layers.interviewBand) drawInterview(ctx, E, snap, { lift });
-  if (layers.subtitle) drawTicker(ctx, E, snap);
+  if (layers.variant) {
+    const v = normalizeVariant(snap.variant);
+    const el = isFullPanel(v) ? "screens" : v === "interview" ? "interview" : "scorebug";
+    drawVariant(ctx, envFor(E, elementBranding(snap, el)), snap, { lift });
+  }
+  if (layers.interviewBand) drawInterview(ctx, envFor(E, elementBranding(snap, "interview")), snap, { lift });
+  if (layers.subtitle) drawTicker(ctx, envFor(E, elementBranding(snap, "lowerThird")), snap);
   ctx.restore();
+}
+
+/**
+ * Tüm yayın grafiklerini program tuvaline çizer.
+ * frame: { width, height, now, sceneId? }   snapshot: buildGraphicsSnapshot() çıktısı.
+ * snapshot.fade { branding, brandingFor, at, ms }: grafik paketi değişince eski görünüm
+ * yenisine karışır. snapshot.qr: programın köşesinde QR kartı (bağlantı).
+ */
+export function drawGraphics(ctx, frame, snap) {
+  if (!ctx || !snap || !snap.branding) return;
+  const now = frame?.now ?? Date.now();
+  const layers = graphicsLayers(snap, frame?.sceneId);
+  const any = layers.variant || layers.subtitle || layers.interviewBand;
+  if (any) {
+    const f = snap.fade;
+    const t = f && f.branding && f.ms > 0 ? (now - f.at) / f.ms : 1;
+    if (t >= 0 && t < 1) {
+      const e = FADE_EASE(Math.min(1, Math.max(0, t)));
+      ctx.save();
+      ctx.globalAlpha *= 1 - e;
+      drawLayers(ctx, { ...frame, now }, { ...snap, branding: f.branding, brandingFor: f.brandingFor || null, fade: null }, layers);
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha *= e;
+      drawLayers(ctx, { ...frame, now }, snap, layers);
+      ctx.restore();
+    } else drawLayers(ctx, { ...frame, now }, snap, layers);
+  }
+  if (snap.qr && qrVisible(snap.qr, now)) {
+    const k = (Number(frame?.width) || STAGE_W) / STAGE_W;
+    ctx.save();
+    ctx.scale(k, k);
+    drawQrCard(ctx, { W: STAGE_W, H: (Number(frame?.height) || 1080) / k, now, B: snap.branding, M: stateFor(ctx).measure, lift: layers.subtitle ? TICKER_LIFT : 0 }, snap.qr);
+    ctx.restore();
+  }
 }

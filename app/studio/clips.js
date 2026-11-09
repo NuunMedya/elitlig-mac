@@ -207,9 +207,10 @@ function buildWebClipArgs(input, outFile, { width, height, fps, hasAudio = true 
     "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
     "-fflags", "+genpts", "-i", input,
     "-map", "0:v:0", ...(hasAudio ? ["-map", "0:a:0?"] : []),
-    "-vf", `scale=${size.width}:${size.height}:flags=bicubic,fps=${rate},format=yuv420p`,
+    "-vf", `${ff.scaleFilter(size.width, size.height)},fps=${rate},format=yuv420p`, // BT.709 dönüşümü
     "-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high", "-level", computeH264Level(size.width, size.height, rate),
     "-pix_fmt", "yuv420p", "-crf", "21", "-maxrate", "8M", "-bufsize", "16M",
+    ...ff.COLOR_ARGS,
     "-g", String(rate * 2), "-bf", "2", "-threads", "2",
     ...(hasAudio ? ["-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2"] : ["-an"]),
     "-movflags", "+faststart", "-f", "mp4",

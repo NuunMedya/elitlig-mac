@@ -90,7 +90,7 @@ export const PANEL_PARTS = {
   ],
   sahne: [
     { id: "templates", label: "Üst çubuk (Yeni sahne, şablon galerisi)", sel: ".st-scenetab__bar, .st-tpl" },
-    { id: "foot", label: "Sahne kutusu alt satırı (katmanlar, kaynak ekle)", sel: ".st-scard__foot" },
+    { id: "foot", label: "Sahne kartı eylem düğmeleri (yayına al, düzenle, çoğalt, sil)", sel: ".scn-card__acts" },
     { id: "sources", label: "Kaynaklar listesi", sel: ".st-scenetab__side" },
   ],
   led: [

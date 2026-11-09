@@ -12,8 +12,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Field, Icon, Kbd, Modal } from "../../../components/ui";
 import {
-  LATENCY_OPTIONS, PLACEHOLDERS, PRIVACY_OPTIONS, TITLE_MAX, normalizeSettings, parseTags, presetFromSettings, renderTemplate,
-  settingsFromPreset, tagsText, templateVars, validateSettings,
+  LATENCY_OPTIONS, PLACEHOLDERS, PRIVACY_OPTIONS, TITLE_MAX, defaultTitle, normalizeSettings, parseTags, presetFromSettings, readTitleUpper, renderTemplate,
+  settingsFromPreset, tagsText, templateVars, upperTr, validateSettings, writeTitleUpper,
 } from "./templates";
 import { useYoutubePresets } from "./useYoutubePresets";
 import { CoverStartRow } from "./cover/CoverDialog"; // [kapak]
@@ -23,10 +23,11 @@ import "./youtube.css";
 const hasPlaceholder = (s) => /\{\w+\}/.test(String(s || ""));
 
 /** Formdaki (yer tutuculu olabilir) değerler → gönderilecek ayarlar. */
-export function resolveForm(form, vars) {
+export function resolveForm(form, vars, { upper = false } = {}) {
+  const title = renderTemplate(form.title, vars);
   return normalizeSettings({
     ...form,
-    title: renderTemplate(form.title, vars),
+    title: upper ? upperTr(title) : title,
     description: renderTemplate(form.description, vars),
     tags: parseTags(form.tagsText).map((t) => renderTemplate(t, vars)).filter(Boolean),
   });
@@ -41,7 +42,11 @@ export default function YoutubeStartDialog({ mode = "start", yt, match, homeName
   const edit = mode === "edit";
   const presets = useYoutubePresets();
   const vars = useMemo(() => templateVars(match, { homeName, awayName, matchId: yt?.matchId }), [match, homeName, awayName, yt?.matchId]);
-  const fallbackTitle = `${vars.home} – ${vars.away}`;
+  // "Başlığı büyük harf yap" (varsayılan açık): gönderilen başlık Türkçe büyük harfe çevrilir.
+  const [upper, setUpperState] = useState(() => readTitleUpper());
+  const setUpper = (on) => { setUpperState(on); writeTitleUpper(on); };
+  // Varsayılan biçim: "<LİG / TURNUVA> <SEZON> <TUR> · ELİTLİG" (sunucu taslağı / ön ayar yoksa).
+  const fallbackTitle = defaultTitle(vars, { upper });
   const [form, setForm] = useState(() => toForm({ title: fallbackTitle, privacy: yt?.privacy || "public" }));
   const [presetId, setPresetId] = useState("");
   const [source, setSource] = useState("loading"); // loading | draft | preset | stream | fallback
@@ -70,23 +75,27 @@ export default function YoutubeStartDialog({ mode = "start", yt, match, homeName
     })();
     return () => { alive = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Taslak / ön ayar yoksa: maç verisi sonradan gelirse (lig, sezon, tur) varsayılan başlık güncellenir.
+  useEffect(() => {
+    if (!edit && source === "fallback" && !touched) setForm((f) => (f.title === fallbackTitle ? f : { ...f, title: fallbackTitle }));
+  }, [fallbackTitle, source, touched, edit]);
   // Taslak yoksa varsayılan ön ayar.
   useEffect(() => {
     if (source !== "fallback" || touched || presets.loading) return;
     const def = presets.items.find((p) => p.is_default);
-    if (def) { setForm(toForm(settingsFromPreset(def, vars))); setPresetId(def.id); setSource("preset"); }
+    if (def) { setForm(toForm(settingsFromPreset(def, vars))); setPresetId(def.id); setSource("preset"); setUpperState(def.uppercase !== false); }
   }, [source, touched, presets.loading, presets.items, vars]);
 
-  const resolved = useMemo(() => resolveForm(form, vars), [form, vars]);
+  const resolved = useMemo(() => resolveForm(form, vars, { upper }), [form, vars, upper]);
   const problems = validateSettings({ ...resolved, title: resolved.title || fallbackTitle });
   const blocking = problems.filter((p) => !p.startsWith("Başlık boş"));
-  const showPreview = hasPlaceholder(form.title) || hasPlaceholder(form.description) || hasPlaceholder(form.tagsText);
+  const showPreview = hasPlaceholder(form.title) || hasPlaceholder(form.description) || hasPlaceholder(form.tagsText) || (upper && resolved.title !== form.title.trim());
   const selected = presets.items.find((p) => p.id === presetId) || null;
 
   const applyPreset = (id) => {
     setPresetId(id);
     const p = presets.items.find((x) => x.id === id);
-    if (p) { setTouched(true); setForm(toForm(settingsFromPreset(p, vars))); }
+    if (p) { setTouched(true); setForm(toForm(settingsFromPreset(p, vars))); setUpperState(p.uppercase !== false); }
   };
   const insert = (key) => {
     const field = focusRef.current === "description" ? "description" : focusRef.current === "tags" ? "tagsText" : "title";
@@ -97,11 +106,11 @@ export default function YoutubeStartDialog({ mode = "start", yt, match, homeName
     try { await fn(); if (ok) toast?.(ok, { tone: "success" }); } catch (e) { toast?.(e?.message || "İşlem yapılamadı.", { tone: "error", timeout: 5000 }); } finally { setSaving(false); }
   };
   const savePreset = () => run(async () => {
-    const item = await presets.create(presetFromSettings(newName || form.title || "Ön ayar", { ...form, tags: parseTags(form.tagsText) }, vars));
+    const item = await presets.create(presetFromSettings(newName || form.title || "Ön ayar", { ...form, uppercase: upper, tags: parseTags(form.tagsText) }, vars));
     if (item?.id) setPresetId(String(item.id));
     setNewName(null);
   }, presets.local ? "Ön ayar bu bilgisayara kaydedildi." : "Ön ayar kaydedildi (tüm maçlarda kullanılabilir).");
-  const updatePreset = () => selected && run(() => presets.update(selected.id, { ...presetFromSettings(selected.name, { ...form, tags: parseTags(form.tagsText) }, vars), is_default: selected.is_default }), "Ön ayar güncellendi.");
+  const updatePreset = () => selected && run(() => presets.update(selected.id, { ...presetFromSettings(selected.name, { ...form, uppercase: upper, tags: parseTags(form.tagsText) }, vars), is_default: selected.is_default }), "Ön ayar güncellendi.");
   const removePreset = () => selected && run(async () => { await presets.remove(selected.id); setPresetId(""); }, "Ön ayar silindi.");
   const toggleDefault = () => selected && run(() => presets.setDefault(selected.is_default ? null : selected.id), selected.is_default ? "Varsayılan kaldırıldı." : `“${selected.name}” varsayılan yapıldı.`);
 
@@ -166,6 +175,9 @@ export default function YoutubeStartDialog({ mode = "start", yt, match, homeName
         <Field label={`Başlık · ${resolved.title.length || fallbackTitle.length}/${TITLE_MAX}`}>
           <input autoFocus value={form.title} onChange={(e) => set({ title: e.target.value })} onFocus={() => { focusRef.current = "title"; }} placeholder={fallbackTitle} maxLength={300} spellCheck={false} />
         </Field>
+        <label className="toggle yt-upper" title="Gönderilen başlık Türkçe büyük harfe çevrilir (i → İ): “OSTİM FUTBOL TURNUVASI 1. SEZON SON 16 TURU · ELİTLİG”">
+          <input type="checkbox" checked={upper} onChange={(e) => setUpper(e.target.checked)} data-yt-upper="" /> Başlığı büyük harf yap
+        </label>
         <Field label="Açıklama">
           <textarea rows={4} value={form.description} onChange={(e) => set({ description: e.target.value })} onFocus={() => { focusRef.current = "description"; }} placeholder="Maçın açıklaması, bağlantılar… (bölümler yayında kendiliğinden eklenir)" />
         </Field>

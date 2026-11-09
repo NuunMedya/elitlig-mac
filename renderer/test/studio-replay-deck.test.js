@@ -1,12 +1,12 @@
 // Anlık tekrar destesi (lib/studio/replayDeck.js): durumlar SEÇİLİ → ÖNİZLEMEDE → YAYINDA,
-// oynatma listesi, yayında denetim modeli (hız, J / K / L, döngü, görünüm), açılar arası
+// pozisyon başına açı seçimi (oynatma listesi yok), yayında denetim modeli (hız, J / K / L, döngü, görünüm), açılar arası
 // zaman eşlemesi, ilerleme, hareket çubuğu, yayınlanan seçim ve tuşlar; önizleme → program
 // kopyası (previewTake) ile birlikte.
 import { describe, expect, it } from "vitest";
 import {
   DECK_RATES, MAX_RATE, MIN_RATE, STAGE, STAGE_LABEL, ZOOM_PRESETS, activityFromFrames, airedOut, airedStart, airedSwitch, angleStep, clampRate, deckFromPayload,
-  deckKeyAction, deckReducer, jog, mapAngleTime, movePlaylist, playlistFromSelection, progressOf, rateStep, rateText, remainingOf, selectionOf,
-  sequenceOf, setPlaylistAngle, stageOf, timeAt, togglePlaylist, zoomStep,
+  deckKeyAction, deckReducer, jog, mapAngleTime, nextInSequence, pickAll, pickNumbers, picksOf, positionAngles, positionStep, progressOf, rampSteps, rateStep, rateText,
+  remainingOf, setPicks, stageOf, timeAt, togglePick, zoomStep,
 } from "../src/lib/studio/replayDeck";
 import { planTake, playerQueueOf, replayPayload, samePayload } from "../src/lib/studio/previewTake";
 import { normalizeModeSettings } from "../src/lib/studio/modes";
@@ -54,38 +54,64 @@ describe("hız ve yakınlaştırma basamakları", () => {
 });
 
 describe("durumlar: SEÇİLİ → ÖNİZLEMEDE → YAYINDA", () => {
-  const playlist = [{ replayId: "r1", angle: "program" }, { replayId: "r1", angle: "cam1" }];
-  it("yayın > önizleme > seçili > boşta", () => {
-    expect(stageOf({ replayId: "r2", playlist })).toBe(STAGE.idle);
-    expect(stageOf({ replayId: "r1", playlist })).toBe(STAGE.selected);
-    expect(stageOf({ replayId: "r1", playlist, cursor: { replayId: "r1", angle: "cam1" } })).toBe(STAGE.preview);
-    expect(stageOf({ replayId: "r1", playlist, cursor: { replayId: "r1", angle: "cam1" }, air: { replayId: "r1", angle: "program" } })).toBe(STAGE.air);
-    // açı düzeyinde
-    expect(stageOf({ replayId: "r1", angle: "cam2", playlist, cursor: { replayId: "r1", angle: "cam1" } })).toBe(STAGE.idle);
-    expect(stageOf({ replayId: "r1", angle: "cam1", playlist, air: { replayId: "r1", angle: "program" } })).toBe(STAGE.selected);
+  const picks = { r1: ["program", "cam1"] };
+  it("yayın > önizleme > seçili > boşta (pozisyon ve açı düzeyinde)", () => {
+    expect(stageOf({ replayId: "r2", picks })).toBe(STAGE.idle);
+    expect(stageOf({ replayId: "r1", picks })).toBe(STAGE.selected);
+    expect(stageOf({ replayId: "r1", picks, cursor: { replayId: "r1", angle: "cam1" } })).toBe(STAGE.preview);
+    expect(stageOf({ replayId: "r1", picks, cursor: { replayId: "r1", angle: "cam1" }, air: { replayId: "r1", angle: "program" } })).toBe(STAGE.air);
+    expect(stageOf({ replayId: "r1", angle: "cam2", picks, cursor: { replayId: "r1", angle: "cam1" } })).toBe(STAGE.idle);
+    expect(stageOf({ replayId: "r1", angle: "cam1", picks, air: { replayId: "r1", angle: "program" } })).toBe(STAGE.selected);
+    // yayındaki dizi: açı kümesinde
+    expect(stageOf({ replayId: "r1", angle: "cam1", air: { replayId: "r1", angle: "program", angles: ["program", "cam1"] } })).toBe(STAGE.air);
     expect(STAGE_LABEL.air).toBe("YAYINDA");
   });
 });
 
-describe("oynatma listesi", () => {
-  it("seçimden liste: önceki sıra korunur, yeni girişler sona, url'siz açı atılır", () => {
-    const pl = playlistFromSelection(LIST, { r1: ["cam2", "program"], r2: ["program", "cam1"] });
-    expect(pl).toEqual([{ replayId: "r1", angle: "cam2" }, { replayId: "r1", angle: "program" }, { replayId: "r2", angle: "program" }]);
-    const moved = movePlaylist(pl, 2, 0);
-    const again = playlistFromSelection(LIST, { r1: ["cam2"], r2: ["program"] }, { prev: moved });
-    expect(again).toEqual([{ replayId: "r2", angle: "program" }, { replayId: "r1", angle: "cam2" }]);
-    expect(selectionOf(moved)).toEqual({ r2: ["program"], r1: ["cam2", "program"] });
+describe("pozisyon başına açı seçimi (oynatma listesi yok)", () => {
+  it("tık: seç / bırak, sıra = tıklama sırası, numaralar; boş pozisyon silinir", () => {
+    let p = togglePick({}, "r1", "cam2");
+    p = togglePick(p, "r1", "program");
+    p = togglePick(p, "r2", "program");
+    expect(p).toEqual({ r1: ["cam2", "program"], r2: ["program"] });
+    expect(pickNumbers(p, "r1")).toEqual({ cam2: 1, program: 2 });
+    p = togglePick(p, "r1", "cam2");
+    expect(pickNumbers(p, "r1")).toEqual({ program: 1 });
+    p = togglePick(p, "r2", "program");
+    expect(p).toEqual({ r1: ["program"] });
+    expect(setPicks(p, "r1", [])).toEqual({});
+    expect(setPicks({}, "r1", ["a", "a", "b"])).toEqual({ r1: ["a", "b"] });
   });
-  it("ekle / çıkar, açı değiştir (yineleme yok), sıra numaraları", () => {
-    let pl = togglePlaylist([], { replayId: "r1", angle: "cam1" });
-    pl = togglePlaylist(pl, { replayId: "r1", angle: "program" });
-    expect(sequenceOf(pl, "r1")).toEqual({ cam1: 1, program: 2 });
-    pl = togglePlaylist(pl, { replayId: "r1", angle: "cam1" });
-    expect(pl).toEqual([{ replayId: "r1", angle: "program" }]);
-    pl = [{ replayId: "r1", angle: "program" }, { replayId: "r1", angle: "cam1" }];
-    expect(setPlaylistAngle(pl, 0, "cam2")).toEqual([{ replayId: "r1", angle: "cam2" }, { replayId: "r1", angle: "cam1" }]);
-    expect(setPlaylistAngle(pl, 0, "cam1")).toEqual([{ replayId: "r1", angle: "cam1" }]);
-    expect(movePlaylist(pl, 0, 9)).toEqual([{ replayId: "r1", angle: "cam1" }, { replayId: "r1", angle: "program" }]);
+  it("Tümü: seçilenler başta, kalanlar kayıt sırasıyla; url'siz açı seçilemez", () => {
+    expect(pickAll({ r1: ["cam2"] }, R1)).toEqual({ r1: ["cam2", "program", "cam1"] });
+    expect(pickAll({}, R2)).toEqual({ r2: ["program"] });
+    expect(picksOf({ r2: ["cam1", "program"] }, R2)).toEqual(["program"]);
+  });
+  it("önizlemeye / yayına giden: YALNIZ o pozisyonun seçili açıları; seçim yoksa program", () => {
+    const picks = { r1: ["cam2", "cam1"], r2: ["program"] };
+    expect(positionAngles(picks, R1)).toEqual(["cam2", "cam1"]);
+    expect(positionAngles({}, R1)).toEqual(["program"]);
+    expect(positionAngles({}, { id: "x", angles: [{ angle: "cam9", url: "u" }] })).toEqual(["cam9"]);
+    expect(positionAngles({}, { id: "x", angles: [] })).toEqual([]);
+    // yük: diğer pozisyonun seçimi KARIŞMAZ
+    const p = replayPayload({ list: LIST, playlist: positionAngles(picks, R1).map((angle) => ({ replayId: "r1", angle })), cursor: { replayId: "r1", angle: "cam2" }, rate: 1, ...maps() });
+    expect(p.items.map((x) => x.key)).toEqual(["r1/cam2", "r1/cam1"]);
+    expect(p.angles).toEqual(["cam2", "cam1"]);
+  });
+  it("önizleme dizisi: sıradaki açı (döngü), pozisyonlar arası adım, rampa", () => {
+    expect(nextInSequence(["a", "b", "c"], "a")).toBe("b");
+    expect(nextInSequence(["a", "b", "c"], "c")).toBe("a");
+    expect(nextInSequence(["a", "b", "c"], "c", { loop: false })).toBe(null);
+    expect(nextInSequence(["a", "b"], "x")).toBe("a");
+    const list = [{ ...R2, kind: "goal" }, { ...R1, kind: "moment" }, { id: "r0", kind: "goal", angles: [{ angle: "program", url: "u0" }] }];
+    expect(positionStep(list, "r2", 1).id).toBe("r1");
+    expect(positionStep(list, "r2", 1, { kind: "goal" }).id).toBe("r0");
+    expect(positionStep(list, "r2", -1).id).toBe("r2");
+    expect(positionStep(list, "yok", 1).id).toBe("r2");
+    const steps = rampSteps(1, 0.25, 800, 100);
+    expect(steps).toHaveLength(8);
+    expect(steps[steps.length - 1]).toEqual({ at: 800, rate: 0.25 });
+    for (let i = 1; i < steps.length; i += 1) expect(steps[i].rate).toBeLessThanOrEqual(steps[i - 1].rate);
   });
   it("yük listenin AÇIK sırasını izler (tekrarlar arası karışık sıra), öğeye özel hız", () => {
     const playlist = [{ replayId: "r2", angle: "program" }, { replayId: "r1", angle: "cam1" }, { replayId: "r1", angle: "program" }];

@@ -2,7 +2,7 @@
 // kaynak kalıcılığı göçü, tekrar yakınlaştırma görünümü.
 import { CHAPTER_MIN_GAP_MS, chapterRules, chapterSignature, chaptersText, nextChapterStart, normalizeChapters, parseStamp } from "../src/views/studio/youtube/chapters";
 import {
-  markDefault, normalizePresets, normalizeSettings, parseTags, presetFromSettings, renderTemplate, settingsFromPreset, startBody, templateVars, trDate, validateSettings,
+  defaultTitle, markDefault, smartTrim, normalizePresets, normalizeSettings, parseTags, presetFromSettings, renderTemplate, settingsFromPreset, startBody, templateVars, trDate, upperTr, validateSettings,
 } from "../src/views/studio/youtube/templates";
 import { resolveForm } from "../src/views/studio/youtube/YoutubeStartDialog";
 import { presetBody } from "../src/views/studio/youtube/useYoutubePresets";
@@ -66,7 +66,7 @@ describe("YouTube ön ayarları: şablonlar", () => {
   const match = { id: 42, first_team_name: "Ankara Gücü", second_team_name: "Yıldızspor", date: "2026-11-06", time: "20:30:00", league_name: "Elit Lig", match_season: "2026-27", match_field: "none", city: "Ankara" };
   const vars = templateVars(match);
   it("maç verisi → değişkenler", () => {
-    expect(vars).toEqual({ home: "Ankara Gücü", away: "Yıldızspor", date: "6 Kasım 2026", time: "20:30", league: "Elit Lig", season: "2026-27", venue: "", city: "Ankara", link: "https://elitlig.com/maclar/42" });
+    expect(vars).toEqual({ home: "Ankara Gücü", away: "Yıldızspor", date: "6 Kasım 2026", time: "20:30", league: "Elit Lig", season: "2026-27", round: "", stage: "", venue: "", city: "Ankara", link: "https://elitlig.com/maclar/42" });
     expect(templateVars(match, { homeName: "AG", link: "https://x.y/z" })).toMatchObject({ home: "AG", link: "https://x.y/z" });
     expect(trDate("2026-01-31T10:00:00Z")).toBe("31 Ocak 2026");
   });
@@ -76,9 +76,30 @@ describe("YouTube ön ayarları: şablonlar", () => {
     expect(renderTemplate("{venue} · {home}\n{link} {nope}", vars)).toBe("Ankara Gücü\nhttps://elitlig.com/maclar/42 {nope}");
     expect(renderTemplate("Sezon {season}", vars)).toBe("Sezon 2026-27");
   });
+  it("varsayılan başlık: <LİG> <SEZON> <TUR> · ELİTLİG, Türkçe büyük harf", () => {
+    const v = templateVars({ first_team_name: "Kartal", second_team_name: "Şahin", league_name: "Ostim Futbol Turnuvası", match_season: "1. Sezon", round_name: "Son 16 Turu" });
+    expect(v.round).toBe("Son 16 Turu");
+    expect(defaultTitle(v)).toBe("OSTİM FUTBOL TURNUVASI 1. SEZON SON 16 TURU · ELİTLİG");
+    expect(defaultTitle(v, { upper: false })).toBe("Ostim Futbol Turnuvası 1. Sezon Son 16 Turu · ELİTLİG");
+    expect(templateVars({ group: { group_name: "Çeyrek final" } }).round).toBe("Çeyrek final");
+    expect(templateVars({ stage: "none", group_name: "A Grubu" }).stage).toBe("A Grubu");
+    expect(defaultTitle(templateVars({ first_team_name: "Kartal", second_team_name: "Şahin", league_name: "none" }))).toBe("KARTAL - ŞAHİN · ELİTLİG");
+    // sezon lig / tur adını içeriyorsa tekrar edilmez (sunucuyla aynı)
+    expect(defaultTitle(templateVars({ league_name: "Süper Lig", match_season: "Süper Lig 2026 Güz", round_name: "2026" }))).toBe("SÜPER LİG 2026 GÜZ · ELİTLİG");
+    const long = smartTrim(`${"Çok uzun turnuva adı ".repeat(8)}1. Sezon · ELİTLİG`);
+    expect(long.length).toBeLessThanOrEqual(100);
+    expect(long.endsWith("… · ELİTLİG")).toBe(true);
+    // ön ayarın uppercase alanı
+    expect(settingsFromPreset({ title_template: "{league} {round}", uppercase: true }, v).title).toBe("OSTİM FUTBOL TURNUVASI SON 16 TURU");
+    expect(settingsFromPreset({ title_template: "{league}", uppercase: false }, v)).toMatchObject({ title: "Ostim Futbol Turnuvası", uppercase: false });
+    expect(presetFromSettings("x", { title: "OSTİM FUTBOL TURNUVASI 1. SEZON · ELİTLİG", uppercase: true }, v)).toMatchObject({ title_template: "{league} {season} · ELİTLİG", uppercase: true });
+    expect(upperTr("istanbul ılgaz")).toBe("İSTANBUL ILGAZ");
+    expect(renderTemplate("{league} {season} {round} · ELİTLİG", v)).toBe("Ostim Futbol Turnuvası 1. Sezon Son 16 Turu · ELİTLİG");
+    expect(resolveForm({ title: "{league} {round}", description: "", tagsText: "" }, v, { upper: true }).title).toBe("OSTİM FUTBOL TURNUVASI SON 16 TURU");
+  });
   it("ön ayar ↔ form: maç adları yer tutucuya geri çevrilir", () => {
-    const p = presetFromSettings("Lig maçı", { title: "Ankara Gücü – Yıldızspor | Elit Lig", description: "Canlı: Ankara", tags: ["elitlig", "Ankara Gücü"], privacy: "unlisted", latency: "low" }, vars);
-    expect(p).toMatchObject({ name: "Lig maçı", title_template: "{home} – {away} | {league}", description_template: "Canlı: {city}", tags: ["elitlig", "{home}"], privacy: "unlisted", latency: "low", dvr: true, made_for_kids: false });
+    const p = presetFromSettings("Lig maçı", { title: "Ankara Gücü – Yıldızspor | Elit Lig", description: "Canlı: Ankara", tags: ["elitlig", "Ankara Gücü"], privacy: "unlisted", latency: "low", uppercase: false }, vars);
+    expect(p).toMatchObject({ name: "Lig maçı", title_template: "{home} – {away} | {league}", description_template: "Canlı: {city}", tags: ["elitlig", "{home}"], privacy: "unlisted", latency: "low", dvr: true, made_for_kids: false, uppercase: false });
     const other = templateVars({ first_team_name: "Kartal", second_team_name: "Şahin", league_name: "Elit Lig" });
     expect(settingsFromPreset(p, other)).toMatchObject({ title: "Kartal – Şahin | Elit Lig", tags: ["elitlig", "Kartal"], privacy: "unlisted" });
     expect(presetBody({ ...p, id: "x", local: true, updated_at: "t", is_default: true })).toEqual({ ...p, is_default: true });

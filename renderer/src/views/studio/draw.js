@@ -11,6 +11,20 @@ import { processFrame } from "./fx/fxProcessor";
 import { MAX_VIDEO_DELAY_MS, pickDelayed, regionPixels, tickerOffset } from "../../lib/studio/liveSources";
 import { isFullVisibility, layerVisibility } from "../../lib/studio/layerAnim";
 
+// Ana iş parçacığında da ayrı çizim işçisinde de (compositor/program.worker.js) çalışır:
+// DOM sınıfları yoksa (işçi) VideoFrame / ImageBitmap / OffscreenCanvas kullanılır.
+const HAS = (name) => typeof globalThis[name] === "function";
+const isVideoEl = (el) => HAS("HTMLVideoElement") && el instanceof HTMLVideoElement;
+const isImageEl = (el) => HAS("HTMLImageElement") && el instanceof HTMLImageElement;
+const isCanvasEl = (el) => (HAS("HTMLCanvasElement") && el instanceof HTMLCanvasElement) || (HAS("OffscreenCanvas") && el instanceof OffscreenCanvas);
+const isFrame = (el) => HAS("VideoFrame") && el instanceof VideoFrame;
+const isBitmap = (el) => HAS("ImageBitmap") && el instanceof ImageBitmap;
+/** Ekran dışı tuval (işçide OffscreenCanvas). */
+export function makeCanvas(w = 2, h = 2) {
+  if (typeof document !== "undefined" && document.createElement) { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; }
+  return new OffscreenCanvas(w, h);
+}
+
 const PLACEHOLDER = {
   waiting: "Açılıyor…",
   missing: "Kaynak yok",
@@ -31,7 +45,7 @@ const PLACEHOLDER = {
 function regionDrawable(rt, d, source, now) {
   const { sx, sy, sw, sh } = regionPixels(source.region, d.w, d.h);
   let c = rt.regionCanvas;
-  if (!c) { c = document.createElement("canvas"); rt.regionCanvas = c; }
+  if (!c) { c = makeCanvas(); rt.regionCanvas = c; }
   if (c.width !== sw || c.height !== sh) { c.width = sw; c.height = sh; rt.regionAt = -1; }
   if (now - (rt.regionAt ?? -1) >= 8 || now < rt.regionAt) {
     rt.regionAt = now;
@@ -55,7 +69,7 @@ function delayedDrawable(rt, d, delayMs, now) {
     // Gerekenden eski kareler geri dönüşüme (tuval yeniden kullanılır).
     while (ring.frames.length > 1 && ring.frames[1].t <= now - delayMs - 40) ring.spare.push(ring.frames.shift().c);
     if (ring.frames.length > 90) ring.spare.push(ring.frames.shift().c);
-    const c = ring.spare.pop() || document.createElement("canvas");
+    const c = ring.spare.pop() || makeCanvas();
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
     try { c.getContext("2d").drawImage(d.el, 0, 0, w, h); ring.frames.push({ t: now, c }); } catch { ring.spare.push(c); }
     if (ring.spare.length > 4) ring.spare.length = 4;
@@ -73,7 +87,7 @@ export function drawableOf(rt, now = 0, source = null) {
   let out = d;
   if (source.kind === "region" && source.region) out = regionDrawable(rt, out, source, now);
   const delay = Math.min(MAX_VIDEO_DELAY_MS, Number(source.videoDelayMs) || 0);
-  if (delay > 0 && (out.el instanceof HTMLVideoElement || out.el instanceof HTMLCanvasElement)) out = delayedDrawable(rt, out, delay, now);
+  if (delay > 0 && (isVideoEl(out.el) || isCanvasEl(out.el) || isFrame(out.el))) out = delayedDrawable(rt, out, delay, now);
   else if (rt.delayRing) rt.delayRing = null;
   return out;
 }
@@ -81,22 +95,23 @@ export function drawableOf(rt, now = 0, source = null) {
 function baseDrawable(rt, now = 0) {
   if (!rt || rt.status !== "live") return null;
   if (rt.images) {
-    const list = rt.images.filter((im) => im.complete && im.naturalWidth);
+    const list = rt.images.filter((im) => (isBitmap(im) ? im.width : im.complete && im.naturalWidth));
     if (!list.length) return null;
     const im = list[slideIndex(list.length, rt.intervalMs, now)];
-    return { el: im, w: im.naturalWidth, h: im.naturalHeight };
+    return isBitmap(im) ? { el: im, w: im.width, h: im.height } : { el: im, w: im.naturalWidth, h: im.naturalHeight };
   }
   const el = rt.el;
   if (!el) return null;
-  if (el instanceof HTMLVideoElement) {
+  if (isFrame(el)) return el.displayWidth ? { el, w: el.displayWidth, h: el.displayHeight } : null;
+  if (isVideoEl(el)) {
     if (el.readyState < 2 || !el.videoWidth) return null;
     return { el, w: el.videoWidth, h: el.videoHeight };
   }
-  if (el instanceof HTMLImageElement) {
+  if (isImageEl(el)) {
     if (!el.complete || !el.naturalWidth) return null;
     return { el, w: el.naturalWidth, h: el.naturalHeight };
   }
-  if (el instanceof HTMLCanvasElement) return el.width ? { el, w: el.width, h: el.height } : null;
+  if (isCanvasEl(el) || isBitmap(el)) return el.width ? { el, w: el.width, h: el.height } : null;
   return null;
 }
 
@@ -258,7 +273,8 @@ export function drawLayer(ctx, layer, source, rt, W, H, opts = {}) {
         const fx = opts.fx !== undefined ? (opts.fx && fxActive(opts.fx) ? opts.fx : null) : effectiveFx(source, L);
         if (fx) {
           flip = fxOrientOnly(fx);
-          if (!flip) {
+          // opts.noFx (küçük resim, çoklu görünüm): WebGL işlemesi yok — yalnız çevirme uygulanır.
+          if (!flip && !opts.noFx) {
             const key = opts.fx !== undefined ? `${source.id}|ui` : layer.fx ? `${source.id}|${layer.id}` : source.id;
             const p = processFrame(key, d, fx, { now: performance.now(), maxAge: opts.fxMaxAge ?? 12 });
             if (p) d = p;
@@ -311,8 +327,12 @@ export function drawSource(ctx, source, rt, box, fit = "cover", opts = {}) {
 
 /** Video: kutuya oranı korunarak (tekrar, VAR). */
 export function drawVideoIn(ctx, video, box, fit = "contain") {
-  if (!video || video.readyState < 2 || !video.videoWidth) return false;
-  const f = fitRect(video.videoWidth, video.videoHeight, box, fit);
+  if (!video) return false;
+  const frame = isFrame(video);
+  const vw = frame ? video.displayWidth : video.videoWidth;
+  const vh = frame ? video.displayHeight : video.videoHeight;
+  if ((!frame && video.readyState < 2) || !vw) return false;
+  const f = fitRect(vw, vh, box, fit);
   if (!f) return false;
   try { ctx.drawImage(video, f.sx, f.sy, f.sw, f.sh, f.dx, f.dy, f.dw, f.dh); } catch { return false; }
   return true;

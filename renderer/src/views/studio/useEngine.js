@@ -24,7 +24,7 @@
 //   "auto":      donanım VideoEncoder varsa webcodecs.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AUDIO_BITRATE_KBPS, isEncoding, pickMimeType, recorderBitsPerSecond } from "../../lib/studio/broadcast";
-import { choosePipeline } from "../../lib/studio/encodepath";
+import { choosePipeline, intermediateAudioKbps } from "../../lib/studio/encodepath";
 import { createWebCodecsPipeline, probeWebCodecs } from "./webcodecs";
 
 const studio = () => window.elitlig?.studio;
@@ -34,7 +34,7 @@ export const STALL_MS = 4000;
 const RESTART_GAP_MS = 10000;
 const STATS_REPORT_MS = 5000;
 
-export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subscribeFrames = null, getDrawStats = null, onError }) {
+export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subscribeFrames = null, getRemoteEncoder = null, getDrawStats = null, onError }) {
   const [status, setStatus] = useState({ state: "idle" });
   const [since, setSince] = useState(null);
   const [mode, setMode] = useState(null); // "live" | "rehearsal"
@@ -52,6 +52,7 @@ export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subs
   const pipelineRef = useRef("legacy"); // bu oturumun kodlama yolu
   const wcRef = useRef(null); // { pipeline, unsubscribe }
   const wcConfigRef = useRef(null);
+  const wcAudioConfigRef = useRef(null); // desteklenen Opus yapılandırması (yoklamadan)
   const fallbackRef = useRef(null); // { reason, at } — WebCodecs'ten eski yola geçildiyse
   const errRef = useRef(onError);
   errRef.current = onError;
@@ -132,9 +133,11 @@ export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subs
     try {
       pipeline = createWebCodecsPipeline({
         canvas, audioTrack: getAudioTrack(), fps: opts.fps, width: opts.width, height: opts.height,
-        audioBitrateKbps: opts.audioBitrateKbps, keyframeSec: opts.keyframeSec || 2, videoConfig: wcConfigRef.current,
+        audioBitrateKbps: opts.audioBitrateKbps, keyframeSec: opts.keyframeSec || 2, videoConfig: wcConfigRef.current, audioConfig: wcAudioConfigRef.current,
         onData: (buf) => { lastDataRef.current = Date.now(); studio()?.pushChunk?.(buf); },
         onFatal: (reason) => fallbackToLegacy(reason),
+        // İşçi motoru: görüntü çizim işçisinde kodlanır (ana iş parçacığı yükünden bağımsız).
+        remoteEncoder: getRemoteEncoder?.() || null,
       });
     } catch {
       fallbackToLegacy("CONFIGURE");
@@ -144,7 +147,7 @@ export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subs
     wcRef.current = { pipeline, unsubscribe };
     lastDataRef.current = Date.now();
     return true;
-  }, [fallbackToLegacy, getAudioTrack, getCanvas, stopWebCodecs, subscribeFrames]);
+  }, [fallbackToLegacy, getAudioTrack, getCanvas, getRemoteEncoder, stopWebCodecs, subscribeFrames]);
 
   const startRecorder = useCallback(() => {
     const opts = optsRef.current;
@@ -161,7 +164,8 @@ export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subs
       rec = new MediaRecorder(new MediaStream(tracks), {
         mimeType: opts.mimeType || undefined,
         videoBitsPerSecond: recorderBitsPerSecond(opts.videoBitrateKbps),
-        audioBitsPerSecond: (Number(opts.audioBitrateKbps) || AUDIO_BITRATE_KBPS) * 1000,
+        // Ara Opus, AAC hedefinin ≈ 1,5 katı (ffmpeg AAC'ye çevirir; ikinci kodlamaya temiz girsin).
+        audioBitsPerSecond: intermediateAudioKbps(Number(opts.audioBitrateKbps) || AUDIO_BITRATE_KBPS) * 1000,
       });
     } catch (err) {
       errRef.current?.(`Kaydedici açılamadı: ${err?.message || err}`);
@@ -247,21 +251,25 @@ export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subs
       ...(stream?.encoder && stream.encoder !== "auto" ? { encoderPreference: stream.encoder } : {}),
       // Yayın gecikmesi (0–120 sn): yalnız RTMP'ye giden bacak gecikir (kayıt / tekrar anlık).
       ...(Number(stream?.delaySec) > 0 ? { streamDelaySec: Number(stream.delaySec) } : {}),
+      // RTMP göndericisi (Ayarlar › Yayın › Gönderici): "node" (yeni) | "ffmpeg" (eski).
+      rtmpPublisher: stream?.publisher === "ffmpeg" ? "ffmpeg" : "node",
     };
+    const audioBitrateKbps = Number(stream?.audioKbps) || AUDIO_BITRATE_KBPS;
     // Kodlama yolu: WebCodecs (tek kodlama) destekleniyorsa ve seçildiyse ffmpeg görüntüyü kopyalar.
     const setting = stream?.pipeline || "auto";
     let probe = { ok: false };
     if (setting !== "legacy" && getCanvas && subscribeFrames) {
-      try { probe = await probeWebCodecs({ width: preset.width, height: preset.height, fps: preset.fps, videoBitrateKbps: preset.videoBitrateKbps, allowSoftware: setting === "webcodecs" }); } catch { probe = { ok: false }; }
+      try { probe = await probeWebCodecs({ width: preset.width, height: preset.height, fps: preset.fps, videoBitrateKbps: preset.videoBitrateKbps, audioBitrateKbps, allowSoftware: setting === "webcodecs" }); } catch { probe = { ok: false }; }
     }
     const pipeline = choosePipeline(setting, { webcodecs: probe.ok, hardware: probe.hardware });
     pipelineRef.current = pipeline;
     wcConfigRef.current = pipeline === "webcodecs" ? probe.config : null;
+    wcAudioConfigRef.current = pipeline === "webcodecs" ? probe.audioConfig || null : null;
     fallbackRef.current = null;
     const wcInfo = pipeline === "webcodecs"
-      ? { videoCopy: true, pipeline: "webcodecs", videoEncoderLabel: `WebCodecs ${probe.hardware ? "donanım" : "yazılım"} · ${probe.config.codec} · ${probe.config.bitrateMode === "constant" ? "CBR" : "VBR"}` }
+      ? { videoCopy: true, pipeline: "webcodecs", videoEncoderLabel: `WebCodecs ${probe.hardware ? "donanım" : "yazılım"} · ${probe.config.codec} · ${probe.config.bitrateMode === "constant" ? "CBR" : "VBR"}`, ...(probe.colorSpace ? { videoColorSpace: probe.colorSpace } : {}) }
       : { pipeline: "legacy" };
-    const opts = { url: url || null, ...(url && backupUrl ? { backupUrl } : {}), keepDisplayAwake: keepDisplayAwake !== false, width: preset.width, height: preset.height, fps: preset.fps, videoBitrateKbps: preset.videoBitrateKbps, audioBitrateKbps: Number(stream?.audioKbps) || AUDIO_BITRATE_KBPS, mimeType, ...extra, ...wcInfo, ...(matchId ? { matchId, matchName: matchName || null } : {}), ...(lr ? { localRecord: lr } : {}) };
+    const opts = { url: url || null, ...(url && backupUrl ? { backupUrl } : {}), keepDisplayAwake: keepDisplayAwake !== false, width: preset.width, height: preset.height, fps: preset.fps, videoBitrateKbps: preset.videoBitrateKbps, audioBitrateKbps, mimeType, ...extra, ...wcInfo, ...(matchId ? { matchId, matchName: matchName || null } : {}), ...(lr ? { localRecord: lr } : {}) };
     setStatus({ state: "starting" });
     const res = await s.start(opts);
     if (!res?.ok) {

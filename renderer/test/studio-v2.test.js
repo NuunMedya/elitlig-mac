@@ -78,7 +78,7 @@ describe("kodlama ayarı", () => {
     expect(bitrateAdvice({ resolution: "1080p", fps: 60, bitrateKbps: 2000 })).toMatch(/düşük/);
     expect(bitrateAdvice({ resolution: "720p", fps: 30, bitrateKbps: 2500 })).toBeNull();
     expect(bitrateAdvice({ resolution: "1080p", fps: 60, bitrateKbps: 15000 })).toMatch(/gereksiz/);
-    expect(uploadNeedMbps(4500)).toBeCloseTo(6.9, 1);
+    expect(uploadNeedMbps(4500)).toBeCloseTo(7.0, 1); // (4500 + 192 ses) × 1,5
   });
   it("ayrı çözünürlük / fps / bit hızı; eski 'quality' tercihi okunur", () => {
     expect(normalizeEncoding({ resolution: "1080p", fps: 60, bitrateKbps: 7000 })).toEqual({ resolution: "1080p", fps: 60, bitrateKbps: 7000 });

@@ -146,7 +146,9 @@ test("tüm kodlayıcılar: CBR, 2 sn GOP, High profil, açık seviye", () => {
     assert.equal(at(a, "-g"), "120", enc);
     assert.ok(["high", "100"].includes(at(a, "-profile:v")), enc);
     const level = a.includes("-level") ? at(a, "-level") : at(a, "-bsf:v");
-    assert.ok(["4.2", "42", "h264_metadata=level=4.2"].includes(level), `${enc}: ${level}`);
+    assert.ok(["4.2", "42", `h264_metadata=level=4.2:${ff.H264_COLOR_METADATA}`].includes(level), `${enc}: ${level}`);
+    // BT.709 sınırlı aralık renk bilgisi her kodlayıcıda (oynatıcı rengi tahmin etmesin).
+    assert.deepEqual([at(a, "-colorspace"), at(a, "-color_primaries"), at(a, "-color_trc"), at(a, "-color_range")], ["bt709", "bt709", "bt709", "tv"], enc);
   }
 });
 
@@ -182,7 +184,7 @@ test("Media Foundation: donanım, cbr, live_streaming, seviye h264_metadata ile"
   assert.equal(at(a, "-hw_encoding"), "1");
   assert.equal(at(a, "-rate_control"), "cbr");
   assert.equal(at(a, "-scenario"), "live_streaming");
-  assert.equal(at(a, "-bsf:v"), "h264_metadata=level=4.1");
+  assert.equal(at(a, "-bsf:v"), "h264_metadata=level=4.1:video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1");
   assert.equal(a.includes("-level"), false);
 });
 
@@ -197,12 +199,12 @@ test("libx264 ve VideoToolbox: önceki ayarlar korunur, seviye eklenir", () => {
 test("yayın komutu: kodlayıcıya göre piksel biçimi ve seviye", () => {
   const base = ff.normalizeStreamOptions({ width: 1920, height: 1080, fps: 60, videoBitrateKbps: 6000 });
   const nv = ff.buildStreamArgs({ ...base, encoder: "h264_nvenc" });
-  assert.match(at(nv, "-vf"), /^scale=1920:1080:flags=bicubic,fps=60,format=yuv420p$/);
+  assert.match(at(nv, "-vf"), /^scale=1920:1080:flags=bicubic:out_color_matrix=bt709:out_range=tv,fps=60,format=yuv420p$/);
   assert.equal(at(nv, "-level"), "4.2");
   const amf = ff.buildStreamArgs({ ...base, encoder: "h264_amf" });
   assert.match(at(amf, "-vf"), /format=nv12$/);
   const mf = ff.buildStreamArgs({ ...base, encoder: "h264_mf" });
-  assert.equal(at(mf, "-bsf:v"), "h264_metadata=level=4.2");
+  assert.equal(at(mf, "-bsf:v"), `h264_metadata=level=4.2:${ff.H264_COLOR_METADATA}`);
   assert.equal(mf[mf.length - 2], "tee");
 });
 
@@ -216,4 +218,65 @@ test("Windows donanım kodlayıcı hataları ENCODER olarak eşlenir (geri düş
     "[vost#0:0/h264_nvenc @ 0000] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.",
   ]) assert.equal(ff.mapFfmpegError(line).code, "ENCODER", line);
   assert.equal(ff.mapFfmpegError("Connection refused").code, "CONNECTION_REFUSED");
+});
+
+/* ------------------------- kalite: ses kodlayıcı ve renk ------------------------- */
+
+test("ses: varsayılan 192 kbps AAC-LC twoloop; aac_at (AudioToolbox) CBR", () => {
+  const a = ff.streamAudioArgs(undefined);
+  assert.deepEqual([at(a, "-c:a"), at(a, "-profile:a"), at(a, "-aac_coder"), at(a, "-b:a"), at(a, "-ar"), at(a, "-ac")], ["aac", "aac_low", "twoloop", "192k", "48000", "2"]);
+  assert.equal(at(a, "-af"), ff.STREAM_AUDIO_FILTER);
+  const m = ff.streamAudioArgs(256, "aac_at");
+  assert.deepEqual([at(m, "-c:a"), at(m, "-aac_at_mode"), at(m, "-b:a"), at(m, "-ar")], ["aac_at", "cbr", "256k", "48000"]);
+  assert.equal(m.includes("-aac_coder"), false);
+  assert.equal(at(ff.streamAudioArgs(96), "-b:a"), "128k", "en az 128 kbps");
+  assert.equal(ff.normalizeStreamOptions({}).audioBitrateKbps, 192);
+  // Yayın komutu motorun seçtiği ses kodlayıcısını kullanır (kopya ve yeniden kodlama kipi).
+  const base = ff.normalizeStreamOptions({ width: 1280, height: 720, fps: 30, videoBitrateKbps: 3000, audioBitrateKbps: 192 });
+  assert.equal(at(ff.buildStreamArgs({ ...base, encoder: "libx264", audioEncoder: "aac_at" }), "-c:a"), "aac_at");
+  assert.equal(at(ff.buildStreamArgs({ ...base, encoder: "libx264", videoCopy: true, audioEncoder: "aac_at" }), "-c:a"), "aac_at");
+  assert.equal(at(ff.buildStreamArgs({ ...base, encoder: "libx264" }), "-c:a"), "aac");
+});
+
+test("yoklama: aac_at listede ve açılıyorsa ses kodlayıcısı aac_at, açılmıyorsa aac", async () => {
+  const list = `${ENC_LIST}\n A....D aac_at  x`;
+  const mk = (atWorks) => async (_file, args) => {
+    if (args.includes("-version")) return { ok: true, stdout: "ffmpeg version 7.1.1" };
+    if (args.includes("-encoders")) return { ok: true, stdout: list };
+    if (args.includes("-muxers")) return { ok: true, stdout: MUX_LIST };
+    if (at(args, "-c:a") === "aac_at") return { ok: atWorks, stdout: "", stderr: atWorks ? "" : "AudioToolbox error" };
+    return { ok: true, stdout: "" };
+  };
+  assert.equal((await ff.probeFfmpeg({ path: "/f", source: "bundled" }, { runImpl: mk(true), platform: "darwin" })).audioEncoder, "aac_at");
+  assert.equal((await ff.probeFfmpeg({ path: "/f", source: "bundled" }, { runImpl: mk(false), platform: "darwin" })).audioEncoder, "aac");
+  assert.equal((await ff.probeFfmpeg({ path: "/f", source: "bundled" }, { runImpl: fakeRun(["libx264"]).runImpl, platform: "win32" })).audioEncoder, "aac");
+});
+
+test("renk: yeniden kodlamada BT.709'a dönüştürülüp etiketlenir; kopyada kodlayıcının bildirdiği değer SPS'e", () => {
+  assert.equal(ff.scaleFilter(1920, 1080), "scale=1920:1080:flags=bicubic:out_color_matrix=bt709:out_range=tv");
+  const base = ff.normalizeStreamOptions({ width: 1920, height: 1080, fps: 30, videoBitrateKbps: 6000 });
+  const x = ff.buildStreamArgs({ ...base, encoder: "libx264" });
+  assert.match(at(x, "-vf"), /out_color_matrix=bt709:out_range=tv,fps=30,format=yuv420p$/);
+  assert.equal(at(x, "-colorspace"), "bt709");
+  // Kopya: renk uzayı bilinmiyorsa akışa dokunulmaz.
+  const plain = ff.buildStreamArgs({ ...ff.normalizeStreamOptions({ videoCopy: true }), encoder: "libx264" });
+  assert.equal(at(plain, "-bsf:v"), "h264_mp4toannexb");
+  const cs = { primaries: "bt709", transfer: "bt709", matrix: "bt709", fullRange: false };
+  const o = ff.normalizeStreamOptions({ videoCopy: true, videoColorSpace: cs });
+  assert.deepEqual(o.videoColorSpace, cs);
+  const copy = ff.buildStreamArgs({ ...o, encoder: "libx264" });
+  assert.equal(at(copy, "-bsf:v"), "h264_metadata=video_full_range_flag=0:colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1,h264_mp4toannexb");
+  // BT.601 (smpte170m) kodlayıcı: yine kendi değeri yazılır (dönüşüm yok, yalnız etiket).
+  assert.equal(ff.colorMetadataFor({ matrix: "smpte170m", primaries: "smpte170m", transfer: "smpte170m", fullRange: false }), "video_full_range_flag=0:colour_primaries=6:transfer_characteristics=6:matrix_coefficients=6");
+  // Giriş karesinin RGB / sRGB bilgisi (matris "rgb") yazılmaz; matrissiz bilgi yok sayılır.
+  assert.equal(ff.colorMetadataFor({ matrix: "rgb", primaries: "bt709", transfer: "iec61966-2-1", fullRange: true }), null);
+  assert.equal(ff.colorMetadataFor({ primaries: "bt709" }), null);
+  assert.equal(ff.normalizeStreamOptions({ videoCopy: true, videoColorSpace: { matrix: "x", primaries: 3 } }).videoColorSpace, null);
+  // Yeniden kodlama kipinde renk uzayı alanı taşınmaz (ffmpeg kendi dönüştürür).
+  assert.equal(ff.normalizeStreamOptions({ videoColorSpace: cs }).videoColorSpace, null);
+});
+
+test("NVENC: uzamsal AQ ve ileri bakış (CBR bit dağılımı)", () => {
+  const a = ff.videoEncoderArgs("h264_nvenc", opts);
+  assert.deepEqual([at(a, "-spatial-aq"), at(a, "-rc-lookahead")], ["1", "10"]);
 });

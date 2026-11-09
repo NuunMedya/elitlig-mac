@@ -8,6 +8,10 @@ export default defineConfig({
   root,
   base: "./",
   plugins: [react()],
-  build: { outDir: "dist", emptyOutDir: true, target: "chrome120", sourcemap: false },
+  // Çizim işçisi (views/studio/compositor/program.worker.js) ES modülü olarak paketlenir.
+  worker: { format: "es" },
+  // Ses AudioWorklet modülü (views/studio/audioTap.worklet.js) ayrı dosya kalmalı: küçük
+  // dosyalar data: adresine gömülür, CSP (script-src 'self') data: betiğini yasaklar.
+  build: { outDir: "dist", emptyOutDir: true, target: "chrome120", sourcemap: false, assetsInlineLimit: (file) => (/\.worklet\.js$/.test(file) ? false : undefined) },
   test: { globals: true, environment: "node", include: ["test/**/*.test.js"] },
 });

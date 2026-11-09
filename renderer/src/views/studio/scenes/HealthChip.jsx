@@ -8,12 +8,15 @@
 // zamanlayıcısıyla çizilir (stüdyo kökü değil); pencere kapalıyken yalnız etiket.
 import React, { memo, useEffect, useRef, useState } from "react";
 import { Icon } from "../../../components/ui";
-import { streamHealth } from "../../../lib/studio/broadcast";
+import { bottleneckCause, networkQueueSec, streamHealth } from "../../../lib/studio/broadcast";
+import { goalStressText } from "../../../lib/studio/goalStress";
+import { limitingStage } from "../../../lib/studio/renderBudget";
+import { loadSnapshot } from "../perf/renderLoad";
 
 const kb = (n) => (Number.isFinite(Number(n)) ? `${Math.round(n)} kbps` : "—");
-const secOf = (bytes, kbps) => (bytes > 0 && kbps > 0 ? `${((bytes * 8) / (kbps * 1000)).toFixed(1).replace(".", ",")} sn` : "0 sn");
+const kbOf = (bytes) => (bytes >= 1024 * 1024 ? `${(bytes / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.round((Number(bytes) || 0) / 1024)} KB`);
 
-function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encoding }) {
+function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encoding, goalStress = null, goalMeasuring = false }) {
   const [, setTick] = useState(0);
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -31,7 +34,13 @@ function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encodi
   const warnings = [...h.warnings];
   if (wc && wc.encodeDropped > 0 && wc.queue >= 3) warnings.push(`Kodlayıcı geride (kuyruk ${wc.queue}): kareler atlanıyor.`);
   if (enc?.fallback) warnings.push(`Tek kodlama durdu (${enc.fallback.reason}); eski yol kullanılıyor.`);
+  if (goalStress && !goalStress.ok && Date.now() - goalStress.at < 5 * 60_000) warnings.push(`Son golde yayın zorlandı: ${goalStressText(goalStress)}.`);
   const n = status.network || null;
+  const cause = bottleneckCause({ status, draw, enc, targetFps, encoding });
+  // Hangi aşama fps'i sınırlıyor: çizim / kodlama / arayüz yükü (ana iş parçacığı) — en çok yük bindirenlerle.
+  const load = open ? loadSnapshot() : null;
+  const stage = open ? limitingStage({ targetFps, draw, enc: wc, load }) : null;
+  const engineText = draw.engine === "worker" ? `ayrı iş parçacığı${draw.mainBase ? " · kip tabanı ana iş parçacığında" : ""}` : "ana iş parçacığı";
   const fps = wc ? wc.encodedFps : h.fps;
   const label = encoding
     ? `${fps} fps${h.bitrateKbps != null ? ` · ${h.bitrateKbps} kbps` : ""}${!wc && h.speed != null ? ` · ${h.speed.toFixed(2)}×` : ""}`
@@ -44,9 +53,17 @@ function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encodi
       {open && (
         <div className="st-health__pop" role="dialog" aria-label="Yayın tanılama">
           <strong>Yayın tanılama</strong>
+          {encoding && <p className={`st-health__cause is-${cause.tone}`}><b>{cause.label}</b>{cause.detail ? ` — ${cause.detail}` : ""}</p>}
+          {stage && <p className={`st-health__cause is-${stage.stage === "ok" ? "ok" : "warn"}`}><b>Sınırlayan aşama: {stage.label}</b>{stage.detail ? ` — ${stage.detail}` : ""}</p>}
           <dl>
+            <dt>Çizim motoru</dt><dd>{engineText}</dd>
             <dt>Kodlama yolu</dt><dd>{!encoding ? "—" : wc ? `Tek kodlama · ${wc.hardware ? "donanım" : "yazılım"} · ${wc.bitrateMode === "constant" ? "CBR" : "VBR"}` : `Eski (MediaRecorder + ${status.encoder || "ffmpeg"})`}</dd>
-            <dt>Program çizimi</dt><dd>{draw.fps || 0} / {targetFps} fps · en uzun {draw.drawMs || 0} ms</dd>
+            <dt>Program çizimi</dt><dd>{draw.fps || 0} / {targetFps} fps{Number.isFinite(draw.unique) ? ` · yeni kare ${draw.unique}` : ""} · ort. {draw.avgMs ?? "—"} ms · en uzun {draw.drawMs || 0} ms</dd>
+            {draw.engine === "worker" && <><dt>Çizim ayrıntısı</dt><dd>taban {draw.baseMs ?? "—"} ms · grafik {draw.gfxMs ?? "—"} ms · kodlayıcıya verme {draw.encSubmitMs ?? "—"} ms · kaynak {draw.srcFps ?? "—"} fps ({draw.sources ?? 0}){draw.mainBase ? ` · kip tabanı ${draw.basesIn ?? 0} fps` : ""}</dd></>}
+            {load && <>
+              <dt>Arayüz yükü</dt><dd className={load.busyPct >= 75 ? "text-red" : ""}>ana iş parçacığı %{load.busyPct ?? "?"} meşgul · uzun kareler {load.long.msPerSec} ms/sn (en uzun {load.long.maxMs} ms) · {load.activeLoops} ikincil çizim</dd>
+              {load.offenders.length > 0 && <><dt>En çok yük</dt><dd><ol className="st-health__top">{load.offenders.map((o) => <li key={`${o.kind}:${o.name}`}>{o.name} — {o.msPerSec} ms/sn{o.fps ? ` · ${o.fps} fps` : ""}</li>)}</ol></dd></>}
+            </>}
             <dt>Çizim takılması</dt><dd className={draw.stalls ? "text-red" : ""}>{draw.stalls || 0} (son sn) · {draw.totalStalls || 0} toplam</dd>
             {wc && <>
               <dt>Kodlanan</dt><dd>{wc.encodedFps} fps · {kb(wc.outKbps)}</dd>
@@ -57,10 +74,17 @@ function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encodi
               <dt>Kodlayıcı (ffmpeg)</dt><dd>{encoding && Number.isFinite(status.fps) ? `${Math.round(status.fps)} fps` : "—"}{h.speed != null ? ` · ${h.speed.toFixed(2)}×` : ""}</dd>
               <dt>Düşen kare</dt><dd>{encoding ? h.dropped : "—"}</dd>
             </>}
+            {wc?.audioPath && <>
+              <dt>Ses</dt><dd className={(wc.audioWorker?.gapMs || wc.audioGapMs) ? "text-red" : ""}>{wc.audioPath === "worker" ? "ayrı iş parçacığı" : "ana iş parçacığı"}{wc.audioWorker ? ` · boşluk ${wc.audioWorker.gapMs} ms` : ` · boşluk ${wc.audioGapMs || 0} ms · okuma gecikmesi en çok ${wc.audioReadLagMaxMs || 0} ms`}</dd>
+            </>}
+            <dt>Gol anı (son)</dt><dd className={goalStress && !goalStress.ok ? "text-red" : ""}>{goalMeasuring ? "ölçülüyor… (20 sn)" : goalStressText(goalStress)}</dd>
             <dt>Çıkış bit hızı</dt><dd>{h.bitrateKbps != null ? `${h.bitrateKbps} kbps` : "—"}</dd>
-            <dt>Gönderim (RTMP)</dt><dd>{n ? `${kb(n.sentKbps)}${n.state !== "up" ? ` · ${n.state}` : ""}` : "—"}</dd>
+            <dt>Gönderim (RTMP)</dt><dd>{n ? `${kb(n.uplinkKbps ?? n.sentKbps)}${n.state !== "up" ? ` · ${n.state}` : ""}` : "—"}</dd>
             {n && <>
-              <dt>Ağ tamponu</dt><dd className={n.dropping ? "text-red" : ""}>{secOf(n.pendingBytes, n.inKbps || n.sentKbps)}{n.dropEvents ? ` · ${n.dropEvents} kez atlandı` : ""}</dd>
+              <dt>Sunucuya ulaşan</dt><dd title="Yayın sunucusunun onayladığı (RTMP Acknowledgement) veri hızı">{Number.isFinite(n.ackKbps) ? kb(n.ackKbps) : n.publisher === "node" ? "onay bekleniyor" : "— (ffmpeg yolu ölçmez)"}</dd>
+              <dt>Üretilen (kodlayıcı)</dt><dd>{kb(n.inKbps)}</dd>
+              <dt>Gönderim kuyruğu</dt><dd className={n.dropping || networkQueueSec(n) >= 2 ? "text-red" : ""}>{String(networkQueueSec(n)).replace(".", ",")} sn · {kbOf(n.pendingBytes)}{Number(n.socketQueuedBytes) > 0 ? ` (soket ${kbOf(n.socketQueuedBytes)})` : ""}{n.dropEvents ? ` · ${n.dropEvents} kez atlandı` : ""}</dd>
+              <dt>Gönderim yolu</dt><dd>{n.publisher === "node" ? `Node RTMP · ${n.chunkSize || 4096} B parça` : "ffmpeg RTMP · 128 B parça (yedek)"}</dd>
               <dt>Yeniden bağlanma</dt><dd>{n.reconnects || 0}</dd>
             </>}
           </dl>

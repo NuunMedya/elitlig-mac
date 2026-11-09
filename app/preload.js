@@ -82,6 +82,21 @@ contextBridge.exposeInMainWorld("elitlig", {
       check: (ids) => ipcRenderer.invoke("studio:media:check", Array.isArray(ids) ? ids : []),
       forget: (id) => ipcRenderer.invoke("studio:media:forget", id),
     },
+    // Müzik çalar (app/studio/musichost.js): "Yayına da ver" için gizli müzik penceresi
+    // (iki YouTube oynatıcısı), sesinin yakalanması, YouTube başlığı (oEmbed).
+    music: {
+      host: (msg) => ipcRenderer.invoke("studio:music:host", msg && typeof msg === "object" ? msg : {}),
+      armCapture: (mode) => ipcRenderer.invoke("studio:music:armCapture", mode === "loopback" ? "loopback" : "frame"),
+      capability: () => ipcRenderer.invoke("studio:music:capability"),
+      oembed: (url) => ipcRenderer.invoke("studio:music:oembed", String(url || "")),
+      playlist: (listId) => ipcRenderer.invoke("studio:music:playlist", String(listId || "")),
+      onHostEvent: on("studio:music:hostEvent"),
+    },
+    // Dışarı giden tüm sesleri kapat (app/studio/outmute.js): bütün pencerelerin hoparlör çıkışı.
+    outMute: {
+      set: (on) => ipcRenderer.invoke("studio:outMute:set", Boolean(on)),
+      get: () => ipcRenderer.invoke("studio:outMute:get"),
+    },
     // Canlı giriş kaynakları (app/studio/live): telefon kamerası (WebRTC sinyalleşme),
     // RTMP / SRT girişi ve ağ akışları (ffmpeg → fMP4 → MSE), web sayfası (ekran dışı pencere).
     live: {
@@ -127,11 +142,15 @@ contextBridge.exposeInMainWorld("elitlig", {
     reportStats: (stats) => { if (stats && typeof stats === "object") ipcRenderer.send("studio:reportStats", stats); },
     // Yayın tanılama: { pipeline, encoder, fps, speed, sentKbps, relayPendingBytes, client: {…} } | null
     health: () => ipcRenderer.invoke("studio:health"),
+    // Bağlantı testi: { endpoint?, ingestHost?, ingestPort? } → { ok, uploadKbps, rttMs, samples, error? }
+    speedTest: (opts) => ipcRenderer.invoke("studio:speedTest", opts && typeof opts === "object" ? { endpoint: opts.endpoint, ingestHost: opts.ingestHost, ingestPort: opts.ingestPort } : {}),
     network: () => ipcRenderer.invoke("studio:network"),
     saveClip: (opts) => ipcRenderer.invoke("studio:saveClip", opts || {}),
     listClips: () => ipcRenderer.invoke("studio:listClips"),
     deleteClip: (name) => ipcRenderer.invoke("studio:deleteClip", name),
     uploadClip: (opts) => ipcRenderer.invoke("studio:uploadClip", opts || {}),
+    // [gol-klip] yayın öncelikli yükleme: { kbps, paused } · { reset: true } · { cancel: true } · null → durum
+    uploadThrottle: (opts) => ipcRenderer.invoke("studio:uploadThrottle", opts ?? null),
     revealClip: (name) => ipcRenderer.invoke("studio:revealClip", name),
     // Çok açılı kayıt: her kaynak (kamera vb.) için ayrı MediaRecorder akışı (Matroska/WebM).
     // sources: [{ id, name, width, height, fps, mimeType }] — mimeType H.264 ise

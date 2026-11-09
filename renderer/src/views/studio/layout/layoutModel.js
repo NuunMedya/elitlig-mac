@@ -23,6 +23,7 @@
 //   Kaldırılan: { kind: "panel" | "item", id, t?, o?, board?, label, at }   (en yeni başta)
 // İlk açılışta eski şerit (studio.rail.v1), sahne ızgarası (studio.stage.v1) ve alt
 // panel (studio.dock.v1) kayıtlarından göç edilir (migrateLayout).
+import { normalizeGroupStyles } from "../shortcuts/wStyle";
 import { DEFAULT_RAIL, RAIL_GROUPS, RAIL_WIDGETS, widgetOf } from "../shortcuts/railModel";
 
 export const LAYOUT_KEY = "studio.layout.v1";
@@ -69,6 +70,7 @@ export const LAYOUT_PANELS = [
   { key: "olaylar", label: "Olay gir", icon: "pencil", group: "islem", hint: "Olay türü → oyuncu → kaydet" },
   { key: "bolumler", label: "Bölümler", icon: "flag", group: "islem", hint: "YouTube bölüm işaretleri" },
   { key: "golMuzigi", label: "Gol müziği", icon: "music", group: "islem", hint: "Takım başına gol müziği, çal / durdur" },
+  { key: "muzikCalar", label: "Müzik çalar", icon: "music", group: "islem", hint: "Müzik listesi (YouTube + dosya), geçiş, sonraki / önceki, yayına da ver" },
   { key: "yukleme", label: "Yükleme günlüğü", icon: "upload", group: "islem", hint: "Gol klibi yüklemeleri ve bağlantı denemesi" },
   { key: "board", label: "Pano", icon: "grid", group: "pano", multi: true, hint: "Serbest bileşen panosu: düğmeler, ses şeritleri, tekrar parçaları…" },
   // Maç yönetiminin sekmeleri ayrı paneller (birleşik "Maç yönetimi" de kalır; durum ortak).
@@ -142,7 +144,7 @@ export const LAYOUT_COMPONENTS = [
   // ── tekrar ──
   { ...P("tekrar", "list", "Tekrar · olay listesi", [6, 9], [3, 3]), group: "tekrar", icon: "list", hint: "Goller / anlar: küçük resim, dakika, golcü, ★; tık: önizle" },
   { ...P("tekrar", "grid", "Tekrar · açı ızgarası", [7, 7], [3, 3]), group: "tekrar", icon: "video", hint: "Seçili tekrarın tüm açıları canlı; tık: önizle · ⌘ tık: listeye" },
-  { ...P("tekrar", "queue", "Tekrar · oynatma listesi + YAYINA AL", [5, 8], [3, 3]), group: "tekrar", icon: "play", hint: "Sürükle bırak sıra, öğe başına açı / giriş–çıkış / hız; YAYINA AL, CANLIYA DÖN" },
+  { ...P("tekrar", "queue", "Tekrar · seçili gol + YAYINA AL", [5, 8], [3, 3]), group: "tekrar", icon: "play", hint: "Önizlenen golün seçili açıları; YAYINA AL, CANLIYA DÖN" },
   { ...P("tekrar", "timeline", "Tekrar · süre çubuğu", [12, 3], [4, 2]), group: "tekrar", icon: "clock", hint: "Büyük süre çubuğu: tıkla / sürükle → sar; giriş / çıkış, işaretler (yayındaysa yayındaki tekrar)" },
   { ...P("tekrar", "transport", "Tekrar · taşıma (J K L)", [8, 2], [3, 2]), group: "tekrar", icon: "play", hint: "Oynat / duraklat, kare kare, ±1 sn, J K L, döngü" },
   { ...P("tekrar", "zoom", "Tekrar · yakınlaştırma", [6, 2], [3, 1]), group: "tekrar", icon: "search", hint: "1 / 1,5 / 2 / 3× ve kaydırıcı (yayındaysa yayına anında)" },
@@ -214,6 +216,122 @@ export function widgetSize(key) {
 export const componentOf = (key) => LAYOUT_COMPONENTS.find((c) => c.key === key) || null;
 /** Pano öğesinin parçacık şerit boyutu sınıfı ("2x1"…), en / boy birimine göre. */
 export const widgetSizeKey = (it) => `${it.w >= 2 ? 2 : 1}x${it.h >= 4 ? 2 : 1}`;
+
+/* ───────────────────────── panel açma hedefleri (düğmeler) ─────────────────────────
+ * Her panel, her panel PARÇASI (Maç yönetimi › Kadro, Reji › skor ve saat, Tekrar › liste,
+ * Yayın › YouTube kartı / bölümler / kayıt…), her Kontrol merkezi bölümü ve her Ayarlar
+ * bölümü için bir "aç" düğmesi. Kayıtlardan (LAYOUT_PANELS, LAYOUT_COMPONENTS, aşağıdaki
+ * CONTROL_SECTIONS / SETTINGS_TARGETS) ÜRETİLİR: yeni panel / parça eklenince düğmesi de gelir.
+ *
+ *   hedef  { id, group, label, icon, hint, kind: "panel" | "part" | "cc" | "ayar", panel?, comp?, parent?, section? }
+ *          id: panel anahtarı ("yonetimKadro"), parça anahtarı ("part:tekrar:list", "reji.home"),
+ *          "cc:<bölüm>" (Kontrol merkezi) ya da "ayar:<bölüm>" (Ayarlar)
+ *   nerede "layout" (yerinde: ekranda yerine koy / öne getir) · "kontrol" (Kontrol merkezinde)
+ *          · "float" (yüzen pencerede) · "ayarlar" (Ayarlar sayfasında)
+ * Parçacık türü "go:<id>" (kısayol panoları ve Kutu ekle › "Aç · …" grupları).
+ */
+export const OPEN_GROUPS = [
+  { key: "mac", label: "Maç yönetimi · Reji", icon: "board" },
+  { key: "tekrar", label: "Tekrar", icon: "repeat" },
+  { key: "ses", label: "Ses ve müzik", icon: "sliders" },
+  { key: "yayin", label: "Yayın", icon: "broadcast" },
+  { key: "sahne", label: "Sahneler · ekranlar · kaynaklar", icon: "layers" },
+  { key: "led", label: "LED ekran", icon: "overview" },
+  { key: "kip", label: "VAR · Röportaj · Özet", icon: "target" },
+  { key: "grafik", label: "Grafik ayarları", icon: "trophy" },
+  { key: "ayar", label: "Ayarlar bölümleri", icon: "sliders" },
+  { key: "kontrol", label: "Kontrol merkezi bölümleri", icon: "command" },
+];
+/** Kontrol merkezi bölümleri (Studio.jsx ccSections ile aynı anahtarlar; yoksa Kontrol merkezi ilk bölümü açar). */
+export const CONTROL_SECTIONS = [
+  ["yayin", "Yayın", "broadcast"], ["bolumler", "Bölümler", "flag"], ["ayar:yayin", "Yayın ayarları · kodlama", "sliders"], ["ayar:kayit", "Kayıt ayarları", "download"], ["ayar:kapak", "YouTube kapağı", "image"],
+  ["sahne", "Sahneler", "layers"], ["kaynaklar", "Kaynaklar", "camera"], ["ayar:gecis", "Geçişler", "swap"],
+  ["tekrar", "Tekrar", "repeat"], ["ayar:tekrar", "Tekrar ayarları", "repeat"],
+  ["yonetim", "Maç yönetimi (tümü)", "board"], ["yonetimMaclar", "Maçlar", "calendar"], ["yonetimReji", "Reji", "zap"], ["yonetimKadro", "Kadro", "shirt"], ["yonetimMacsonu", "Maç sonu", "award"], ["yonetimTakimlar", "Takımlar & oyuncular", "users"], ["olaylar", "Olay gir", "pencil"], ["ayar:mac", "Reji / Maç ayarları", "board"],
+  ["ses", "Ses", "mic"], ["golMuzigi", "Gol müziği", "music"],
+  ["ayar:skorbord", "Skorbord", "trophy"], ["ayar:altyazi", "Altyazı", "list"], ["ayar:marka", "Marka & ön ayarlar", "palette"], ["ayar:sponsor", "Sponsor & linkler", "handshake"], ["ayar:paketler", "Grafik paketleri", "palette"], ["ayar:var", "VAR teması", "palette"],
+  ["var", "VAR", "target"], ["roportaj", "Röportaj", "users"], ["ayar:roportaj", "Röportaj ayarları", "users"], ["ozet", "Özet", "sparkles"], ["ayar:ozet", "Özet ayarları", "sparkles"],
+  ["led", "LED ekran", "overview"], ["ayar:led", "LED ayarları", "overview"],
+  ["yukleme", "Yükleme günlüğü", "upload"], ["ayar:makro", "Makrolar", "zap"], ["ayar:serit", "Kısayollar panosu", "zap"], ["ayar:kisayol", "Klavye kısayolları", "command"],
+].map(([key, label, icon]) => ({ key, label, icon }));
+/** Ayarlar sayfası bölümleri (SettingsPage SETTINGS_SECTIONS + Studio ek bölümleri). grafik: Grafik grubunda. */
+export const SETTINGS_TARGETS = [
+  ["yayin", "Yayın", "broadcast"], ["kayit", "Kayıt", "download"], ["kapak", "YouTube kapağı", "image"], ["tekrar", "Tekrar", "repeat"], ["gecis", "Geçiş", "swap"],
+  ["led", "LED ekran", "overview"], ["roportaj", "Röportaj", "users"], ["ozet", "Özet", "sparkles"], ["mac", "Reji / Maç", "board"], ["makro", "Makrolar", "zap"],
+  ["gorunum", "Görünüm", "grid"], ["bildirim", "Bildirimler", "bell"], ["serit", "Kısayollar panosu", "zap"], ["panel", "Panel parçaları", "eye"], ["kisayol", "Klavye kısayolları", "command"],
+  ["sablon", "Ayar şablonları", "copy"], ["gelismis", "Gelişmiş", "sliders"], ["ses", "Ses (ayarlar)", "mic"], ["yerlesim", "Ekran yerleşimi", "board"],
+  ["skorbord", "Skorbord", "trophy", true], ["altyazi", "Altyazı", "list", true], ["marka", "Marka & ön ayarlar", "palette", true], ["sponsor", "Sponsor & linkler", "handshake", true], ["paketler", "Grafik paketleri", "palette", true], ["var", "VAR teması", "palette", true],
+].map(([key, label, icon, grafik]) => ({ key, label, icon, grafik: Boolean(grafik) }));
+
+const PANEL_OPEN_GROUP = {
+  yonetim: "mac", yonetimMaclar: "mac", yonetimReji: "mac", yonetimKadro: "mac", yonetimMacsonu: "mac", yonetimTakimlar: "mac", olaylar: "mac",
+  tekrar: "tekrar", acilar: "tekrar", ses: "ses", golMuzigi: "ses", muzikCalar: "ses", olcer: "ses",
+  yayin: "yayin", bolumler: "yayin", yukleme: "yayin", led: "led", ledPvw: "led", var: "kip", roportaj: "kip", ozet: "kip",
+  pvw: "sahne", pgm: "sahne", gecis: "sahne", sahneSerit: "sahne", sahne: "sahne",
+};
+const COMP_OPEN_GROUP = { ses: "ses", golmuzik: "ses", tekrar: "tekrar", maclar: "mac", reji: "mac", kadro: "mac", macsonu: "mac", yayin: "yayin", led: "led", kip: "kip", ekran: "sahne" };
+const MG_TAB_PANEL = { maclar: "yonetimMaclar", kadro: "yonetimKadro", macsonu: "yonetimMacsonu", reji: "yonetimReji" };
+/** Parçanın ait olduğu panel (Kontrol merkezinde hangi bölüm açılır, yerleşimde nerenin yanına konur). */
+export function partParent(key) {
+  const c = componentOf(key);
+  if (!c) return null;
+  if (c.part) return c.panel;
+  const [head, tab] = String(key).split(".");
+  if (head === "reji") return "yonetimReji";
+  if (head === "mg") return MG_TAB_PANEL[tab] || "yonetim";
+  if (head === "ses") return "ses";
+  if (head === "golmuzik") return "golMuzigi";
+  if (head === "tekrar") return "tekrar";
+  if (key === "olaygir") return "olaylar";
+  return null;
+}
+const ccKeys = () => new Set(CONTROL_SECTIONS.map((x) => x.key));
+function buildOpenTargets() {
+  const out = [];
+  for (const p of LAYOUT_PANELS) {
+    const group = PANEL_OPEN_GROUP[p.key];
+    if (!group || p.multi) continue;
+    out.push({ id: p.key, kind: "panel", panel: p.key, group, label: p.label, icon: p.icon, hint: p.hint || "" });
+  }
+  const panelKeys = new Set(LAYOUT_PANELS.map((p) => p.key));
+  for (const c of LAYOUT_COMPONENTS) {
+    if (c.widget || c.multi || panelKeys.has(c.key) || !isKnownPanelId(compPanelId(c.key))) continue;
+    const group = c.key === "olaygir" ? "mac" : COMP_OPEN_GROUP[c.group];
+    if (!group) continue;
+    out.push({ id: c.key, kind: "part", comp: c.key, parent: partParent(c.key), group, label: c.label, icon: c.icon || "grid", hint: c.hint || "Panelin bu parçası tek başına" });
+  }
+  for (const s of SETTINGS_TARGETS) {
+    out.push({ id: `ayar:${s.key}`, kind: "ayar", section: s.key, group: s.grafik ? "grafik" : "ayar", label: s.grafik ? s.label : `Ayarlar › ${s.label}`, icon: s.icon, hint: "Ayarlar sayfasının bu bölümü", cc: ccKeys().has(`ayar:${s.key}`) });
+  }
+  for (const s of CONTROL_SECTIONS) {
+    out.push({ id: `cc:${s.key}`, kind: "cc", section: s.key, group: "kontrol", label: `Kontrol merkezi › ${s.label}`, icon: s.icon, hint: "Kontrol merkezinde bu bölüm" });
+  }
+  return out;
+}
+export const OPEN_TARGETS = buildOpenTargets();
+export const openTargetOf = (id) => OPEN_TARGETS.find((t) => t.id === id) || null;
+/** Hedefin "nerede açılsın" seçenekleri ([anahtar, etiket]); ilki varsayılan. */
+export function openWheres(t) {
+  if (!t) return [];
+  if (t.kind === "cc") return [["kontrol", "Kontrol merkezinde"]];
+  if (t.kind === "ayar") return t.cc ? [["ayarlar", "Ayarlar sayfasında"], ["kontrol", "Kontrol merkezinde"]] : [["ayarlar", "Ayarlar sayfasında"]];
+  return [["layout", "Yerinde (ekranda; kaldırıldıysa son yerine)"], ["kontrol", "Kontrol merkezinde"], ["float", "Yüzen pencerede"]];
+}
+/** Parça → yerleşimdeki panel kimliği. */
+export const openTargetPanelId = (t) => (t?.kind === "part" ? compPanelId(t.comp) : t?.kind === "panel" ? t.panel : null);
+
+// Kısayol parçacığı olarak kayıt: "go:<id>" (railModel kataloğuna ve pano bileşenlerine eklenir).
+const OPEN_SIZES = ["1x1", "1x2", "2x1", "2x2"];
+for (const g of OPEN_GROUPS) {
+  if (!RAIL_GROUPS.some((x) => x.key === `go-${g.key}`)) RAIL_GROUPS.push({ key: `go-${g.key}`, label: `Aç · ${g.label}`, icon: g.icon });
+  COMPONENT_GROUPS.push({ key: `w-go-${g.key}`, label: `Panel aç · ${g.label}` });
+}
+for (const t of OPEN_TARGETS) {
+  const type = `go:${t.id}`;
+  const w = { type, family: "openTarget", label: `${t.label} · aç`, icon: t.icon, group: `go-${t.group}`, size: "1x1", sizes: OPEN_SIZES, hint: t.hint, target: t.id };
+  if (!RAIL_WIDGETS.some((x) => x.type === type)) RAIL_WIDGETS.push(w);
+  LAYOUT_COMPONENTS.push({ key: `w:${type}`, widget: type, group: `w-go-${t.group}`, label: w.label, icon: t.icon, hint: t.hint, size: widgetSize("2x1"), min: [1, 1], multi: true });
+}
 
 /* ───────────────────────── panolar ───────────────────────── */
 
@@ -326,7 +444,63 @@ export function setBoardCols(board, cols) {
 
 /* ───────────────────────── yerleşim durumu ───────────────────────── */
 
-export const EMPTY_LAYOUT = Object.freeze({ v: 1, rev: 2, dock: null, boards: {}, removed: [], mins: {}, preset: null, autoHide: true });
+/* ───────── sekme şeridi biçimi (grup başına; "Yan sekmeler") ─────────
+ * pos     "top" | "left" | "right" | "hidden"   sekme şeridinin yeri (gizli: düzenle kipinde görünür)
+ * size    "s" | "m" | "l"                        sekme boyu / yazı / yan şerit eni
+ * weight  500 | 650 | 750 | 850                  yazı kalınlığı
+ * accent  vurgu (etkin sekme çizgisi, simge) · bg  şerit zemini · active  etkin sekme zemini ("" = tema)
+ * icons   simgeler açık / kapalı
+ */
+export const TAB_POSITIONS = [["top", "Üstte"], ["left", "Solda"], ["right", "Sağda"], ["hidden", "Gizli"]];
+export const TAB_SIZES = [["s", "Küçük"], ["m", "Orta"], ["l", "Büyük"]];
+export const TAB_WEIGHTS = [[500, "İnce"], [650, "Normal"], [750, "Kalın"], [850, "Çok kalın"]];
+export const DEFAULT_TAB_STYLE = Object.freeze({ pos: "top", size: "m", weight: 750, accent: "", bg: "", active: "", icons: true });
+const COLOR_RE = /^#[0-9a-f]{6}$/i;
+/** Biçimi temizle; yalnız varsayılandan FARKLI alanları döndürür (partial) ya da tam (full). */
+export function normalizeTabStyle(raw, { full = false } = {}) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const d = DEFAULT_TAB_STYLE;
+  const v = {
+    pos: TAB_POSITIONS.some(([k]) => k === r.pos) ? r.pos : d.pos,
+    size: TAB_SIZES.some(([k]) => k === r.size) ? r.size : d.size,
+    weight: TAB_WEIGHTS.some(([k]) => k === Number(r.weight)) ? Number(r.weight) : d.weight,
+    accent: COLOR_RE.test(r.accent || "") ? r.accent.toLowerCase() : "",
+    bg: COLOR_RE.test(r.bg || "") ? r.bg.toLowerCase() : "",
+    active: COLOR_RE.test(r.active || "") ? r.active.toLowerCase() : "",
+    icons: r.icons !== false,
+  };
+  if (full) return v;
+  const out = {};
+  // verilmiş ve geçerli alanlar (renkte boş = tema)
+  for (const k of Object.keys(v)) if (k in r && (k === "icons" ? typeof r.icons === "boolean" : ["accent", "bg", "active"].includes(k) ? v[k] || r[k] === "" : String(v[k]) === String(r[k]))) out[k] = v[k];
+  return out;
+}
+/** Düğme grubunun varsayılan rengi / biçimi (layout.wstyle[grup]); patch alanı null → sil. */
+export function setGroupWStyle(layout, group, patch) {
+  const cur = { ...(layout.wstyle?.[group] || {}), ...patch };
+  for (const k of Object.keys(cur)) if (cur[k] == null) delete cur[k];
+  const all = normalizeGroupStyles({ ...(layout.wstyle || {}), [group]: cur });
+  return { ...layout, wstyle: all };
+}
+/** Grubun etkin biçimi: genel varsayılan + grup ayarı. */
+export const tabStyleOf = (layout, gid) => normalizeTabStyle({ ...(layout?.tabDefault || {}), ...(layout?.tabs?.[gid] || {}) }, { full: true });
+/** Grup biçimini değiştir (patch); varsayılana dönen alanlar silinir. gid null → genel varsayılan. */
+export function setTabStyle(layout, gid, patch) {
+  if (!gid) return { ...layout, tabDefault: normalizeTabStyle({ ...(layout.tabDefault || {}), ...patch }) };
+  const base = layout.tabDefault || {};
+  const merged = { ...(layout.tabs?.[gid] || {}), ...patch };
+  for (const k of Object.keys(merged)) if (merged[k] == null) delete merged[k]; // null: alanı varsayılana bırak
+  // genel varsayılanla aynı olan alanlar grupta tutulmaz
+  const clean = {};
+  const full = normalizeTabStyle(merged, { full: true });
+  const def = normalizeTabStyle(base, { full: true });
+  for (const k of Object.keys(merged)) if (k in full && full[k] !== def[k]) clean[k] = full[k];
+  const tabs = { ...(layout.tabs || {}) };
+  if (Object.keys(clean).length) tabs[gid] = clean; else delete tabs[gid];
+  return { ...layout, tabs };
+}
+
+export const EMPTY_LAYOUT = Object.freeze({ v: 1, rev: 2, dock: null, boards: {}, removed: [], mins: {}, preset: null, autoHide: true, tabs: {}, tabDefault: {}, wstyle: {} });
 
 export function normalizeLayout(raw) {
   const r = raw && typeof raw === "object" ? raw : {};
@@ -339,7 +513,12 @@ export function normalizeLayout(raw) {
   const removed = (Array.isArray(r.removed) ? r.removed : []).filter((x) => x && (x.kind === "panel" || x.kind === "item") && typeof x.id === "string").slice(0, MAX_REMOVED);
   const mins = {};
   for (const [g, v] of Object.entries(r.mins && typeof r.mins === "object" ? r.mins : {})) if (v === "h" || v === "w") mins[g] = v;
-  return { v: 1, rev: Number(r.rev) || 0, dock, boards, removed, mins, preset: typeof r.preset === "string" ? r.preset : null, autoHide: r.autoHide !== false };
+  const tabs = {};
+  for (const [g, v] of Object.entries(r.tabs && typeof r.tabs === "object" ? r.tabs : {})) {
+    const s = normalizeTabStyle(v);
+    if (Object.keys(s).length && String(g).length <= 40) tabs[g] = s;
+  }
+  return { v: 1, rev: Number(r.rev) || 0, dock, boards, removed, mins, preset: typeof r.preset === "string" ? r.preset : null, autoHide: r.autoHide !== false, tabs, tabDefault: normalizeTabStyle(r.tabDefault), wstyle: normalizeGroupStyles(r.wstyle) };
 }
 
 export function loadLayout(storage) {
@@ -479,6 +658,68 @@ export function dockTree(dock) {
   };
   const floating = (dock.floatingGroups || []).map((f) => ({ type: "group", id: f.data?.id, floating: true, views: (f.data?.views || []).map(view), active: f.data?.activeView || null }));
   return { root: walk(dock.grid.root, dock.grid.orientation), floating };
+}
+
+/**
+ * Panelin ızgaradaki komşusu (kaldırılınca "son yerine" geri koymak için):
+ *   { panel, direction } — panel: komşu bölmenin ilk paneli; direction: geri eklenecek panelin
+ *   o komşuya göre yönü ("right" | "left" | "below" | "above"). Aynı bölmede başka sekme varsa
+ *   { panel: o sekme, direction: "within" }. Bulunamazsa null.
+ */
+export function neighborOf(dock, id) {
+  const root = dock?.grid?.root;
+  if (!root) return null;
+  const first = (n) => (n.type === "leaf" ? n.data?.views?.[0] || null : (n.data || []).map(first).find(Boolean) || null);
+  const walk = (n, orientation) => {
+    if (n.type === "leaf") return null;
+    const kids = n.data || [];
+    const horiz = orientation === "HORIZONTAL";
+    for (let i = 0; i < kids.length; i += 1) {
+      const k = kids[i];
+      if (k.type === "leaf" && (k.data?.views || []).includes(id)) {
+        const mate = (k.data.views || []).find((v) => v !== id);
+        if (mate) return { panel: mate, direction: "within" };
+        const prev = kids.slice(0, i).reverse().map(first).find(Boolean);
+        if (prev) return { panel: prev, direction: horiz ? "right" : "below" };
+        const next = kids.slice(i + 1).map(first).find(Boolean);
+        if (next) return { panel: next, direction: horiz ? "left" : "above" };
+        return null;
+      }
+      if (k.type !== "leaf") {
+        const r = walk(k, horiz ? "VERTICAL" : "HORIZONTAL");
+        if (r) return r;
+      }
+    }
+    return null;
+  };
+  if (root.type === "leaf") {
+    const mate = (root.data?.views || []).find((v) => v !== id);
+    return mate ? { panel: mate, direction: "within" } : null;
+  }
+  return walk(root, dock.grid.orientation);
+}
+
+/**
+ * Panelin hazır düzendeki yeri (kaldırılmış / hiç eklenmemiş paneli "varsayılan yerine" koymak
+ * için): have(id) ekranda olan paneller için true. Dönüş { panel, direction } | null.
+ */
+export function presetTarget(presetKey, id, have) {
+  const spec = presetOf(presetKey || "klasik")?.spec || presetOf("klasik").spec;
+  const json = specToDock(spec);
+  if (!json || !dockPanelIds(json).includes(id)) return null;
+  // önce aynı sekme grubundaki ekrandaki paneller, sonra ızgara komşuları (yakından uzağa)
+  const leafOf = (n) => (n.type === "leaf" ? ((n.data?.views || []).includes(id) ? n : null) : (n.data || []).map(leafOf).find(Boolean) || null);
+  const leaf = leafOf(json.grid.root);
+  const mate = (leaf?.data?.views || []).find((v) => v !== id && have(v));
+  if (mate) return { panel: mate, direction: "within" };
+  // komşu: yalnız ekranda olan panellerle sadeleştirilmiş ağaçta ara
+  const prune = (n) => {
+    if (n.type === "leaf") { const views = (n.data?.views || []).filter((v) => v === id || have(v)); return views.length ? { ...n, data: { ...n.data, views } } : null; }
+    const data = (n.data || []).map(prune).filter(Boolean);
+    return data.length ? { ...n, data } : null;
+  };
+  const root = prune(json.grid.root);
+  return root ? neighborOf({ grid: { ...json.grid, root } }, id) : null;
 }
 
 /** Düzende olmayan paneller (katalogda "kaldırılanlar" / "eklenebilir"). */

@@ -1,0 +1,47 @@
+/* Yayın Stüdyosu · KONTROL MERKEZİ: tam pencere (Ayarlar gibi) ya da sağda iğneli çekmece. */
+.cc { display: flex; background: var(--bg); min-width: 0; min-height: 0; }
+.cc.is-full { position: absolute; inset: 0; z-index: 28; animation: viewIn 0.16s ease-out; }
+.cc.is-pinned { position: relative; flex: none; max-width: 70%; border-left: 1px solid var(--border); box-shadow: -14px 0 40px rgba(var(--shade-rgb), 0.35); }
+.cc__grip { position: absolute; left: -3px; top: 0; bottom: 0; width: 7px; z-index: 3; cursor: col-resize; }
+.cc__grip:hover { background: rgba(var(--acc-rgb), 0.45); }
+
+.cc__nav { flex: none; width: 236px; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); background: var(--bg-2); }
+.cc.is-pinned .cc__nav { width: 184px; }
+.cc__brand { display: flex; align-items: center; gap: 8px; padding: 14px 14px 8px; font-size: 15px; }
+.cc__brand .ic { color: var(--acc-text); }
+.cc__search { display: flex; align-items: center; gap: 6px; margin: 0 10px 8px; padding: 0 8px; height: 32px; border-radius: 9px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--faint); }
+.cc__search:focus-within { border-color: var(--acc); color: var(--acc-text); }
+.cc__search input { flex: 1; min-width: 0; height: 100%; border: 0 !important; background: none !important; box-shadow: none !important; padding: 0 !important; color: var(--text); font-size: 12.5px; outline: none; }
+.cc__list { flex: 1; min-height: 0; overflow: auto; padding: 0 8px 14px; display: flex; flex-direction: column; gap: 1px; scrollbar-width: thin; }
+.cc__group { margin: 10px 6px 3px; font-size: 10px; font-weight: 850; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+.cc__item { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; color: var(--muted); padding: 6px 8px; border-radius: 8px; font-size: 12.5px; font-weight: 650; text-align: left; cursor: pointer; }
+.cc__item:hover { color: var(--text); background: var(--surface); }
+.cc__item.is-on { color: var(--text); background: rgba(var(--acc-rgb), 0.22); box-shadow: inset 3px 0 0 var(--acc); }
+.cc__item .ic { flex: none; }
+.cc__item-t { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.cc__item-t small { font-size: 10.5px; font-weight: 600; color: var(--acc-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc__count { flex: none; font-size: 10px; padding: 0 6px; border-radius: 8px; background: var(--surface-3); color: var(--text); }
+.cc__none { padding: 8px; }
+
+.cc__main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.cc__head { display: flex; align-items: center; gap: 9px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.cc__head h2 { margin: 0; font: 800 17px var(--display); white-space: nowrap; }
+.cc__head .ic { color: var(--acc-text); flex: none; }
+.cc__head .btn--primary .ic, .cc__head .btn--red .ic { color: currentColor; }
+.cc__hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--faint); }
+.cc__head .icon-btn.is-on { color: var(--acc-text); background: rgba(var(--acc-rgb), 0.2); }
+.cc__body { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px 18px; }
+.cc__body > .st-set__body { padding: 0; max-width: none; overflow: visible; }
+
+/* İğneliyken yerleşim kalan alanı kullanır */
+.st-shell.has-cc > .st-body { flex: 1; min-width: 0; }
+.st-set.st-set--embedded { position: static; inset: auto; z-index: auto; display: block; background: none; animation: none; }
+.st-set--embedded > .st-set__body { overflow: visible; padding: 0; }
+
+/* üst çubuk düğmesi */
+.st-ccbtn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 11px; border-radius: 9px; border: 1px solid rgba(var(--acc-rgb), 0.45); background: rgba(var(--acc-rgb), 0.14); color: var(--text); font-size: 12.5px; font-weight: 750; white-space: nowrap; cursor: pointer; }
+.st-ccbtn:hover { background: rgba(var(--acc-rgb), 0.26); }
+.st-ccbtn.is-on { background: var(--acc); border-color: var(--acc); color: var(--acc-on); }
+.st-ccbtn .ic { color: var(--acc-text); }
+.st-ccbtn.is-on .ic { color: var(--on-strong); }
+@media (max-width: 1360px) { .st-ccbtn span { display: none; } .st-ccbtn { padding: 0 8px; } }

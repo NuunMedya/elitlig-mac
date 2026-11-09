@@ -9,6 +9,8 @@ const ff = require("./ffmpeg");
 const { levelBsfArgs } = require("./h264level");
 
 const pixFmt = (encoder) => (typeof ff.encoderPixelFormat === "function" ? ff.encoderPixelFormat(encoder) : "yuv420p");
+/** Ölçekleme + BT.709 sınırlı aralık (ffmpeg.js scaleFilter; renk etiketleri videoEncoderArgs'ta). */
+const scaleFilterOf = (width, height) => (typeof ff.scaleFilter === "function" ? ff.scaleFilter(width, height) : `scale=${width}:${height}:flags=bicubic`);
 
 const clampInt = (value, min, max, fallback) => {
   const n = Math.round(Number(value));
@@ -90,7 +92,7 @@ function buildAngleArgs({ width, height, fps, videoBitrateKbps, audioBitrateKbps
   const enc = withoutOptions(ff.videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height, keyframeSeconds: segmentSeconds, speedLevel }), ["-g", "-keyint_min"]);
   return [
     ...head,
-    "-vf", `scale=${width}:${height}:flags=bicubic,fps=${fps},format=${pixFmt(encoder)}`,
+    "-vf", `${scaleFilterOf(width, height)},fps=${fps},format=${pixFmt(encoder)}`,
     ...enc,
     "-g", String(fps), "-keyint_min", String(fps),
     "-force_key_frames", `expr:gte(t,n_forced*${segmentSeconds})`,
@@ -139,7 +141,7 @@ function buildRenderArgs({ input = "pipe:0", inputFormat = "matroska", outFile, 
     "-f", inputFormat, "-i", input,
     "-map", "0:v:0", "-map", "0:a:0?",
     // 4:2:0 (yuv420p; QSV / AMF / Media Foundation aynı örneklemenin NV12 düzenini ister).
-    "-vf", `scale=${width}:${height}:flags=bicubic,fps=${fps},format=${pixFmt(encoder)}`,
+    "-vf", `${scaleFilterOf(width, height)},fps=${fps},format=${pixFmt(encoder)}`,
     ...ff.videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height }),
     "-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "48000", "-ac", "2", "-af", "aresample=async=1000",
     ...levelBsfArgs(width, height, fps),

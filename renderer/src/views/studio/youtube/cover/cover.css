@@ -1,11 +1,11 @@
 /* YouTube kapağı: önizleme, şablon seçici, seçenekler, pencere. */
-.yc-preview { display: block; width: 100%; height: auto; border-radius: 8px; background: #0b0614; box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35); }
+.yc-preview { display: block; width: 100%; height: auto; border-radius: 8px; background: #0b0614; box-shadow: 0 6px 22px rgba(var(--shade-rgb), 0.35); }
 .yc-preview.is-loading { aspect-ratio: 16 / 9; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
 
 .yc-templates { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .yc-tpl { display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text); cursor: pointer; text-align: left; }
-.yc-tpl:hover { border-color: rgba(139, 92, 246, 0.6); }
-.yc-tpl.is-on { border-color: #8b5cf6; box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.45); background: rgba(139, 92, 246, 0.12); }
+.yc-tpl:hover { border-color: rgba(var(--acc-rgb), 0.6); }
+.yc-tpl.is-on { border-color: var(--acc); box-shadow: 0 0 0 2px rgba(var(--acc-rgb), 0.45); background: rgba(var(--acc-rgb), 0.12); }
 .yc-tpl .yc-preview { border-radius: 6px; box-shadow: none; }
 .yc-tpl__label { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; padding: 0 2px 2px; }
 
@@ -31,16 +31,16 @@
 .yc-auto { font-size: 12.5px; }
 .yc-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; min-width: 0; }
 .yc-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; font-weight: 700; }
-.yc-pill.is-ok { background: rgba(34, 197, 94, 0.16); color: #4ade80; }
-.yc-pill.is-busy { background: rgba(59, 130, 246, 0.16); color: #93c5fd; }
-.yc-error { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: 9px; background: rgba(255, 45, 85, 0.1); border: 1px solid rgba(255, 45, 85, 0.35); color: #ff8aa0; font-size: 12px; }
+.yc-pill.is-ok { background: rgba(34, 197, 94, 0.16); color: var(--green-text); }
+.yc-pill.is-busy { background: rgba(59, 130, 246, 0.16); color: var(--blue-text); }
+.yc-error { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: 9px; background: rgba(255, 45, 85, 0.1); border: 1px solid rgba(255, 45, 85, 0.35); color: var(--red-ink); font-size: 12px; }
 .yc-error > div { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-.yc-error strong { color: #ffd1da; font-weight: 600; }
-.yc-error small { color: #ff8aa0; }
+.yc-error strong { color: var(--red-text); font-weight: 600; }
+.yc-error small { color: var(--red-ink); }
 @media (max-width: 1000px) { .yc-dialog__grid { grid-template-columns: 1fr; } }
 
 /* YouTube başlatma penceresindeki kapak satırı */
-.yc-start { display: flex; gap: 10px; align-items: center; padding: 7px 9px; border-radius: 9px; border: 1px solid var(--border-strong); background: rgba(255, 255, 255, 0.02); }
+.yc-start { display: flex; gap: 10px; align-items: center; padding: 7px 9px; border-radius: 9px; border: 1px solid var(--border-strong); background: rgba(var(--ink-rgb), 0.02); }
 .yc-start .yc-preview { width: 160px; flex: none; box-shadow: none; border-radius: 5px; }
 .yc-start__body { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; font-size: 12px; }
 .yc-start__body select { max-width: 220px; }

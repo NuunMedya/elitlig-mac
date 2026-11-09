@@ -17,8 +17,9 @@
 // düzenler (tek doğruluk kaynağı).
 export const SETTINGS_KEY = "studio.settings.v1";
 import { PIPELINES, normalizePipeline } from "../../../lib/studio/encodepath";
+import { COMPOSITOR_ENGINES, normalizeCompositorEngine } from "../../../lib/studio/renderBudget";
 import { DEFAULT_OPS, normalizeOps } from "./opsDefaults";
-export { PIPELINES };
+export { PIPELINES, COMPOSITOR_ENGINES };
 
 export const ENCODER_PREFS = [
   { key: "auto", label: "Otomatik (önerilen)", hint: "Donanım kodlayıcı varsa o, yoksa x264" },
@@ -28,6 +29,14 @@ export const ENCODER_PREFS = [
 export const KEYFRAME_CHOICES = [1, 2, 4];
 /** Yayın gecikmesi (sn): yalnız YouTube / RTMP'ye giden görüntü gecikir (OBS "Stream Delay"). */
 export const STREAM_DELAY_CHOICES = [0, 5, 10, 15, 30, 60, 120];
+/**
+ * RTMP göndericisi (2.21.0): "auto" — Node yayıncısı (4096 B parça, sunucu onayı ölçülür;
+ * bağlanamazsa ya da sunucu veri almıyorsa kendiliğinden ffmpeg'e döner) · "ffmpeg" — eski yol.
+ */
+export const RTMP_PUBLISHERS = [
+  { key: "auto", label: "Otomatik (yeni, hızlı)", hint: "Büyük parçalarla gönderir: aynı bit hızında ~20 kat az paket. Sorun olursa kendiliğinden eskiye döner." },
+  { key: "ffmpeg", label: "ffmpeg (eski)", hint: "2.20 ve öncesindeki gönderici. Yeni gönderici sorun çıkarırsa seçin." },
+];
 export const AUDIO_KBPS_CHOICES = [128, 160, 192, 256]; // 96 kbps AAC stereo cızırtılı; kodlayıcı en az 128 yazar
 
 /** Kayıt kalitesi (yayından ayrı). videoKbps null = yayınla aynı. */
@@ -57,6 +66,7 @@ export const HOTKEY_ACTIONS = [
   { key: "goalAway", label: "Deplasmana GOL (golcü seçilir)", default: [] },
   { key: "goalMusic", label: "Gol müziği çal / durdur", default: [] },
   { key: "goalMusicStop", label: "Gol müziğini KES (çalarken)", default: ["k"] },
+  { key: "outMute", label: "Dışarı giden tüm sesleri kapat / aç (hoparlör, kulaklık; yayın değişmez)", default: [] },
   { key: "subtitle", label: "Altyazıyı aç / kapat", default: [] },
   { key: "interviewBand", label: "Röportaj bandını aç / kapat", default: [] },
   { key: "interview", label: "Röportaj kaydını başlat / bitir", default: [] },
@@ -67,15 +77,38 @@ export const DEFAULT_HOTKEYS = Object.fromEntries(HOTKEY_ACTIONS.map((a) => [a.k
 /** Atanamayan tuşlar: sahne tuşları ve gol yanıtları. */
 export const RESERVED_KEYS = new Set(["1", "2", "3", "4", "5", "6", "7", "8", "9", "h", "a", "e", "d", "Escape", "Tab"]);
 
+/** Arayüz ölçeği seçenekleri (%); ⌘ + / − / 0 bunlar arasında gezer. */
+export const UI_SCALES = [70, 75, 80, 85, 90, 100, 110, 125];
+/** ⌘ + / ⌘ − : bir sonraki / önceki ölçek; ⌘ 0 : %100. */
+export function stepScale(cur, dir) {
+  if (!dir) return 100;
+  const i = UI_SCALES.indexOf(Number(cur));
+  const at = i < 0 ? UI_SCALES.indexOf(100) : i;
+  return UI_SCALES[Math.min(UI_SCALES.length - 1, Math.max(0, at + (dir > 0 ? 1 : -1)))];
+}
+/** Panel arayüzü renk temaları (studio.css: <html data-st-theme / data-st-tone>); tone: "light" açık tema. sw: önizleme renkleri [zemin, yüzey, vurgu, ikinci vurgu]. */
+export const UI_THEMES = [
+  { key: "gece", label: "Gece mavisi", hint: "Koyu mor-lacivert, mor vurgu (varsayılan)", sw: ["#07040b", "#1d1229", "#8b5cf6", "#c026d3"] },
+  { key: "grafit", label: "Grafit", hint: "Nötr gri, gök mavisi vurgu: göz yormaz", sw: ["#0b0c0e", "#1c1e22", "#38bdf8", "#94a3b8"] },
+  { key: "okyanus", label: "Okyanus", hint: "Derin lacivert-yeşil, turkuaz vurgu", sw: ["#03101a", "#0f2433", "#14b8a6", "#0ea5e9"] },
+  { key: "kirmizi", label: "Kırmızı reji", hint: "Siyah zemin, kırmızı vurgu (karanlık reji odası)", sw: ["#0a0505", "#1f1012", "#ef4444", "#f97316"] },
+  { key: "acik", label: "Açık", tone: "light", hint: "Nötr gri-beyaz, mor vurgu: aydınlık oda, gündüz", sw: ["#e6e8ee", "#ffffff", "#6d28d9", "#a21caf"] },
+  { key: "kagit", label: "Kağıt", tone: "light", hint: "Sıcak krem zemin, kiremit vurgu: göz yormayan açık", sw: ["#e9e2d4", "#fffdf8", "#b9410e", "#a16207"] },
+  { key: "buz", label: "Buz", tone: "light", hint: "Soğuk mavi-beyaz, deniz mavisi vurgu", sw: ["#dfe8f2", "#fbfdff", "#0369a1", "#0e7490"] },
+];
+/** Temanın tonu: "light" | "dark" (<html data-st-tone>; açık temada görüntü adaları koyu kalır). */
+export const themeTone = (key) => (UI_THEMES.find((t) => t.key === key)?.tone === "light" ? "light" : "dark");
 export const DEFAULT_SETTINGS = {
-  v: 2,
+  v: 3,
   // pipeline: kodlama yolu — "auto" | "webcodecs" (tek kodlama) | "legacy" (MediaRecorder + ffmpeg)
-  stream: { encoder: "auto", keyframeSec: 2, audioKbps: 128, pipeline: "auto", delaySec: 0 },
+  // audioKbps 192: AAC 128 kbps'de 16 kHz üstü belirgin kesilir (ölçüm: kaynak −41,9 dB → 128k −49,7 / 192k −46,0 dB).
+  // compositor: çizim motoru — "auto" | "worker" (ayrı iş parçacığı) | "main" (ana iş parçacığı; eski yol)
+  stream: { encoder: "auto", keyframeSec: 2, audioKbps: 192, pipeline: "auto", delaySec: 0, publisher: "auto", compositor: "auto" },
   record: { enabled: false, dir: null, quality: "stream", customKbps: 10000, customHeight: 1080 },
   // tekrar klibi 15 sn: önizlemede giriş–çıkışla istenen bölüm seçilir. directTake: R kısayolu
   // son tekrarı önizlemeye yükleyip AYNI GEÇİŞ yoluyla hemen yayına alır [önizleme-geçiş]
   replay: { seconds: 15, directTake: false, postSeconds: 4, uploadDelaySec: 60 },
-  view: { hints: true, tooltips: true, scale: 100 },
+  view: { hints: true, tooltips: true, scale: 100, theme: "gece" },
   hotkeys: DEFAULT_HOTKEYS,
   notify: { micOpen: true, lowBitrate: true, silence: true, silenceSec: 30 },
   // İşletim varsayılanları (LED, röportaj, özet, reji / maç, makrolar): ./opsDefaults
@@ -117,17 +150,31 @@ export function migrateReplaySeconds(r) {
   return v < 2 && Number(sec) === LEGACY_REPLAY_SECONDS ? DEFAULT_SETTINGS.replay.seconds : sec;
 }
 
+/**
+ * Eski varsayılan ses bit hızı (128 kbps) yeni varsayılana (192) taşınır: kayıt
+ * sürümü 3'ten küçükse ve değer eski varsayılansa kullanıcı değiştirmemiş sayılır.
+ * 160 / 192 / 256 seçildiyse ya da kayıt v3 ise dokunulmaz.
+ */
+export function migrateAudioKbps(r) {
+  const k = r?.stream?.audioKbps;
+  if (k == null) return undefined;
+  const v = Number(r?.v) || 1;
+  return v < 3 && Number(k) === 128 ? DEFAULT_SETTINGS.stream.audioKbps : k;
+}
+
 export function normalizeSettings(raw) {
   const r = raw && typeof raw === "object" ? raw : {};
   const d = DEFAULT_SETTINGS;
   return {
-    v: 2,
+    v: 3,
     stream: {
       encoder: pick(r.stream?.encoder, ENCODER_PREFS.map((e) => e.key), d.stream.encoder),
       keyframeSec: pick(Number(r.stream?.keyframeSec), KEYFRAME_CHOICES, d.stream.keyframeSec),
-      audioKbps: pick(Number(r.stream?.audioKbps), AUDIO_KBPS_CHOICES, d.stream.audioKbps),
+      audioKbps: pick(Number(migrateAudioKbps(r)), AUDIO_KBPS_CHOICES, d.stream.audioKbps),
       pipeline: normalizePipeline(r.stream?.pipeline),
       delaySec: pick(Number(r.stream?.delaySec), STREAM_DELAY_CHOICES, d.stream.delaySec),
+      publisher: pick(r.stream?.publisher, RTMP_PUBLISHERS.map((p) => p.key), d.stream.publisher),
+      compositor: normalizeCompositorEngine(r.stream?.compositor),
     },
     record: {
       enabled: bool(r.record?.enabled, d.record.enabled),
@@ -146,7 +193,8 @@ export function normalizeSettings(raw) {
     view: {
       hints: bool(r.view?.hints, d.view.hints),
       tooltips: bool(r.view?.tooltips, d.view.tooltips),
-      scale: pick(Number(r.view?.scale), [90, 100, 110, 125], d.view.scale),
+      scale: pick(Number(r.view?.scale), UI_SCALES, d.view.scale),
+      theme: pick(String(r.view?.theme || ""), UI_THEMES.map((t) => t.key), d.view.theme),
     },
     hotkeys: normHotkeys(r.hotkeys),
     notify: {

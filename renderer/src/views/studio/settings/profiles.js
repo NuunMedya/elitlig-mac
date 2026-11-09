@@ -8,8 +8,10 @@
 //   rail       studio.rail.v1       sol kısayol şeridi
 //   dock       studio.dock.v1       alt panel sütunları, panel sırası, gizli parçalar
 //   layout     studio.layout.v1     ekran yerleşimi: bölmeler, sekme grupları, panolar (+ eski studio.stage.v1)
+//   density    studio.density.v1    panel yoğunluğu: kart genişliği, ayraçlar, eylem çubuğu yeri
 //   led        studio.led.v2        LED ekranı ve yönlendirme
 //   graphics   elitlig.studio.graphics.* / brandingExtras.* / graphicsSection  grafik ayarları (maç başına)
+//   packages   studio.gfxPackages.v1 grafik paketleri (özel paketler, lig varsayılanları, etkin paket)
 //   goalMusic  studio.goalMusic*    gol müziği (takım başına)
 //   youtube    studio.ytPresets.v1  YouTube yayın ön ayarları (yerel)
 //   ui         alt sekme seçimleri (Maç yönetimi sekmesi, Reji gol müziği…)
@@ -29,8 +31,10 @@ export const PROFILE_GROUPS = [
   { key: "rail", label: "Kısayol şeridi", hint: "Sol şeritteki parçacıklar, boyutları ve sırası", match: (k) => k === "studio.rail.v1", live: true },
   { key: "dock", label: "Alt panel düzeni", hint: "Sütunlar, panel sırası, gizli parçalar", match: (k) => k === "studio.dock.v1", live: true },
   { key: "layout", label: "Ekran yerleşimi", hint: "Bölmeler, sekme grupları, panolar ve bileşenleri, boyutlar (Düzenle / Ayarlar › Yerleşim)", match: (k) => k === "studio.layout.v1" || k === "studio.stage.v1", live: true },
+  { key: "density", label: "Panel yoğunluğu", hint: "Sık / Normal / Geniş, kart genişlikleri, bölme ayraçları, eylem çubuğunun yeri", match: (k) => k === "studio.density.v1", live: true },
   { key: "led", label: "LED ekran", hint: "Ekran ve yönlendirme", match: (k) => k === "studio.led.v2", live: true },
   { key: "graphics", label: "Grafik ayarları", hint: "Skorbord, altyazı, marka ekleri, görünürlük (maç başına)", match: (k) => k.startsWith("elitlig.studio.graphics.") || k.startsWith("elitlig.studio.brandingExtras.") || k === "elitlig.studio.graphicsSection" },
+  { key: "packages", label: "Grafik paketleri", hint: "Özel grafik paketleri, lig / turnuva varsayılanları, maçların etkin paketi, uygulama biçimi", match: (k) => k === "studio.gfxPackages.v1", live: true },
   { key: "goalMusic", label: "Gol müziği", hint: "Takım başına müzikler ve otomatik çalma", match: (k) => k.startsWith("studio.goalMusic") },
   { key: "youtube", label: "YouTube ön ayarları", hint: "Bu bilgisayarda saklanan yayın ön ayarları", match: (k) => k === "studio.ytPresets.v1" },
   { key: "ui", label: "Arayüz seçimleri", hint: "Alt sekme seçimleri (Maç yönetimi, Reji gol müziği…)", match: (k) => k === "elitlig.studio.manageTab" || k === "studio.reji.musicOpen" || k === "elitlig.studio.postTab" },

@@ -36,6 +36,8 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Testler
+        # Asılı kalan bir test derlemeyi saatlerce bekletmesin.
+        timeout-minutes: 20
         run: npm test
 
       # Yayın Stüdyosu: ffmpeg (arm64 + x64) build/fetch-ffmpeg.js ile indirilir; önbellekte tutulur.
@@ -47,8 +49,19 @@ jobs:
             build/ffmpeg/x64
           key: ffmpeg-mac-${{ hashFiles('build/fetch-ffmpeg.js') }}
 
+      - name: Electron / electron-builder indirme önbelleği
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: eb-mac-${{ hashFiles('package-lock.json') }}
+          restore-keys: eb-mac-
+
       - name: Derle (.dmg + .zip, universal)
-        run: npm run dist
+        # Electron / araç indirmeleri ara sıra 5xx veriyor: geçici ağ hatasında 3 kez dene.
+        shell: bash
+        run: for i in 1 2 3; do npm run dist && exit 0; echo "Derleme $i. denemede başarısız; 30 sn sonra yeniden"; sleep 30; done; exit 1
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
@@ -133,6 +146,8 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Testler
+        # Asılı kalan bir test derlemeyi saatlerce bekletmesin.
+        timeout-minutes: 20
         run: npm test
 
       # Yayın Stüdyosu: ffmpeg.exe (Gyan 7.1.1 essentials, SHA-256 sabit) build/fetch-ffmpeg.js ile indirilir.
@@ -142,8 +157,19 @@ jobs:
           path: build/ffmpeg/win-x64
           key: ffmpeg-win-${{ hashFiles('build/fetch-ffmpeg.js') }}
 
+      - name: Electron / electron-builder indirme önbelleği
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: eb-win-${{ hashFiles('package-lock.json') }}
+          restore-keys: eb-win-
+
       - name: Derle (NSIS kurulum .exe + .zip, x64)
-        run: npm run dist:win
+        # Electron / araç indirmeleri ara sıra 5xx veriyor: geçici ağ hatasında 3 kez dene.
+        shell: bash
+        run: for i in 1 2 3; do npm run dist:win && exit 0; echo "Derleme $i. denemede başarısız; 30 sn sonra yeniden"; sleep 30; done; exit 1
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 

@@ -190,7 +190,7 @@ function buildSelectionArgs({ out, segments, size, fps = 30 }) {
   const parts = [];
   segments.forEach((s, i) => {
     const d = s.durationSec.toFixed(3);
-    parts.push(`[${i}:v:0]scale=${W}:${H}:force_original_aspect_ratio=decrease:flags=bicubic,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=yuv420p,trim=duration=${d},setpts=PTS-STARTPTS[v${i}]`);
+    parts.push(`[${i}:v:0]scale=${W}:${H}:force_original_aspect_ratio=decrease:flags=bicubic:out_color_matrix=bt709:out_range=tv,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps},format=yuv420p,trim=duration=${d},setpts=PTS-STARTPTS[v${i}]`);
     if (audioIndex.has(i)) {
       const lead = Math.round((s.audio.leadSec || 0) * 1000);
       parts.push(`[${audioIndex.get(i)}:a:0]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,asetpts=PTS-STARTPTS${lead > 0 ? `,adelay=${lead}|${lead}` : ""},apad,atrim=end=${d},asetpts=PTS-STARTPTS[a${i}]`);
@@ -206,6 +206,7 @@ function buildSelectionArgs({ out, segments, size, fps = 30 }) {
     "-map", "[v]", "-map", "[a]",
     "-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high", "-level", computeH264Level(W, H, fps),
     "-pix_fmt", "yuv420p", "-crf", "21", "-maxrate", "8M", "-bufsize", "16M",
+    ...ff.COLOR_ARGS, // BT.709 (TV aralığı) etiketleri: canlı yayınla aynı renk
     "-g", String(fps * 2), "-bf", "2", "-threads", "2",
     "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
     "-movflags", "+faststart", "-f", "mp4",
@@ -303,7 +304,7 @@ function createReplayStore({
   }
 
   async function probe(file) {
-    const res = await runImpl(getFfmpegPath(), ["-hide_banner", "-nostdin", "-i", file], { timeout: 15000 });
+    const res = await bgRun(getFfmpegPath(), ["-hide_banner", "-nostdin", "-i", file], { timeout: 15000 });
     return ffargs.parseVideoInfo(res.stderr);
   }
 
@@ -328,7 +329,8 @@ function createReplayStore({
     fs.writeFileSync(listFile, `${files.map(ff.concatLine).join("\n")}\n`);
     const src = await probe(files[0]);
     const out = path.join(dir, `${fileBase}.mp4`);
-    const res = await runImpl(getFfmpegPath(), ffargs.buildConcatLevelArgs(listFile, out, { ...src, durationSec: plan.durationMs / 1000 }), { timeout: 60000 });
+    // Gol anında yayın kodlayıcısıyla yarışmasın: birleştirme / kapak da düşük öncelikli (BG_NICE).
+    const res = await bgRun(getFfmpegPath(), ffargs.buildConcatLevelArgs(listFile, out, { ...src, durationSec: plan.durationMs / 1000 }), { timeout: 60000 });
     if (!res.ok || !fs.existsSync(out) || fs.statSync(out).size === 0) {
       try { fs.unlinkSync(out); } catch { /* yoksay */ }
       throw new Error(String(res.stderr || "").trim().split("\n").pop() || "ffmpeg");
@@ -336,7 +338,7 @@ function createReplayStore({
     const meta = await probe(out);
     const durationMs = meta.durationMs ?? plan.durationMs;
     const poster = `${fileBase}.jpg`;
-    const pres = await runImpl(getFfmpegPath(), ffargs.buildPosterArgs(out, path.join(dir, poster), { durationMs }), { timeout: 20000 });
+    const pres = await bgRun(getFfmpegPath(), ffargs.buildPosterArgs(out, path.join(dir, poster), { durationMs }), { timeout: 20000 });
     const hasPoster = pres.ok && fs.existsSync(path.join(dir, poster));
     return {
       angle: plan.angle,

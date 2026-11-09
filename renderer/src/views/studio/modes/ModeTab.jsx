@@ -11,6 +11,7 @@ import ReplayPanel from "../ReplayPanel";
 import VarPanel from "../var/VarPanel";
 import HighlightsPanel from "../HighlightsPanel";
 import InterviewPanel from "./InterviewPanel";
+import { Splitter } from "../dock/PanelFrame";
 
 const ROUTE_CONTEXT = { tekrar: "replay", var: "replay", ozet: "highlight", roportaj: "live" };
 
@@ -137,6 +138,7 @@ export default function ModeTab({ api, mode }) {
         <RoutePicker audio={api.audio} context={ROUTE_CONTEXT[mode]} />
         <LayersPanel api={api} mode={mode} />
       </aside>
+      <Splitter id="mode:side" side="before" label="Yayın kartı ↔ panel" />
       <div className="md-main"><ModeBody api={bodyApi} mode={mode} /></div>
     </div>
   );

@@ -8,6 +8,6 @@ export { INTERVIEW_STYLES, interviewLayout, normalizeInterviewStyle } from "./dr
 export { lineupV2Slides, slideAt, lineupV3Side, summaryScroll } from "./drawPanels";
 export { miniLayout } from "./drawBugs";
 export { TICKER_LIFT } from "./drawTicker";
-export { getImage, preloadImages, setImageLoadListener } from "./images";
+export { getImage, preloadImages, putImage, setImageLoadListener } from "./images";
 export { graphicsLayers } from "./draw";
 export * from "./visibility";
