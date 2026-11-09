@@ -140,29 +140,38 @@ test("yayıncı ↔ RTMP sunucusu: Set Chunk Size 4096, connect (app, tcUrl), pu
 });
 
 test("yayıncı: sunucu yayını reddederse (BadName) AUTH hatası; el sıkışmada kapanırsa HANDSHAKE", async () => {
-  const sink = createRtmpSink({ reject: "NetStream.Publish.BadName" });
-  const port = await sink.listen();
-  const pub = createRtmpPublisher({ url: `rtmp://127.0.0.1:${port}/live2/yanlis` });
-  const err = new Promise((r) => pub.events.once("error", r));
-  pub.start();
-  assert.equal((await err).code, "AUTH");
-  await sink.close();
-  const sink2 = createRtmpSink({ closeAfterHandshake: true });
-  const port2 = await sink2.listen();
-  const pub2 = createRtmpPublisher({ url: `rtmp://127.0.0.1:${port2}/live2/k` });
-  const err2 = new Promise((r) => pub2.events.once("error", r));
-  pub2.start();
-  assert.equal((await err2).code, "HANDSHAKE");
-  await sink2.close();
-  // Kapalı port: CONNECTION_REFUSED.
-  const srv = net.createServer();
-  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
-  const dead = srv.address().port;
-  await new Promise((r) => srv.close(r));
-  const pub3 = createRtmpPublisher({ url: `rtmp://127.0.0.1:${dead}/live2/k` });
-  const err3 = new Promise((r) => pub3.events.once("error", r));
-  pub3.start();
-  assert.equal((await err3).code, "CONNECTION_REFUSED");
+  const cleanup = [];
+  try {
+    const sink = createRtmpSink({ reject: "NetStream.Publish.BadName" });
+    cleanup.push(() => sink.close());
+    const port = await sink.listen();
+    const pub = createRtmpPublisher({ url: `rtmp://127.0.0.1:${port}/live2/yanlis` });
+    cleanup.push(() => pub.end?.());
+    const err = new Promise((r) => pub.events.once("error", r));
+    pub.start();
+    assert.equal((await err).code, "AUTH");
+    const sink2 = createRtmpSink({ closeAfterHandshake: true });
+    cleanup.push(() => sink2.close());
+    const port2 = await sink2.listen();
+    const pub2 = createRtmpPublisher({ url: `rtmp://127.0.0.1:${port2}/live2/k` });
+    cleanup.push(() => pub2.end?.());
+    const err2 = new Promise((r) => pub2.events.once("error", r));
+    pub2.start();
+    assert.equal((await err2).code, "HANDSHAKE");
+    // Kapalı port: CONNECTION_REFUSED.
+    const srv = net.createServer();
+    await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+    const dead = srv.address().port;
+    await new Promise((r) => srv.close(r));
+    const pub3 = createRtmpPublisher({ url: `rtmp://127.0.0.1:${dead}/live2/k` });
+    cleanup.push(() => pub3.end?.());
+    const err3 = new Promise((r) => pub3.events.once("error", r));
+    pub3.start();
+    assert.equal((await err3).code, "CONNECTION_REFUSED");
+  } finally {
+    // Doğrulama düşse de sunucu ve soketler kapanır: test asılı kalmaz.
+    for (const fn of cleanup.reverse()) { try { await fn(); } catch { /* yoksay */ } }
+  }
 });
 
 /* ------------------------- gerçek ffmpeg ile (tümleşik) ------------------------- */

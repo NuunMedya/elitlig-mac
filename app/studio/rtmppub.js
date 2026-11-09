@@ -272,7 +272,9 @@ function createRtmpPublisher({ url, connect = null, now = () => Date.now(), chun
     s.on("data", onData);
     s.on("drain", () => events.emit("drain"));
     s.on("error", (e) => {
-      const code = e.code === "ECONNREFUSED" ? "CONNECTION_REFUSED" : e.code === "ENOTFOUND" || e.code === "EAI_AGAIN" ? "DNS" : e.code === "ETIMEDOUT" ? "TIMEOUT" : /certificate|SSL|TLS|ERR_TLS|self.signed|UNABLE_TO|CERT_/i.test(`${e.code} ${e.message}`) ? "TLS" : "IO";
+      const code = e.code === "ECONNREFUSED" ? "CONNECTION_REFUSED" : e.code === "ENOTFOUND" || e.code === "EAI_AGAIN" ? "DNS" : e.code === "ETIMEDOUT" ? "TIMEOUT" : /certificate|SSL|TLS|ERR_TLS|self.signed|UNABLE_TO|CERT_/i.test(`${e.code} ${e.message}`) ? "TLS"
+        // macOS: sunucu el sıkışmada kapatınca "close" yerine ECONNRESET / EPIPE gelir; bu da el sıkışma hatasıdır (ffmpeg yedeğine geçişi tetikler).
+        : (e.code === "ECONNRESET" || e.code === "EPIPE") && phase !== "publishing" ? "HANDSHAKE" : "IO";
       fail(code, e.message || String(e.code || "IO"));
     });
     s.on("close", () => {
