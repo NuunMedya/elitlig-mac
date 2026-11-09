@@ -141,3 +141,5 @@
 .wg-bank { display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; align-items: stretch !important; justify-content: flex-start !important; gap: 6px; }
 .wg-bank__folders { flex: none; align-items: center; }
 .wg-bank__g { flex: 1 1 auto; min-height: 0; }
+.wmu:not(.wx-tile) > *, .wg-bank > * { flex: 0 0 auto !important; height: auto !important; margin-top: 0 !important; margin-bottom: 0 !important; grid-area: auto !important; }
+.wmu:not(.wx-tile) > .wmu-tracks, .wg-bank > .wg-bank__g { flex: 1 1 auto !important; align-content: start; }
