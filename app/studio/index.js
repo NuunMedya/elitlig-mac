@@ -58,6 +58,7 @@ const { createUploadGovernor } = require("./uploadgov");
 const { createUploadLog, withUploadLog } = require("./uploadlog");
 const { serveStudio, REPLAY_ID } = require("./scheme");
 const { createDiagnostics } = require("./diag");
+const { runUplinkTest } = require("./speedtest");
 const { remuxParts, defaultRecordDir, createSettings } = require("./localrecord");
 const { createInterviews } = require("./interview");
 const { createLedManager } = require("./led");
@@ -162,6 +163,8 @@ function registerStudio({
   const engine = createStudioEngine({
     getFfmpeg, tempRoot: path.join(tempRoot, "program"), log, diag: diagnostics,
     qualityTuning: true,
+    // 2.21.0: RTMP(S) Node yayıncısıyla (rtmppub.js; 4096 baytlık parçalar, tek yazma). Bağlanamazsa ffmpeg'e döner.
+    relayOptions: { publisher: "node" },
     remuxLocal: ({ parts, outFile, ffmpegPath: bin }) => remuxParts({ parts, outFile, ffmpegPath: bin || ffmpegPath() }),
   });
   const angles = createAngles({ getFfmpeg, tempRoot: path.join(tempRoot, "angles"), log, diag: diagnostics });
@@ -389,6 +392,18 @@ function registerStudio({
   ipcMain.handle("studio:health", () => engine.health());
   // RTMP aktarıcısının ayrıntılı durumu (status.network ile aynı) | null.
   ipcMain.handle("studio:network", () => engine.network());
+  // Bağlantı testi (speedtest.js): YouTube giriş sunucusuna gecikme + tek bağlantılı yükleme hızı.
+  let speedTestRun = null;
+  ipcMain.handle("studio:speedTest", async (_e, opts = {}) => {
+    if (speedTestRun) return speedTestRun;
+    const endpoint = typeof opts?.endpoint === "string" && /^https?:\/\//i.test(opts.endpoint) ? opts.endpoint : undefined;
+    const ingestHost = typeof opts?.ingestHost === "string" && /^[a-z0-9.-]{1,253}$/i.test(opts.ingestHost) ? opts.ingestHost : undefined;
+    speedTestRun = runUplinkTest({ endpoint, ingestHost, ingestPort: Number(opts?.ingestPort) > 0 ? Number(opts.ingestPort) : undefined })
+      .then((r) => { try { diagnostics.write("program", "bağlantı testi", { uploadKbps: r.uploadKbps, rttMs: r.rttMs, samples: r.samples.length, error: r.error?.code || null }); } catch { /* yoksay */ } return r; })
+      .catch((e) => ({ ok: false, error: { code: "NETWORK", message: e.message } }))
+      .finally(() => { speedTestRun = null; });
+    return speedTestRun;
+  });
 
   /* --------------------------------- açılar --------------------------------- */
 

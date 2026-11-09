@@ -343,7 +343,7 @@ test("aktarıcı TCP: yalnız beklenen (arm) bağlantı kabul edilir; gelen veri
 
 /* ------------------------------ komut satırları ------------------------------ */
 
-test("aktarıcı komutu: -c copy FLV, no_duration_filesize, rw_timeout + tcp_nodelay (yalnız RTMP)", () => {
+test("aktarıcı komutu: -c copy FLV, no_duration_filesize, rw_timeout (yalnız RTMP); tcp_nodelay YOK; küçük giriş kuyruğu; pipe: FLV stdout'a", () => {
   const a = ff.buildRelayArgs({ url: "rtmps://a.rtmps.youtube.com:443/live2/k" });
   assert.equal(at(a, "-f"), "mpegts");
   assert.equal(at(a, "-i"), "pipe:0");
@@ -351,13 +351,22 @@ test("aktarıcı komutu: -c copy FLV, no_duration_filesize, rw_timeout + tcp_nod
   assert.equal(at(a, "-flvflags"), "no_duration_filesize");
   assert.equal(at(a, "-bsf:a"), "aac_adtstoasc");
   assert.equal(at(a, "-rw_timeout"), "10000000");
-  assert.equal(at(a, "-tcp_nodelay"), "1");
+  // 2.21.0: Nagle açık (ffmpeg 128 B'lık parçaları ayrı send() ile yazar; nodelay her birini ayrı paket yapıyordu).
+  assert.equal(a.includes("-tcp_nodelay"), false);
+  assert.equal(at(a, "-thread_queue_size"), "64");
   assert.equal(at(a, "-progress"), "pipe:1");
   assert.equal(a.includes("-nostdin"), true);
   assert.equal(a.at(-1), "rtmps://a.rtmps.youtube.com:443/live2/k");
   const file = ff.buildRelayArgs({ url: "/tmp/x.flv" });
   assert.equal(file.includes("-rw_timeout"), false);
   assert.equal(file.includes("-tcp_nodelay"), false);
+  // Node yayıncısı için: FLV stdout'a, ilerleme yok (stdout FLV taşır).
+  const pipe = ff.buildRelayArgs({ url: "rtmp://a.rtmp.youtube.com/live2/k", output: "pipe" });
+  assert.equal(pipe.at(-1), "pipe:1");
+  assert.equal(pipe.includes("-progress"), false);
+  assert.equal(pipe.includes("-rw_timeout"), false);
+  assert.equal(pipe.join(" ").includes("live2/k"), false); // anahtar komut satırında yok
+  assert.equal(at(pipe, "-flvflags"), "no_duration_filesize");
 });
 
 test("yayın komutu (aktarıcı): RTMP yerine yerel TCP'ye MPEG-TS (fifo, taşmada atar); YouTube CBR, 2 sn GOP, CFR, AAC 48 kHz stereo", () => {
@@ -488,4 +497,80 @@ test("motor (aktarıcı): kodlayıcı hataları kullanıcı durdurana kadar dene
   assert.equal(restarts.length, 8);
   assert.equal(statuses.at(-1).attempt, attempts);
   await engine.stop();
+});
+
+/* ------------------------- Node ağ ucu (sahte yayıncı) ------------------------- */
+
+function fakePublisher() {
+  const made = [];
+  const factory = (opts) => {
+    const pub = {
+      opts, events: new EventEmitter(), flv: [], st: { sentBytes: 0, queuedBytes: 0, ackedBytes: 0, chunkSize: 4096 }, publishing: false, ended: false, destroyed: false,
+      start() { this.started = true; },
+      writeFlv(b) { this.flv.push(b); return this.st.queuedBytes < 1024 * 1024; },
+      stats() { return { ...this.st }; },
+      isPublishing() { return this.publishing; },
+      end() { this.ended = true; },
+      destroy() { this.destroyed = true; },
+      up() { this.publishing = true; this.st.sentBytes = 4000; this.events.emit("publishing"); },
+    };
+    made.push(pub);
+    return pub;
+  };
+  return { made, factory };
+}
+
+test("aktarıcı (Node ağ ucu): ffmpeg FLV'yi stdout'a yazar, yayıncı bağlanınca 'up'; soket kuyruğu atlama eşiğine sayılır; hata → yeniden dener", async () => {
+  const { made, factory } = fakePublisher();
+  const { relay, children, timers, statuses, clock } = setupRelay({ publisher: "node", publisherFactory: factory, highWaterBytes: 100 * 188, sustainMs: 0 });
+  relay.write(gop(1));
+  assert.equal(children.length, 1);
+  assert.equal(children[0].args.at(-1), "pipe:1");
+  assert.equal(children[0].args.includes("-progress"), false);
+  assert.equal(made.length, 1);
+  assert.equal(made[0].opts.url, "rtmp://a.rtmp.youtube.com/live2/ANA-ANAHTAR");
+  assert.equal(made[0].started, true);
+  children[0].stdout.emit("data", Buffer.from("FLV…"));
+  assert.equal(made[0].flv.length, 1);
+  made[0].up();
+  assert.equal(statuses.at(-1).state, "up");
+  assert.equal(relay.status().publisher, "node");
+  assert.equal(relay.status().chunkSize, 4096);
+  // Sunucu onayları → ackKbps.
+  made[0].events.emit("ack", 1_000_000); clock.t += 4000; made[0].events.emit("ack", 3_000_000);
+  assert.equal(relay.status().ackKbps, 4000);
+  // Soket kuyruğu doldu (ağ yetişmiyor): stdin boş olsa da görüntü atlanır, ses sürer.
+  made[0].st.queuedBytes = 300 * 188;
+  assert.equal(relay.status().pendingBytes, 300 * 188);
+  relay.write(Buffer.concat([vid(1), aud()]));
+  assert.equal(relay.status().dropping, true);
+  // Yayıncı hatası → süreç öldürülür, geri çekilmeyle yeniden kurulur.
+  made[0].events.emit("error", Object.assign(new Error("Connection reset by peer"), { code: "IO" }));
+  assert.equal(made[0].destroyed, true);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(statuses.at(-1).state, "down");
+  assert.equal(statuses.at(-1).lastError.code, "IO");
+  timers.runNext(1000);
+  assert.equal(made.length, 2);
+  await relay.stop();
+});
+
+test("aktarıcı (Node ağ ucu): bağlanmadan art arda protokol hatası → ffmpeg RTMP yoluna geçer; DNS hatası geçirmez", async () => {
+  const { made, factory } = fakePublisher();
+  const { relay, children, timers, notes } = setupRelay({ publisher: "node", publisherFactory: factory });
+  relay.write(gop(1));
+  const failNext = async (code, msg) => {
+    made.at(-1).events.emit("error", Object.assign(new Error(msg), { code }));
+    await new Promise((r) => setImmediate(r));
+    timers.runNext([...timers.pending.values()].find((t) => t.ms >= 1000 && t.ms <= 10000 && t.ms !== 3000)?.ms);
+  };
+  await failNext("DNS", "getaddrinfo ENOTFOUND a.rtmp.youtube.com");
+  await failNext("DNS", "getaddrinfo ENOTFOUND a.rtmp.youtube.com");
+  assert.equal(relay.status().publisher, "node");
+  await failNext("HANDSHAKE", "Yayın sunucusuyla RTMP el sıkışması tamamlanamadı.");
+  await failNext("HANDSHAKE", "Yayın sunucusuyla RTMP el sıkışması tamamlanamadı.");
+  assert.equal(relay.status().publisher, "ffmpeg");
+  assert.ok(notes.some((n) => /ffmpeg RTMP yoluna geçiliyor/.test(n.m)));
+  assert.equal(children.at(-1).args.at(-1), "rtmp://a.rtmp.youtube.com/live2/ANA-ANAHTAR");
+  await relay.stop();
 });

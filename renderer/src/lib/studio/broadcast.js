@@ -392,6 +392,85 @@ export function streamHealth({ status = {}, draw = {}, targetFps = 30, encoding 
   };
 }
 
+const mbpsText = (kbps) => `${(Number(kbps) / 1000).toFixed(1).replace(".", ",")} Mbps`;
+
+/**
+ * Ağ kuyruğu (sn): aktarıcıda bekleyen veri / gelen bit hızı. Node yayıncısında
+ * pendingBytes = aktarıcı ffmpeg girişi + soket kuyruğu (çekirdeğe verilemeyen).
+ */
+export function networkQueueSec(network) {
+  const n = network || null;
+  const kbps = Number(n?.inKbps) || Number(n?.sentKbps) || 0;
+  const bytes = Number(n?.pendingBytes) || 0;
+  return kbps > 0 ? Math.round(((bytes * 8) / (kbps * 1000)) * 10) / 10 : 0;
+}
+
+/**
+ * Darboğaz sınıflaması (Yayın tanılama): sorun nerede?
+ *   network  "Ağ yetmiyor"          — aktarıcı kare atlıyor / ağ kuyruğu büyüyor / sunucuya ulaşan < üretilen
+ *   encoder  "Kodlayıcı yetişmiyor" — WebCodecs kuyruğu ≥ 3 kare ya da kodlanan fps < çizilen; eski yolda ffmpeg hızı < 0,95×
+ *   busy     "Bilgisayar meşgul"     — ana iş parçacığı takılıyor (çizim takılması)
+ *   draw     "Çizim yetişmiyor"      — program çizimi hedef fps'in altında
+ *   ok       "Sorun yok"
+ * Sıra önemlidir: ağ yetmezse kodlayıcı / çizim normal görünür; kodlayıcı takılırsa ağ boş kalır.
+ * → { key, label, detail, tone }
+ */
+export function bottleneckCause({ status = {}, draw = {}, enc = null, targetFps = 30, encoding = false } = {}) {
+  if (!encoding) return { key: "idle", label: "Yayın kapalı", detail: "", tone: "idle" };
+  const n = status.network || null;
+  const fps = Number(targetFps) || 30;
+  if (n && (n.state === "down" || n.state === "connecting" || status.state === "reconnecting")) {
+    return { key: "network", label: "Ağ yetmiyor", detail: n.lastError?.message || "Yayın sunucusuna yeniden bağlanılıyor.", tone: "bad" };
+  }
+  if (n && n.state === "up") {
+    const q = networkQueueSec(n);
+    const produced = Number(n.inKbps) || 0;
+    const reach = Number.isFinite(n.ackKbps) ? n.ackKbps : Number.isFinite(n.uplinkKbps) ? n.uplinkKbps : Number(n.sentKbps) || 0;
+    const behind = produced > 300 && reach > 0 && reach < produced * 0.85;
+    if (n.dropping || q >= 2 || (behind && q >= 1)) {
+      const parts = [];
+      if (reach > 0) parts.push(`bağlantı ≈ ${mbpsText(reach)} taşıyor`);
+      if (produced > 0) parts.push(`yayın ${mbpsText(produced)}`);
+      parts.push(`kuyruk ${String(q).replace(".", ",")} sn`);
+      return { key: "network", label: "Ağ yetmiyor", detail: `${parts.join(", ")}${n.dropping ? "; kareler atlanıyor" : ""}. Bit hızını düşürün ya da kablolu bağlantı kullanın.`, tone: n.dropping || q >= 4 ? "bad" : "warn" };
+    }
+  }
+  const drawFps = Number(draw.fps) || 0;
+  if (enc && enc.pipeline === "webcodecs") {
+    const encFps = Number(enc.encodedFps) || 0;
+    if (Number(enc.queue) >= 3 || (drawFps >= fps * 0.9 && encFps > 0 && encFps < Math.min(drawFps, fps) * 0.9)) {
+      return { key: "encoder", label: "Kodlayıcı yetişmiyor", detail: `kodlanan ${encFps} fps (çizilen ${drawFps}), kuyruk ${enc.queue || 0} kare. Bit hızını / çözünürlüğü düşürün${enc.hardware ? "" : " ya da donanım kodlayıcıyı açın"}.`, tone: "warn" };
+    }
+  } else if (Number.isFinite(Number(status.speed)) && Number(status.speed) < 0.95) {
+    return { key: "encoder", label: "Kodlayıcı yetişmiyor", detail: `ffmpeg hızı ${Number(status.speed).toFixed(2)}× (gerçek zaman 1,00×).`, tone: "warn" };
+  }
+  if (Number(draw.stalls) > 0) return { key: "busy", label: "Bilgisayar meşgul", detail: `son saniyede ${draw.stalls} takılma (en uzun çizim ${Number(draw.drawMs) || 0} ms). Başka uygulamaları kapatın.`, tone: "warn" };
+  if (drawFps && drawFps < fps * 0.85) return { key: "draw", label: "Çizim yetişmiyor", detail: `program ${drawFps} / ${fps} fps. Katman / efekt sayısını azaltın.`, tone: "warn" };
+  return { key: "ok", label: "Sorun yok", detail: "", tone: "ok" };
+}
+
+/**
+ * Bağlantı testi sonucu → öneri (OBS otomatik yapılandırması gibi): tek bağlantının ölçülen
+ * yükleme hızının ≈ %75'i kullanılır (dalgalanma + ses + RTMP payı); ona sığan en yüksek
+ * hızlı ayar, sığmıyorsa doğrudan bit hızı. → { key, label, bitrateKbps, usableKbps, text } | null
+ */
+export function speedTestAdvice(result, audioKbps = AUDIO_BITRATE_KBPS) {
+  const up = Number(result?.uploadKbps) || 0;
+  if (!result?.ok || up <= 0) return null;
+  const usable = Math.round(up * 0.75);
+  const fits = [...STREAM_QUALITY_PRESETS].reverse().find((p) => p.bitrateKbps + audioKbps <= usable);
+  const lower = Math.max(BITRATE_MIN_KBPS, Math.floor((usable - audioKbps) / 100) * 100);
+  const pick = fits || STREAM_QUALITY_PRESETS[0];
+  const rtt = Number.isFinite(result.rttMs) ? ` · YouTube'a gecikme ${result.rttMs} ms` : "";
+  return {
+    key: pick.key,
+    label: fits ? `${pick.label} (${pick.detail})` : `${pick.label}, bit hızı ≈ ${lower} kbps`,
+    bitrateKbps: fits ? pick.bitrateKbps : Math.min(pick.bitrateKbps, lower),
+    usableKbps: usable,
+    text: `Yükleme ≈ ${mbpsText(up)} (tek bağlantı)${rtt}. Önerilen: ${fits ? `${pick.label} · ${pick.detail}` : `${pick.label} · ${lower} kbps`}.`,
+  };
+}
+
 /** Kısa ağ özeti (üst çubuk ipucu): "Gönderim 4,6 Mbps · 2 kez yeniden bağlandı". */
 export function networkSummary(status = {}) {
   const n = status?.network;

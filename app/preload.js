@@ -127,6 +127,8 @@ contextBridge.exposeInMainWorld("elitlig", {
     reportStats: (stats) => { if (stats && typeof stats === "object") ipcRenderer.send("studio:reportStats", stats); },
     // Yayın tanılama: { pipeline, encoder, fps, speed, sentKbps, relayPendingBytes, client: {…} } | null
     health: () => ipcRenderer.invoke("studio:health"),
+    // Bağlantı testi: { endpoint?, ingestHost?, ingestPort? } → { ok, uploadKbps, rttMs, samples, error? }
+    speedTest: (opts) => ipcRenderer.invoke("studio:speedTest", opts && typeof opts === "object" ? { endpoint: opts.endpoint, ingestHost: opts.ingestHost, ingestPort: opts.ingestPort } : {}),
     network: () => ipcRenderer.invoke("studio:network"),
     saveClip: (opts) => ipcRenderer.invoke("studio:saveClip", opts || {}),
     listClips: () => ipcRenderer.invoke("studio:listClips"),

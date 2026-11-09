@@ -585,7 +585,7 @@ function createStudioEngine({
       state, pipeline: s.opts.videoCopy ? "webcodecs" : "legacy", encoder: encoderOf(s),
       fps: p.fps ?? null, speed: p.speed ?? null, droppedFrames: p.droppedFrames ?? 0, dupFrames: p.dupFrames ?? 0,
       encodedKbps: s.bitrateKbps ?? null, pendingBytes: s.child?.stdin?.writableLength ?? 0,
-      ...(n ? { rtmp: n.state, sentKbps: n.sentKbps, reconnects: n.reconnects, attempt: n.attempt, ingest: n.target, droppedBytes: n.droppedBytes, dropEvents: n.dropEvents, relayPendingBytes: n.pendingBytes ?? null, lastError: n.lastError?.code || null } : {}),
+      ...(n ? { rtmp: n.state, publisher: n.publisher ?? null, sentKbps: n.sentKbps, uplinkKbps: n.uplinkKbps ?? null, ackKbps: n.ackKbps ?? null, inKbps: n.inKbps ?? null, reconnects: n.reconnects, attempt: n.attempt, ingest: n.target, droppedBytes: n.droppedBytes, dropEvents: n.dropEvents, relayPendingBytes: n.pendingBytes ?? null, socketQueuedBytes: n.socketQueuedBytes ?? null, lastError: n.lastError?.code || null } : {}),
       ...(c ? { client: c } : {}),
     };
   }
@@ -850,6 +850,8 @@ function createStudioEngine({
         // Yayın gecikmesi: yalnız RTMP bacağı (kayıt / tekrar halkası anlık kalır).
         delayMs: Math.round(Math.min(120, Math.max(0, Number(rawOpts.streamDelaySec) || 0)) * 1000),
         ...relayOptions,
+        // Ağ ucu seçimi (Ayarlar › Yayın › Gönderim yolu): "node" (4096 baytlık parçalar) | "ffmpeg".
+        ...(rawOpts.rtmpPublisher === "node" || rawOpts.rtmpPublisher === "ffmpeg" ? { publisher: rawOpts.rtmpPublisher } : {}),
       });
       try {
         await relay.listen();

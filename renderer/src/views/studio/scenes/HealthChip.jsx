@@ -8,11 +8,11 @@
 // zamanlayıcısıyla çizilir (stüdyo kökü değil); pencere kapalıyken yalnız etiket.
 import React, { memo, useEffect, useRef, useState } from "react";
 import { Icon } from "../../../components/ui";
-import { streamHealth } from "../../../lib/studio/broadcast";
+import { bottleneckCause, networkQueueSec, streamHealth } from "../../../lib/studio/broadcast";
 import { goalStressText } from "../../../lib/studio/goalStress";
 
 const kb = (n) => (Number.isFinite(Number(n)) ? `${Math.round(n)} kbps` : "—");
-const secOf = (bytes, kbps) => (bytes > 0 && kbps > 0 ? `${((bytes * 8) / (kbps * 1000)).toFixed(1).replace(".", ",")} sn` : "0 sn");
+const kbOf = (bytes) => (bytes >= 1024 * 1024 ? `${(bytes / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.round((Number(bytes) || 0) / 1024)} KB`);
 
 function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encoding, goalStress = null, goalMeasuring = false }) {
   const [, setTick] = useState(0);
@@ -34,6 +34,7 @@ function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encodi
   if (enc?.fallback) warnings.push(`Tek kodlama durdu (${enc.fallback.reason}); eski yol kullanılıyor.`);
   if (goalStress && !goalStress.ok && Date.now() - goalStress.at < 5 * 60_000) warnings.push(`Son golde yayın zorlandı: ${goalStressText(goalStress)}.`);
   const n = status.network || null;
+  const cause = bottleneckCause({ status, draw, enc, targetFps, encoding });
   const fps = wc ? wc.encodedFps : h.fps;
   const label = encoding
     ? `${fps} fps${h.bitrateKbps != null ? ` · ${h.bitrateKbps} kbps` : ""}${!wc && h.speed != null ? ` · ${h.speed.toFixed(2)}×` : ""}`
@@ -46,6 +47,7 @@ function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encodi
       {open && (
         <div className="st-health__pop" role="dialog" aria-label="Yayın tanılama">
           <strong>Yayın tanılama</strong>
+          {encoding && <p className={`st-health__cause is-${cause.tone}`}><b>{cause.label}</b>{cause.detail ? ` — ${cause.detail}` : ""}</p>}
           <dl>
             <dt>Kodlama yolu</dt><dd>{!encoding ? "—" : wc ? `Tek kodlama · ${wc.hardware ? "donanım" : "yazılım"} · ${wc.bitrateMode === "constant" ? "CBR" : "VBR"}` : `Eski (MediaRecorder + ${status.encoder || "ffmpeg"})`}</dd>
             <dt>Program çizimi</dt><dd>{draw.fps || 0} / {targetFps} fps · en uzun {draw.drawMs || 0} ms</dd>
@@ -64,9 +66,12 @@ function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encodi
             </>}
             <dt>Gol anı (son)</dt><dd className={goalStress && !goalStress.ok ? "text-red" : ""}>{goalMeasuring ? "ölçülüyor… (20 sn)" : goalStressText(goalStress)}</dd>
             <dt>Çıkış bit hızı</dt><dd>{h.bitrateKbps != null ? `${h.bitrateKbps} kbps` : "—"}</dd>
-            <dt>Gönderim (RTMP)</dt><dd>{n ? `${kb(n.sentKbps)}${n.state !== "up" ? ` · ${n.state}` : ""}` : "—"}</dd>
+            <dt>Gönderim (RTMP)</dt><dd>{n ? `${kb(n.uplinkKbps ?? n.sentKbps)}${n.state !== "up" ? ` · ${n.state}` : ""}` : "—"}</dd>
             {n && <>
-              <dt>Ağ tamponu</dt><dd className={n.dropping ? "text-red" : ""}>{secOf(n.pendingBytes, n.inKbps || n.sentKbps)}{n.dropEvents ? ` · ${n.dropEvents} kez atlandı` : ""}</dd>
+              <dt>Sunucuya ulaşan</dt><dd title="Yayın sunucusunun onayladığı (RTMP Acknowledgement) veri hızı">{Number.isFinite(n.ackKbps) ? kb(n.ackKbps) : n.publisher === "node" ? "onay bekleniyor" : "— (ffmpeg yolu ölçmez)"}</dd>
+              <dt>Üretilen (kodlayıcı)</dt><dd>{kb(n.inKbps)}</dd>
+              <dt>Gönderim kuyruğu</dt><dd className={n.dropping || networkQueueSec(n) >= 2 ? "text-red" : ""}>{String(networkQueueSec(n)).replace(".", ",")} sn · {kbOf(n.pendingBytes)}{Number(n.socketQueuedBytes) > 0 ? ` (soket ${kbOf(n.socketQueuedBytes)})` : ""}{n.dropEvents ? ` · ${n.dropEvents} kez atlandı` : ""}</dd>
+              <dt>Gönderim yolu</dt><dd>{n.publisher === "node" ? `Node RTMP · ${n.chunkSize || 4096} B parça` : "ffmpeg RTMP · 128 B parça (yedek)"}</dd>
               <dt>Yeniden bağlanma</dt><dd>{n.reconnects || 0}</dd>
             </>}
           </dl>

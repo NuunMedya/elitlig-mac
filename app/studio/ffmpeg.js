@@ -474,12 +474,18 @@ const streamLogLevel = ({ url, relayUrl, fifo }) => (url && fifo && !relayUrl ? 
  * canlı FLV'de geri dönüp süre / boyut yazılmaz. -progress: gönderilen bayt
  * (total_size) bağlantının canlı olduğunu gösterir (askı buradan anlaşılır).
  */
-function buildRelayArgs({ url, rwTimeoutMs = 10000 } = {}) {
-  const rtmp = /^rtmps?:/i.test(String(url || ""));
+function buildRelayArgs({ url, rwTimeoutMs = 10000, output = "url" } = {}) {
+  const pipe = output === "pipe";
+  const rtmp = !pipe && /^rtmps?:/i.test(String(url || ""));
   return [
     "-hide_banner", "-nostdin", "-y", "-loglevel", "level+warning", "-nostats",
-    "-progress", "pipe:1", "-stats_period", "1",
-    "-fflags", "+genpts+discardcorrupt", "-thread_queue_size", "1024",
+    // pipe: FLV stdout'a (Node RTMP yayıncısı, rtmppub.js) — ilerleme yok, sayaçlar yayıncıda.
+    ...(pipe ? [] : ["-progress", "pipe:1", "-stats_period", "1"]),
+    // -thread_queue_size 64 (eskiden 1024): giriş iş parçacığının paket kuyruğu ağ yetişmeyince
+    // ~10 sn'lik veriyi (1024 paket) aktarıcının GÖREMEDİĞİ yerde biriktiriyordu — yayın 10+ sn
+    // geride kalırken kare atlama devreye girmiyordu (ölçüm: 12 Mbps / 6 Mbps'lik hat, 30 sn'de
+    // 11 sn gecikme, kuyruk 1 MB görünüyordu). 64 paket ≈ 0,6 sn: birikme stdin'de görünür.
+    "-fflags", "+genpts+discardcorrupt", "-thread_queue_size", "64",
     "-probesize", "2000000", "-analyzeduration", "2000000",
     "-f", "mpegts", "-i", "pipe:0",
     "-map", "0:v:0", "-map", "0:a:0?",
@@ -489,8 +495,12 @@ function buildRelayArgs({ url, rwTimeoutMs = 10000 } = {}) {
     "-bsf:a", "aac_adtstoasc",
     "-max_muxing_queue_size", "1024",
     "-f", "flv", "-flvflags", "no_duration_filesize",
-    ...(rtmp ? ["-rw_timeout", String(Math.round(rwTimeoutMs * 1000)), "-tcp_nodelay", "1"] : []),
-    url,
+    // -tcp_nodelay YOK (2.21.0): ffmpeg her 128 baytlık parçayı ve 1 baytlık parça başlığını
+    // ayrı send() ile yazar; Nagle kapalıyken (macOS'ta Linux'un autocorking'i yok) her biri ayrı
+    // TCP paketi oluyordu (12 Mbps → kabloda ~21 Mbps, ~22 000 paket/sn). Nagle açıkken aynı
+    // akış ~1 000 paket/sn, kabloda ~12 Mbps (ölçüm: app/test/studio-rtmppub.test.js notları).
+    ...(rtmp ? ["-rw_timeout", String(Math.round(rwTimeoutMs * 1000))] : []),
+    pipe ? "pipe:1" : url,
   ];
 }
 
