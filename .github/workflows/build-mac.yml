@@ -36,6 +36,8 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Testler
+        # Asılı kalan bir test derlemeyi saatlerce bekletmesin.
+        timeout-minutes: 20
         run: npm test
 
       # Yayın Stüdyosu: ffmpeg (arm64 + x64) build/fetch-ffmpeg.js ile indirilir; önbellekte tutulur.
@@ -144,6 +146,8 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Testler
+        # Asılı kalan bir test derlemeyi saatlerce bekletmesin.
+        timeout-minutes: 20
         run: npm test
 
       # Yayın Stüdyosu: ffmpeg.exe (Gyan 7.1.1 essentials, SHA-256 sabit) build/fetch-ffmpeg.js ile indirilir.

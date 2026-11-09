@@ -11,7 +11,7 @@
     "dev": "vite --config renderer/vite.config.mjs",
     "build": "vite build --config renderer/vite.config.mjs",
     "start": "npm run build && electron .",
-    "test": "vitest run --config renderer/vite.config.mjs && node --test app/test/*.test.js",
+    "test": "vitest run --config renderer/vite.config.mjs && node --test --test-timeout=240000 app/test/*.test.js",
     "dist": "npm run build && npm run ffmpeg && electron-builder --mac dmg zip --universal --publish never",
     "ffmpeg": "node build/fetch-ffmpeg.js",
     "dist:win": "npm run build && npm run ffmpeg:win && electron-builder --win nsis zip --x64 --publish never",
