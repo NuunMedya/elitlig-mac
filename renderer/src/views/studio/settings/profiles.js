@@ -8,6 +8,7 @@
 //   rail       studio.rail.v1       sol kısayol şeridi
 //   dock       studio.dock.v1       alt panel sütunları, panel sırası, gizli parçalar
 //   layout     studio.layout.v1     ekran yerleşimi: bölmeler, sekme grupları, panolar (+ eski studio.stage.v1)
+//   density    studio.density.v1    panel yoğunluğu: kart genişliği, ayraçlar, eylem çubuğu yeri
 //   led        studio.led.v2        LED ekranı ve yönlendirme
 //   graphics   elitlig.studio.graphics.* / brandingExtras.* / graphicsSection  grafik ayarları (maç başına)
 //   goalMusic  studio.goalMusic*    gol müziği (takım başına)
@@ -29,6 +30,7 @@ export const PROFILE_GROUPS = [
   { key: "rail", label: "Kısayol şeridi", hint: "Sol şeritteki parçacıklar, boyutları ve sırası", match: (k) => k === "studio.rail.v1", live: true },
   { key: "dock", label: "Alt panel düzeni", hint: "Sütunlar, panel sırası, gizli parçalar", match: (k) => k === "studio.dock.v1", live: true },
   { key: "layout", label: "Ekran yerleşimi", hint: "Bölmeler, sekme grupları, panolar ve bileşenleri, boyutlar (Düzenle / Ayarlar › Yerleşim)", match: (k) => k === "studio.layout.v1" || k === "studio.stage.v1", live: true },
+  { key: "density", label: "Panel yoğunluğu", hint: "Sık / Normal / Geniş, kart genişlikleri, bölme ayraçları, eylem çubuğunun yeri", match: (k) => k === "studio.density.v1", live: true },
   { key: "led", label: "LED ekran", hint: "Ekran ve yönlendirme", match: (k) => k === "studio.led.v2", live: true },
   { key: "graphics", label: "Grafik ayarları", hint: "Skorbord, altyazı, marka ekleri, görünürlük (maç başına)", match: (k) => k.startsWith("elitlig.studio.graphics.") || k.startsWith("elitlig.studio.brandingExtras.") || k === "elitlig.studio.graphicsSection" },
   { key: "goalMusic", label: "Gol müziği", hint: "Takım başına müzikler ve otomatik çalma", match: (k) => k.startsWith("studio.goalMusic") },

@@ -130,6 +130,8 @@ import { HOTKEY_ACTIONS, keyText, localRecordOptions, recordEstimate, recordQual
 // ── alt panel çalışma alanı (sütunlar, parçalar) + ayar şablonları ──
 import { useDock } from "./dock/useDock";
 import { panelOf } from "./dock/dockModel";
+import { PanelFrame } from "./dock/PanelFrame";
+import { reloadDensity } from "./dock/density";
 // ── ekran yerleşimi (./layout): dockview bölmeleri + panolar ──
 import Workspace from "./layout/Workspace";
 import LayoutToolbar from "./layout/LayoutToolbar";
@@ -1593,8 +1595,83 @@ export default function Studio({ auth, go }) {
             onRetry={replays.retry} onDismiss={replays.dismissPending} uploadOf={replays.uploadOf} recordAngles={liveAngles} />}
     </div>
   );
+  /* ───────── [yoğunluk + eylem çubuğu] panel çerçevesi (./dock/PanelFrame) ─────────
+     Yayına içerik veren panellerde yapışkan YAYIN çubuğu: ÖNİZLEMEYE GÖNDER · YAYINA AL / GEÇİŞ ·
+     CANLIYA DÖN (kip yayındayken). Hepsi tek önizleme → program yolunu kullanır (toPreview /
+     modes.setPreview → take). Diğer işletim panellerinde yalnız yoğunluk denetimi. */
+  const hkText = (k) => { const v = settings.hotkeys?.[k]?.[0]; return v ? keyText(v) : null; };
+  const modeName = (m) => panelOf(m)?.label || m;
+  const pvMode = hasModes ? modes.previewMode || null : null;
+  const airM = hasModes ? modes.airMode || null : null;
+  const pvwName = pvMode ? modeName(pvMode) : studioMode ? previewScene?.name || null : null;
+  const takeSpec = (mine) => ({
+    label: mine ? "YAYINA AL" : "GEÇİŞ",
+    sub: pvwName ? `Önizlemede: ${pvwName}` : "Önizleme boş",
+    k: hkText("transition"),
+    disabled: !canTake,
+    onClick: () => { toProgram(); },
+  });
+  const backSpec = () => (airM ? {
+    label: "CANLIYA DÖN", sub: `${modeName(airM)} yayında · önceki sahneye`,
+    k: airM === "var" ? hkText("var") : airM === "tekrar" ? "Esc" : null,
+    onClick: () => modes.endOnAir?.(),
+  } : null);
+  const modePvwSpec = (m) => {
+    const inPv = pvMode === m;
+    const list = replays.replays || [];
+    const send = () => {
+      if (m === "tekrar") {
+        const picks = modes.replayEditor?.rm?.picks || {};
+        const r = list.find((x) => (picks[x.id] || []).length);
+        if (r && modes.sendToPreview) modes.sendToPreview(r); else modes.loadLatest?.();
+        return;
+      }
+      if (m === "var" && modes.var?.preview) { modes.var.preview(); return; }
+      modes.setPreview?.(m);
+    };
+    return {
+      label: "ÖNİZLEMEYE GÖNDER",
+      sub: inPv ? `${modeName(m)} önizlemede ✓` : m === "tekrar" ? (list.length ? "Seçili pozisyon / son tekrar" : "Henüz tekrar yok") : modeName(m),
+      k: m === "tekrar" ? hkText("replay") : m === "var" ? hkText("var") : null,
+      active: inPv,
+      disabled: m === "tekrar" && !list.length,
+      onClick: send,
+    };
+  };
+  const airBarFor = (key) => {
+    if (key === "sahne") {
+      const sel = (inlineSceneId && config.scenes.find((x) => x.id === inlineSceneId)) || null;
+      const inPv = Boolean(sel) && !pvMode && config.previewSceneId === sel.id;
+      return {
+        pvw: {
+          label: "ÖNİZLEMEYE GÖNDER", sub: sel ? (inPv ? `${sel.name} önizlemede ✓` : sel.name) : "Önce bir sahne seç", k: "1–9",
+          active: inPv, disabled: !sel || inPv || !studioMode, onClick: () => sel && toPreview(sel.id),
+        },
+        take: takeSpec(!pvMode && Boolean(previewScene) && config.previewSceneId !== config.programSceneId),
+        back: backSpec(),
+      };
+    }
+    if (hasModes && (key === "tekrar" || key === "var" || key === "roportaj" || key === "ozet")) {
+      return { pvw: modePvwSpec(key), take: takeSpec(pvMode === key), back: backSpec() };
+    }
+    if (key === "led") {
+      const lp = led.prefs || {};
+      const route = lp.web ? "web" : lp.route || "program";
+      return {
+        pvw: { label: "LED'E ÖNİZLEME", sub: route === "preview" ? "LED önizlemeyi gösteriyor ✓" : "LED önizlemedekini göstersin", active: route === "preview", disabled: Boolean(lp.web), onClick: () => led.setRoute({ route: "preview" }) },
+        take: takeSpec(false),
+        back: backSpec() || (!lp.web && route !== "program" ? { label: "LED CANLIYA DÖN", sub: "LED yayını (programı) izlesin", onClick: () => led.setRoute({ route: "program" }) } : null),
+      };
+    }
+    return null;
+  };
+  const FRAMED = ["sahne", "tekrar", "var", "roportaj", "ozet", "led", "yonetim", "yonetimReji", "ses", "yayin"];
   const dockDefs = {};
-  const defPanel = (key, render, extra = {}) => { if (render) dockDefs[key] = { ...panelOf(key), ...extra, render }; };
+  const defPanel = (key, render, extra = {}) => {
+    if (!render) return;
+    const framed = FRAMED.includes(key) ? (o) => <PanelFrame panel={key} bar={airBarFor(key)}>{render(o)}</PanelFrame> : render;
+    dockDefs[key] = { ...panelOf(key), ...extra, render: framed, raw: render };
+  };
   // Maç yönetimi: birleşik panel + ayrılmış sekmeler ("Maç yönetimi › Reji" …) + pano bölümleri
   // (layout/components ManagePart). Seçili maç burada; süzgeç / taslaklar manage/manageStore'da ortak.
   const manageProps = { matchId, match: live.match, live, onOpenMatch: setMatchId, replays: replays.replays, onPlayReplay: playReplay, onGoalTap: onDockGoalTap, onEventCreated: onDockEventCreated, goalMusic: goalMusic || undefined };
@@ -1627,7 +1704,7 @@ export default function Studio({ auth, go }) {
   defPanel("led", () => <LedPanel led={led} scenes={config.scenes} matchId={matchId} ledMode={g?.ledMode} g={hasGraphics ? g : null} live={live} />, { count: led.status.open ? "●" : null });
   defPanel("olaylar", () => <div className="st-dock-events"><EventEntry ctx={railCtx} onClose={() => {}} /></div>);
   dockPanelsRef.current = Object.keys(dockDefs);
-  defPanel("bolumler", () => <PanelScope panel="yayin" only="chapters"><div className="st-bcastwrap lw-solo" data-solo-panel="yayin" data-solo-part="chapters">{dockDefs.yayin.render({ passive: true })}</div></PanelScope>, { count: chapters.chapters.length || null });
+  defPanel("bolumler", () => <PanelScope panel="yayin" only="chapters"><div className="st-bcastwrap lw-solo" data-solo-panel="yayin" data-solo-part="chapters">{(dockDefs.yayin.raw || dockDefs.yayin.render)({ passive: true })}</div></PanelScope>, { count: chapters.chapters.length || null });
   defPanel("muzikCalar", () => <div className="lw-pad"><MusicPanel mp={music} /></div>, { count: music.playing ? "●" : null });
   if (GoalMusicPanel) defPanel("golMuzigi", () => (goalMusic ? <div className="lw-pad"><GoalMusicPanel gm={goalMusic} /></div> : <p className="st-hint st-pad">Gol müziği için maç aç (takımların müzikleri).</p>), { count: goalMusic?.playing ? "●" : null });
   if (UploadLogPanel) defPanel("yukleme", () => <div className="lw-pad"><UploadLogPanel defaultOpen /></div>);
@@ -1698,8 +1775,9 @@ export default function Studio({ auth, go }) {
     if (groups.includes("rail")) rail.reload?.();
     if (groups.includes("dock")) { try { setDock(JSON.parse(localStorage.getItem("studio.dock.v1") || "null")); } catch { /* yoksay */ } }
     if (groups.includes("layout")) lay.reload();
+    if (groups.includes("density")) reloadDensity();
     if (groups.includes("led")) { try { const v = JSON.parse(localStorage.getItem("studio.led.v2") || "null"); if (v && led.setPref) led.setPref(v); } catch { /* yoksay */ } }
-    return groups.some((k) => !["prefs", "settings", "rail", "dock", "led", "layout"].includes(k));
+    return groups.some((k) => !["prefs", "settings", "rail", "dock", "led", "layout", "density"].includes(k));
   });
 
   /* ───────── Ayarlar sayfası özellikleri (Ayarlar ve Kontrol merkezi gömülü bölümleri ortak) ───────── */

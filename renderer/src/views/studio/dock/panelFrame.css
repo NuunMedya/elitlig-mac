@@ -1,0 +1,182 @@
+/* Yayın Stüdyosu · PANEL ÇERÇEVESİ (dock/PanelFrame.jsx): yoğunluk, iç ayraçlar, yapışkan YAYIN
+   eylem çubuğu. Renkler yalnız tema belirteçleri (studio.css): --green / --st-live / --amber … */
+.studio, .st-modal {
+  --ab-pvw: var(--green);
+  --ab-pvw-soft: var(--green-soft);
+  --ab-live: var(--st-live, var(--red));
+  --ab-back: var(--amber);
+  --ab-back-soft: var(--amber-soft);
+  --ab-on-solid: #fff;
+  --ab-bar-bg: var(--bg-2);
+}
+
+/* ───────── çerçeve ───────── */
+.pf { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; height: 100%; min-height: 0; min-width: 0; container-type: inline-size; container-name: pfr; }
+.pf__body { position: relative; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; display: flex; flex-direction: column; container-type: inline-size; container-name: pf dcol; scrollbar-width: thin; }
+.pf__body > * { min-width: 0; }
+.pf__body > .st-modewrap, .pf__body > .mg-dock, .pf__body > .md-tab { flex: 1 1 auto; }
+/* İç içe kaydırma yok: kap (lw-panel / sütun) taşmaz, gövde kayar; çubuk hep görünür. */
+.lw-panel > .pf, .st-dcol__body > .pf, .st-dock__body > .pf { flex: 1 1 auto; }
+
+/* ───────── yoğunluk satırı (eylem çubuğu olmayan paneller) ───────── */
+.pf-tools { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-height: 26px; padding: 1px 6px; border-bottom: 1px solid var(--border); background: var(--ab-bar-bg); }
+
+/* ───────── yoğunluk denetimi ───────── */
+.pf-dens { position: relative; flex: none; display: flex; align-items: center; margin-left: auto; }
+.pf-dens__inline { display: flex; align-items: center; gap: 6px; }
+.pf-dens__seg { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+.pf-dens__seg button { border: 0; background: none; padding: 2px 8px; min-height: 22px; font: 700 11px/1 var(--font, inherit); color: var(--muted); cursor: pointer; }
+.pf-dens__seg button + button { border-left: 1px solid var(--border); }
+.pf-dens__seg button:hover { color: var(--text); }
+.pf-dens__seg button.is-on { background: rgba(var(--acc-rgb), 0.22); color: var(--text); }
+.pf-dens__card { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.pf-dens__card input[type="range"] { width: 86px; height: 16px; margin: 0; accent-color: var(--acc); }
+.pf-dens__ic, .pf-dens__toggle { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--muted); cursor: pointer; }
+.pf-dens__ic:hover, .pf-dens__toggle:hover, .pf-dens__toggle.is-on { color: var(--text); background: var(--surface-2); border-color: var(--border); }
+.pf-dens__toggle { display: none; }
+.pf-dens__pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 40; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: max-content; max-width: 260px; padding: 8px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border-strong); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); }
+.pf.is-bar-bottom .pf-dens__pop { top: auto; bottom: calc(100% + 4px); }
+@container pfr (max-width: 899px) {
+  .pf.has-ab .pf-dens__inline { display: none; }
+  .pf.has-ab .pf-dens__toggle { display: inline-grid; }
+}
+@container pfr (max-width: 519px) {
+  .pf-dens__inline { display: none; }
+  .pf-dens__toggle { display: inline-grid; }
+}
+
+/* ───────── YAYIN eylem çubuğu (yapışkan: çerçevenin üstü ya da altı) ───────── */
+.pf-ab { flex: none; z-index: 5; display: flex; align-items: stretch; gap: 8px; padding: 6px 8px; background: var(--ab-bar-bg); border-bottom: 1px solid var(--border); }
+.pf.is-bar-bottom .pf-ab { border-bottom: 0; border-top: 1px solid var(--border); }
+.pf-ab__acts { flex: 1 1 auto; display: flex; gap: 6px; min-width: 0; }
+.pf-ab__b { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 4px 10px; border-radius: 10px; border: 1.5px solid var(--border-strong); background: var(--surface-2); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: filter 0.1s, transform 0.05s, box-shadow 0.12s; }
+.pf-ab__b:hover:not(:disabled) { filter: brightness(1.12); }
+.pf-ab__b:active:not(:disabled) { transform: translateY(1px); }
+.pf-ab__b:disabled { opacity: 0.45; cursor: default; }
+.pf-ab__b .ic { flex: none; }
+.pf-ab__b.is-pvw { background: var(--ab-pvw-soft); border-color: var(--ab-pvw); }
+.pf-ab__b.is-pvw .ic { color: var(--ab-pvw); }
+.pf-ab__b.is-pvw.is-active { box-shadow: inset 0 0 0 1px var(--ab-pvw); }
+.pf-ab__b.is-take { flex-grow: 1.6; min-height: 52px; background: var(--ab-live); border-color: var(--ab-live); color: var(--ab-on-solid); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.22); }
+.pf-ab__b.is-take .pf-ab__t b { font-size: 15px; }
+.pf-ab__b.is-back { background: var(--ab-back-soft); border-color: var(--ab-back); }
+.pf-ab__b.is-back .ic { color: var(--ab-back); }
+.pf-ab__t { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; line-height: 1.12; }
+.pf-ab__t b { font-size: 13px; font-weight: 850; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pf-ab__t small { font-size: 10.5px; font-weight: 600; opacity: 0.82; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pf-ab__k { flex: none; font-size: 10.5px; }
+.pf-ab__s { display: none; }
+@container pfr (max-width: 520px) {
+  .pf-ab__l { display: none; }
+  .pf-ab__s { display: inline; }
+  .pf-ab__b:not(.is-take) > .ic { display: none; }
+  .pf-ab__b { gap: 4px; padding: 4px 6px; }
+  .pf-ab__b.is-take { flex-grow: 1.25; }
+  .pf-ab__k { padding: 0 4px; min-width: 0; }
+}
+.pf-ab__b.is-take .pf-ab__k { background: rgba(0, 0, 0, 0.25); border-color: rgba(255, 255, 255, 0.35); color: var(--ab-on-solid); }
+@container pfr (max-width: 640px) {
+  .pf-ab { padding: 5px 6px; gap: 6px; }
+  .pf-ab__b { gap: 6px; padding: 4px 7px; }
+  .pf-ab__t b { white-space: normal; }
+  .pf-ab__b.is-take .pf-ab__t b { font-size: 13.5px; }
+}
+@container pfr (max-width: 460px) {
+  .pf-ab__t small { display: none; }
+  .pf-ab__b { min-height: 42px; }
+  .pf-ab__b.is-take { min-height: 46px; }
+  .pf-ab__t b { font-size: 11.5px; letter-spacing: 0.02em; }
+  .pf-ab__b.is-take .pf-ab__t b { font-size: 12.5px; }
+}
+@container pfr (max-width: 360px) {
+  .pf-ab__b .ic, .pf-ab__k { display: none; }
+  .pf-ab__b { justify-content: center; text-align: center; }
+}
+/* Panoya konmuş küçük parçacık (Hazır ekranlar): çubuk tek satır, kısayol çipi korunur. */
+.pf-mini { margin-top: 4px; }
+.pf-mini .pf-ab { padding: 0; border: 0; background: none; }
+.pf-mini .pf-ab__b { min-height: 34px; padding: 3px 8px; }
+.pf-mini .pf-ab__b.is-take { min-height: 38px; }
+.pf-mini .pf-ab__t b { font-size: 12px; }
+/* Çubuk varken mod kartındaki yinelenen büyük düğmeler gizlenir (geçiş seçimi kalır). */
+.pf.has-ab .md-air__go, .pf.has-ab .md-air > .btn--block.btn--sm { display: none; }
+
+/* ───────── sürüklenebilir ayraç ───────── */
+.pf-split { position: relative; align-self: stretch; width: 8px; min-height: 24px; cursor: col-resize; touch-action: none; z-index: 2; }
+.pf-split > i { position: absolute; left: 3px; top: 4px; bottom: 4px; width: 2px; border-radius: 2px; background: var(--border); transition: background 0.12s; }
+.pf-split:hover > i, .pf-split.is-drag > i { background: var(--acc); }
+
+/* ───────── SAHNELER ───────── */
+.pf[data-pf] .st-scenetab.is-v3 { gap: var(--dens-gap); }
+.pf[data-pf] .st-scenetab.is-v3 .scn-grid:not(.is-list) { grid-template-columns: repeat(auto-fill, minmax(min(var(--card-w), 100%), 1fr)); gap: var(--dens-gap); }
+.pf[data-pf] .st-scenetab.is-v3.has-side { grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); }
+.pf[data-pf] .st-scenetab.is-v3.has-edit { grid-template-columns: minmax(min(170px, 30%), 1fr) 8px minmax(300px, var(--split-sahne-edit, 1.3fr)); column-gap: 2px; }
+.pf[data-pf] .st-scenetab.is-v3.has-edit > .st-scenetab__side { grid-column: 1 / -1; }
+.pf[data-pf] .st-scenetab.is-v3.is-narrow.has-edit { grid-template-columns: minmax(0, 1fr); }
+.pf[data-pf] .st-scenetab.is-v3:not(.has-side) .st-srows__list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)); gap: 4px var(--dens-gap); }
+.pf[data-pf] .scn-help { margin: 2px 0 0; }
+/* dar sahne kartında "Yayına al" yazısı kırılmaz: yalnız simge kalır */
+.pf[data-pf] .scn-card:not(.is-row):not(.is-add) { container-type: inline-size; container-name: scn; }
+.pf[data-pf] .scn-act.is-air span { white-space: nowrap; }
+@container scn (max-width: 230px) { .pf[data-pf] .scn-act.is-air span { display: none; } }
+/* yandaki katman düzenleyici: solda katmanlar + dönüşüm, sağda tuval (boş alan bırakmaz) */
+.pf[data-pf] .sie { container-type: inline-size; container-name: sie; padding: var(--dens-pad); gap: var(--dens-gap); }
+.pf[data-pf] .sie__body { grid-template-columns: minmax(170px, 0.85fr) minmax(0, 1.4fr); gap: var(--dens-gap); }
+.pf[data-pf] .sie__left { min-width: 0; display: flex; flex-direction: column; gap: var(--dens-gap); }
+.pf[data-pf] .sie__left > .st-col { background: var(--surface-2); padding: 6px; }
+.pf[data-pf] .sie__stage { max-height: none; min-height: 90px; width: 100%; }
+@container sie (max-width: 520px) {
+  .pf[data-pf] .sie__body { grid-template-columns: minmax(0, 1fr); }
+  .pf[data-pf] .sie__right { order: -1; }
+}
+
+/* ───────── TEKRAR ───────── */
+.pf[data-pf] .rpx-body2:not(.no-list):not(.no-side) { grid-template-columns: minmax(min(280px, 40%), 1fr) 8px minmax(220px, var(--split-tekrar-side, 0.8fr)); grid-template-rows: minmax(0, 1fr); column-gap: 2px; row-gap: var(--dens-gap); }
+.pf[data-pf] .rpx-side { flex-direction: column; gap: var(--dens-gap); }
+.pf[data-pf] .rpx-pa, .pf[data-pf] .rpx-pa.is-md { width: var(--thumb-w); }
+.pf[data-pf] .rpx-poslist { gap: var(--dens-gap); padding: var(--dens-pad); }
+@container pf (max-width: 640px) {
+  .pf[data-pf] .rpx-body2:not(.no-list):not(.no-side) { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(180px, 1fr) auto; }
+  .pf[data-pf] .rpx-body2 > .pf-split { display: none; }
+  .pf[data-pf] .rpx-side { flex-direction: row; }
+  .pf[data-pf] .rpx-side > * { flex: 1; min-width: 0; }
+}
+@container pf (max-width: 440px) {
+  .pf[data-pf] .rpx-side { flex-direction: column; }
+}
+
+/* ───────── kip sekmeleri (VAR · Röportaj · Özet · Tekrar ayar kartı) ───────── */
+.pf[data-pf] .md-tab { grid-template-columns: var(--split-mode-side, 240px) 8px minmax(0, 1fr); column-gap: 2px; row-gap: var(--dens-gap); padding: var(--dens-pad); }
+.pf[data-pf] .md-tab.is-tekrar:not(.is-side) { grid-template-columns: minmax(0, 1fr); }
+.pf[data-pf] .md-tab.is-tekrar:not(.is-side) > .pf-split { display: none; }
+.pf[data-pf] .md-tab.is-tekrar.is-side { grid-template-columns: var(--split-mode-side, 240px) 8px minmax(0, 1fr); }
+@container pf (max-width: 620px) {
+  .pf[data-pf] .md-tab, .pf[data-pf] .md-tab.is-tekrar.is-side { grid-template-columns: minmax(0, 1fr); }
+  .pf[data-pf] .md-tab > .pf-split { display: none; }
+  .pf[data-pf] .md-tab > .md-side { overflow: visible; }
+}
+.pf[data-pf] :is(.md-var, .st-var, .md-iv, .mx-cards, .st-led, .st-bcast, .st-hl) { grid-template-columns: repeat(auto-fill, minmax(min(var(--card-w), 100%), 1fr)); gap: var(--dens-gap); }
+.pf[data-pf] .iv-flow { grid-template-columns: repeat(auto-fit, minmax(min(calc(var(--card-w) * 1.15), 100%), 1fr)); }
+.pf[data-pf] .md-pick { grid-template-columns: repeat(auto-fill, minmax(min(calc(var(--card-w) * 0.42), 100%), 1fr)); }
+.pf[data-pf] .md-grid2 { grid-template-columns: repeat(auto-fit, minmax(min(calc(var(--card-w) * 0.7), 100%), 1fr)); }
+.pf[data-pf] .md-main > * + * { margin-top: var(--dens-gap); }
+
+/* ───────── REJİ (takım sütunları · orta sütun · olaylar) ───────── */
+.pf[data-pf] .rj { --rj-gap: var(--dens-gap); grid-template-columns: minmax(min(var(--card-w), 30%), 1fr) minmax(min(calc(var(--card-w) * 1.3), 40%), 1.25fr) minmax(min(var(--card-w), 30%), 1fr); grid-template-areas: "home center away" "music music music"; }
+.pf[data-pf] .rj-panel { padding: calc(var(--dens-pad) + 2px); gap: var(--dens-gap); }
+@container pf (max-width: 820px) {
+  .pf[data-pf] .rj { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "center center" "home away" "music music"; }
+}
+@container pf (max-width: 380px) {
+  .pf[data-pf] .rj { grid-template-columns: minmax(0, 1fr); grid-template-areas: "center" "home" "away" "music"; }
+}
+.pf[data-pf] .mg-split { grid-template-columns: repeat(auto-fit, minmax(min(calc(var(--card-w) * 1.5), 100%), 1fr)); }
+.pf[data-pf] .mg-grid-auto, .pf[data-pf] .mg-scope { grid-template-columns: repeat(auto-fill, minmax(min(calc(var(--card-w) * 0.8), 100%), 1fr)); }
+
+/* ───────── SES (kanal şeritleri) ───────── */
+.pf[data-pf] .mx-strip { width: var(--strip-w); }
+.pf[data-pf] .mx-strip.is-master { width: calc(var(--strip-w) * 1.3); }
+.pf[data-pf] .mx-strips { gap: var(--dens-gap); }
+
+/* ───────── ortak kart iç kenarı ───────── */
+.pf[data-pf] :is(.st-var, .st-led, .st-bcast, .md-var, .md-iv) > .st-card { padding: calc(var(--dens-pad) + 2px); }
