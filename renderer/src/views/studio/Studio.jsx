@@ -1540,6 +1540,8 @@ export default function Studio({ auth, go }) {
         inOf: RE.rm.inPointOf, outOf: RE.rm.outPointOf, setIn: RE.rm.setInPoint, setOut: RE.rm.setOutPoint,
         // desteler: program yayındayken parçacıklar yayındaki tekrarı anında denetler
         decks: RE.decks || null, focus: RE.focus || null,
+        // yan yana tekrar: pozisyonun açıları bölünmüş ekranda önizlemeye (decks.*.split / .track deste başına)
+        openSplit: RE.rm.openSplit || null,
       } : null,
     },
     moment: captureMoment,

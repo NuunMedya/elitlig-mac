@@ -8,7 +8,10 @@
 //
 // Önizleme durumu (tek doğruluk kaynağı):
 //   { kind: "scene", sceneId }
-//   { kind: "replay", mode: "tekrar", replayId, angle, angles, items, inSec, outSec, rate, zoom, view }
+//   { kind: "replay", mode: "tekrar", replayId, angle, angles, items, inSec, outSec, rate, zoom, view, split }
+//   split: yan yana tekrar (lib/studio/replaySplit › splitForPayload) — { layout, fit, panes: [{ angle, url,
+//   durationMs, offsetFrames, view, delta }] } ya da null. Bölmede items YALNIZ ana açıdır (panes[0]):
+//   oynatıcı / ses / yükleme hattı onu izler, öbür pencereler ona eşlenir.
 //   { kind: "var" | "interview" | "highlight", mode }
 //   { kind: "none" }
 // Program durumu:
@@ -27,6 +30,8 @@ export const MODE_KIND = Object.freeze({ tekrar: "replay", var: "var", roportaj:
 export const KIND_MODE = Object.freeze(Object.fromEntries(Object.entries(MODE_KIND).map(([m, k]) => [k, m])));
 export const kindOfMode = (mode) => MODE_KIND[mode] || null;
 export const modeOfKind = (kind) => KIND_MODE[kind] || null;
+
+import { sameSplit, splitForPayload } from "./replaySplit";
 
 const defaultKey = (replayId, angle) => `${replayId || ""}|${angle || ""}`;
 const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
@@ -66,7 +71,7 @@ function queueOf(list, selection, order = null, playlist = null) {
  * başlayıp kuyruğun kalanını sırayla oynar, değilse yalnız o klip yayına gider.
  * Dönüş: yük ya da null (önizlenecek klip yok).
  */
-export function replayPayload({ list, selection, order = null, playlist = null, cursor, inOf, outOf, viewOf, rateOf, keyOf = defaultKey, rate = 1 } = {}) {
+export function replayPayload({ list, selection, order = null, playlist = null, cursor, inOf, outOf, viewOf, rateOf, keyOf = defaultKey, rate = 1, split = null } = {}) {
   const queue = queueOf(list, selection, order, playlist);
   let cur = null;
   if (cursor?.replayId) {
@@ -109,6 +114,7 @@ export function replayPayload({ list, selection, order = null, playlist = null, 
     rate: clampRate(rate),
     zoom: first.view.zoom,
     view: first.view,
+    split: split ? splitForPayload(split, first.replay) : null,
   };
 }
 
@@ -124,6 +130,7 @@ export function samePayload(a, b) {
   if (a.kind !== b.kind) return false;
   if (a.kind !== "replay") return true;
   if (a.rate !== b.rate || a.items.length !== b.items.length) return false;
+  if (!sameSplit(a.split || null, b.split || null)) return false;
   return a.items.every((x, i) => {
     const y = b.items[i];
     return x.replayId === y.replayId && x.angle === y.angle && x.startSec === y.startSec && x.endSec === y.endSec && (x.rate || 0) === (y.rate || 0)
@@ -204,6 +211,7 @@ export const takeLabel = (preview) => (isMode(preview) ? "YAYINA AL" : "GEÇİŞ
 export function payloadSummary(p) {
   if (!p || p.kind !== "replay" || !p.items?.length) return "";
   const parts = [];
+  if (p.split?.panes?.length) parts.push(`yan yana · ${p.split.panes.length} açı`);
   if (p.items.length > 1) parts.push(`${p.items.length} klip sırayla`);
   if (p.rate !== 1) parts.push(`${String(p.rate).replace(".", ",")}×`);
   if (p.zoom > 1.001) parts.push(`${p.zoom.toFixed(1).replace(".", ",")}× yakın`);

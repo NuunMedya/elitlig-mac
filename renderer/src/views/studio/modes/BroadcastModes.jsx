@@ -75,6 +75,7 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
   const rm = useReplayMode({
     replays, rate: cfg.rate, setRate: setReplayRate, audio, between: cfg.between, brandRef,
     onFinished: () => endRef.current(), onError: (m) => say(m, { tone: "error", timeout: 5000 }), previewing: previewMode === "tekrar",
+    sources: src.list, squads: live?.squads || null,
   });
   const setVarSettings = useCallback((fn) => setCfg((c) => ({ ...c, var: typeof fn === "function" ? fn(c.var) : fn })), [setCfg]);
   const vr = useVar({
@@ -306,6 +307,8 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     // Açı seçmek önizlemeyi DEĞİŞTİRMEZ; yalnız "ÖNİZLEMEYE GÖNDER" (sendToPreview) değiştirir.
     sendToPreview: (r, o) => { const ok = rm.sendToPreview(r, o); if (ok) setPreview("tekrar"); return ok; },
     load: (r, o) => { const ok = rm.load(r, o); if (ok) setPreview("tekrar"); return ok; },
+    // Yan yana tekrar: açılar bölünmüş ekranda önizlemeye.
+    openSplit: (r, angles, o) => { const ok = rm.openSplit(r, angles, o); if (ok) setPreview("tekrar"); return ok; },
   }), [rm, setPreview]);
   const api = {
     state, cfg, setCfg, setReplayRate, takeToAir, takeMode, endOnAir, setPreview, clearPreview, airMode, previewMode,

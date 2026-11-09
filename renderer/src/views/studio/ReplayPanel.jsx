@@ -10,7 +10,8 @@
 //   └────────────────────────────────────────────────────────────────────────────────────────────┘
 // Her pozisyonun açılarına tıkla → seçilir (tıklama sırası, numaralı). "ÖNİZLEMEYE GÖNDER"
 // YALNIZ o pozisyonun seçili açılarını (yoksa program açısını) sırayla önizlemeye yükler;
-// GEÇİŞ aynen onu yayına verir. Seçim 1 dk sonra (Ayarlar › Tekrar) o golün klibi olarak
+// GEÇİŞ aynen onu yayına verir. "Yan yana" / "YAN YANA ÖNİZLE (n)": pozisyonun seçili açıları
+// (≥ 2; yoksa ilk iki açı) aynı anda, zamanda eşli bölünmüş ekranda önizlemeye (rm.openSplit). Seçim 1 dk sonra (Ayarlar › Tekrar) o golün klibi olarak
 // oyuncunun profiline yüklenir; yüklemeye kadar değiştirilebilir. Canlı yayın riskteyse
 // yükleme bekler ("Yayın öncelikli"). Parçalar (<Part>) panoya ayrı konabilir:
 // part:tekrar:list (pozisyonlar) / grid (önizlemedeki pozisyonun açıları) / queue (önizleme /
@@ -152,7 +153,7 @@ function ReplayPanelInner({ api }) {
           {showList && (
             <Part id="list" label="Pozisyonlar (goller / anlar ve açıları)">
               <PositionList list={ordered} pending={pending} R={R} meta={meta} picks={picks} pick={rm.pick} cursor={cursor} air={airPos} sources={sources}
-                onSend={send} solo={!showHead} live={api.live} />
+                onSend={send} onSplit={rm.openSplit ? (r, a) => rm.openSplit(r, a) : null} splitId={previewing && rm.split?.active ? pvPos?.replayId : null} solo={!showHead} live={api.live} />
             </Part>
           )}
           {showList && (showGrid || showQueue) && <Splitter id="tekrar:side" side="after" label="Pozisyonlar ↔ önizleme sütunu" />}
@@ -218,7 +219,7 @@ function AngleThumb({ a, sources, no, stage, live, onClick, onDoubleClick, title
 
 /* ───────────────────────── pozisyon listesi ───────────────────────── */
 
-function PositionList({ list, pending, R, meta, picks, pick, cursor, air, sources, onSend, solo, live }) {
+function PositionList({ list, pending, R, meta, picks, pick, cursor, air, sources, onSend, onSplit, splitId, solo, live }) {
   return (
     <section className="rpx-col rpx-poss" aria-label="Pozisyonlar">
       <h5 className="rpx-col__h">Pozisyonlar <span className="muted">({list.length}) · açılara tıkla → seç (sıra numaralı) · ÖNİZLEMEYE GÖNDER</span>{solo && <span className="st-top__spacer" />}</h5>
@@ -235,7 +236,7 @@ function PositionList({ list, pending, R, meta, picks, pick, cursor, air, source
           </li>
         ))}
         {list.map((r, i) => (
-          <PositionRow key={r.id} r={r} R={R} meta={meta} picks={picks} pick={pick} cursor={cursor} air={air} sources={sources} onSend={onSend} liveThumbs={i < 2} live={live} />
+          <PositionRow key={r.id} r={r} R={R} meta={meta} picks={picks} pick={pick} cursor={cursor} air={air} sources={sources} onSend={onSend} onSplit={onSplit} isSplit={splitId === r.id} liveThumbs={i < 2} live={live} />
         ))}
         {!list.length && !pending.length && <li className="st-hint st-pad">Henüz tekrar yok. GOL'e bas ya da <strong>ÖNEMLİ AN</strong> (<Kbd>B</Kbd>) ile kaydet.</li>}
       </ul>
@@ -243,7 +244,7 @@ function PositionList({ list, pending, R, meta, picks, pick, cursor, air, source
   );
 }
 
-function PositionRow({ r, R, meta, picks, pick, cursor, air, sources, onSend, liveThumbs, live }) {
+function PositionRow({ r, R, meta, picks, pick, cursor, air, sources, onSend, onSplit, isSplit, liveThumbs, live }) {
   const m = metaFor(r, meta);
   const u = R.uploadOf?.(r.id);
   const chip = uploadChip(u, r, m, R.now || Date.now());
@@ -306,7 +307,13 @@ function PositionRow({ r, R, meta, picks, pick, cursor, air, sources, onSend, li
             <Icon name="upload" size={11} /> {u?.status === "uploaded" ? "Yeniden yükle" : u?.status === "failed" ? "Yeniden dene" : "Şimdi yükle"}
           </button>
         )}
-        <button type="button" className={`btn btn--sm rpx-send ${isPvw ? "is-on" : ""}`} onClick={() => onSend(r)} disabled={!goTo.length}
+        {onSplit && angles.length > 1 && (
+          <button type="button" className={`btn btn--sm rpx-split ${isSplit ? "is-on" : ""}`} onClick={() => onSplit(r, chosen.length >= 2 ? chosen : null)}
+            title={chosen.length >= 2 ? `Seçili ${Math.min(4, chosen.length)} açı aynı anda, zamanda eşli bölünmüş ekranda önizlemeye (yayına GEÇİŞ ile)` : "İlk iki açı yan yana önizlemeye (açıları seçerek 3–4 açı)"}>
+            <Icon name="grid" size={13} /> {chosen.length >= 2 ? `YAN YANA ÖNİZLE (${Math.min(4, chosen.length)})` : "Yan yana"}
+          </button>
+        )}
+        <button type="button" className={`btn btn--sm rpx-send ${isPvw && !isSplit ? "is-on" : ""}`} onClick={() => onSend(r)} disabled={!goTo.length}
           title={`Bu pozisyonun ${chosen.length ? `seçili ${chosen.length} açısını` : "program açısını"} sırayla önizlemeye yükle (yayına GEÇİŞ ile)`}>
           <Icon name="eye" size={13} /> ÖNİZLEMEYE GÖNDER{chosen.length > 1 ? ` (${chosen.length})` : ""}
         </button>

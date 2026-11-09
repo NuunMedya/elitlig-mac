@@ -6,7 +6,9 @@
 //   gönder" · açı 1…N (önizlemede / yayında o açıya geç) · önceki / sonraki gol · hız ön
 //   ayarları · jog tekerleği · yakınlaştırma ön ayarları · tekrar + ağır çekim (tek dokunuş) ·
 //   yükleme durumu (şimdi / iptal, yayın sağlığı) · son N gol (her biri KENDİ açılarıyla) ·
-//   giriş / çıkış · döngü · kareyi dondur · ağır çekim rampası · önemli an · tekrar + VAR.
+//   giriş / çıkış · döngü · kareyi dondur · ağır çekim rampası · önemli an · tekrar + VAR ·
+//   YAN YANA TEKRAR (odaktaki pozisyonun açıları bölünmüş ekranda; yerleşim çipleri) ·
+//   OYUNCU TAKİBİ (takip aracı, vurgu biçimi, otomatik izle, dondur ve göster).
 //
 // [önizleme-geçiş] Her şey önce ÖNİZLEME'ye yüklenir; "yayına" düğmeleri yükleyip aynı GEÇİŞ
 // yolunu çağırır (ctx.replay.send(r, { take: true })) — önizlemede görünen aynen gider.
@@ -16,6 +18,7 @@ import React, { useRef, useState } from "react";
 import { Icon } from "../../../components/ui";
 import { angleLabel, anglesOf, metaFor, replayTitle } from "../../../lib/studio/replays";
 import { ZOOM_PRESETS, pickNumbers, picksOf, positionAngles, positionStep } from "../../../lib/studio/replayDeck";
+import { SPLIT_LAYOUTS } from "../../../lib/studio/replaySplit";
 import { countdownText } from "../../../lib/studio/goalClips";
 import { healthText } from "../../../lib/studio/uploadGuard";
 import { MOMENT_SECONDS, RATE_STEPS, goalReplays, jogTo, secText } from "./flowLogic";
@@ -597,7 +600,86 @@ function ReplayVar({ ctx, w, h }) {
   );
 }
 
+/* ═════════════════════════ YAN YANA TEKRAR ═════════════════════════ */
+
+/** Bölmesi olan deste: yayında bölme varsa program, yoksa önizleme. */
+function splitDeckOf(R) {
+  const D = R.editor?.decks;
+  if (!D) return null;
+  if (D.program?.active && D.program.split?.active && R.editor.focus !== "preview") return D.program;
+  return D.preview || null;
+}
+
+function SplitTile({ ctx, w, h }) {
+  const R = ctx.replay;
+  const d = splitDeckOf(R);
+  const S = d?.split;
+  const r = focusPos(R);
+  const picked = r ? picksOf(R.picks || {}, r) : [];
+  const n = r ? haveAngles(r).length : 0;
+  const onAir = d?.target === "program";
+  const open = (layout) => {
+    if (!r || !R.editor?.openSplit) return;
+    R.editor.openSplit(r, picked.length >= 2 ? picked : null, layout ? { layout } : undefined);
+  };
+  const main = () => { if (S?.active) S.close(); else open(null); };
+  const layouts = w >= 2 ? SPLIT_LAYOUTS : SPLIT_LAYOUTS.filter((l) => l.key === "yan" || l.key === "grid");
+  return (
+    <Shell tone={onAir ? "danger" : "violet"} w={w} h={h} state={S?.active ? (onAir ? "air" : "pvw") : null} className="wx-split">
+      <Head icon="grid" label={onAir ? "YAN YANA · YAYINDA" : "YAN YANA TEKRAR"} right={S?.active ? <em className="wx-big">{S.panes.length}</em> : null} />
+      <button type="button" className={`wx-split__go ${S?.active ? "is-on" : ""}`} disabled={!r || n < 2 || (!S?.active && !R.editor?.openSplit)} onClick={main}
+        title={S?.active ? (onAir ? "Yayında tek açıya dön" : "Yan yanayı kapat") : "Odaktaki pozisyonun açıları aynı anda (seçili ≥ 2 açı, yoksa ilk iki) önizlemeye"}>
+        {S?.active ? (onAir ? "TEK AÇIYA DÖN" : "KAPAT") : picked.length >= 2 ? `YAN YANA ÖNİZLE (${Math.min(4, picked.length)})` : "YAN YANA ÖNİZLE"}
+      </button>
+      {(h >= 2 || w >= 2) && (
+        <div className={`wx-chips is-n${layouts.length}`}>
+          {layouts.map((l) => (
+            <button key={l.key} type="button" className={S?.layout === l.key ? "is-on" : ""} disabled={!r || n < 2 || (onAir && !S?.active)}
+              onClick={() => (S?.active ? S.setLayout(l.key) : open(l.key))} title={l.label}>{l.short}</button>
+          ))}
+        </div>
+      )}
+      {h >= 2 && <small className="wx-s">{r ? `${titleOf(R, r)} · ${S?.active ? S.panes.map((p) => p.label).join(" | ") : `${n} açı`}` : "tekrar yok"}</small>}
+    </Shell>
+  );
+}
+
+/* ═════════════════════════ OYUNCU TAKİBİ ═════════════════════════ */
+
+function TrackTile({ ctx, w, h }) {
+  const R = ctx.replay;
+  const d = deckOf(R);
+  const T = d?.track;
+  const tool = T?.tool || {};
+  const on = Boolean(tool.on);
+  const busy = T?.busy;
+  return (
+    <Shell tone={d?.target === "program" ? "danger" : "violet"} w={w} h={h} state={on ? "armed" : null} className="wx-track">
+      <Head icon="target" label={d?.target === "program" ? "TAKİP · YAYINDA" : "OYUNCU TAKİBİ"} right={T?.tracks?.length ? <em className="wx-big">{T.tracks.length}</em> : null} />
+      <button type="button" className={`wx-split__go ${on ? "is-on" : ""}`} disabled={!T?.available} onClick={() => T.setTool({ on: !on })}
+        title="Açık: monitörde oyuncuya tıkla → vurgu oyuncuyu izler (yayına çizilir)">{on ? "◎ TAKİP AÇIK · tıkla" : "◎ TAKİBİ AÇ"}</button>
+      {(w >= 2 || h >= 2) && T && (
+        <div className={`wx-chips is-n${w >= 2 ? 4 : 2}`}>
+          {(w >= 2 ? T.styles : T.styles.slice(0, 2)).map((s) => <button key={s.key} type="button" className={tool.style === s.key ? "is-on" : ""} onClick={() => T.setTool({ style: s.key })}>{s.label}</button>)}
+        </div>
+      )}
+      {h >= 2 && T && (
+        <div className="wx-row">
+          {busy
+            ? <button type="button" onClick={T.cancel}>İzleniyor {Math.round((busy.p || 0) * 100)}%</button>
+            : <button type="button" disabled={!T.tracks.some((x) => x.keys > 0)} onClick={T.auto} title="Anahtar karelerden otomatik izle">⟳ Otomatik</button>}
+          <button type="button" className={tool.freeze ? "is-on" : ""} onClick={() => T.setTool({ freeze: !tool.freeze })} title="Dondur ve göster: ilk anahtarda durur, vurgu belirir">❚❚ Dondur</button>
+          {w >= 2 && <button type="button" onClick={T.newPlayer}>+ Oyuncu</button>}
+        </div>
+      )}
+      {!T && <span className="st-w__empty">Önizlemede ya da yayında tekrar yok.</span>}
+    </Shell>
+  );
+}
+
 export const TEKRAR_WIDGETS = {
+  splitPro: { render: (p) => <SplitTile {...p} /> },
+  trackPro: { render: (p) => <TrackTile {...p} /> },
   replayToPvw: { render: (p) => <LastReplay {...p} /> },
   replayToAir: { render: (p) => <LastReplay {...p} air /> },
   anglePick: { render: (p) => <AnglePick {...p} /> },

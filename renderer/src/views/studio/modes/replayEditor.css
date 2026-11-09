@@ -253,6 +253,8 @@
 .rpx-pos__plan em { font-style: normal; color: var(--faint); }
 .rpx-send { flex: none; gap: 6px; background: #15803d !important; border-color: #22c55e !important; color: var(--on-strong) !important; font: 900 11.5px var(--font) !important; letter-spacing: 0.05em; }
 .rpx-send.is-on { box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.45); }
+.rpx-split { flex: none; gap: 6px; font: 800 11px var(--font) !important; letter-spacing: 0.04em; }
+.rpx-split.is-on { background: #fbbf24 !important; border-color: #fbbf24 !important; color: var(--on-bright) !important; }
 .rpx-pos__err { font-size: 10.5px; }
 
 /* sağ: önizleme / yayın kutusu */
@@ -282,3 +284,58 @@
 .rdk-ex button { height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(0, 0, 0, 0.55); color: rgba(var(--on-strong-rgb), 0.85); font: 800 10px var(--font); letter-spacing: 0.04em; display: inline-flex; align-items: center; gap: 3px; cursor: pointer; white-space: nowrap; }
 .rdk-ex button.is-on { border-color: #fbbf24; color: var(--amber-text); background: rgba(245, 158, 11, 0.2); }
 .rdk-ex button:disabled { opacity: 0.4; cursor: default; }
+
+/* ───────── YAN YANA TEKRAR (replaySplitUi) ───────── */
+.rsp-chips { display: inline-flex; align-items: center; gap: 3px; padding: 2px 4px; border-radius: 8px; background: rgba(0, 0, 0, 0.7); color: var(--on-strong); min-width: 0; }
+.rsp-chips__h { font: 800 9.5px var(--font); letter-spacing: 0.08em; color: rgba(var(--on-strong-rgb), 0.7); padding: 0 3px; }
+.rsp-chips button { height: 22px; padding: 0 6px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 6px; background: rgba(29, 18, 41, 0.92); color: var(--on-strong); font: 700 10.5px var(--font); cursor: pointer; white-space: nowrap; }
+.rsp-chips button.is-on { background: #fbbf24; border-color: #fbbf24; color: var(--on-bright); }
+.rsp-chips__x { border-style: dashed !important; }
+.rsp-ico { position: relative; width: 16px; height: 10px; border: 1.5px solid currentColor; border-radius: 2px; flex: none; }
+.rsp-ico.is-yan::after { content: ""; position: absolute; left: 50%; top: -1px; bottom: -1px; border-left: 1.5px solid currentColor; }
+.rsp-ico.is-ustalt::after { content: ""; position: absolute; top: 50%; left: -1px; right: -1px; border-top: 1.5px solid currentColor; }
+.rsp-ico.is-pip::after { content: ""; position: absolute; right: 1px; bottom: 1px; width: 6px; height: 4px; background: currentColor; }
+.rsp-ico.is-uclu::after { content: ""; position: absolute; left: 62%; top: -1px; bottom: -1px; border-left: 1.5px solid currentColor; }
+.rsp-ico.is-uclu::before { content: ""; position: absolute; left: 62%; right: -1px; top: 50%; border-top: 1.5px solid currentColor; }
+.rsp-ico.is-grid::after { content: ""; position: absolute; left: 50%; top: -1px; bottom: -1px; border-left: 1.5px solid currentColor; }
+.rsp-ico.is-grid::before { content: ""; position: absolute; top: 50%; left: -1px; right: -1px; border-top: 1.5px solid currentColor; }
+.rsp-panes { position: absolute; inset: 0; pointer-events: none; }
+.rsp-pane { position: absolute; box-sizing: border-box; pointer-events: none; }
+.rsp-pane.is-focus { box-shadow: inset 0 0 0 2px rgba(251, 191, 36, 0.85); }
+.rsp-pane__bar { position: absolute; right: 4px; top: 4px; justify-content: flex-end; display: inline-flex; align-items: center; gap: 3px; pointer-events: auto; max-width: calc(100% - 8px); flex-wrap: wrap; }
+.rsp-pane.is-top .rsp-pane__bar { top: 36px; }
+.rsp-pane__bar button { height: 20px; padding: 0 6px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 5px; background: rgba(0, 0, 0, 0.72); color: var(--on-strong); font: 700 10px var(--font); cursor: pointer; white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.rsp-pane.is-focus .rsp-pane__name { border-color: #fbbf24; color: var(--amber-text); }
+.rsp-off { display: inline-flex; align-items: center; gap: 1px; border-radius: 5px; background: rgba(0, 0, 0, 0.72); }
+.rsp-off button { width: 20px; padding: 0; border: 0; background: transparent; }
+.rsp-off b { min-width: 30px; text-align: center; font: 800 10px var(--mono, ui-monospace, monospace); color: var(--amber-text); cursor: default; }
+.rsp-angles { display: inline-flex; gap: 3px; flex-wrap: wrap; }
+.rsp-angles button { height: 22px; padding: 0 7px; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 6px; background: rgba(0, 0, 0, 0.6); color: rgba(var(--on-strong-rgb), 0.8); font: 700 10.5px var(--font); cursor: pointer; }
+.rsp-angles button.is-on { border-color: var(--rdk-acc, #22c55e); color: var(--on-strong); background: color-mix(in srgb, var(--rdk-acc, #22c55e) 30%, transparent); }
+
+/* ───────── OYUNCU TAKİBİ (TrackBar) ───────── */
+.rpo__surf.is-track { cursor: crosshair; }
+.rtk-tog.is-on { background: #22d3ee !important; border-color: #22d3ee !important; color: var(--on-bright) !important; }
+.rtk { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 4px 6px; border-radius: 8px; background: rgba(4, 30, 38, 0.86); box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.45); color: var(--on-strong); }
+.rtk__h { font: 800 10px var(--font); letter-spacing: 0.08em; color: var(--on-strong); }
+.rtk__hint { font: 600 10.5px var(--font); color: rgba(var(--on-strong-rgb), 0.72); margin-right: 4px; }
+.rtk button { height: 22px; padding: 0 7px; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 6px; background: rgba(0, 0, 0, 0.55); color: var(--on-strong); font: 700 10.5px var(--font); cursor: pointer; white-space: nowrap; }
+.rtk button.is-on { background: #22d3ee; border-color: #22d3ee; color: var(--on-bright); }
+.rtk__group, .rtk__colors, .rtk__size { display: inline-flex; align-items: center; gap: 2px; }
+.rtk__colors button { width: 18px; height: 18px; padding: 0; border-radius: 50%; background: var(--rtk-c); border: 2px solid rgba(0, 0, 0, 0.5); }
+.rtk__colors button.is-on { background: var(--rtk-c); box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95); border-color: rgba(0, 0, 0, 0.6); }
+.rtk__size b { min-width: 22px; text-align: center; font: 800 10.5px var(--mono, ui-monospace, monospace); color: var(--amber-text); }
+.rtk__label { width: 120px; height: 22px; padding: 0 6px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; background: rgba(0, 0, 0, 0.5); color: var(--on-strong); font: 600 11px var(--font); }
+.rtk__fz.is-on { background: #fbbf24 !important; border-color: #fbbf24 !important; color: var(--on-bright) !important; }
+.rtk__auto { border-color: rgba(34, 211, 238, 0.7) !important; }
+.rtk__auto.is-busy { background: rgba(34, 211, 238, 0.25) !important; }
+.rtk__trk { display: inline-flex; align-items: center; }
+.rtk__trk > button:first-child { border-radius: 6px 0 0 6px; display: inline-flex; align-items: center; gap: 4px; }
+.rtk__trk i { width: 8px; height: 8px; border-radius: 50%; background: var(--rtk-c); }
+.rtk__trk.is-on > button:first-child { border-color: var(--rtk-c); }
+.rtk__del { border-radius: 0 6px 6px 0 !important; border-left: 0 !important; padding: 0 5px !important; }
+.st-monitor.is-program:not(:hover) .rpo.is-pgm:not(:focus-within) .rtk, .st-monitor.is-program:not(:hover) .rpo.is-pgm:not(:focus-within) .rsp-pane__bar { opacity: 0; pointer-events: none; }
+.rtk.is-compact { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 3px; padding: 3px 4px; }
+.rtk.is-compact .rtk__label { width: 84px; flex: none; }
+.rtk.is-compact button { padding: 0 5px; flex: none; }
+.rtk.is-compact .rtk__colors button { width: 14px; height: 14px; }

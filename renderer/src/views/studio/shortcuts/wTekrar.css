@@ -43,3 +43,8 @@
 .lw-ri.ws .wx-gl .wx-gl__list li { flex: 0 0 auto; max-width: 190px; }
 .lw-ri.ws .wx-gl .wx-gl__r span { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lw-ri.ws .wx-gl > .wx-head { display: none; }
+/* Yan yana tekrar / oyuncu takibi düğmeleri */
+.wx-split__go { flex: none; min-height: 28px; border-radius: 7px; border: 1px solid var(--border-strong); background: rgba(var(--shade-rgb), 0.28); color: var(--text); font: 900 11px var(--font); letter-spacing: 0.04em; cursor: pointer; padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wx-split__go.is-on { background: var(--c, var(--acc)); border-color: var(--c, var(--acc)); color: var(--c-on, var(--on-strong)); }
+.wx-split__go:disabled { opacity: 0.45; cursor: default; }
+.wx-split .wx-s, .wx-track .wx-s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

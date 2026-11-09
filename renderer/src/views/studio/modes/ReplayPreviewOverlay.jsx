@@ -12,6 +12,10 @@
 //              Önizlemede: Giriş / Çıkış, YAYINA AL. Programda: sıradaki, CANLIYA DÖN.
 // target="program": tüm denetimler YAYINDAKİ tekrara anında uygulanır (useReplayMode › decks.program).
 // [önizleme-geçiş] target="preview": yalnız önizleme; YAYINA AL Studio'nun tek GEÇİŞ yolunu çağırır.
+// YAN YANA: üst şeritte yerleşim çipleri; bölmede tekerlek / sürükle imlecin altındaki PENCEREYE
+// uygulanır (pencere başına yakınlaştırma), pencere üstünde ±kare kayması / "Ana".
+// TAKİP (◎): açıkken monitöre tık → oyuncu anahtar karesi (⌥ tık: sil), alt şeritte biçim / renk /
+// isim / Otomatik izle / Dondur ve göster.
 import React, { memo, useEffect, useRef, useState } from "react";
 import { canvasLoop } from "../perf/renderLoad";
 import { SECONDARY_FPS } from "../../../lib/studio/renderBudget";
@@ -19,6 +23,8 @@ import { Icon } from "../../../components/ui";
 import { replayTitle } from "../../../lib/studio/replays";
 import { DEFAULT_VIEW, clipTime, isZoomed, panBy, zoomAt, zoomRect, clampView } from "./replayView";
 import { DeckAngles, DeckExtras, DeckSeq, DeckSpeed, DeckTime, DeckTimeline, DeckTransport, DeckZoom, useDeckClock } from "./replayDeckUi";
+import { SplitAngles, SplitChips, SplitPanes, TrackBar } from "./replaySplitUi";
+import { hitPane, panePanBy, paneZoomAt } from "../../../lib/studio/replaySplit";
 import "./replayEditor.css";
 
 /** Eski arayüz (rm) → önizleme destesi (testler / eski çağrılar). */
@@ -35,6 +41,15 @@ function deckFromRm(rm, rate, onRate) {
   };
 }
 
+/** Bölmede (x, y: 0…1) hangi pencere ve pencere içi konum. */
+function paneAt(S, x, y) {
+  if (!S?.active) return null;
+  const i = hitPane(S.rects, x, y);
+  if (i < 0) return null;
+  const r = S.rects[i];
+  return { i, lx: (x - r.x) / r.w, ly: (y - r.y) / r.h, k: S.scaleOf?.(i) || { x: 1, y: 1 } };
+}
+
 function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "preview", sources, meta, onTake, onLive, canTake = true, box, onFocus, keysOn, onKeys }) {
   const deck = deckProp || deckFromRm(rm, rate, onRate);
   const deckRef = useRef(deck);
@@ -49,6 +64,7 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
   const w = box?.w || 0;
   const compact = w > 0 && w < 860;
   const tiny = w > 0 && w < 420;
+  const trackOn = Boolean(deck.track?.tool?.on && deck.track?.available);
 
   // Küçük harita (yakınlaşınca).
   useEffect(() => {
@@ -81,6 +97,8 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
       const px = (e.clientX - r.left) / r.width;
       const py = (e.clientY - r.top) / r.height;
       const factor = Math.exp(-e.deltaY * (e.ctrlKey ? 0.012 : 0.0018)); // dokunmatik yüzey kıstırması ctrlKey ile
+      const pa = paneAt(D.split, px, py);
+      if (pa) { if (D.split.focus !== pa.i) D.split.setFocus(pa.i); D.split.setPaneView(pa.i, (v) => paneZoomAt(v, pa.lx, pa.ly, factor, pa.k)); return; }
       D.setView((v) => zoomAt(v, px, py, factor));
     };
     c.addEventListener("wheel", onWheel, { passive: false });
@@ -99,7 +117,10 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
     e.currentTarget.focus({ preventScroll: true });
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     pinch.current = null;
-    start.current = { ...norm(e), at: performance.now() };
+    start.current = { ...norm(e), at: performance.now(), moved: 0 };
+    const pa = paneAt(deck.split, start.current.x, start.current.y);
+    start.current.pane = pa;
+    if (pa && deck.split.focus !== pa.i) deck.split.setFocus(pa.i);
     if (area) setRect({ x0: start.current.x, y0: start.current.y, x1: start.current.x, y1: start.current.y });
   };
   const onPointerMove = (e) => {
@@ -119,11 +140,25 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
     const dx = (e.clientX - p.x) / r.width;
     const dy = (e.clientY - p.y) / r.height;
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (start.current) start.current.moved += Math.abs(e.clientX - p.x) + Math.abs(e.clientY - p.y);
+    const pa = start.current?.pane;
+    if (pa && (dx || dy)) {
+      const pr = deck.split.rects[pa.i];
+      if (pr) deck.split.setPaneView(pa.i, (v) => panePanBy(v, dx / pr.w, dy / pr.h, pa.k));
+      return;
+    }
     if (dx || dy) deck.setView((v) => panBy(v, dx, dy));
   };
   const onPointerUp = (e) => {
     pointers.current.delete(e.pointerId);
     if (pointers.current.size < 2) pinch.current = null;
+    // Takip açıkken kısa tık (sürüklemesiz): oyuncu anahtar karesi.
+    const st0 = start.current;
+    if (trackOn && !area && st0 && st0.moved < 5 && performance.now() - st0.at < 600 && e.type === "pointerup") {
+      deck.track.clickAt(st0.x, st0.y, { remove: e.altKey });
+      start.current = null;
+      return;
+    }
     if (!area || !rect) return;
     const x0 = Math.min(rect.x0, rect.x1);
     const x1 = Math.max(rect.x0, rect.x1);
@@ -163,19 +198,27 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
   const inTxt = deck.inPoint > 0 ? clipTime(deck.inPoint) : "";
   const outTxt = deck.outPoint > 0 ? clipTime(deck.outPoint) : "";
   const tag = isPgm ? "● YAYINDA" : "ÖNİZLEMEDE";
+  const S = deck.split;
+  const splitOn = Boolean(S?.active);
   return (
     <div className={`rpo rdk ${isPgm ? "is-air is-pgm" : "is-pvw"} ${compact ? "is-compact" : ""} ${tiny ? "is-tiny" : ""}`} data-deck={target}
       aria-label={isPgm ? "Yayındaki tekrar denetimi (yalnız operatör görür)" : "Tekrar düzenleyici (önizleme)"} onPointerDownCapture={() => onFocus?.(target)}>
-      <div ref={surfRef} className={`rpo__surf ${isZoomed(view) ? "is-zoomed" : ""} ${area ? "is-area" : ""}`} tabIndex={0} onKeyDown={onKeyDown} data-deck={target}
+      <div ref={surfRef} className={`rpo__surf ${isZoomed(view) || splitOn ? "is-zoomed" : ""} ${area ? "is-area" : ""} ${trackOn ? "is-track" : ""}`} tabIndex={0} onKeyDown={onKeyDown} data-deck={target}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
         onDoubleClick={() => deck.active && deck.setView(DEFAULT_VIEW)}
         title="Tekerlek / kıstır: yakınlaştır · sürükle: kaydır · çift tık: sıfırla · J K L · ←/→ kare · ⇧ ±1 sn · 1–6 hız · A / S açı" />
+      {splitOn && <SplitPanes deck={deck} />}
       {rect && <span className="rdk-rect" style={{ left: `${Math.min(rect.x0, rect.x1) * 100}%`, top: `${Math.min(rect.y0, rect.y1) * 100}%`, width: `${Math.abs(rect.x1 - rect.x0) * 100}%`, height: `${Math.abs(rect.y1 - rect.y0) * 100}%` }} />}
       <div className="rpo__top">
         <span className={`rpo__tag ${isPgm ? "is-air" : ""}`}>{tag}</span>
         {!tiny && title && <span className="rdk-title">{title}{isPgm && deck.total > 1 ? ` · ${deck.index + 1}/${deck.total}` : ""}</span>}
         {!tiny && <span className="rpo__angles">{(deck.seq || []).length > 1 ? <DeckSeq deck={deck} sources={sources} compact={compact} /> : null}<DeckAngles deck={(deck.seq || []).length > 1 ? { ...deck, angles: [] } : deck} sources={sources} mixToggle={!compact} />{(deck.seq || []).length > 1 && isPgm && !compact && <button type="button" className={`rdk-an__mix ${deck.mix ? "is-on" : ""}`} onClick={() => deck.setMix()} title="Açı değişimi: kesme ya da karışım">{deck.mix ? "KARIŞIM" : "KESME"}</button>}</span>}
+        {!tiny && S?.available && <SplitChips deck={deck} compact={compact} />}
         <span className="st-top__spacer" />
+        {deck.track && !tiny && (
+          <button type="button" className={`rdk-area rtk-tog ${trackOn ? "is-on" : ""}`} disabled={!deck.track.available} onClick={() => deck.track.setTool({ on: !deck.track.tool?.on })}
+            title="Oyuncu takibi: monitörde oyuncuya tıkla → vurgu oyuncuyu izler (yayına çizilir)">◎{compact ? "" : " Takip"}{deck.track.tracks.length ? ` ${deck.track.tracks.length}` : ""}</button>
+        )}
         {!tiny && (
           <span className="rpo__zoom">
             <DeckZoom deck={deck} compact={compact} />
@@ -183,8 +226,10 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
           </span>
         )}
       </div>
-      {isZoomed(view) && <canvas ref={mapRef} className="rpo__map" width={160} height={90} aria-hidden="true" />}
+      {isZoomed(view) && !splitOn && <canvas ref={mapRef} className="rpo__map" width={160} height={90} aria-hidden="true" />}
       <div className="rpo__panel" onPointerDown={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
+        {trackOn && <TrackBar deck={deck} compact={compact} />}
+        {splitOn && !isPgm && !compact && <div className="rpo__row"><SplitAngles deck={deck} /></div>}
         <DeckTimeline deck={deck} t={t} size={compact ? "normal" : "normal"} />
         <div className="rpo__row">
           <DeckTime deck={deck} t={t} compact={compact} />
