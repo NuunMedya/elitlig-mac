@@ -249,6 +249,8 @@ export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subs
       ...(stream?.encoder && stream.encoder !== "auto" ? { encoderPreference: stream.encoder } : {}),
       // Yayın gecikmesi (0–120 sn): yalnız RTMP'ye giden bacak gecikir (kayıt / tekrar anlık).
       ...(Number(stream?.delaySec) > 0 ? { streamDelaySec: Number(stream.delaySec) } : {}),
+      // RTMP göndericisi (Ayarlar › Yayın › Gönderici): "node" (yeni) | "ffmpeg" (eski).
+      rtmpPublisher: stream?.publisher === "ffmpeg" ? "ffmpeg" : "node",
     };
     const audioBitrateKbps = Number(stream?.audioKbps) || AUDIO_BITRATE_KBPS;
     // Kodlama yolu: WebCodecs (tek kodlama) destekleniyorsa ve seçildiyse ffmpeg görüntüyü kopyalar.

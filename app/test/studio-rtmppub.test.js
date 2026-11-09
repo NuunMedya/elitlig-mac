@@ -280,3 +280,29 @@ test("gerçek ffmpeg: Node yayıncısı RTMPS (TLS) ile yayınlar", { timeout: 9
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("gerçek ffmpeg: sunucu Window Ack bildirip hiç onay göndermezse (veri ulaşmıyor) Node yolu ffmpeg RTMP yoluna geçer", { timeout: 90000 }, async (t) => {
+  const why = await skipReason();
+  if (why) { t.skip(why); return; }
+  const info = await getInfo();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "studio-rtmppub-noack-"));
+  const sink = createRtmpSink({ windowAck: 100000, noAcks: true });
+  const port = await sink.listen();
+  try {
+    const ts = path.join(root, "in.ts");
+    await makeTs(info.path, ts, { seconds: 8 });
+    const notes = [];
+    const relay = createRelay({ ffmpegPath: info.path, primaryUrl: `rtmp://127.0.0.1:${port}/live2/anahtar`, spawnImpl: spawn, publisher: "node", noAckMs: 2000, backoffMs: [200], note: (m) => notes.push(m) });
+    await feedRealtime(relay, fs.readFileSync(ts), 8);
+    await waitFor(() => relay.status().publisher === "ffmpeg" && relay.status().state === "up", 5000);
+    const st = relay.status();
+    await relay.stop();
+    assert.equal(st.publisher, "ffmpeg", notes.join(" | "));
+    assert.ok(notes.some((n) => /veri aldığını bildirmiyor/.test(n)), notes.join(" | "));
+    assert.equal(sink.sessions[0].clientChunk, 4096); // ilk bağlantı Node yayıncısı
+    assert.equal(sink.sessions.at(-1).clientChunk, 128); // sonraki ffmpeg
+  } finally {
+    await sink.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

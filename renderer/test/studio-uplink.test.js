@@ -1,6 +1,7 @@
 // Yayın sağlığı: darboğaz sınıflaması (Ağ yetmiyor / Kodlayıcı yetişmiyor / Çizim yetişmiyor /
 // Bilgisayar meşgul), ağ kuyruğu ve "Bağlantı testi" önerisi.
 import { bottleneckCause, networkQueueSec, speedTestAdvice } from "../src/lib/studio/broadcast";
+import { RTMP_PUBLISHERS, normalizeSettings } from "../src/views/studio/settings/settings";
 
 const up = (o = {}) => ({ state: "up", inKbps: 12300, sentKbps: 12200, uplinkKbps: 12200, ackKbps: 12100, pendingBytes: 0, dropping: false, ...o });
 const wc = (o = {}) => ({ pipeline: "webcodecs", queue: 0, encodedFps: 60, hardware: true, ...o });
@@ -48,5 +49,14 @@ describe("bağlantı testi önerisi", () => {
     expect(low.bitrateKbps).toBe(2000);
     expect(low.text).toContain("35 ms");
     expect(speedTestAdvice({ ok: false })).toBe(null);
+  });
+});
+
+describe("Ayarlar › Yayın › Gönderici", () => {
+  it("varsayılan otomatik (Node); ffmpeg seçimi saklanır; geçersiz değer otomatiğe döner", () => {
+    expect(normalizeSettings({}).stream.publisher).toBe("auto");
+    expect(normalizeSettings({ stream: { publisher: "ffmpeg" } }).stream.publisher).toBe("ffmpeg");
+    expect(normalizeSettings({ stream: { publisher: "xyz" } }).stream.publisher).toBe("auto");
+    expect(RTMP_PUBLISHERS.map((p) => p.label)).toEqual(["Otomatik (yeni, hızlı)", "ffmpeg (eski)"]);
   });
 });

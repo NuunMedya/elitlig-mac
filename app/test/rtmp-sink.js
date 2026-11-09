@@ -5,7 +5,7 @@
 const net = require("node:net");
 const { amfEncode, amfDecode, chunkMessage } = require("../studio/rtmppub");
 
-function createRtmpSink({ windowAck = 2500000, reject = null, closeAfterHandshake = false, server: makeServer = null } = {}) {
+function createRtmpSink({ windowAck = 2500000, reject = null, closeAfterHandshake = false, noAcks = false, server: makeServer = null } = {}) {
   const sessions = [];
   const sockets = new Set();
   function handle(sock) {
@@ -81,7 +81,7 @@ function createRtmpSink({ windowAck = 2500000, reject = null, closeAfterHandshak
     sock.on("data", (d) => {
       ses.bytes += d.length;
       buf = buf.length ? Buffer.concat([buf, d]) : d;
-      if (phase === 2 && ses.bytes - lastAck >= windowAck) {
+      if (!noAcks && phase === 2 && ses.bytes - lastAck >= windowAck) {
         lastAck = ses.bytes;
         const a = Buffer.alloc(4); a.writeUInt32BE(ses.bytes >>> 0); send(chunkMessage({ csid: 2, type: 3, payload: a, chunkSize: 128 }));
         ses.ackSent += 1;

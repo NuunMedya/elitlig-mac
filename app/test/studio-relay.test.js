@@ -574,3 +574,57 @@ test("aktarıcı (Node ağ ucu): bağlanmadan art arda protokol hatası → ffmp
   assert.equal(children.at(-1).args.at(-1), "rtmp://a.rtmp.youtube.com/live2/ANA-ANAHTAR");
   await relay.stop();
 });
+
+test("aktarıcı (Node ağ ucu): sunucu Window Ack bildirip 15 sn onay göndermezse ffmpeg yoluna geçer; onay gelirse geçmez", async () => {
+  const { made, factory } = fakePublisher();
+  const { relay, children, timers, clock, notes } = setupRelay({ publisher: "node", publisherFactory: factory });
+  relay.write(gop(1));
+  made[0].up();
+  made[0].st.windowAnnounced = true;
+  made[0].st.windowAck = 2_500_000;
+  const tickWatch = (ms, bytes) => { clock.t += ms; made[0].st.sentBytes += bytes; made.at(-1).st.sentBytes = made[0].st.sentBytes; timers.runNext(1000); };
+  // Onaylar geliyor: 20 sn boyunca geçiş yok.
+  for (let i = 0; i < 20; i += 1) { tickWatch(1000, 1_500_000); made[0].st.ackedBytes = made[0].st.sentBytes - 100_000; }
+  assert.equal(relay.status().publisher, "node");
+  assert.equal(made[0].destroyed, false);
+  // Onay kesildi: 15 sn sonra (pencerenin 1,2 katından fazla veri gitmişken) ffmpeg'e geçer.
+  for (let i = 0; i < 15; i += 1) tickWatch(1000, 1_500_000); // ilk yoklama son onayı görür; 15 sn bundan sonra sayılır
+  assert.equal(relay.status().publisher, "node");
+  tickWatch(1000, 1_500_000);
+  assert.equal(relay.status().publisher, "ffmpeg");
+  assert.equal(made[0].destroyed, true);
+  assert.ok(notes.some((n) => /veri aldığını bildirmiyor/.test(n.m)));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(relay.status().lastError.code, "NO_ACK");
+  timers.runNext(1000);
+  assert.equal(children.at(-1).args.at(-1), "rtmp://a.rtmp.youtube.com/live2/ANA-ANAHTAR"); // ffmpeg RTMP
+  assert.equal(made.length, 1);
+  await relay.stop();
+});
+
+test("aktarıcı (Node ağ ucu): sunucu Window Ack bildirmiyorsa onay bekçisi devreye girmez", async () => {
+  const { made, factory } = fakePublisher();
+  const { relay, timers, clock } = setupRelay({ publisher: "node", publisherFactory: factory });
+  relay.write(gop(1));
+  made[0].up();
+  for (let i = 0; i < 40; i += 1) { clock.t += 1000; made[0].st.sentBytes += 1_500_000; timers.runNext(1000); }
+  assert.equal(relay.status().publisher, "node");
+  await relay.stop();
+});
+
+test("motor: start({ rtmpPublisher }) aktarıcının ağ ucunu seçer (Ayarlar › Gönderici); verilmezse motorun varsayılanı", async () => {
+  const seen = [];
+  const relayFactory = (o) => { seen.push(o.publisher); return { listen: () => Promise.reject(new Error("deneme")), dispose() {}, events: new EventEmitter() }; };
+  const { spawnImpl } = fakeSpawn();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "studio-pubopt-"));
+  try {
+    for (const rtmpPublisher of ["ffmpeg", "node", undefined]) {
+      const engine = createStudioEngine({ getFfmpeg: async () => ({ available: true, path: "/bin/ffmpeg", encoders: { libx264: true }, muxers: { fifo: true, matroska: true } }), tempRoot: tmp, spawnImpl, relayFactory, relayOptions: { publisher: "node" } });
+      await engine.start({ url: "rtmp://a.rtmp.youtube.com/live2/k", width: 1280, height: 720, fps: 30, videoBitrateKbps: 2500, ...(rtmpPublisher ? { rtmpPublisher } : {}) });
+      engine.dispose();
+    }
+    assert.deepEqual(seen, ["ffmpeg", "node", "node"]);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

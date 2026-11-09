@@ -59,6 +59,7 @@ const RELAY_MESSAGES = {
   stalled: "Yayın sunucusuna veri gitmiyor (bağlantı askıda).",
   dropping: "Bağlantı yayına yetişemiyor; gerçek zamanda kalmak için bazı kareler atlandı (ses sürüyor). Bit hızını düşürmeyi deneyin.",
   unknown: "Yayın bağlantısı koptu.",
+  noAck: "Yayın sunucusu veri aldığını bildirmiyor; eski göndericiye (ffmpeg) geçiliyor.",
 };
 
 /** Geri çekilme: n. deneme (1'den) için bekleme; listenin sonu tavandır. */
@@ -277,6 +278,9 @@ function createRelay({
   publisherFactory = createRtmpPublisher,
   publisherOptions = {},
   fallbackAfter = 2,
+  // Node yolu bağlandı ama sunucu (Window Ack Size bildirdiği hâlde) noAckMs boyunca hiç onay
+  // göndermedi — veri gidiyor ama sunucuya ulaşmıyor / işlenmiyor: ffmpeg yoluna geçilir.
+  noAckMs = 15000,
 } = {}) {
   const events = new EventEmitter();
   const delay = createDelayLine({ delayMs, now, timers, tickMs: delayTickMs, onData: (d) => write(d), onMarker: () => newStream() });
@@ -610,8 +614,21 @@ function createRelay({
   function pollPublisher(p) {
     if (!p.pub || !p.pub.isPublishing()) return;
     const s = p.pub.stats();
-    pushRate(sentRate, now(), s.sentBytes, 5000);
+    const t = now();
+    pushRate(sentRate, t, s.sentBytes, 5000);
     onPusherProgress(p, { totalSize: s.sentBytes });
+    if (pusher !== p || !s.windowAnnounced || !(noAckMs > 0)) return;
+    // Onay bekçisi: son onaydan (ya da yayın başından) bu yana pencerenin 1,2 katından fazla
+    // veri gitti ve noAckMs geçti, sunucu hâlâ onaylamıyor → ffmpeg yolu.
+    if (!p.ackMark || s.ackedBytes > p.ackMark.acked) p.ackMark = { at: t, acked: s.ackedBytes, sent: s.sentBytes };
+    else if (t - p.ackMark.at >= noAckMs && s.sentBytes - p.ackMark.sent > s.windowAck * 1.2) {
+      mode = "ffmpeg";
+      nodeFails = 0;
+      p.failReason = { code: "NO_ACK", message: RELAY_MESSAGES.noAck, publisherCode: "NO_ACK" };
+      note("Node RTMP yayıncısı: sunucu veri aldığını bildirmiyor; ffmpeg RTMP yoluna geçiliyor (yedek)", { sinceMs: t - p.ackMark.at, sentSinceAck: s.sentBytes - p.ackMark.sent, windowAck: s.windowAck, ackedBytes: s.ackedBytes });
+      log("studio: RTMP sunucu onayı yok, ffmpeg yoluna geçiliyor", {});
+      kill(p);
+    }
   }
 
   function onPusherProgress(p, prog) {
@@ -653,6 +670,7 @@ function createRelay({
       watchTimer = null;
       if (pusher !== p || p.exited || p.stopping) return;
       pollPublisher(p);
+      if (p.failReason?.code === "NO_ACK") return; // ffmpeg yoluna geçiliyor (süreç öldürüldü)
       const t = now();
       if (!p.connected && t - p.startedAt >= connectTimeoutMs) {
         p.failReason = { code: "TIMEOUT", message: RELAY_MESSAGES.connectTimeout };

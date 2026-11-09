@@ -28,6 +28,14 @@ export const ENCODER_PREFS = [
 export const KEYFRAME_CHOICES = [1, 2, 4];
 /** Yayın gecikmesi (sn): yalnız YouTube / RTMP'ye giden görüntü gecikir (OBS "Stream Delay"). */
 export const STREAM_DELAY_CHOICES = [0, 5, 10, 15, 30, 60, 120];
+/**
+ * RTMP göndericisi (2.21.0): "auto" — Node yayıncısı (4096 B parça, sunucu onayı ölçülür;
+ * bağlanamazsa ya da sunucu veri almıyorsa kendiliğinden ffmpeg'e döner) · "ffmpeg" — eski yol.
+ */
+export const RTMP_PUBLISHERS = [
+  { key: "auto", label: "Otomatik (yeni, hızlı)", hint: "Büyük parçalarla gönderir: aynı bit hızında ~20 kat az paket. Sorun olursa kendiliğinden eskiye döner." },
+  { key: "ffmpeg", label: "ffmpeg (eski)", hint: "2.20 ve öncesindeki gönderici. Yeni gönderici sorun çıkarırsa seçin." },
+];
 export const AUDIO_KBPS_CHOICES = [128, 160, 192, 256]; // 96 kbps AAC stereo cızırtılı; kodlayıcı en az 128 yazar
 
 /** Kayıt kalitesi (yayından ayrı). videoKbps null = yayınla aynı. */
@@ -87,7 +95,7 @@ export const DEFAULT_SETTINGS = {
   v: 3,
   // pipeline: kodlama yolu — "auto" | "webcodecs" (tek kodlama) | "legacy" (MediaRecorder + ffmpeg)
   // audioKbps 192: AAC 128 kbps'de 16 kHz üstü belirgin kesilir (ölçüm: kaynak −41,9 dB → 128k −49,7 / 192k −46,0 dB).
-  stream: { encoder: "auto", keyframeSec: 2, audioKbps: 192, pipeline: "auto", delaySec: 0 },
+  stream: { encoder: "auto", keyframeSec: 2, audioKbps: 192, pipeline: "auto", delaySec: 0, publisher: "auto" },
   record: { enabled: false, dir: null, quality: "stream", customKbps: 10000, customHeight: 1080 },
   // tekrar klibi 15 sn: önizlemede giriş–çıkışla istenen bölüm seçilir. directTake: R kısayolu
   // son tekrarı önizlemeye yükleyip AYNI GEÇİŞ yoluyla hemen yayına alır [önizleme-geçiş]
@@ -157,6 +165,7 @@ export function normalizeSettings(raw) {
       audioKbps: pick(Number(migrateAudioKbps(r)), AUDIO_KBPS_CHOICES, d.stream.audioKbps),
       pipeline: normalizePipeline(r.stream?.pipeline),
       delaySec: pick(Number(r.stream?.delaySec), STREAM_DELAY_CHOICES, d.stream.delaySec),
+      publisher: pick(r.stream?.publisher, RTMP_PUBLISHERS.map((p) => p.key), d.stream.publisher),
     },
     record: {
       enabled: bool(r.record?.enabled, d.record.enabled),

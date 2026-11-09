@@ -210,6 +210,7 @@ function createRtmpPublisher({ url, connect = null, now = () => Date.now(), chun
   let inBuf = Buffer.alloc(0);
   let inChunk = 128;
   let windowAck = WINDOW_DEFAULT;
+  let windowAnnounced = false; // sunucu Window Acknowledgement Size gönderdi mi (onay bekleyebilir miyiz)
   let received = 0;
   let lastAckSent = 0;
   let ackedBytes = 0; // sunucunun bildirdiği (aldığı) bayt
@@ -366,7 +367,7 @@ function createRtmpPublisher({ url, connect = null, now = () => Date.now(), chun
         }
         return;
       }
-      case 5: windowAck = payload.readUInt32BE(0) || WINDOW_DEFAULT; return;
+      case 5: windowAck = payload.readUInt32BE(0) || WINDOW_DEFAULT; windowAnnounced = true; return;
       case 20: case 17: onCommand(amfDecode(type === 17 ? payload.subarray(1) : payload)); return;
       default:
     }
@@ -474,6 +475,7 @@ function createRtmpPublisher({ url, connect = null, now = () => Date.now(), chun
       ackedBytes, // sunucunun aldığını bildirdiği (Window Ack Size'a bağlı, 0: sunucu bildirmiyor)
       ackAt,
       windowAck,
+      windowAnnounced,
       mediaBytes,
       firstTs,
       lastTs,
