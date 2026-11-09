@@ -76,7 +76,7 @@ export function useBranding(matchId) {
   }, []);
 
   /** Taslağı YALNIZ bu maça kaydeder (PUT /api/maclar/:id/overlay-branding; web kaplamaları dahil). */
-  const save = useCallback(async (value) => {
+  const save = useCallback(async (value, { quiet = false } = {}) => {
     if (!id) return false;
     if (value == null && draftFor !== id) { toast("Maçın görünümü henüz yüklenmedi; birazdan yeniden dene.", { tone: "warn" }); return false; }
     const target = normalizeBranding(value ?? draft);
@@ -87,7 +87,7 @@ export function useBranding(matchId) {
     if (!res.ok) { toast(friendlyError(res, "Yayın görünümü kaydedilemedi."), { tone: "error", timeout: 6000 }); return false; }
     const next = normalizeBranding({ ...(res.data?.branding || serverBrandingBody(target)), extras: target.extras });
     if (idRef.current === id) { setSaved(next); setDraft(next); setDraftFor(id); setSource(res.data?.source || `match:${id}`); }
-    toast("Bu maçın görünümü kaydedildi; web kaplamaları birkaç saniyede güncellenir.", { tone: "success" });
+    if (!quiet) toast("Bu maçın görünümü kaydedildi; web kaplamaları birkaç saniyede güncellenir.", { tone: "success" });
     return true;
   }, [draft, draftFor, id, toast]);
 

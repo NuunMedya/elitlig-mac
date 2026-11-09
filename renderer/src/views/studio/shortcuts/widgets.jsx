@@ -30,6 +30,7 @@ import { GENEL_WIDGETS } from "./wGenel";
 import { MUZIK_WIDGETS } from "./wMuzik";
 import { MUZIK_PRO_WIDGETS } from "./wMuzikPro";
 import { PANEL_WIDGETS } from "./wPanels";
+import { PAKET_WIDGETS } from "./wPaket";
 import "./widgetsOps.css";
 import "./widgetsPro.css";
 
@@ -374,5 +375,6 @@ export const WIDGET_IMPL = {
   ...MUZIK_PRO_WIDGETS,
   // panel açma düğmeleri (./wPanels): yerleşimde yerine koy / Kontrol merkezinde aç
   ...PANEL_WIDGETS,
+  ...PAKET_WIDGETS,
 };
 

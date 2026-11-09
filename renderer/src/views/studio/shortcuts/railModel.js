@@ -146,6 +146,13 @@ export const RAIL_WIDGETS = [
   { type: "subtitlePro", family: "subtitle", label: "Altyazı · metin + süre", icon: "list", group: "grafik", size: "3x2", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Hazır metinler, serbest metin, N sn göster (geri sayar)" },
   { type: "sponsorPro", family: "sponsor", label: "Sponsor göster / dönüşüm", icon: "handshake", group: "grafik", size: "2x2", sizes: ["1x1", "2x1", "2x2", "3x2"], hint: "Sponsoru alt bantta göster (süreli), sıradaki, altyazı dönüşümü" },
   { type: "ledPro", family: "led", label: "LED · yönlendirme + içerik", icon: "overview", group: "grafik", size: "2x2", sizes: ["2x1", "2x2", "3x2"], hint: "Aç / kapat, Program · Önizleme · Kapalı, LED içeriği" },
+  // ── grafik paketi + yayın bağlantıları (./wPaket) ──
+  { type: "gfxPackage", family: "gfxPackage", label: "Grafik paketi · seçici", icon: "palette", group: "grafik", size: "2x2", sizes: ["1x1", "2x1", "2x2", "3x2", "4x2"], hint: "Tek dokunuşla bütün görünüm (renk, yazı, skorbord, geçiş, VAR, kapak); hemen ya da sonraki geçişte" },
+  { type: "gfxPackageNext", family: "gfxPackage", label: "Grafik paketi · sıradaki", icon: "palette", group: "grafik", size: "1x1", sizes: ["1x1", "2x1"], hint: "Sıradaki pakete geç" },
+  { type: "linkYoutube", family: "links", label: "YouTube yayınını aç", icon: "video", group: "yayin", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "İzleme sayfası · seçenek: aç / kopyala / programda QR" },
+  { type: "linkYtStudio", family: "links", label: "YouTube Studio'da aç", icon: "sliders", group: "yayin", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "Yayının YouTube Studio canlı yayın sayfası" },
+  { type: "linkMatch", family: "links", label: "Maç sayfasını aç", icon: "globe", group: "yayin", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "elitlig.com maç sayfası · seçenek: aç / kopyala / programda QR" },
+  { type: "linksBoard", family: "links", label: "Bağlantılar · aç / kopyala / QR", icon: "link", group: "yayin", size: "2x2", sizes: ["2x1", "2x2", "3x2"], hint: "YouTube yayını, YouTube Studio, maç sayfası; kopyala ve QR" },
   // ── sahne ──
   { type: "sceneNav", family: "scene", label: "Önceki / sonraki sahne", icon: "chevronRight", group: "sahne", size: "2x1", sizes: ["2x1", "1x2", "2x2"], hint: "‹ › sahneyi önizlemeye; büyükte YAYINA" },
   { type: "sceneBank", family: "scene", label: "Sahne bankası (4–8)", icon: "layers", group: "sahne", size: "3x2", sizes: WIDE, hint: "Canlı küçük resimli sahneler; tık önizleme · çift tık yayın" },
