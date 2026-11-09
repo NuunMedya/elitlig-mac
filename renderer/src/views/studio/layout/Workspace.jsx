@@ -39,7 +39,20 @@ import { LayoutCtx } from "./ctx";
 export { LayoutCtx, useLayoutCtx } from "./ctx";
 
 const THEME = { name: "studio", className: "dockview-theme-studio", gap: 6, dndOverlayMounting: "absolute" };
-const HEAD = 30;
+const HEAD0 = 30;
+const MINW0 = 44;
+/**
+ * ARAYÜZ ÖLÇEĞİ ve dockview: stüdyo kökü CSS `zoom` ile ölçeklenir. Chromium'un standart zoom'unda
+ * getBoundingClientRect / clientX GÖRSEL (ölçekli) pikseldir, offsetWidth / style.left ise öğenin
+ * YEREL (ölçeksiz) pikseli. dockview bırakma bölgesini (x − rect.left) / offsetWidth ile, önizleme
+ * kutusunu rect farkını style.top/left'e yazarak hesapladığından ölçek ≠ %100'de kutu imlecin
+ * başka yerinde çıkar ve yanlış kenara bırakılır. Çözüm: dockview kökü (.lw-root) ölçeği geri alır
+ * (zoom: 1 / ölçek → etkin ölçek 1, iki koordinat sistemi aynı); panel gövdeleri, sekme içerikleri
+ * ve grup eylemleri .lw-z / .lw-tab / .lw-gact ile yeniden ölçeklenir; şerit boyları --ui-z ile.
+ */
+let UIZ = 1;
+const HEAD = () => Math.round(HEAD0 * UIZ);
+const MINW = () => Math.round(MINW0 * UIZ);
 /** "Parçalara ayır": panel → pano bileşenleri. */
 const DECOMPOSE = {
   ses: ["ses.master", "ses.killall", "ses.mutemic", "part:ses:routing", "part:ses:scenes", "part:ses:mic", "part:ses:music"],
@@ -99,17 +112,19 @@ function StudioPanel({ params, api }) {
   deact.current = ctx.onDeactivate;
   useEffect(() => () => deact.current?.(kind), [kind]);
   if (kind === "board") {
-    return <div className="lw-panel is-board"><Boundary><Board boardId={opts.board} panelId={api.id} /></Boundary></div>;
+    return <div className="lw-z"><div className="lw-panel is-board"><Boundary><Board boardId={opts.board} panelId={api.id} /></Boundary></div></div>;
   }
   if (kind === "comp") {
     // Tek bileşen panel olarak (Sekmelere ayır): pano öğesi gibi çizilir.
     const item = { i: api.id, t: opts.t, x: 0, y: 0, w: 12, h: 12 };
-    return <div className="lw-panel is-comp" data-comp={opts.t}><Boundary>{ctx.renderComponent(item, {})}</Boundary></div>;
+    return <div className="lw-z"><div className="lw-panel is-comp" data-comp={opts.t}><Boundary>{ctx.renderComponent(item, {})}</Boundary></div></div>;
   }
   const body = ctx.renderPanel(kind, opts, api.id);
   return (
+    <div className="lw-z">
     <div className={`lw-panel is-${kind} ${meta?.monitor ? "is-monitor" : ""} ${ctx.panelInfo(kind)?.flash ? "is-flash" : ""}`} data-dock-panel={kind} onPointerDownCapture={() => ctx.onActivate?.(kind)}>
       <PanelScope panel={kind}><Boundary>{body ?? <p className="st-hint st-pad">Bu panel bu sürümde yok.</p>}</Boundary></PanelScope>
+    </div>
     </div>
   );
 }
@@ -232,6 +247,8 @@ function Watermark() {
 /* ───────────────────────── çalışma alanı ───────────────────────── */
 
 export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
+  const uiz = Number(value?.zoom) > 0 ? Number(value.zoom) : 1;
+  UIZ = uiz;
   const apiRef = useRef(null);
   const applying = useRef(false);
   const layoutRef = useRef(layout);
@@ -284,7 +301,7 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
     for (const [gid, axis] of Object.entries(mins || {})) {
       const g = api.getGroup(gid);
       if (!g) continue;
-      if (axis === "h") { g.api.setConstraints({ minimumHeight: HEAD, maximumHeight: HEAD }); g.api.setSize({ height: HEAD }); } else { g.api.setConstraints({ minimumWidth: 44, maximumWidth: 44 }); g.api.setSize({ width: 44 }); }
+      if (axis === "h") { g.api.setConstraints({ minimumHeight: HEAD(), maximumHeight: HEAD() }); g.api.setSize({ height: HEAD() }); } else { g.api.setConstraints({ minimumWidth: MINW(), maximumWidth: MINW() }); g.api.setSize({ width: MINW() }); }
       g.element?.classList?.add("lw-min", `is-${axis}`);
     }
   }, []);
@@ -339,7 +356,7 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
         const title = rem?.title || titleOf(id);
         const p = a.addPanel({
           id, component: "studio", title, params: paramsOfId(id), ...(position ? { position } : {}),
-          ...(target.float ? { floating: { x: 120, y: 90, width: 560, height: 380 } } : {}),
+          ...(target.float ? { floating: { x: Math.round(120 * UIZ), y: Math.round(90 * UIZ), width: Math.round((target.width || 560) * UIZ), height: Math.round((target.height || 380) * UIZ) } } : {}),
         });
         setLayout((l) => dropRemoved(l, "panel", id));
         save();
@@ -395,7 +412,7 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
         const g = groupOf(gid);
         const a = api();
         if (!g || !a) return;
-        try { a.addFloatingGroup(g, { x: 100, y: 80, width: Math.max(360, g.width || 480), height: Math.max(260, g.height || 320) }); } catch { /* yoksay */ }
+        try { a.addFloatingGroup(g, { x: Math.round(100 * UIZ), y: Math.round(80 * UIZ), width: Math.max(360 * UIZ, g.width || 480 * UIZ), height: Math.max(260 * UIZ, g.height || 320 * UIZ) }); } catch { /* yoksay */ }
         save();
       },
       dockFloating(gid) {
@@ -421,14 +438,14 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
         }
         const h0 = g.height;
         sizes.current[gid] = h0;
-        g.api.setConstraints({ minimumHeight: HEAD, maximumHeight: HEAD });
-        g.api.setSize({ height: HEAD });
+        g.api.setConstraints({ minimumHeight: HEAD(), maximumHeight: HEAD() });
+        g.api.setSize({ height: HEAD() });
         let axis = "h";
-        if (g.height > HEAD + 6) {
+        if (g.height > HEAD() + 6) {
           g.api.setConstraints({ minimumHeight: 100, maximumHeight: BIG });
           sizes.current[gid] = g.width;
-          g.api.setConstraints({ minimumWidth: 44, maximumWidth: 44 });
-          g.api.setSize({ width: 44 });
+          g.api.setConstraints({ minimumWidth: MINW(), maximumWidth: MINW() });
+          g.api.setSize({ width: MINW() });
           axis = "w";
         }
         g.element?.classList?.add("lw-min", `is-${axis}`);
@@ -579,6 +596,8 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
   }, [applyMins, load, save, syncHeaders, titleOf]);
 
   useEffect(() => { syncHeaders(); }, [edit, layout.autoHide, layout.tabs, layout.tabDefault, syncHeaders]);
+  // Ölçek değişince küçültülmüş grupların başlık boyu yeniden (ölçekli) uygulanır.
+  useEffect(() => { applyMins(layoutRef.current.mins); }, [uiz, applyMins]);
   useEffect(() => () => clearTimeout(saveT.current), []);
 
   const ctx = useMemo(() => {
@@ -599,7 +618,7 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
           <button type="button" className="btn btn--xs" onClick={() => ctrl.resetDefault()}><Icon name="undo" size={12} /> Varsayılana dön</button>
         </div>
       )}
-      <div className={`lw-root ${edit ? "is-edit" : ""}`}>
+      <div className={`lw-root ${edit ? "is-edit" : ""}`} style={uiz !== 1 ? { zoom: 1 / uiz, "--ui-z": uiz } : undefined} data-ui-z={uiz}>
         <DockviewReact
           className="lw-dv"
           theme={THEME}

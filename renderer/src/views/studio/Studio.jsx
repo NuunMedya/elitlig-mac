@@ -131,7 +131,7 @@ import Workspace from "./layout/Workspace";
 import LayoutToolbar from "./layout/LayoutToolbar";
 import LayoutSettings, { BoardEditor } from "./layout/LayoutSettings";
 import { useLayout } from "./layout/useLayout";
-import { boardPanelId, componentOf, dockPanelIds, panelMeta } from "./layout/layoutModel";
+import { boardPanelId, componentOf, dockPanelIds, openTargetOf, openTargetPanelId, panelMeta } from "./layout/layoutModel";
 import { PanelScope, PartsProvider } from "./dock/parts";
 import AutoTransition from "./layout/AutoTransition";
 import { normalizeModeSettings } from "../../lib/studio/modes";
@@ -268,6 +268,7 @@ export default function Studio({ auth, go }) {
     if (!c) return;
     const flash = (k) => { setDockFlash(k); setTimeout(() => setDockFlash((f) => (f === k ? null : f)), 1200); };
     // Maç yönetimi sekmelerine ayrılmışsa birleşik panel geri eklenmez: ayrılmış sekme öne gelir.
+    if (where === "float") { floatPanel(key); return; }
     if (key === "yonetim" && !c.has(key)) {
       const part = ["yonetimReji", "yonetimMaclar", "yonetimKadro", "yonetimMacsonu", "yonetimTakimlar"].find((k) => c.has(k));
       if (part) { c.activate(part); flash(part); return; }
@@ -280,6 +281,45 @@ export default function Studio({ auth, go }) {
     setDockFlash(key);
     setTimeout(() => setDockFlash((f) => (f === key ? null : f)), 1200);
     if (!had) toast(`“${panelMeta(key).label}” ekrana eklendi (Düzenle ile yerini değiştirebilirsin).`, { tone: "info", timeout: 2600 });
+  });
+
+  /** Paneli yüzen pencerede aç: yoksa yüzen olarak eklenir; varsa (ızgaradaysa) yüzen pencereye taşınır. */
+  const floatPanel = useStable((id) => {
+    const c = lay.ctrlRef.current;
+    const a = c?.api?.();
+    if (!c || !a) return;
+    const p = a.getPanel(id);
+    if (!p) { c.add(id, { float: true }); toast(`“${panelMeta(id)?.label || componentOf(String(id).replace(/^comp~/, ""))?.label || id}” yüzen pencerede açıldı.`, { tone: "info", timeout: 2200 }); return; }
+    if (p.group?.api?.location?.type === "floating") { p.api.setActive(); return; }
+    const z = (Number(settings.view.scale) || 100) / 100; // yüzen kutu boyu ölçekli (dockview kökü ölçeksiz)
+    try { a.addFloatingGroup(p, { x: Math.round(120 * z), y: Math.round(90 * z), width: Math.round(560 * z), height: Math.round(380 * z) }); } catch { p.api.setActive(); }
+  });
+  /**
+   * Panel açma HEDEFİ (wPanels "go:<id>"; layoutModel.OPEN_TARGETS): panel, panel parçası,
+   * Kontrol merkezi bölümü ya da Ayarlar bölümü. where: layout | kontrol | float | ayarlar.
+   */
+  const openTarget = useStable((id, where) => {
+    const t = openTargetOf(id);
+    if (!t) return;
+    if (t.kind === "cc") { controlRef.current?.openSection?.(t.section); return; }
+    if (t.kind === "ayar") {
+      if (where === "kontrol" && t.cc) controlRef.current?.openSection?.(`ayar:${t.section}`);
+      else setSettingsSection(t.section);
+      return;
+    }
+    if (t.kind === "panel") { openPanel(t.panel, { where: where || "layout" }); return; }
+    // Parça: kendi paneli ("comp~<parça>") olarak ana panelinin yanına (sekme) ya da yüzen pencerede.
+    if (where === "kontrol") { controlRef.current?.open?.(t.parent || null); return; }
+    const pid = openTargetPanelId(t);
+    if (where === "float") { floatPanel(pid); return; }
+    const c = lay.ctrlRef.current;
+    if (!c) return;
+    const had = c.has(pid);
+    const parentId = t.parent && (c.has(t.parent) ? t.parent : t.parent.startsWith("yonetim") && c.has("yonetim") ? "yonetim" : null);
+    c.add(pid, !had && parentId ? { panel: parentId, direction: "within" } : {});
+    setDockFlash(pid);
+    setTimeout(() => setDockFlash((f) => (f === pid ? null : f)), 1200);
+    if (!had) toast(`“${t.label}” ekrana eklendi (Düzenle ile yerini değiştirebilirsin).`, { tone: "info", timeout: 2600 });
   });
 
   /* ───────── sahne alanı ızgarası (stage/StageGrid, lib/studio/stageGrid.js) ───────── */
@@ -1474,6 +1514,8 @@ export default function Studio({ auth, go }) {
     led, openLedTab: () => setTab("led"),
     // Panel açma düğmeleri (wPanels): yerleşimde yerine koy ya da Kontrol merkezinde aç; hasPanel: ekranda mı
     openPanel: (key, where) => openPanel(key, { where }), hasPanel: (key) => lay.has(key), controlOpen: Boolean(ccSection),
+    // Hedef düğmeleri (her panel / parça / Kontrol merkezi ve Ayarlar bölümü): wPanels TARGET_WIDGETS
+    openTarget, controlSection: ccSection, settingsSection,
     ready: {
       ids: readyIds, go: onReady, setMinutes: setReadyMinutes,
       minutesOf: (key) => { const c = readyClockOf(config, key); return c ? Math.round((Number(c.durationMs) || 0) / 60_000) : null; },
@@ -1699,7 +1741,11 @@ export default function Studio({ auth, go }) {
   ].filter(Boolean);
   const openControl = useCallback((key) => setCcSection((cur) => key || cur || controlLastSection() || "yayin"), []);
   const ccSectionOf = (panelKey) => (ccSections.some((s) => s.key === panelKey) ? panelKey : "yayin");
-  controlRef.current = { open: (panelKey) => openControl(panelKey ? ccSectionOf(panelKey) : null) };
+  controlRef.current = {
+    open: (panelKey) => openControl(panelKey ? ccSectionOf(panelKey) : null),
+    // Bölüm anahtarıyla (ör. "kaynaklar", "ayar:skorbord"); yoksa bölümün paneli, o da yoksa ilk bölüm.
+    openSection: (key) => openControl(ccSections.some((s) => s.key === key) ? key : ccSectionOf(String(key || "").replace(/^ayar:/, ""))),
+  };
 
   return (
     <PartsProvider dock={dock} setDock={setDock}>

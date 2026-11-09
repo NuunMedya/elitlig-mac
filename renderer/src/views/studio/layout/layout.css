@@ -4,7 +4,7 @@
 .dockview-theme-studio {
   --dv-paneview-active-outline-color: var(--acc);
   --dv-tabs-and-actions-container-font-size: 12.5px;
-  --dv-tabs-and-actions-container-height: 30px;
+  --dv-tabs-and-actions-container-height: calc(30px * var(--ui-z, 1));
   --dv-drag-over-background-color: rgba(var(--acc-rgb), 0.22);
   --dv-drag-over-border-color: var(--acc);
   --dv-tabs-container-scrollbar-color: var(--scroll);
@@ -51,6 +51,13 @@
 /* küçültülmüş grup: yalnız başlık */
 .dv-groupview.lw-min .dv-content-container, .lw-min .dv-content-container { display: none; }
 .lw-min.is-w .dv-tabs-and-actions-container { writing-mode: vertical-rl; height: 100% !important; }
+
+/* ───────── arayüz ölçeği (Workspace.jsx: .lw-root zoom = 1 / ölçek) ─────────
+   dockview'un kendi öğeleri (gruplar, sekme kutuları, bırakma bölgeleri, önizleme kutusu, yüzen
+   pencereler) etkin ölçek 1'de kalır: imleç ↔ bırakma hedefi hesabı tutarlı. İçerik yeniden ölçeklenir. */
+.lw-z { zoom: var(--ui-z, 1); height: 100%; min-height: 0; min-width: 0; }
+.lw-root .lw-tab, .lw-root .lw-gact, .lw-root .lw-empty { zoom: var(--ui-z, 1); }
+.dockview-theme-studio .dv-tab { padding: 0 calc(4px * var(--ui-z, 1)) 0 calc(8px * var(--ui-z, 1)); }
 
 /* sekme */
 .lw-tab { display: flex; align-items: center; gap: 6px; height: 100%; padding: 0 2px; font-weight: 750; white-space: nowrap; min-width: 0; }
