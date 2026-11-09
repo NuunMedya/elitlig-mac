@@ -123,6 +123,10 @@ import SettingsPage from "./settings/SettingsPage";
 import ControlCenter, { controlLastSection, controlPinned } from "./control/ControlCenter";
 import { SourceLibrary } from "./SourcesPanel";
 import { COVER_SECTION } from "./youtube/cover/CoverSection";
+import { usePackageControl } from "./graphics/usePackageControl"; // [grafik paketi]
+import PackagesSection from "./graphics/PackagesSection"; // [grafik paketi]
+import { reloadPackageStore } from "./graphics/packageStore"; // [grafik paketi]
+import { LinksMenu, useBroadcastLinks } from "./links/LinkButtons"; // [bağlantılar]
 import { VAR_THEME_SECTION } from "./settings/VarThemeSection";
 import { useStudioSettings } from "./settings/useStudioSettings";
 import { patchOps } from "./settings/opsDefaults";
@@ -353,6 +357,8 @@ export default function Studio({ auth, go }) {
   const g = useGraphicsSafe({ matchId, live });
   const gRef = useRef(g);
   gRef.current = g;
+  // [grafik paketi] tek dokunuşla bütün görünüm; lig varsayılanı; "sonraki geçişte" GEÇİŞ'te uygulanır.
+  const pk = usePackageControl({ g, live, setPref, toast });
   const branding = g?.branding || DEFAULT_BRANDING;
   const brandingRef = useRef(branding);
   brandingRef.current = branding;
@@ -484,6 +490,8 @@ export default function Studio({ auth, go }) {
   const goalStress = useGoalStress({ active: engine.active, getDrawStats: comp.getStats, getEncodeStats: engine.getEncodeStats, getStatus: () => engineStatusRef.current });
   goalMarkRef.current = goalStress.mark;
   const yt = useYoutube(matchId, { encodingLive: engine.mode === "live" && engine.active });
+  // [bağlantılar] YouTube yayını / YouTube Studio / maç sayfası: aç, kopyala, programda QR.
+  const links = useBroadcastLinks({ stream: yt.stream, match: live.match, g, toast });
   const hl = useHighlights(matchId);
   const [busy, setBusy] = useState(false);
   const [startedVia, setStartedVia] = useState(null); // "youtube" | "manual" | "rehearsal"
@@ -746,6 +754,7 @@ export default function Studio({ auth, go }) {
     const cfg = configRef.current;
     const plan = planTake({ preview: previewStateNow(), program: programStateNow(), studioMode });
     const tr = { kind: tKind.key, ms: tMs };
+    if (plan.type !== "none") pk.flushPending(); // [grafik paketi] "sonraki geçişte" bekleyen paket
     if (plan.type === "none") {
       // Eski yol (yayın modları modülü yokken): VAR / tekrar yayındaysa önizleme sahnesine dön.
       const target = cfg.previewSceneId || cfg.programSceneId;
@@ -1552,6 +1561,7 @@ export default function Studio({ auth, go }) {
     outMute: { ...outMute, set: (on, opts) => setOutMute(on, opts), toggle: (opts) => toggleOutMute(opts) },
     goalMusic, GoalMusicButtons, music,
     g, variant, setVariant,
+    pkg: pk, links, // [grafik paketi] seçici · [bağlantılar] YouTube / maç sayfası
     interview,
     led, openLedTab: () => setTab("led"),
     // Panel açma düğmeleri (wPanels): yerleşimde yerine koy ya da Kontrol merkezinde aç; hasPanel: ekranda mı
@@ -1723,7 +1733,7 @@ export default function Studio({ auth, go }) {
   defPanel("ozet", modeRender("ozet"), { count: modeTabOf("ozet")?.count ?? null });
   defPanel("yayin", () => (
     <div className="st-bcastwrap">
-      <BroadcastPanel yt={yt} engine={engine} busy={busy} matchId={matchId} matchName={matchName} match={live.match} startedVia={onAir ? startedVia : null} encoding={prefs.encoding} onEncoding={setEncoding}
+      <BroadcastPanel links={links} yt={yt} engine={engine} busy={busy} matchId={matchId} matchName={matchName} match={live.match} startedVia={onAir ? startedVia : null} encoding={prefs.encoding} onEncoding={setEncoding}
         onStartYoutube={startYoutube} onStartManual={startManual} onRehearsal={startRehearsal} onStop={() => stopEncoder({ askFirst: false })} onEndYoutube={endYoutube} toast={toast} ask={ask}
         localRec={localRec} onLocalRec={setLocalRec} recordInfo={recordInfo} onOpenSettings={() => openSettings("kayit")}
         chapters={{ ...chapters, onAdd: addChapter, onRemove: chapters.remove, onClear: chapters.clear }} />
@@ -1785,6 +1795,7 @@ export default function Studio({ auth, go }) {
     ...(ScoreboardTab && g ? [{ key: "skorbord", label: "Skorbord", icon: "trophy", group: "grafik", render: () => <ScoreboardTab {...gfxProps} /> }] : []),
     ...(SubtitlePanel && g ? [{ key: "altyazi", label: "Altyazı", icon: "list", group: "grafik", render: () => <SubtitlePanel {...gfxProps} /> }] : []),
     ...((BrandTab || PresetsTab) && g ? [{ key: "marka", label: "Marka & ön ayarlar", icon: "palette", group: "grafik", render: () => <div className="st-gfxpair is-brand">{BrandTab && <BrandTab {...gfxProps} />}{PresetsTab && <PresetsTab {...gfxProps} />}</div> }] : []),
+    ...(g ? [{ key: "paketler", label: "Grafik paketleri", icon: "palette", group: "grafik", render: () => <PackagesSection pk={pk} g={g} live={live} toast={toast} /> }] : []), // [grafik paketi]
     ...((SponsorPanel || LinksPanel) && g ? [{ key: "sponsor", label: "Sponsor & linkler", icon: "handshake", group: "grafik", render: () => <div className="st-gfxpair">{SponsorPanel && <SponsorPanel {...gfxProps} />}{LinksPanel && <LinksPanel {...gfxProps} />}</div> }] : []),
     { key: "ses", label: "Ses", icon: "mic", group: "panel", render: audioPanel },
     { key: "yerlesim", label: "Ekran yerleşimi", icon: "board", group: "yerlesim", render: ({ Section }) => <LayoutSettings Section={Section} layout={lay.layout} setLayout={lay.setLayout} ctrl={() => lay.ctrlRef.current} ctxLabel={layoutValue} onAsk={ask} /> },
@@ -1804,8 +1815,9 @@ export default function Studio({ auth, go }) {
     if (groups.includes("dock")) { try { setDock(JSON.parse(localStorage.getItem("studio.dock.v1") || "null")); } catch { /* yoksay */ } }
     if (groups.includes("layout")) lay.reload();
     if (groups.includes("density")) reloadDensity();
+    if (groups.includes("packages")) reloadPackageStore();
     if (groups.includes("led")) { try { const v = JSON.parse(localStorage.getItem("studio.led.v2") || "null"); if (v && led.setPref) led.setPref(v); } catch { /* yoksay */ } }
-    return groups.some((k) => !["prefs", "settings", "rail", "dock", "led", "layout", "density"].includes(k));
+    return groups.some((k) => !["prefs", "settings", "rail", "dock", "led", "layout", "density", "packages"].includes(k));
   });
 
   /* ───────── Ayarlar sayfası özellikleri (Ayarlar ve Kontrol merkezi gömülü bölümleri ortak) ───────── */
@@ -1854,6 +1866,7 @@ export default function Studio({ auth, go }) {
     ccExtra("skorbord", "grafik", ["skor", "skorbord", "çeşit"]),
     ccExtra("altyazi", "grafik", ["altyazı", "metin", "bant"]),
     ccExtra("marka", "grafik", ["marka", "logo", "ön ayar", "renk"]),
+    ccExtra("paketler", "grafik", ["paket", "grafik paketi", "tema", "görünüm", "renk", "yazı tipi"]),
     ccExtra("sponsor", "grafik", ["sponsor", "link", "bağlantı"]),
     ccSettings(VAR_THEME_SECTION.key, "grafik", VAR_THEME_SECTION.label, VAR_THEME_SECTION.icon, ["var", "tema"]),
     ccPanel("var", "kip", { kw: ["var", "inceleme", "karar"] }),
@@ -1895,6 +1908,7 @@ export default function Studio({ auth, go }) {
           </button>
         )}
         <span className="st-top__sep" />
+        <LinksMenu links={links} />
         <button type="button" className="icon-btn st-help" onClick={() => setHelp(true)} title="Klavye kısayolları (?)"><Icon name="help" size={16} /></button>
         <button type="button" className={`st-ccbtn ${ccSection ? "is-on" : ""}`} onClick={() => (ccSection ? (setCcSection(null), setCcPinned(false)) : openControl())} title="Kontrol merkezi: tüm paneller ve yayın düzenlemeleri tek yerde (paneller ekrandan kaldırılsa da)" aria-pressed={Boolean(ccSection)}><Icon name="command" size={14} /> <span>Kontrol merkezi</span></button>
         <button type="button" className={`icon-btn st-gear ${settingsSection ? "is-on" : ""}`} onClick={() => (settingsSection ? setSettingsSection(null) : openSettings())} title="Stüdyo ayarları"><Icon name="sliders" size={16} /></button>

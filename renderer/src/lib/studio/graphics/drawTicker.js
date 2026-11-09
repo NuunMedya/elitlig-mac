@@ -72,12 +72,13 @@ export function drawTicker(ctx, E, snap) {
     if (img && drawContain(ctx, img, 0, E.H - 24 - 160, W, 160)) return { x: 0, y: E.H - 184, w: W, h: 160 };
   }
 
+  const R = TICKER_BAR.r * (Number.isFinite(P.radiusK) ? P.radiusK : 1); // grafik paketi: köşe yuvarlaklığı
   ctx.save();
   ctx.shadowColor = "rgba(9, 0, 10, 0.55)"; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
-  fillRound(ctx, x, y, w, h, TICKER_BAR.r, vGrad(ctx, y, y + h, [[0, P.p800], [1, P.p900]]));
+  fillRound(ctx, x, y, w, h, R, vGrad(ctx, y, y + h, [[0, P.p800], [1, P.p900]]));
   ctx.restore();
   ctx.save();
-  roundRect(ctx, x, y, w, h, TICKER_BAR.r);
+  roundRect(ctx, x, y, w, h, R);
   ctx.clip();
 
   // Sol marka bloğu

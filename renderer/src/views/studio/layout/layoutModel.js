@@ -249,7 +249,7 @@ export const CONTROL_SECTIONS = [
   ["tekrar", "Tekrar", "repeat"], ["ayar:tekrar", "Tekrar ayarları", "repeat"],
   ["yonetim", "Maç yönetimi (tümü)", "board"], ["yonetimMaclar", "Maçlar", "calendar"], ["yonetimReji", "Reji", "zap"], ["yonetimKadro", "Kadro", "shirt"], ["yonetimMacsonu", "Maç sonu", "award"], ["yonetimTakimlar", "Takımlar & oyuncular", "users"], ["olaylar", "Olay gir", "pencil"], ["ayar:mac", "Reji / Maç ayarları", "board"],
   ["ses", "Ses", "mic"], ["golMuzigi", "Gol müziği", "music"],
-  ["ayar:skorbord", "Skorbord", "trophy"], ["ayar:altyazi", "Altyazı", "list"], ["ayar:marka", "Marka & ön ayarlar", "palette"], ["ayar:sponsor", "Sponsor & linkler", "handshake"], ["ayar:var", "VAR teması", "palette"],
+  ["ayar:skorbord", "Skorbord", "trophy"], ["ayar:altyazi", "Altyazı", "list"], ["ayar:marka", "Marka & ön ayarlar", "palette"], ["ayar:sponsor", "Sponsor & linkler", "handshake"], ["ayar:paketler", "Grafik paketleri", "palette"], ["ayar:var", "VAR teması", "palette"],
   ["var", "VAR", "target"], ["roportaj", "Röportaj", "users"], ["ayar:roportaj", "Röportaj ayarları", "users"], ["ozet", "Özet", "sparkles"], ["ayar:ozet", "Özet ayarları", "sparkles"],
   ["led", "LED ekran", "overview"], ["ayar:led", "LED ayarları", "overview"],
   ["yukleme", "Yükleme günlüğü", "upload"], ["ayar:makro", "Makrolar", "zap"], ["ayar:serit", "Kısayollar panosu", "zap"], ["ayar:kisayol", "Klavye kısayolları", "command"],
@@ -260,7 +260,7 @@ export const SETTINGS_TARGETS = [
   ["led", "LED ekran", "overview"], ["roportaj", "Röportaj", "users"], ["ozet", "Özet", "sparkles"], ["mac", "Reji / Maç", "board"], ["makro", "Makrolar", "zap"],
   ["gorunum", "Görünüm", "grid"], ["bildirim", "Bildirimler", "bell"], ["serit", "Kısayollar panosu", "zap"], ["panel", "Panel parçaları", "eye"], ["kisayol", "Klavye kısayolları", "command"],
   ["sablon", "Ayar şablonları", "copy"], ["gelismis", "Gelişmiş", "sliders"], ["ses", "Ses (ayarlar)", "mic"], ["yerlesim", "Ekran yerleşimi", "board"],
-  ["skorbord", "Skorbord", "trophy", true], ["altyazi", "Altyazı", "list", true], ["marka", "Marka & ön ayarlar", "palette", true], ["sponsor", "Sponsor & linkler", "handshake", true], ["var", "VAR teması", "palette", true],
+  ["skorbord", "Skorbord", "trophy", true], ["altyazi", "Altyazı", "list", true], ["marka", "Marka & ön ayarlar", "palette", true], ["sponsor", "Sponsor & linkler", "handshake", true], ["paketler", "Grafik paketleri", "palette", true], ["var", "VAR teması", "palette", true],
 ].map(([key, label, icon, grafik]) => ({ key, label, icon, grafik: Boolean(grafik) }));
 
 const PANEL_OPEN_GROUP = {
