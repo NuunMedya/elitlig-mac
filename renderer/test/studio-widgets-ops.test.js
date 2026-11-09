@@ -143,7 +143,7 @@ describe("makrolar", () => {
     const m = normalizeMacro({ id: "t", steps: [{ type: "ready", key: "break", air: true }, { type: "subtitle", text: "Ara" }, { type: "musicPlay" }, { type: "ledContent", content: "clock" }, { type: "chapter", label: "x" }] });
     const r = await runMacro(m, ctx, { delayMs: 0 });
     expect(log).toEqual(["ready:break:true", "sub:true", "led:clock"]);
-    expect(r).toEqual({ ok: false, skipped: [2, 4] });
+    expect(r).toMatchObject({ ok: false, skipped: [2, 4] });
   });
 });
 

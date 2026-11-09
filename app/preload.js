@@ -82,6 +82,15 @@ contextBridge.exposeInMainWorld("elitlig", {
       check: (ids) => ipcRenderer.invoke("studio:media:check", Array.isArray(ids) ? ids : []),
       forget: (id) => ipcRenderer.invoke("studio:media:forget", id),
     },
+    // Müzik çalar (app/studio/musichost.js): "Yayına da ver" için gizli müzik penceresi
+    // (iki YouTube oynatıcısı), sesinin yakalanması, YouTube başlığı (oEmbed).
+    music: {
+      host: (msg) => ipcRenderer.invoke("studio:music:host", msg && typeof msg === "object" ? msg : {}),
+      armCapture: (mode) => ipcRenderer.invoke("studio:music:armCapture", mode === "loopback" ? "loopback" : "frame"),
+      capability: () => ipcRenderer.invoke("studio:music:capability"),
+      oembed: (url) => ipcRenderer.invoke("studio:music:oembed", String(url || "")),
+      onHostEvent: on("studio:music:hostEvent"),
+    },
     // Canlı giriş kaynakları (app/studio/live): telefon kamerası (WebRTC sinyalleşme),
     // RTMP / SRT girişi ve ağ akışları (ffmpeg → fMP4 → MSE), web sayfası (ekran dışı pencere).
     live: {

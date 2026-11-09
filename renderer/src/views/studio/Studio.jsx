@@ -70,6 +70,10 @@ import { payloadSummary, planTake, previewStateOf, programStateOf, samePayload, 
 import { useLiveMatch } from "./useLiveMatch";
 import { useStudioSources } from "./useStudioSources";
 import { useAudioMixer } from "./useAudioMixer";
+import { MusicPanel, useMusicPlayer } from "./music";
+import { MacroPromptHost, requestMacroPrompt } from "./shortcuts/MacroEditor";
+import { getMacros, macroForCombo } from "./shortcuts/macros";
+import { fireMacroButton } from "./shortcuts/wGenel";
 import { bugVariantOf, drawBug, useCanvasImage, useCompositor } from "./useCompositor";
 import { drawScene } from "./draw";
 import { useEngine } from "./useEngine";
@@ -634,6 +638,10 @@ export default function Studio({ auth, go }) {
 
   /* ───────── gol müziği (isteğe bağlı modül: ./goalmusic) ───────── */
   const goalMusic = useGoalMusicSafe({ homeTeamId: live.homeTeamId, awayTeamId: live.awayTeamId, homeName: live.homeName, awayName: live.awayName, matchId, live, toast });
+  // Müzik çalar (./music): liste, geçiş; varsayılan yalnız hoparlör, "Yayına da ver" müzik penceresinden yakalar.
+  const music = useMusicPlayer({ mixer: mixer?.attachStream ? mixer : null, toast });
+  const goalPlaying = Boolean(goalMusic?.playing);
+  useEffect(() => { music.duck(goalPlaying); }, [goalPlaying]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const restartVideosIn = useCallback((sceneId) => {
     const sc = resolveScene(configRef.current, sceneId);
@@ -1014,6 +1022,7 @@ export default function Studio({ auth, go }) {
   const railPopRef = useRef(null);
   const rail = useRail();
   const keyRef = useRef(null);
+  const railCtxRef = useRef(null);
   keyRef.current = (e) => {
     if (document.querySelector(".modal-backdrop, .st-pop")) return;
     if (settingsSection) return; // Ayarlar açıkken (tuş atama) stüdyo kısayolları çalışmaz
@@ -1031,6 +1040,9 @@ export default function Studio({ auth, go }) {
       }
       return;
     }
+    // [makro] makroya atanmış kısayol (F1–F12 ya da değiştiricili; Ayarlar › Makrolar).
+    const mk = combo && !editSceneId ? macroForCombo(getMacros(), combo) : null;
+    if (mk && railCtxRef.current) { e.preventDefault(); fireMacroButton(railCtxRef.current, mk); return; }
     const act = keyAction(e, { pendingGoal: goalArmed, hotkeys: settings.hotkeys });
     if (!act) return;
     if (act.type === "goalCancel") { setGoalArmed(false); return; }
@@ -1468,7 +1480,7 @@ export default function Studio({ auth, go }) {
     var: { active: varActive, previewing: hasModes && modes.previewMode === "var", toggle: toggleVar, state: varNow, set: setVarAny, withReplay: varWithReplay },
     event: { live: live.status === "canli", minute: live.match ? live.minute : null, homeName: live.homeName, awayName: live.awayName, squads: live.squads, begin: beginEvent, submit: submitEvent, cancel: cancelEvent },
     goal: (side) => askGoal(side),
-    goalMusic, GoalMusicButtons,
+    goalMusic, GoalMusicButtons, music,
     g, variant, setVariant,
     interview,
     led, openLedTab: () => setTab("led"),
@@ -1500,7 +1512,16 @@ export default function Studio({ auth, go }) {
     pgmFx: { kind: pgmFx?.kind || null, set: setPgmFx },
     encoding: { value: prefs.encoding, set: (patch) => setEncoding({ ...prefs.encoding, ...patch }), pipeline: settings.stream.pipeline },
     pipeline: { value: settings.stream.pipeline, set: (k) => setSetting("stream", { pipeline: k }), active: engine.status?.pipeline || null },
+    // [makro] uzun makrolar her adımda GÜNCEL bağlamı okur; çalışırken soru; YouTube başlığı.
+    getCtx: () => railCtxRef.current,
+    macroPrompt: requestMacroPrompt,
+    platform: window.elitlig?.platform || "darwin",
+    youtubeTitle: async (title) => {
+      if (!yt.stream?.broadcast_id) { toast("YouTube başlığı için önce YouTube yayınını aç.", { tone: "warn" }); return false; }
+      try { const d = await yt.loadDraft(); await yt.updateSettings({ ...(d || {}), title }); toast(`YouTube başlığı: “${title}”.`, { tone: "success", timeout: 2500 }); return true; } catch (e) { toast(errorText(e, "YouTube başlığı değiştirilemedi."), { tone: "error" }); return false; }
+    },
   };
+  railCtxRef.current = railCtx;
   // Ekrandaki panolarda "Yayın" parçacığı varsa üst çubuktaki düğme gizlenir.
   const railHasGoLive = Object.entries(lay.layout.boards).some(([id, b]) => lay.has(boardPanelId(id)) && b.items.some((x) => x.t === "w:golive" || x.t === "w:goLivePro"));
 
@@ -1565,6 +1586,7 @@ export default function Studio({ auth, go }) {
   defPanel("olaylar", () => <div className="st-dock-events"><EventEntry ctx={railCtx} onClose={() => {}} /></div>);
   dockPanelsRef.current = Object.keys(dockDefs);
   defPanel("bolumler", () => <PanelScope panel="yayin" only="chapters"><div className="st-bcastwrap lw-solo" data-solo-panel="yayin" data-solo-part="chapters">{dockDefs.yayin.render({ passive: true })}</div></PanelScope>, { count: chapters.chapters.length || null });
+  defPanel("muzikCalar", () => <div className="lw-pad"><MusicPanel mp={music} /></div>, { count: music.playing ? "●" : null });
   if (GoalMusicPanel) defPanel("golMuzigi", () => (goalMusic ? <div className="lw-pad"><GoalMusicPanel gm={goalMusic} /></div> : <p className="st-hint st-pad">Gol müziği için maç aç (takımların müzikleri).</p>), { count: goalMusic?.playing ? "●" : null });
   if (UploadLogPanel) defPanel("yukleme", () => <div className="lw-pad"><UploadLogPanel defaultOpen /></div>);
 
@@ -1680,6 +1702,7 @@ export default function Studio({ auth, go }) {
     ccSettings("mac", "mac", "Reji / Maç ayarları", "board", ["reji"]),
     ccPanel("ses", "ses", { kw: ["mikrofon", "karıştırıcı", "kanal", "fader", "müzik", "yönlendirme"] }),
     ccPanel("golMuzigi", "ses", { kw: ["müzik", "gol"] }),
+    ccPanel("muzikCalar", "ses", { kw: ["müzik", "liste", "çalar", "geçiş", "youtube"] }),
     ccExtra("skorbord", "grafik", ["skor", "skorbord", "çeşit"]),
     ccExtra("altyazi", "grafik", ["altyazı", "metin", "bant"]),
     ccExtra("marka", "grafik", ["marka", "logo", "ön ayar", "renk"]),
@@ -1791,6 +1814,7 @@ export default function Studio({ auth, go }) {
       {/* ── röportaj: kayıt bitince inceleme (izle → web sitesine yükle / sil) ── */}
       <InterviewReviewHost iv={interview} />
       {/* [gol-müziği] çalarken büyük "MÜZİĞİ KES" hapı (portal: düzenden bağımsız, sahnenin üstünde ortada) */}
+      <MacroPromptHost />
       {GoalMusicStopPill && goalMusic && <GoalMusicStopPill gm={goalMusic} hotkey={settings.hotkeys.goalMusicStop?.[0] ? keyText(settings.hotkeys.goalMusicStop[0]) : null} />}
       {ytStart.dialog /* [medya] YouTube başlatma penceresi */}
     </div>

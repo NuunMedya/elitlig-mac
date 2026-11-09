@@ -64,6 +64,7 @@ const { createLedManager } = require("./led");
 const { createMediaLibrary, dialogFilters } = require("./media");
 const ff = require("./ffmpeg");
 const { registerLive } = require("./live");
+const { createMusicHost } = require("./musichost");
 
 const DAY_MS = 24 * 3600 * 1000;
 const LIVE_UPLOAD_BYTES_PER_SEC = 250 * 1024; // ≈ 2 Mbit/sn: yayın sürerken gol klibi yüklemesi
@@ -263,9 +264,21 @@ function registerStudio({
 
   // getDisplayMedia: arayüz kaynağı kendisi seçer (studio.selectScreen), sistem seçicisi açılmaz.
   let selectedSource = null;
+  // Müzik çalar "Yayına da ver" (musichost.js): gizli müzik penceresinin sesi (sekme sesi
+  // yakalama, Windows + macOS) ya da yalnız Windows'ta bütün sistem sesi (loopback).
+  const musicHost = createMusicHost({ BrowserWindow, ipcMain, log: (...a) => log(...a) });
+  musicHost.register();
   ses.setDisplayMediaRequestHandler((request, callback) => {
     const origin = request.securityOrigin || request.frame?.url || "";
     if (!isOwnUrl(origin) && !isOwnUrl(request.frame?.url || "")) { callback({}); return; }
+    const music = musicHost.takeCapture();
+    if (music?.mode === "frame") { callback({ video: music.frame, audio: music.frame, enableLocalEcho: true }); return; }
+    if (music?.mode === "loopback") {
+      desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } })
+        .then((sources) => (sources[0] ? callback({ video: sources[0], audio: "loopback" }) : callback({})))
+        .catch(() => callback({}));
+      return;
+    }
     desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 0, height: 0 } })
       .then((sources) => {
         const source = sources.find((s) => s.id === selectedSource) || sources.find((s) => s.id.startsWith("screen:")) || sources[0];

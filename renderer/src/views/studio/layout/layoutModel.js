@@ -69,6 +69,7 @@ export const LAYOUT_PANELS = [
   { key: "olaylar", label: "Olay gir", icon: "pencil", group: "islem", hint: "Olay türü → oyuncu → kaydet" },
   { key: "bolumler", label: "Bölümler", icon: "flag", group: "islem", hint: "YouTube bölüm işaretleri" },
   { key: "golMuzigi", label: "Gol müziği", icon: "music", group: "islem", hint: "Takım başına gol müziği, çal / durdur" },
+  { key: "muzikCalar", label: "Müzik çalar", icon: "music", group: "islem", hint: "Müzik listesi (YouTube + dosya), geçiş, sonraki / önceki, yayına da ver" },
   { key: "yukleme", label: "Yükleme günlüğü", icon: "upload", group: "islem", hint: "Gol klibi yüklemeleri ve bağlantı denemesi" },
   { key: "board", label: "Pano", icon: "grid", group: "pano", multi: true, hint: "Serbest bileşen panosu: düğmeler, ses şeritleri, tekrar parçaları…" },
   // Maç yönetiminin sekmeleri ayrı paneller (birleşik "Maç yönetimi" de kalır; durum ortak).
