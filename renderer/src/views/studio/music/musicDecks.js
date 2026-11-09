@@ -2,7 +2,7 @@
 // çalacağı parçaya göre şu arka uçlardan birini kullanır (ortak arayüz):
 //
 //   deck.load(track, { volume }) → Promise   başlangıç saniyesinden çalar (bitiş: end)
-//   deck.setVolume(0…100) · pause() · resume() · stop() · time() sn · duration() sn | null · destroy()
+//   deck.setVolume(0…100) · pause() · resume() · stop() · seek(sn) · time() sn · duration() sn | null · destroy()
 //   deck.onEvent = (type: "playing" | "paused" | "ended" | "error", data) => {}
 //
 //   ytLocal  gizli YouTube iframe'i BU pencerede — gol müziğiyle aynı oynatıcı motoru
@@ -43,6 +43,7 @@ export function ytLocalDeck() {
   deck.pause = () => withP((pl) => pl.pauseVideo());
   deck.resume = () => withP((pl) => pl.playVideo());
   deck.stop = () => withP((pl) => pl.stopVideo());
+  deck.seek = (sec) => withP((pl) => pl.seekTo(Math.max(0, Number(sec) || 0), true));
   deck.time = () => { try { return Number(cache.player?.getCurrentTime?.()) || 0; } catch { return 0; } };
   deck.duration = () => { try { const d = Number(cache.player?.getDuration?.()); return d > 0 ? d : null; } catch { return null; } };
   deck.preload = () => get().catch(() => {});
@@ -76,6 +77,7 @@ export function ytHostDeck(slot, bridge) {
   deck.pause = () => { cmd("pause"); };
   deck.resume = () => { cmd("play"); };
   deck.stop = () => { tick = { ...tick, playing: false }; cmd("stop"); };
+  deck.seek = (sec) => { const v = Math.max(0, Number(sec) || 0); tick = { ...tick, time: v, at: performance.now() }; cmd("seek", { sec: v }); };
   deck.time = () => tick.time + (tick.playing ? (performance.now() - tick.at) / 1000 : 0);
   deck.duration = () => tick.duration;
   deck.destroy = () => { cmd("stop"); };
@@ -122,6 +124,7 @@ export function fileDeck({ airOut = null } = {}) {
   deck.pause = () => el?.pause();
   deck.resume = () => { el?.play().catch(() => {}); };
   deck.stop = () => { if (el) { el.pause(); try { el.currentTime = 0; } catch { /* yoksay */ } } };
+  deck.seek = (sec) => { if (el) { try { el.currentTime = Math.max(0, Number(sec) || 0); } catch { /* yoksay */ } } };
   deck.time = () => Number(el?.currentTime) || 0;
   deck.duration = () => { const d = Number(el?.duration); return Number.isFinite(d) && d > 0 ? d : null; };
   deck.destroy = () => { deck.air = false; syncAir(); if (el) { el.pause(); el.removeAttribute("src"); el.load?.(); } };

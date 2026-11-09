@@ -52,7 +52,7 @@ function MusicDeck({ ctx, item, w, h, togglePop }) {
 function MusicTrackBtn({ ctx, item, w, h, togglePop }) {
   const mp = ctx.music;
   const t = mp?.tracks.find((x) => x.id === item.opts?.trackId) || null;
-  const cur = Boolean(t && mp.now.trackId === t.id && mp.now.status !== "idle");
+  const cur = Boolean(t && (mp.now.trackId === t.id || mp.now.entryId === t.id) && mp.now.status !== "idle");
   const press = usePress(() => {
     if (!mp) return;
     if (!t) { openPop(item, togglePop, { mode: "options" }); return; }
@@ -64,7 +64,7 @@ function MusicTrackBtn({ ctx, item, w, h, togglePop }) {
     <Shell as="button" tone="violet" w={w} h={h} state={cur ? "air" : null} className={`wx-tile wmu${cur && mp.now.air ? " is-air" : ""}`} {...press} title={t ? `${trackName(t)} · ${formatTime(t.start)}'dan · tık: ${cur ? "durdur" : "çal"} · sağ tık: parça seç` : "Parça seç (sağ tık)"}>
       {cur ? <Ring frac={mp.now.ratio ?? 1} size={h >= 2 ? 40 : 30} tone="air">{bars}</Ring> : <Icon name="music" size={h >= 2 ? 22 : 18} strokeWidth={2.2} />}
       <strong className="wx-t">{t ? trackName(t) : "PARÇA SEÇ"}</strong>
-      <small className="wx-s">{t ? (cur ? (mp.now.remainingSec != null ? `−${formatTime(Math.ceil(mp.now.remainingSec))}` : "çalıyor") : `${formatTime(t.start)}'dan${item.opts?.mode === "cut" ? " · kesme" : ""}`) : "sağ tık"}</small>
+      <small className="wx-s">{t ? (cur ? (mp.now.remainingSec != null ? `−${formatTime(Math.ceil(mp.now.remainingSec))}` : "çalıyor") : t.kind === "playlist" ? `${t.items.length} parça · ${t.order === "shuffle" ? "karışık" : "sırayla"}` : `${formatTime(t.start)}'dan${item.opts?.mode === "cut" ? " · kesme" : ""}`) : "sağ tık"}</small>
     </Shell>
   );
 }
@@ -79,7 +79,7 @@ function MusicBank({ ctx, item, w, h, togglePop }) {
       <Head icon="list" label="PARÇALAR" right={mp.playing ? <button type="button" className="wx-gear" onClick={() => mp.stop()} title="Müziği kes"><Icon name="stop" size={11} /></button> : null} />
       <div className="wmu-tracks" style={{ "--cols": cols }}>
         {mp.tracks.slice(0, n).map((t, i) => {
-          const cur = mp.now.trackId === t.id && mp.now.status !== "idle";
+          const cur = (mp.now.trackId === t.id || mp.now.entryId === t.id) && mp.now.status !== "idle";
           return <button key={t.id} type="button" className={cur ? "is-cur" : ""} onClick={() => (cur ? mp.stop() : mp.play(t.id))} title={`${trackName(t)} · ${formatTime(t.start)}'dan`}>{cur ? bars : `${i + 1}.`} {trackName(t)}</button>;
         })}
         {!mp.tracks.length && <span className="st-w__empty">Liste boş.</span>}

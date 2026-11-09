@@ -89,6 +89,7 @@ contextBridge.exposeInMainWorld("elitlig", {
       armCapture: (mode) => ipcRenderer.invoke("studio:music:armCapture", mode === "loopback" ? "loopback" : "frame"),
       capability: () => ipcRenderer.invoke("studio:music:capability"),
       oembed: (url) => ipcRenderer.invoke("studio:music:oembed", String(url || "")),
+      playlist: (listId) => ipcRenderer.invoke("studio:music:playlist", String(listId || "")),
       onHostEvent: on("studio:music:hostEvent"),
     },
     // Canlı giriş kaynakları (app/studio/live): telefon kamerası (WebRTC sinyalleşme),

@@ -17,7 +17,7 @@
 .gm-team__name { flex: 1; min-width: 0; font-weight: 800; font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gm-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); }
 .gm-seg > button { border: 0; background: none; color: var(--muted); font-size: 11px; font-weight: 750; padding: 3px 8px; border-radius: 6px; }
-.gm-seg > button.is-on { background: color-mix(in srgb, var(--c) 30%, var(--surface-2)); color: var(--on-strong); }
+.gm-seg > button.is-on { background: color-mix(in srgb, var(--c, var(--acc)) 30%, var(--surface-2)); color: var(--text); }
 .gm-tracks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .gm-track { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 8px; border: 1px solid transparent; background: var(--surface); min-width: 0; }
 .gm-track.is-active { border-color: color-mix(in srgb, var(--c) 70%, transparent); }
@@ -60,7 +60,7 @@
 .gm-dur__label { font-size: 11px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .gm-dur__chips { display: inline-flex; flex-wrap: wrap; gap: 3px; }
 .gm-dur__chips > button { border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 750; padding: 3px 8px; border-radius: 7px; cursor: pointer; font-variant-numeric: tabular-nums; }
-.gm-dur__chips > button.is-on { background: color-mix(in srgb, var(--c) 30%, var(--surface-2)); border-color: var(--c); color: var(--on-strong); }
+.gm-dur__chips > button.is-on { background: color-mix(in srgb, var(--c, var(--acc)) 30%, var(--surface-2)); border-color: var(--c, var(--acc)); color: var(--text); }
 .gm-dur__chips > button:disabled { opacity: 0.45; cursor: default; }
 .gm-dur__custom { width: 64px !important; text-align: center; padding: 3px 4px !important; font-size: 11.5px !important; }
 .gm-dur__custom.is-on { box-shadow: 0 0 0 1px var(--c); }
