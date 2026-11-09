@@ -328,6 +328,14 @@ export function useStudioAudio({ sources, settings } = {}) {
     return () => { el.removeEventListener("play", sync); el.removeEventListener("pause", sync); el.removeEventListener("ended", sync); el.removeEventListener("loadedmetadata", sync); clearInterval(t); };
   }, [stripNode]);
 
+  /* ───────── "Dışarı giden tüm sesleri kapat": dinleme (kulaklık) çıkışı susar, yayın karışımı değil ───────── */
+  const outMutedRef = useRef(false);
+  const setOutMuted = useCallback((on) => {
+    outMutedRef.current = Boolean(on);
+    const G = g.current;
+    if (G) setGain(G.ctx, G.monitor, outMutedRef.current ? 0 : (valueRef.current?.monitor?.volume ?? 80) / 100);
+  }, []);
+
   /* ───────── şerit kazançları, solo, master, sınırlayıcı (anında) ───────── */
   useEffect(() => {
     const G = g.current;
@@ -344,7 +352,7 @@ export function useStudioAudio({ sources, settings } = {}) {
     setGain(G.ctx, G.master, dbToGain(value.master.fader));
     setGain(G.ctx, G.wet, value.master.limiter ? 1 : 0);
     setGain(G.ctx, G.dry, value.master.limiter ? 0 : 1);
-    setGain(G.ctx, G.monitor, value.monitor.volume / 100);
+    setGain(G.ctx, G.monitor, outMutedRef.current ? 0 : value.monitor.volume / 100);
     setGain(G.ctx, G.programMon, !anySolo && value.monitor.program ? 1 : 0);
     setGain(G.ctx, G.kill, value.killAll ? 0 : 1);
     G.music.loop = value.music.loop;
@@ -644,6 +652,9 @@ export function useStudioAudio({ sources, settings } = {}) {
     setAllScenes,
     killAll: value.killAll,
     setKillAll,
+    /** Yerel dinleme çıkışını kapat (audio/outMute; yayına giden ses değişmez). */
+    setOutMuted,
+    outMuted: () => outMutedRef.current,
     muteMicOnly,
     toggleStripMute,
     channels,

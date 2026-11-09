@@ -72,6 +72,7 @@ const ASSETS = path.join(__dirname, "assets");
 const IS_MAC = process.platform === "darwin";
 // Windows bildirimleri uygulama kimliği ister (NSIS kısayolu da appId'yi taşır).
 if (process.platform === "win32") app.setAppUserModelId("com.elitlig.araclar");
+const { appIconPath } = require("./appIcon");
 
 let mainWindow = null;
 let quickWindow = null;
@@ -291,7 +292,7 @@ function createTray() {
   // Mac: tek renkli şablon simge; Windows: renkli uygulama simgesi (şablon koyu görev çubuğunda görünmez).
   const image = IS_MAC
     ? nativeImage.createFromPath(path.join(ASSETS, "trayTemplate.png"))
-    : nativeImage.createFromPath(path.join(ASSETS, "icon.png")).resize({ width: 32, height: 32, quality: "best" });
+    : nativeImage.createFromPath(appIconPath()).resize({ width: 32, height: 32, quality: "best" });
   if (IS_MAC) image.setTemplateImage(true);
   tray = new Tray(image);
   if (!IS_MAC) tray.on("click", () => showMain());
@@ -377,7 +378,7 @@ function createMainWindow() {
     ...(IS_MAC
       ? { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 18, y: 18 }, vibrancy: "sidebar", visualEffectState: "followWindow", backgroundColor: "#00000000" }
       : { autoHideMenuBar: true, backgroundColor: nativeTheme.shouldUseDarkColors ? "#1e1e1e" : "#ffffff" }),
-    icon: path.join(ASSETS, "icon.png"),
+    icon: appIconPath(),
     // Yayın Stüdyosu bu pencerede: gizli / küçültülmüş / örtülüyken de program tuvali
     // çizilsin ve MediaRecorder parça üretsin (yayın sürerken studio/index.js ayrıca açar).
     // autoplayPolicy: müzik çaların gizli YouTube oynatıcısı tıklamadan sonra eşzamansız (oynatıcı

@@ -182,3 +182,32 @@
 
 /* ───────── ortak kart iç kenarı ───────── */
 .pf[data-pf] :is(.st-var, .st-led, .st-bcast, .md-var, .md-iv) > .st-card { padding: calc(var(--dens-pad) + 2px); }
+
+/* ───────── SÜTUNLAR (dock/PanelFrame ColumnsControl + ColumnLayer) ─────────
+   Izgara satır içi stillerle n sütuna çevrilir (grid-template-columns: var(--pf-cols)); sınır
+   tutamaçları ızgaranın üstünde, gövdeyle birlikte kayar. */
+.pf-cols { position: relative; flex: none; display: flex; align-items: center; margin-left: auto; }
+.pf-cols + .pf-dens { margin-left: 6px; }
+.pf-cols__btn { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 0 7px; border: 1px solid var(--border); border-radius: 7px; background: none; color: var(--muted); font: 700 11px/1 var(--font, inherit); cursor: pointer; white-space: nowrap; }
+.pf-cols__btn:hover, .pf-cols__btn.is-on { color: var(--text); background: var(--surface-2); border-color: var(--border-strong); }
+.pf-cols__btn.is-set { color: var(--text); border-color: var(--acc); background: rgba(var(--acc-rgb), 0.14); }
+.pf-cols__btn.is-set .ic { color: var(--acc-text); }
+.pf-cols__pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 41; display: flex; flex-direction: column; gap: 8px; width: max-content; min-width: 250px; max-width: 340px; padding: 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border-strong); box-shadow: 0 10px 30px rgba(var(--shade-rgb), 0.45); color: var(--text); }
+.pf.is-bar-bottom .pf-cols__pop { top: auto; bottom: calc(100% + 4px); }
+.pf-cols__row { display: flex; flex-direction: column; gap: 5px; }
+.pf-cols__row > b, .pf-cols__secs > b { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.pf-cols__n button { padding: 2px 7px; }
+.pf-cols__ruler { display: flex; gap: 2px; height: 22px; border-radius: 6px; overflow: hidden; }
+.pf-cols__ruler span { flex: 1 1 0; min-width: 0; display: grid; place-items: center; background: rgba(var(--acc-rgb), 0.16); border: 1px solid rgba(var(--acc-rgb), 0.45); border-radius: 4px; font-size: 10px; font-weight: 800; color: var(--text); overflow: hidden; }
+.pf-cols__hint { margin: 0; font-size: 10.5px; color: var(--muted); }
+.pf-cols__acts { display: flex; gap: 6px; }
+.pf-cols__secs { display: flex; flex-direction: column; gap: 4px; padding-top: 6px; border-top: 1px solid var(--border); }
+.pf-cols__sec { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.pf-cols__sec select { min-width: 110px; }
+.pf-colgrid { position: absolute; z-index: 4; pointer-events: none; }
+.pf-colh { position: absolute; top: 0; bottom: 0; width: 10px; cursor: col-resize; touch-action: none; pointer-events: auto; }
+.pf-colh > i { position: absolute; left: 4px; top: 0; bottom: 0; width: 2px; border-radius: 2px; background: rgba(var(--acc-rgb), 0.28); transition: background 0.12s, width 0.12s, left 0.12s; }
+.pf-colh:hover > i, .pf-colh.is-drag > i { left: 3px; width: 4px; background: var(--acc); }
+.pf.has-cols [data-pf-cols] { column-gap: var(--dens-gap); }
+.pf.has-cols [data-pf-cols] > .mx-strip { width: auto; }
+@container pfr (max-width: 519px) { .pf-cols__btn span { display: none; } }

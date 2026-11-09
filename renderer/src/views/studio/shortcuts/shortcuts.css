@@ -54,6 +54,8 @@
 .st-w {
   --c: var(--acc-text);
   --c-rgb: var(--acc-text-rgb);
+  /* --c dolgusunun üstündeki yazı / simge rengi (tona göre; dolu biçimde ters) */
+  --c-on: var(--on-strong);
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -88,13 +90,14 @@ button.st-w:active:not(:disabled) { transform: scale(0.97); }
 .st-w.is-home { --c: #8a6cf0; --c-rgb: 138, 108, 240; }
 .st-w.is-away { --c: #f5c518; --c-rgb: 245, 197, 24; }
 .st-w.is-plain { --c: var(--acc-text); --c-rgb: var(--acc-text-rgb); border-color: var(--border-strong); background: var(--surface); }
-.st-w.is-amber.is-on, .st-w.is-away.is-on, .st-w.is-green.is-on { color: var(--text); }
+.st-w.is-amber, .st-w.is-away, .st-w.is-green { --c-on: var(--on-bright); }
+.st-w.is-on { color: var(--c-on); }
 .st-w__icon { display: grid; place-items: center; color: color-mix(in srgb, var(--c), var(--ink-to) var(--ink-mix)); line-height: 0; }
-.st-w.is-on .st-w__icon { color: var(--on-strong); }
+.st-w.is-on .st-w__icon { color: var(--c-on); }
 .st-w__label { max-width: 100%; font: 850 11px/1.1 var(--font); letter-spacing: 0.04em; text-transform: uppercase; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 .st-w__sub { max-width: 100%; font-size: 10px; font-weight: 650; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.15; font-variant-numeric: tabular-nums; }
-.st-w.is-on .st-w__sub { color: rgba(var(--on-strong-rgb), 0.85); }
-.st-w__badge { position: absolute; top: 5px; right: 5px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--c); color: var(--on-strong); font: 850 10.5px/18px var(--font); }
+.st-w.is-on .st-w__sub { color: var(--c-on); opacity: 0.9; }
+.st-w__badge { position: absolute; top: 5px; right: 5px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--c); color: var(--c-on, var(--on-strong)); font: 850 10.5px/18px var(--font); }
 .st-w.is-on .st-w__badge { background: #fff; color: var(--on-bright); }
 .st-w__kbd { position: absolute; top: 4px; left: 5px; font: 800 9px/14px var(--mono, monospace); color: var(--faint); padding: 0 4px; border-radius: 4px; border: 1px solid var(--border); }
 .studio.no-hints .st-w__kbd { display: none; }
@@ -108,15 +111,15 @@ button.st-w:active:not(:disabled) { transform: scale(0.97); }
 /* 2×2 panel parçacıkları */
 .st-w.is-panel { cursor: default; justify-content: flex-start; align-items: stretch; gap: 6px; padding: 9px; text-align: left; }
 .st-w__state { display: flex; align-items: center; gap: 6px; font: 850 10.5px var(--font); letter-spacing: 0.08em; color: color-mix(in srgb, var(--c), var(--ink-to) var(--ink-mix)); text-transform: uppercase; }
-.st-w.is-on .st-w__state { color: var(--on-strong); }
+.st-w.is-on .st-w__state { color: var(--c-on); }
 .st-w__state > i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
 .st-w__state > i.is-rec { background: #fff; animation: stPulse 1s ease-in-out infinite; }
 .st-w__state > i.is-led { background: #93c5fd; box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.3); }
-.st-w__count { margin-left: auto; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--c); color: var(--on-strong); font-size: 10.5px; line-height: 17px; text-align: center; }
+.st-w__count { margin-left: auto; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--c); color: var(--c-on, var(--on-strong)); font-size: 10.5px; line-height: 17px; text-align: center; }
 .st-w__clock { font: 850 30px/1 var(--mono, monospace); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 .st-w__title { font-size: 14px; font-weight: 800; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .st-w__meta { color: var(--muted); font-size: 11px; margin-top: -3px; }
-.st-w__cta { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; border: 0; border-radius: 9px; background: var(--c); color: var(--on-strong); font: 850 12px var(--font); letter-spacing: 0.03em; margin-top: auto; }
+.st-w__cta { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; border: 0; border-radius: 9px; background: var(--c); color: var(--c-on, var(--on-strong)); font: 850 12px var(--font); letter-spacing: 0.03em; margin-top: auto; }
 .st-w__cta + .st-w__cta { margin-top: 0; }
 .st-w__cta:hover:not(:disabled) { filter: brightness(1.12); }
 .st-w__cta:disabled { opacity: 0.45; }
@@ -124,7 +127,7 @@ button.st-w:active:not(:disabled) { transform: scale(0.97); }
 .st-w__cta.is-take { min-height: 52px; font-size: 15px; letter-spacing: 0.08em; margin-top: 0; }
 .st-w__cta.is-pgm { background: rgba(255, 45, 85, 0.85); }
 .st-w__cta.is-pvw { background: rgba(34, 197, 94, 0.8); }
-.st-w__cta.is-ready { min-height: 26px; background: var(--surface-3); font-size: 11.5px; border: 1px dashed var(--border-strong); }
+.st-w__cta.is-ready { min-height: 26px; background: var(--surface-3); color: var(--text); font-size: 11.5px; border: 1px dashed var(--border-strong); }
 .st-w__cta.is-ready.is-made { border-style: solid; }
 .st-w__link { border: 0; background: none; color: var(--muted); font-size: 10.5px; font-weight: 650; padding: 0; text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 .st-w__link:hover:not(:disabled) { color: var(--text); text-decoration: underline; }
@@ -134,7 +137,7 @@ button.st-w:active:not(:disabled) { transform: scale(0.97); }
 .st-w__select span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-w__chips { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: auto; }
 .st-w__chips button { min-height: 26px; padding: 0 4px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--muted); font-size: 10.5px; font-weight: 750; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-w__chips button.is-on { background: var(--c); border-color: var(--c); color: var(--on-strong); }
+.st-w__chips button.is-on { background: var(--c); border-color: var(--c); color: var(--c-on, var(--on-strong)); }
 .st-w__chips button:hover:not(:disabled) { color: var(--text); }
 .st-w .st-ledroute { background: rgba(var(--shade-rgb), 0.25); }
 
@@ -146,7 +149,7 @@ button.st-w:active:not(:disabled) { transform: scale(0.97); }
 .st-w__scenebar { position: relative; z-index: 1; width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 14px 6px 5px; background: linear-gradient(transparent, rgba(0, 0, 0, 0.85)); font-size: 10.5px; font-weight: 800; text-align: left; }
 .st-w__scenebar span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-w__scenebar em { font: 850 8.5px/13px var(--font); font-style: normal; letter-spacing: 0.08em; padding: 0 4px; border-radius: 3px; }
-.st-w__scenebar em.is-air { background: var(--st-live); }
+.st-w__scenebar em.is-air { background: var(--st-live); color: var(--on-strong); }
 .st-w__scenebar em.is-pvw { background: var(--green); color: var(--on-bright); }
 
 /* ───────────── açılır panel ───────────── */
@@ -251,3 +254,30 @@ button.st-w:active:not(:disabled) { transform: scale(0.97); }
 .st-cat__scenes > small { color: var(--muted); font-size: 11px; }
 
 @media (max-height: 820px) { .st-railwrap { --rail-cell: 70px; } .st-w__sub { font-size: 9.5px; } }
+
+/* ───────────── AÇIK TEMALAR: parçacık tonları (yazı / simge ≥ 4,5:1 dolgu üstünde) ─────────────
+   Koyu temanın parlak tonları beyaz zeminde ve beyaz yazıyla okunmaz: açık temada koyulaşır;
+   açık dolgunun (sarı) üstünde koyu yazı (--c-on). */
+:root[data-st-tone="light"] .st-w.is-blue { --c: #1d4ed8; --c-rgb: 29, 78, 216; }
+:root[data-st-tone="light"] .st-w.is-green { --c: #15803d; --c-rgb: 21, 128, 61; --c-on: var(--on-strong); }
+:root[data-st-tone="light"] :is(.st-w.is-live, .st-w.is-danger) { --c: #be123c; --c-rgb: 190, 18, 60; }
+:root[data-st-tone="light"] .st-w.is-home, :root[data-st-tone="light"] .st-w.wx { --home: #5b3fc4; --home-rgb: 91, 63, 196; }
+:root[data-st-tone="light"] .st-w.is-home { --c: #5b3fc4; --c-rgb: 91, 63, 196; }
+:root[data-st-tone="light"] .st-w.wx { --air: #be123c; --pvw: #15803d; --armed: #b45309; }
+:root[data-st-tone="light"] .st-w.is-on { background: linear-gradient(160deg, var(--c), color-mix(in srgb, var(--c) 86%, #000)); }
+:root[data-st-tone="light"] .st-w.is-amber { --c: #b45309; --c-rgb: 180, 83, 9; --c-on: var(--on-strong); }
+:root[data-st-tone="light"] .st-w { --muted: var(--text-2); --faint: var(--text-2); }
+.st-w.is-on .st-w__kbd { color: var(--c-on); border-color: currentColor; }
+:root[data-st-tone="light"] .st-w__goicon { background: rgba(var(--on-strong-rgb), 0.95); color: var(--acc-strong); }
+/* seçili çip / düğme üzerine gelince de dolgu üstü renkte kalır */
+.st-w :is(.wx-chips, .st-w__chips, .st-wsch__grid, .wx-row, .wx-seg, .st-wslow__rates, .st-wtk__kinds) button.is-on:hover:not(:disabled) { color: var(--c-on, var(--on-strong)); }
+:root[data-st-tone="light"] .st-w .wx-kbd { color: var(--text); }
+:root[data-st-tone="light"] .st-w.is-on .wx-kbd { color: var(--c-on); }
+:root[data-st-tone="light"] .st-w .wx-take .wx-kbd, :root[data-st-tone="light"] .st-w.is-go:not(.lw-ri.has-wc > *) .st-w__kbd { color: var(--acc-on); border-color: rgba(var(--on-strong-rgb), 0.35); }
+:root[data-st-tone="light"] .st-w.is-go:not(.lw-ri.has-wc > *), :root[data-st-tone="light"] button.st-w.is-go:not(.lw-ri.has-wc > *):hover:not(:disabled) { background: linear-gradient(135deg, var(--acc-strong), var(--acc-deep)); }
+:root[data-st-tone="light"] .st-w.is-go:not(.lw-ri.has-wc > *) .st-w__sub { color: var(--on-strong); }
+:root[data-st-tone="light"] .st-w.wx.wx-go:not(.lw-ri.wc-fill > *) { background: linear-gradient(135deg, rgba(var(--c-rgb), 0.22), rgba(var(--c-rgb), 0.1)), var(--surface); }
+:root[data-st-tone="light"] .ws-ab__row.is-pgm .ws-ab__lbl { background: rgba(225, 29, 72, 0.1); color: var(--text); }
+/* renkli (yumuşak / çerçeve) parçacıkta renkli yazı ve simgeler açık zeminde yeterince koyulaşır */
+:root[data-st-tone="light"] .lw-ri:is(.wc-soft, .wc-outline) > .st-w { --ink-mix: 62%; }
+:root[data-st-tone="light"] .st-w.wx.wx-goal:not(.lw-ri.wc-fill > *) { background: radial-gradient(130% 110% at 0% 0%, rgba(var(--c-rgb), 0.32), transparent 62%), linear-gradient(160deg, rgba(var(--c-rgb), 0.18), rgba(var(--shade-rgb), 0.12)), var(--surface); }

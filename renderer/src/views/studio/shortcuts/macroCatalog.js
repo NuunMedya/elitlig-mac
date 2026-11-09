@@ -108,6 +108,7 @@ export const MACRO_STEPS = [
   S("stripMute", "ses", "Kanal sesi kapat / aç", "sliders", [{ key: "strip", label: "Kanal", kind: "strip" }, { key: "action", label: "Eylem", kind: "select", choices: [["mute", "Kapat"], ["unmute", "Aç"], ["toggle", "Değiştir"]] }]),
   S("stripVolume", "ses", "Kanal seviyesi (N sn'de)", "sliders", [{ key: "strip", label: "Kanal", kind: "strip" }, { key: "db", label: "Seviye (dB)", kind: "db" }, { key: "ms", label: "Geçiş (ms)", kind: "ms" }]),
   S("killAll", "ses", "Tüm sesleri kes / aç", "micOff", [{ key: "on", label: "Kes", kind: "bool" }]),
+  S("outMute", "ses", "Dışarı giden sesleri kapat / aç (hoparlör)", "volumeX", [{ key: "action", label: "Eylem", kind: "select", choices: [["on", "Sesi kapat"], ["off", "Sesi aç"], ["toggle", "Değiştir"]] }, { key: "all", label: "Yayın dahil hepsi", kind: "bool" }]),
   S("duck", "ses", "Müziği kıs (N sn, konuşma için)", "sliders", [{ key: "level", label: "Kısılmış seviye (%)", kind: "number" }, { key: "secs", label: "Süre (sn, 0 = elle açılana dek)", kind: "number" }]),
   // ── müzik ──
   S("musicTrack", "muzik", "Müzik listesi · parça çal", "music", [{ key: "trackId", label: "Parça", kind: "track" }, { key: "from", label: "Başlangıç (boş: parçanın kendi saniyesi, ör. 1:23)", kind: "text" }, { key: "cut", label: "Geçişsiz (kesme)", kind: "bool" }]),

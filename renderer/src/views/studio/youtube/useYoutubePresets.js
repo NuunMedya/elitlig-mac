@@ -6,7 +6,7 @@ import { LOCAL_PRESETS_KEY, markDefault, normalizePreset, normalizePresets } fro
 
 const readLocal = () => { try { return normalizePresets(JSON.parse(localStorage.getItem(LOCAL_PRESETS_KEY) || "[]")).map((p) => ({ ...p, local: true })); } catch { return []; } };
 const writeLocal = (list) => { try { localStorage.setItem(LOCAL_PRESETS_KEY, JSON.stringify(list)); } catch { /* yoksay */ } };
-const FIELDS = ["name", "title_template", "description_template", "privacy", "tags", "latency", "dvr", "made_for_kids", "is_default"];
+const FIELDS = ["name", "title_template", "description_template", "privacy", "tags", "latency", "dvr", "made_for_kids", "uppercase", "is_default"];
 /** Sunucuya giden gövde: yalnız sözleşmedeki alanlar. */
 export const presetBody = (p) => Object.fromEntries(FIELDS.filter((k) => p?.[k] !== undefined).map((k) => [k, p[k]]));
 const itemsOf = (data) => (Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : []);

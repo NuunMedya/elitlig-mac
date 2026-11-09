@@ -142,6 +142,8 @@ import { PanelScope, PartsProvider } from "./dock/parts";
 import AutoTransition from "./layout/AutoTransition";
 import { normalizeModeSettings } from "../../lib/studio/modes";
 import logoInline from "../../assets/elitlig-beyaz.png?inline";
+import OutMuteButton from "./audio/OutMuteButton";
+import { applyNative as applyOutMuteNative, getOutMute, setOutMute, toggleOutMute, useOutMute } from "./audio/outMute";
 import "./studio.css";
 
 // Paralel geliştirilen isteğe bağlı modüller (yoksa yapı bozulmaz, yuva boş kalır):
@@ -391,6 +393,18 @@ export default function Studio({ auth, go }) {
     ? useStudioAudioMod({ sources: { list: config.sources, runtimeRef: src.runtimeRef, programIds, programSceneId: config.programSceneId, scenes: config.scenes }, settings: { value: prefs.audio, onChange: setAudio } }) // eslint-disable-line react-hooks/rules-of-hooks
     : useAudioMixer({ mic: prefs.audio.mic, inputs: prefs.audio.inputs, replayEls, replayAudio: prefs.replayAudio }); // eslint-disable-line react-hooks/rules-of-hooks
   const muted = typeof mixer.micMuted === "boolean" ? mixer.micMuted : Boolean(prefs.audio.mic?.muted);
+  /* ───────── [dış ses] DIŞARI GİDEN TÜM SESLERİ KAPAT (yerel hoparlör / kulaklık; ./audio/outMute) ─────────
+     Ana süreç bütün pencerelerin ses çıkışını kapatır; ayrıca karıştırıcının dinleme çıkışı susar.
+     "Yayın dahil hepsi": karıştırıcının TÜMÜNÜ KAPAT'ı da açılır (açılınca eski hâline döner). */
+  const outMute = useOutMute();
+  const outKilledRef = useRef(false);
+  useEffect(() => { if (getOutMute().on) applyOutMuteNative(true); }, []);
+  useEffect(() => {
+    mixer.setOutMuted?.(outMute.on);
+    const wantKill = outMute.on && outMute.scope === "all";
+    if (wantKill && !outKilledRef.current) { outKilledRef.current = !mixer.killAll; if (!mixer.killAll) mixer.setKillAll?.(true); }
+    else if (!wantKill && outKilledRef.current) { outKilledRef.current = false; mixer.setKillAll?.(false); }
+  }, [outMute.on, outMute.scope]); // eslint-disable-line react-hooks/exhaustive-deps
   const legacyToggleMic = useCallback(() => setAudio((a) => ({ ...a, mic: { ...a.mic, muted: !a.mic.muted } })), [setAudio]);
   const toggleMic = mixer.toggleMic || legacyToggleMic;
 
@@ -1095,7 +1109,7 @@ export default function Studio({ auth, go }) {
     const act = keyAction(e, { pendingGoal: goalArmed, hotkeys: settings.hotkeys });
     if (!act) return;
     if (act.type === "goalCancel") { setGoalArmed(false); return; }
-    if (editSceneId && act.type !== "mic" && act.type !== "goalMusicStop") return; // düzenleyicide yalnız mikrofon ve müziği kes
+    if (editSceneId && act.type !== "mic" && act.type !== "goalMusicStop" && act.type !== "outMute") return; // düzenleyicide yalnız mikrofon, müziği kes, dış ses
     e.preventDefault();
     if (act.type === "mic") toggleMic();
     else if (act.type === "replay") playLatestAny(); // [önizleme-geçiş] son tekrar önizlemeye (yayındaysa GEÇİŞ yerine koyar)
@@ -1113,6 +1127,7 @@ export default function Studio({ auth, go }) {
     else if (act.type === "goalAway") askGoal("away");
     else if (act.type === "goalMusic") { if (goalMusic?.playing) goalMusic.stop?.(); else goalMusic?.play?.(); }
     else if (act.type === "goalMusicStop") { if (goalMusic?.playing) goalMusic.stop?.(); } // [gol-müziği] K: müziği kes
+    else if (act.type === "outMute") toggleOutMute(); // [dış ses]
     else if (act.type === "subtitle") { if (g?.matchId) g.setSubtitleOnAir?.(!g.subtitle?.onAir); }
     else if (act.type === "interviewBand") { if (g?.matchId) g.setInterviewOnAir?.(!g.interview?.onAir); }
     else if (act.type === "interview") { if (interview?.recording) interview.stop(); else if (interview?.available && engine.active) interview.start(); }
@@ -1376,7 +1391,7 @@ export default function Studio({ auth, go }) {
     if (side) goalTapsRef.current.drop(side); // [bölüm]
     if (clipKey) replays.attach(clipKey, { eventId: null });
   });
-  const flowSubmit = useStable(async (forms, { clipKey = null } = {}) => {
+  const flowSubmit = useStable(async (forms, { clipKey = null, quiet = false } = {}) => {
     const list = (forms || []).filter(Boolean);
     if (!list.length) return [];
     const created = [];
@@ -1384,7 +1399,7 @@ export default function Studio({ auth, go }) {
     try {
       for (const f of list) created.push(await live.addFullEvent(f));
     } catch (e) {
-      toast(errorText(e, "Olay kaydedilemedi."), { tone: "error", timeout: 5000 });
+      if (!quiet || created.length) toast(errorText(e, "Olay kaydedilemedi."), { tone: "error", timeout: 5000 });
       if (!created.length) { if (clipKey) { submittingRef.current.delete(clipKey); replays.attach(clipKey, { eventId: null }); } throw e; }
     }
     const gi = list.findIndex((f) => isGoalCode(f.code));
@@ -1531,6 +1546,8 @@ export default function Studio({ auth, go }) {
     var: { active: varActive, previewing: hasModes && modes.previewMode === "var", toggle: toggleVar, state: varNow, set: setVarAny, withReplay: varWithReplay },
     event: { live: live.status === "canli", minute: live.match ? live.minute : null, homeName: live.homeName, awayName: live.awayName, squads: live.squads, begin: beginEvent, submit: submitEvent, cancel: cancelEvent },
     goal: (side) => askGoal(side),
+    // [dış ses] yerel çıkış (hoparlör / kulaklık) · yayın karışımından ayrı
+    outMute: { ...outMute, set: (on, opts) => setOutMute(on, opts), toggle: (opts) => toggleOutMute(opts) },
     goalMusic, GoalMusicButtons, music,
     g, variant, setVariant,
     interview,
@@ -1868,6 +1885,7 @@ export default function Studio({ auth, go }) {
         <StatusPill state={st.state} since={engine.since} />
         <HealthChip status={st} getStats={comp.getStats} getEncodeStats={engine.getEncodeStats} targetFps={preset.fps} encoding={onAir} goalStress={goalStress.last} goalMeasuring={goalStress.measuring} />
         <span className="st-top__spacer" />
+        <OutMuteButton hotkey={settings.hotkeys?.outMute?.[0] ? keyText(settings.hotkeys.outMute[0]) : null} />
         <LayoutToolbar edit={lay.edit} setEdit={lay.setEdit} ctrlRef={lay.ctrlRef} preset={lay.layout.preset} onSettings={() => openSettings("yerlesim")} />
         {!railHasGoLive && (
           <button type="button" className={`btn ${onAir ? "" : "btn--red"} st-golive`} disabled={busy} onClick={topStart}>

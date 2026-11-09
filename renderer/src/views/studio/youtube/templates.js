@@ -1,6 +1,8 @@
 // YouTube yayın ayarları — saf yardımcılar: ön ayar şablonları, taslak, doğrulama.
 //
-// Şablon yer tutucuları: {home} {away} {date} {time} {league} {season} {venue} {city} {link}
+// Şablon yer tutucuları: {home} {away} {date} {time} {league} {season} {round} {stage} {venue} {city} {link}
+// Varsayılan başlık (DEFAULT_TITLE_TEMPLATE): "<LİG / TURNUVA> <SEZON> <TUR / AŞAMA> · ELİTLİG", tamamı
+// Türkçe büyük harf (toLocaleUpperCase("tr-TR"); "Başlığı büyük harf yap", varsayılan açık).
 // Sunucu şablonu kendisi de işler; burada yalnız pencere içinde CANLI ÖNİZLEME için
 // maçın verisiyle doldurulur (bilinmeyen yer tutucu olduğu gibi kalır).
 
@@ -21,6 +23,7 @@ export const PLACEHOLDERS = [
   { key: "time", label: "Saat" },
   { key: "league", label: "Lig" },
   { key: "season", label: "Sezon" },
+  { key: "round", label: "Tur / aşama" },
   { key: "venue", label: "Saha" },
   { key: "city", label: "Şehir" },
   { key: "link", label: "Maç sayfası" },
@@ -45,6 +48,17 @@ export function trDate(v) {
   return month ? `${Number(m[3])} ${month} ${m[1]}` : clean(v);
 }
 
+/** Tur / aşama adı: maç kaydının olası alanları (sunucu sürümüne göre değişir). "none" boş sayılır. */
+export function roundOf(m = {}) {
+  const g = m.group && typeof m.group === "object" ? m.group : null;
+  const sg = m.season_group && typeof m.season_group === "object" ? m.season_group : null;
+  for (const v of [m.round_name, m.round_label, m.round, m.stage_name, m.stage, m.tur, m.asama, m.group_name, m.season_group_name, g?.group_name, g?.name, sg?.group_name, sg?.name, typeof m.group === "string" ? m.group : null]) {
+    const s = clean(v);
+    if (s && !/^\d+$/.test(s)) return s;
+  }
+  return "";
+}
+
 /**
  * Maç kaydı (GET /api/maclar/:id) → şablon değişkenleri.
  * extra: { homeName, awayName, link } (canlı maç kancasından gelen adlar önceliklidir).
@@ -52,13 +66,22 @@ export function trDate(v) {
 export function templateVars(match, extra = {}) {
   const m = match || {};
   const id = m.id ?? extra.matchId ?? null;
+  const season = clean(m.match_season ?? m.season);
+  // Sunucu taslağıyla aynı: sezon adı lig / tur adını zaten içeriyorsa ("Süper Lig 2026 Güz") tekrar etmez.
+  const has = (part) => Boolean(part && season && season.toLocaleLowerCase("tr-TR").includes(part.toLocaleLowerCase("tr-TR")));
+  let league = clean(m.league_name ?? m.league);
+  let round = roundOf(m);
+  if (has(league)) league = "";
+  if (has(round)) round = "";
   return {
     home: clean(extra.homeName) || clean(m.first_team_name) || clean(m.home) || "Ev sahibi",
     away: clean(extra.awayName) || clean(m.second_team_name) || clean(m.away) || "Deplasman",
     date: trDate(m.date ?? m.match_date),
     time: clean(m.time ?? m.match_time).slice(0, 5),
-    league: clean(m.league_name ?? m.league),
-    season: clean(m.match_season ?? m.season),
+    league,
+    season,
+    round,
+    stage: round,
     venue: clean(m.match_field ?? m.venue),
     city: clean(m.city),
     link: clean(extra.link) || clean(m.match_link) || (id ? `https://elitlig.com/maclar/${id}` : ""),
@@ -88,6 +111,42 @@ function tidyLine(line) {
   return kept.join("").replace(/ {2,}/g, " ").trim();
 }
 
+/** Varsayılan YouTube başlığı: "OSTİM FUTBOL TURNUVASI 1. SEZON SON 16 TURU · ELİTLİG". */
+export const DEFAULT_TITLE_TEMPLATE = "{league} {season} {round} · ELİTLİG";
+/** Lig / sezon / tur bilinmiyorsa (sunucu taslağıyla aynı). */
+export const FALLBACK_TITLE_TEMPLATE = "{home} - {away} · ELİTLİG";
+export const TITLE_UPPER_KEY = "studio.ytTitleUpper.v1";
+/** Türkçe büyük harf (i → İ, ı → I). */
+export const upperTr = (s) => String(s ?? "").toLocaleUpperCase("tr-TR");
+/** Maç verisiyle varsayılan başlık; lig / sezon / tur bilinmiyorsa takım adları. */
+export function defaultTitle(vars = {}, { upper = true } = {}) {
+  const t = vars.league || vars.season || vars.round ? renderTemplate(DEFAULT_TITLE_TEMPLATE, vars) : renderTemplate(FALLBACK_TITLE_TEMPLATE, vars);
+  return smartTrim(upper ? upperTr(t) : t);
+}
+/**
+ * Akıllı kısaltma (YouTube ≤ 100): " · ELİTLİG" gibi son ek korunur, baştaki kısım sözcük sınırında
+ * kesilip "…" eklenir.
+ */
+export function smartTrim(title, max = TITLE_MAX) {
+  const s = String(title ?? "").replace(/\s+/g, " ").trim();
+  if (s.length <= max) return s;
+  const m = /^(.*?)(\s[·|]\s[^·|]{1,30})$/.exec(s);
+  const suffix = m ? m[2] : "";
+  const head = m ? m[1] : s;
+  const room = max - suffix.length - 1;
+  let cut = head.slice(0, room);
+  const sp = cut.lastIndexOf(" ");
+  if (sp > room * 0.6) cut = cut.slice(0, sp);
+  return `${cut.replace(/[\s·|,–-]+$/, "")}…${suffix}`.slice(0, max);
+}
+/** "Başlığı büyük harf yap" tercihi (bu bilgisayarda; varsayılan açık). */
+export function readTitleUpper() {
+  try { return localStorage.getItem(TITLE_UPPER_KEY) !== "0"; } catch { return true; }
+}
+export function writeTitleUpper(on) {
+  try { localStorage.setItem(TITLE_UPPER_KEY, on ? "1" : "0"); } catch { /* yoksay */ }
+}
+
 /** Etiketler: "a, b, #c" / dizi → tekil dizi (YouTube toplamı ≤ 500 karakter). */
 export function parseTags(v) {
   const list = Array.isArray(v) ? v : String(v ?? "").split(/[,\n]/);
@@ -108,21 +167,25 @@ export const tagsText = (tags) => (Array.isArray(tags) ? tags.join(", ") : Strin
 export function normalizeSettings(x = {}) {
   const v = x || {};
   return {
-    title: String(v.title ?? "").replace(/[<>]/g, "").slice(0, TITLE_MAX),
+    title: smartTrim(String(v.title ?? "").replace(/[<>]/g, "")),
     description: String(v.description ?? "").replace(/[<>]/g, "").slice(0, DESCRIPTION_MAX),
     privacy: PRIVACY_KEYS.has(v.privacy) ? v.privacy : "public",
     tags: parseTags(v.tags),
     latency: LATENCY_KEYS.has(v.latency) ? v.latency : "normal",
     dvr: v.dvr !== false,
     made_for_kids: Boolean(v.made_for_kids),
+    // Başlık Türkçe büyük harfe çevrilsin mi (ön ayarın "uppercase" alanı; varsayılan açık).
+    uppercase: v.uppercase !== false,
   };
 }
 
 /** Ön ayar (şablonlu) → bu maçın formu. */
 export function settingsFromPreset(preset, vars) {
   const p = preset || {};
+  const title = renderTemplate(p.title_template ?? p.title ?? "", vars);
   return normalizeSettings({
-    title: renderTemplate(p.title_template ?? p.title ?? "", vars),
+    uppercase: p.uppercase,
+    title: p.uppercase !== false ? upperTr(title) : title,
     description: renderTemplate(p.description_template ?? p.description ?? "", vars),
     privacy: p.privacy, tags: (Array.isArray(p.tags) ? p.tags : parseTags(p.tags)).map((t) => renderTemplate(t, vars)), latency: p.latency, dvr: p.dvr, made_for_kids: p.made_for_kids,
   });
@@ -137,9 +200,9 @@ export function presetFromSettings(name, settings, vars = {}) {
   const s = normalizeSettings(settings);
   const back = (text) => {
     let out = String(text || "");
-    for (const k of ["home", "away", "league", "season", "venue", "city", "date", "time", "link"]) {
+    for (const k of ["home", "away", "league", "season", "round", "venue", "city", "date", "time", "link"]) {
       const val = vars[k];
-      if (val && String(val).length >= 3) out = out.split(String(val)).join(`{${k}}`);
+      if (val && String(val).length >= 3) out = out.split(String(val)).join(`{${k}}`).split(upperTr(val)).join(`{${k}}`);
     }
     return out;
   };
@@ -152,6 +215,7 @@ export function presetFromSettings(name, settings, vars = {}) {
     latency: s.latency,
     dvr: s.dvr,
     made_for_kids: s.made_for_kids,
+    uppercase: s.uppercase,
   };
 }
 
@@ -188,7 +252,7 @@ export function normalizePreset(p) {
   return {
     id, name: String(p.name || "Ön ayar").slice(0, 60),
     title_template: String(p.title_template ?? "").slice(0, 300), description_template: String(p.description_template ?? "").slice(0, DESCRIPTION_MAX),
-    privacy: s.privacy, tags: Array.isArray(p.tags) ? p.tags.map(String) : s.tags, latency: s.latency, dvr: s.dvr, made_for_kids: s.made_for_kids,
+    privacy: s.privacy, tags: Array.isArray(p.tags) ? p.tags.map(String) : s.tags, latency: s.latency, dvr: s.dvr, made_for_kids: s.made_for_kids, uppercase: s.uppercase,
     is_default: Boolean(p.is_default), updated_at: p.updated_at || null, local: Boolean(p.local),
   };
 }

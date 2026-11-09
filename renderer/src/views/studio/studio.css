@@ -179,7 +179,7 @@
 }
 /* Görüntü adası: açık temada da koyu (video kontrastı) — monitör ekranı, sahne / açı küçük
    resimleri, görüntü üstü kaplamalar. Vurgu temanınkidir; yazı / yüzey koyu belirteçlerle. */
-:root[data-st-tone="light"] :is(.st-monitor__screen, .st-screen-wrap, .st-tile__hit, .st-angle, .rpo, .st-edit, .st-w.is-scene, .stg-ghost, .st-monitor__note) {
+:root[data-st-tone="light"] :is(.st-monitor__screen, .st-screen-wrap, .st-tile__hit, .st-angle, .rpo, .st-edit, .st-w.is-scene, .stg-ghost, .st-monitor__note, .rpx-pa, .st-wsg__cell, .wx-bank__c, .st-wag__cell, .wx-th, .st-rp__angle, .wl-big.is-black) {
   --bg: #0b0c0e; --bg-deep: #0f1013; --bg-2: #121418; --bg-3: #171a1e; --surface: #1a1c20; --surface-2: #212429; --surface-3: #2b2f35;
   --tint-rgb: 210, 220, 235; --border: rgba(210, 220, 235, 0.1); --border-strong: rgba(210, 220, 235, 0.18);
   --text: #ffffff; --text-2: rgba(255, 255, 255, 0.85); --muted: rgba(255, 255, 255, 0.66); --faint: rgba(255, 255, 255, 0.48);
@@ -199,6 +199,7 @@
 :is(.studio, .st-modal) .pill--blue { color: var(--blue-text); }
 /* Dolgulu düğmedeki tuş rozeti: dolgunun üstünde beyaz (açık temada da). */
 :is(.studio, .st-modal) :is(.btn--primary, .btn--red) .kbd { background: rgba(var(--on-strong-rgb), 0.16); border-color: rgba(var(--on-strong-rgb), 0.35); color: var(--on-strong); }
+:root[data-st-tone="light"] :is(.studio, .st-modal) .btn--soft { color: var(--acc-deep); }
 :root[data-st-tone="light"] :is(.studio, .st-modal) .btn--red { background: linear-gradient(135deg, #e11d48, #be123c); }
 :root[data-st-theme="grafit"] :is(.studio, .st-modal) .btn--primary { color: var(--acc-on); text-shadow: none; }
 .st-modal.modal { background: var(--surface); }
@@ -298,7 +299,7 @@
 .st-tile__hit { position: relative; display: block; padding: 0; border: 0; background: #000; cursor: pointer; }
 .st-tile__hit canvas { display: block; width: 100%; aspect-ratio: 16 / 9; height: auto; }
 .st-tile__badge { position: absolute; top: 4px; left: 4px; padding: 0 5px; border-radius: 4px; font: 800 9px/15px var(--font); letter-spacing: 0.08em; background: var(--green); color: var(--on-bright); }
-.st-tile__badge.is-live { background: var(--st-live); color: var(--on-strong); }
+.st-tile__badge.is-live { background: color-mix(in srgb, var(--st-live) 82%, #000); color: var(--on-strong); }
 .st-tile__warn { position: absolute; right: 4px; bottom: 4px; padding: 0 5px; border-radius: 4px; font-size: 9.5px; line-height: 15px; background: rgba(255, 45, 85, 0.85); color: var(--on-strong); }
 .st-tile__bar { display: flex; align-items: center; gap: 5px; padding: 2px 3px 2px 5px; min-height: 24px; font-size: 11.5px; font-weight: 650; color: var(--muted); }
 .st-tile.is-program .st-tile__bar, .st-tile.is-preview .st-tile__bar { color: var(--text); }

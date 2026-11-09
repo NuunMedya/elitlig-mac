@@ -129,6 +129,7 @@
 
 /* ek müzik düğmeleri (shortcuts/wMuzikPro) */
 .lw-ri.has-wc .wmu { --mc: var(--wc); }
+.lw-ri.wc-fill .wmu { --mc: var(--wc-on); }
 .wmu-ctl button.is-sel { border-color: var(--mc); background: color-mix(in srgb, var(--mc) 22%, var(--surface)); }
 .wmu-ctl button sup { font-size: 8px; }
 .wmu-ctl.is-modes button { height: 24px; font-size: 10.5px; }
@@ -144,7 +145,8 @@
 .wmu-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .wmu-chips button { flex: 1 1 0; min-width: 34px; height: 28px; padding: 0 6px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12px; font-weight: 850; cursor: pointer; font-variant-numeric: tabular-nums; }
 .wmu-chips button small { font-size: 9.5px; font-weight: 700; color: var(--muted); }
-.wmu-chips button.is-on { background: var(--mc); border-color: var(--mc); color: var(--on-strong); }
+.wmu-chips button.is-on { background: var(--mc); border-color: var(--mc); color: var(--c-on, var(--on-strong)); }
+.wmu-chips button.is-on small { color: inherit; opacity: 0.85; }
 .wmu-chips button.is-on small { color: inherit; }
 .wmu-chips button.is-kill { background: #dc2626; border-color: #fca5a5; color: var(--on-strong); }
 .wo-tall .wmu-chips { flex-direction: column; flex-wrap: nowrap; }

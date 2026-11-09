@@ -65,6 +65,7 @@ const { createLedManager } = require("./led");
 const { createMediaLibrary, dialogFilters } = require("./media");
 const ff = require("./ffmpeg");
 const { registerLive } = require("./live");
+const { createOutMute } = require("./outmute");
 const { createMusicHost } = require("./musichost");
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -271,6 +272,9 @@ function registerStudio({
   // yakalama, Windows + macOS) ya da yalnız Windows'ta bütün sistem sesi (loopback).
   const musicHost = createMusicHost({ BrowserWindow, ipcMain, log: (...a) => log(...a) });
   musicHost.register();
+  // Dışarı giden tüm sesleri kapat (yerel hoparlör / kulaklık; yayın karışımı etkilenmez): outmute.js
+  const outMute = createOutMute({ BrowserWindow, ipcMain, app, log: (...x) => log(...x) });
+  outMute.register();
   ses.setDisplayMediaRequestHandler((request, callback) => {
     const origin = request.securityOrigin || request.frame?.url || "";
     if (!isOwnUrl(origin) && !isOwnUrl(request.frame?.url || "")) { callback({}); return; }

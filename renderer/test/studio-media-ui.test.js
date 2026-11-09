@@ -50,7 +50,8 @@ describe("YouTube başlatma penceresi", () => {
     expect(calls).toContain("GET /api/admin/live-streams/youtube-presets");
     act(() => { title.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); });
     expect(started).toHaveLength(1);
-    expect(started[0]).toMatchObject({ title: "Ankara – Yıldız | Elit Lig", privacy: "unlisted", latency: "low", tags: ["elitlig"] });
+    // "Başlığı büyük harf yap" (varsayılan açık): Türkçe büyük harf
+    expect(started[0]).toMatchObject({ title: "ANKARA – YILDIZ | ELİT LİG", privacy: "unlisted", latency: "low", tags: ["elitlig"] });
     unmount();
   });
 });

@@ -63,9 +63,10 @@ export const textOn = (hex) => (contrast(hex, ON_DARK) >= contrast(hex, ON_LIGHT
 export function wStyleAttrs(st) {
   if (!st) return { className: "", style: undefined };
   const className = `has-wc wc-${st.s}`;
-  if (st.c === "theme") return { className: `${className} wc-theme`, style: { "--wc": "var(--acc)", "--wc-rgb": "var(--acc-rgb)", "--wc-on": "var(--on-strong)", "--wc-on-rgb": "var(--on-strong-rgb)" } };
+  // --wc-tint-rgb: dolgunun üstündeki iç yüzeylerin tonu — yazının tersi (beyaz yazıda koyu, koyu yazıda açık ton)
+  if (st.c === "theme") return { className: `${className} wc-theme`, style: { "--wc": "var(--acc)", "--wc-rgb": "var(--acc-rgb)", "--wc-on": "var(--on-strong)", "--wc-on-rgb": "var(--on-strong-rgb)", "--wc-tint-rgb": "0, 0, 0" } };
   const on = textOn(st.c);
-  return { className, style: { "--wc": st.c, "--wc-rgb": hexRgb(st.c).join(", "), "--wc-on": on, "--wc-on-rgb": hexRgb(on).join(", ") } };
+  return { className, style: { "--wc": st.c, "--wc-rgb": hexRgb(st.c).join(", "), "--wc-on": on, "--wc-on-rgb": hexRgb(on).join(", "), "--wc-tint-rgb": on === ON_DARK ? "0, 0, 0" : "255, 255, 255" } };
 }
 
 /** Pano öğesinin grup anahtarı (railModel grubu) — bileşen kaydından. */

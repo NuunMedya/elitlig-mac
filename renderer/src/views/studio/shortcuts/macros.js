@@ -466,6 +466,14 @@ export async function runStep(s, ctx, rt = null) {
       return true;
     }
     case "killAll": if (!C.mixer?.setKillAll) return false; C.mixer.setKillAll(Boolean(s.on)); return true;
+    case "outMute": {
+      // Dışarı giden tüm sesler (yerel hoparlör / kulaklık); "Yayın dahil hepsi": karıştırıcı da kapanır.
+      const O = C.outMute;
+      if (!O?.set) return false;
+      const on = s.action === "toggle" ? !O.on : s.action !== "off";
+      O.set(on, { scope: s.all ? "all" : "local" });
+      return true;
+    }
     case "duck": {
       const mp = C.music;
       if (!mp?.setVolume) return false;

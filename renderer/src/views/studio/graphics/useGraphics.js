@@ -19,7 +19,7 @@ import {
 import {
   VISIBILITY_KEYS, buildGraphicsSnapshot, normalizeVisibility, normalizeVisibilityValue, patchMatchGraphics, preloadImages, readMatchGraphics, snapshotImageUrls,
 } from "../../../lib/studio/graphics";
-import { LED_MODES, SCOREBOARD_VARIANTS, isWebVariant, normalizeLedMode, normalizeVariant } from "../../../lib/studio/graphics/variants";
+import { LED_MODES, SCOREBOARD_VARIANTS, initialViewFor, isWebVariant, normalizeLedMode, normalizeVariant } from "../../../lib/studio/graphics/variants";
 import { useDesk } from "../manage/useDesk";
 import * as api from "./graphicsApi";
 import { useBranding } from "./useBranding";
@@ -59,6 +59,25 @@ export function useGraphics({ matchId, live } = {}) {
     }
     lastServer.current = serverOverlay;
   }, [serverOverlay]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* -------------- ilk açılış: skorboard ve LED "Maç öncesi" kartıyla başlar -------------- */
+  // Maç bu bilgisayarda ilk kez açılınca (kayıtta initView yok) ve maç başlamamışsa program grafiği ve
+  // LED "Maç öncesi" görünümüyle başlar; eşitleme açıksa web kaplaması / LED de aynı moda alınır.
+  // Operatör skorboarda geçince seçim maç başına saklanır (yeniden açılışta korunur).
+  const initDone = useRef(null);
+  useEffect(() => {
+    if (!id || !match || initDone.current === id) return;
+    initDone.current = id;
+    const cur = readMatchGraphics(id);
+    if (cur.initView) return;
+    const view = cur.variant || cur.ledMode ? null : initialViewFor(match);
+    patchLocal({ initView: Date.now(), ...(view ? { variant: view, ledMode: view } : {}) });
+    if (!view) return;
+    setVariantSince(Date.now());
+    if (cur.syncWeb === false) return;
+    lastServer.current = view;
+    Promise.all([api.setOverlayStatus(id, view), api.setLedStatus(id, view)]).then(() => live?.refresh?.()).catch(() => {});
+  }, [id, match]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ------------------------------ skorboard / LED ------------------------------ */
   const setScorebugVariant = useCallback(async (key, { web = syncWeb } = {}) => {

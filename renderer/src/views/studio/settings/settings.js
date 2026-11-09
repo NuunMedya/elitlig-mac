@@ -66,6 +66,7 @@ export const HOTKEY_ACTIONS = [
   { key: "goalAway", label: "Deplasmana GOL (golcü seçilir)", default: [] },
   { key: "goalMusic", label: "Gol müziği çal / durdur", default: [] },
   { key: "goalMusicStop", label: "Gol müziğini KES (çalarken)", default: ["k"] },
+  { key: "outMute", label: "Dışarı giden tüm sesleri kapat / aç (hoparlör, kulaklık; yayın değişmez)", default: [] },
   { key: "subtitle", label: "Altyazıyı aç / kapat", default: [] },
   { key: "interviewBand", label: "Röportaj bandını aç / kapat", default: [] },
   { key: "interview", label: "Röportaj kaydını başlat / bitir", default: [] },

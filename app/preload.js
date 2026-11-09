@@ -92,6 +92,11 @@ contextBridge.exposeInMainWorld("elitlig", {
       playlist: (listId) => ipcRenderer.invoke("studio:music:playlist", String(listId || "")),
       onHostEvent: on("studio:music:hostEvent"),
     },
+    // Dışarı giden tüm sesleri kapat (app/studio/outmute.js): bütün pencerelerin hoparlör çıkışı.
+    outMute: {
+      set: (on) => ipcRenderer.invoke("studio:outMute:set", Boolean(on)),
+      get: () => ipcRenderer.invoke("studio:outMute:get"),
+    },
     // Canlı giriş kaynakları (app/studio/live): telefon kamerası (WebRTC sinyalleşme),
     // RTMP / SRT girişi ve ağ akışları (ffmpeg → fMP4 → MSE), web sayfası (ekran dışı pencere).
     live: {

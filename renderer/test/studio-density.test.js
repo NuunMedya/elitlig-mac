@@ -1,4 +1,5 @@
 import {
+  COLS_MAX, PANEL_COLS, colsTemplate, dragBoundary, equalCols, normalizeWeights, setColCount, setColSection, setColWeights,
   DENSITY_KEY, PANEL_CARDS, SPLITS, densityVars, normalizeDensity, panelDensity, presetCard, resetPanel, setBarPos, setCardWidth, setDensityMode, setSplit,
 } from "../src/views/studio/dock/density";
 import { PROFILE_GROUPS, collectProfile } from "../src/views/studio/settings/profiles";
@@ -53,5 +54,35 @@ describe("panel yoğunluğu (dock/density)", () => {
     const mem = new Map([[DENSITY_KEY, JSON.stringify({ v: 1, panels: { sahne: { d: "genis" } } })]]);
     const storage = { get length() { return mem.size; }, key: (i) => [...mem.keys()][i], getItem: (k) => mem.get(k) ?? null };
     expect(collectProfile(storage, { groups: ["density"] }).groups.density[DENSITY_KEY]).toContain("genis");
+  });
+  it("sütunlar: 1–8, ağırlıklar toplamı n, sürükleme en darı korur, bölüm → sütun, oto'ya dönüş", () => {
+    let s = setColCount(normalizeDensity(null), "yonetimReji", 4);
+    let c = panelDensity(s, "yonetimReji").cols;
+    expect(c).toEqual({ n: 4, w: [1, 1, 1, 1], at: { home: 1, center: 2, away: 3, music: 0 } });
+    expect(colsTemplate(c)).toBe("minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)");
+    expect(densityVars("yonetimReji", panelDensity(s, "yonetimReji"))["--pf-cols"]).toContain("minmax(0, 1fr)");
+    // 400 px'lik 4 sütun (her biri 100): 1. sınır +50 → 150 / 50
+    const w = dragBoundary(c.w, 0, 50, 400, 40);
+    expect(w.map((v) => Math.round((v / 4) * 400))).toEqual([150, 50, 100, 100]);
+    // en dar 40 px
+    expect(dragBoundary(c.w, 0, 999, 400, 40).map((v) => Math.round((v / 4) * 400))).toEqual([160, 40, 100, 100]);
+    s = setColWeights(s, "yonetimReji", w);
+    s = setColSection(s, "yonetimReji", "away", 4);
+    c = panelDensity(s, "yonetimReji").cols;
+    expect(c.at.away).toBe(4);
+    // sayı azalınca bölüm sütunu sınırlanır, genişlikler korunur
+    s = setColCount(s, "yonetimReji", 2);
+    c = panelDensity(s, "yonetimReji").cols;
+    expect(c.n).toBe(2);
+    expect(c.at.away).toBe(2);
+    expect(c.w.reduce((a, b) => a + b, 0)).toBeCloseTo(2, 2);
+    expect(panelDensity(equalCols(s, "yonetimReji"), "yonetimReji").cols.w).toEqual([1, 1]);
+    expect(panelDensity(setColCount(s, "yonetimReji", 99), "yonetimReji").cols.n).toBe(COLS_MAX);
+    expect(panelDensity(setColCount(s, "yonetimReji", 0), "yonetimReji").cols).toBeUndefined();
+    expect(normalizeWeights([3, 1], 2)).toEqual([1.5, 0.5]);
+    // kalıcı: JSON gidiş-dönüş
+    const back = normalizeDensity(JSON.parse(JSON.stringify(s)));
+    expect(panelDensity(back, "yonetimReji").cols).toEqual(panelDensity(s, "yonetimReji").cols);
+    for (const k of ["sahne", "tekrar", "var", "roportaj", "ozet", "led", "ses", "yayin", "yonetim", "yonetimReji"]) expect(PANEL_COLS[k]?.targets?.length).toBeGreaterThan(0);
   });
 });

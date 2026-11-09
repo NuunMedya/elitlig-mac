@@ -46,5 +46,22 @@ export const usesBottom = (key) => ["bottomboard", "interview"].includes(normali
 export const isFullPanel = (key) => Boolean(variantInfo(key)?.full);
 
 export { LED_MODES };
+
+/**
+ * Maç stüdyoda İLK KEZ açılınca yayın grafiklerinin ve LED'in başlangıç görünümü: maç başlamadıysa
+ * "Maç öncesi" (pre_match) kartı; operatör sonra skorboarda geçer (seçim maç başına saklanır).
+ * Başlamış (canlı ve skoru / süresi ilerlemiş) ya da bitmiş maçta null: mevcut görünüm korunur.
+ */
+export const INITIAL_VIEW = "pre_match";
+export function initialViewFor(match) {
+  if (!match || typeof match !== "object") return null;
+  const st = String(match.mac_durumu ?? match.status ?? "").trim().toLowerCase();
+  if (["yayinlanmis", "bitti", "tamamlandi", "finished", "iptal", "ertelendi"].includes(st)) return null;
+  if (st === "canli") {
+    const goals = (Number(match.first_team_score) || 0) + (Number(match.second_team_score) || 0);
+    if (goals > 0) return null;
+  }
+  return INITIAL_VIEW;
+}
 export const LED_KEYS = new Set(LED_MODES.map((m) => m.key));
 export const normalizeLedMode = (key) => (LED_KEYS.has(String(key || "").toLowerCase()) ? String(key).toLowerCase() : "scoreboard");

@@ -2,7 +2,9 @@
    içindeki parçacık kabuğu (.st-w) boyanır. Dolu: renk zemin, yazı kontrasta göre beyaz / koyu;
    çerçeve: yüzey zemin, kalın renkli kenar; yumuşak: renkli ton. Durum halkaları (yayında /
    önizlemede / hazır) korunur. */
-.lw-ri.has-wc > .st-w.st-w.st-w { --c: var(--wc); --c-rgb: var(--wc-rgb); }
+.lw-ri.has-wc > .st-w.st-w.st-w { --c: var(--wc); --c-rgb: var(--wc-rgb); --c-on: var(--wc-on); }
+/* seçili / açık (is-on) kabuk yumuşak ve çerçeve biçimde de renkle dolar, yazı kontrast renkte */
+.lw-ri.wc-soft > .st-w.st-w.st-w.is-on, .lw-ri.wc-outline > .st-w.st-w.st-w.is-on { background: linear-gradient(160deg, var(--wc), color-mix(in srgb, var(--wc) 86%, #000)); border-color: var(--wc); color: var(--wc-on); }
 
 /* yumuşak */
 .lw-ri.wc-soft > .st-w.st-w.st-w { border-color: rgba(var(--wc-rgb), 0.6); background: linear-gradient(160deg, rgba(var(--wc-rgb), 0.3), rgba(var(--wc-rgb), 0.12) 75%), var(--surface); }
@@ -14,17 +16,40 @@
 
 /* dolu: iç parçalar (başlık, simge kutusu, çipler) dolgunun üstünde yazı rengini kullanır */
 .lw-ri.wc-fill > .st-w.st-w.st-w {
-  --c: var(--wc-on); --c-rgb: var(--wc-on-rgb);
+  --c: var(--wc-on); --c-rgb: var(--wc-tint-rgb, var(--wc-on-rgb));
   --text: var(--wc-on); --text-2: var(--wc-on);
-  --muted: rgba(var(--wc-on-rgb), 0.86); --faint: rgba(var(--wc-on-rgb), 0.78);
+  --muted: rgba(var(--wc-on-rgb), 0.94); --faint: rgba(var(--wc-on-rgb), 0.9);
   --acc-text: var(--wc-on); --ink-rgb: var(--wc-on-rgb); --ink-mix: 0%;
   --border: rgba(var(--wc-on-rgb), 0.22); --border-strong: rgba(var(--wc-on-rgb), 0.38);
+  /* iç yüzeyler (çip, düğme, alan) dolgunun üstünde yarı saydam: yazı dolgu üstü renkte okunur */
+  --surface: rgba(var(--wc-tint-rgb, 0, 0, 0), 0.1); --surface-2: rgba(var(--wc-tint-rgb, 0, 0, 0), 0.14); --surface-3: rgba(var(--wc-tint-rgb, 0, 0, 0), 0.2);
+  --bg: rgba(var(--wc-tint-rgb, 0, 0, 0), 0.08); --bg-2: rgba(var(--wc-tint-rgb, 0, 0, 0), 0.1); --bg-3: rgba(var(--wc-tint-rgb, 0, 0, 0), 0.12);
+  --shade-rgb: var(--wc-tint-rgb, 0, 0, 0);
+  --green-text: var(--wc-on); --red-text: var(--wc-on); --amber-text: var(--wc-on); --blue-text: var(--wc-on);
+  /* --c (dolgu üstü renk) dolgulu çip / düğme: yazı dolgunun kendi rengi (ters) */
+  --c-on: var(--wc); --home: var(--wc-on); --home-rgb: var(--wc-on-rgb); --away: var(--wc-on); --away-rgb: var(--wc-on-rgb);
   color: var(--wc-on);
   border-color: color-mix(in srgb, var(--wc) 80%, #000);
-  background: linear-gradient(160deg, color-mix(in srgb, var(--wc) 92%, #fff), var(--wc) 55%, color-mix(in srgb, var(--wc) 86%, #000));
+  /* dolgu yazıdan uzaklaşacak yönde koyulaşır / açılır: iç parçaların renkli tonları da okunur kalır */
+  background: linear-gradient(160deg, color-mix(in srgb, var(--wc) 86%, rgb(var(--wc-tint-rgb, 0, 0, 0))), color-mix(in srgb, var(--wc) 72%, rgb(var(--wc-tint-rgb, 0, 0, 0))));
 }
 .lw-ri.wc-fill > button.st-w.st-w.st-w:hover:not(:disabled) { filter: brightness(1.07); }
 .lw-ri.wc-fill > .st-w.st-w.st-w.is-on { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--wc); }
+.lw-ri.wc-fill > .st-w.st-w.st-w :is(.wx-half, .wx-gb__btn) { background: rgba(var(--wc-tint-rgb, 0, 0, 0), 0.16); border-color: rgba(var(--wc-on-rgb), 0.4); }
+.lw-ri.wc-fill > .st-w.st-w.st-w.is-on, .lw-ri.wc-fill > .st-w.st-w.st-w.is-on :is(.st-w__icon, .st-w__state, .st-w__sub, .st-w__label, .st-w__kbd) { color: var(--wc-on); }
+.lw-ri.wc-fill > .st-w.st-w.st-w :is(.st-wgb__side, .wx-go__ic) { background: rgba(var(--wc-tint-rgb, 0, 0, 0), 0.16); color: var(--wc-on); }
+.lw-ri.wc-fill > .st-w.st-w.st-w .wx-nav__b, .lw-ri.wc-fill > .st-w.st-w.st-w .wx-nav__b:hover:not(:disabled) { color: var(--wc-on); border-color: var(--wc-on); }
+.lw-ri.wc-fill > .st-w.st-w.st-w :is(.wx-btn.is-pvw, .wx-cardbtn) { background: rgba(var(--wc-tint-rgb, 0, 0, 0), 0.2); }
+.lw-ri.wc-fill > .st-w.st-w.st-w .wl-tk__run { background: rgba(var(--wc-tint-rgb, 0, 0, 0), 0.2); }
+.lw-ri.wc-fill > .st-w.st-w.st-w .wx-take { background: var(--wc-on); color: var(--wc); box-shadow: none; }
+.lw-ri.wc-fill > .st-w.st-w.st-w .wx-take .wx-kbd { color: var(--wc); border-color: currentColor; background: none; }
+.lw-ri.wc-fill > .st-w.st-w.st-w .wg-bank__g button { background: rgba(var(--wc-tint-rgb, 0, 0, 0), 0.22); }
+.lw-ri.wc-fill > .st-w.st-w.st-w.is-go .st-w__kbd, .lw-ri.wc-fill > .st-w.st-w.st-w.is-go .st-w__sub, .lw-ri.wc-fill > .st-w.st-w.st-w.is-go .st-w__label { color: var(--wc-on); }
+.lw-ri:is(.wc-soft, .wc-outline) > .st-w.st-w.st-w.is-go .st-w__kbd { color: var(--text); }
+/* yumuşak / çerçeve: kendi zeminini çizen "son tekrarı ver" kabuğunda yazı temanın rengi */
+.lw-ri:is(.wc-soft, .wc-outline) > .st-w.st-w.st-w.is-go { color: var(--text); }
+.lw-ri:is(.wc-soft, .wc-outline) > .st-w.st-w.st-w.is-go .st-w__sub { color: var(--muted); }
+.lw-ri.wc-soft > button.st-w.st-w.st-w.is-on:hover:not(:disabled), .lw-ri.wc-outline > button.st-w.st-w.st-w.is-on:hover:not(:disabled) { background: linear-gradient(160deg, var(--wc), color-mix(in srgb, var(--wc) 86%, #000)); }
 
 /* panel açma düğmesi: simge kutusu ve "ekranda" yazısı */
 .lw-ri.has-wc > .st-w.wx.wp-open .wp-open__ic { background: rgba(var(--wc-rgb), 0.2); color: color-mix(in srgb, var(--wc), var(--ink-to) var(--ink-mix)); }

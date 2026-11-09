@@ -88,9 +88,15 @@ export const RAIL_WIDGETS = [
   { type: "scene", family: "scene", label: "Sahne", icon: "layers", group: "sahne", size: "1x1", sizes: ALL, hint: "Tek sahne: tık önizleme · çift tık yayın", multi: true },
   // ══════════ çok işlevli düğmeler (./wReji, ./wSes, ./wTekrar, ./wYayin) ══════════
   // ── reji ──
-  { type: "goalProHome", family: "goalPro", label: "GOL · ev sahibi (tür → golcü → asist)", icon: "ball", group: "reji", size: "1x1", sizes: ALL, hint: "Tık: tekrar klibi hemen başlar; gol türü, golcü, asist seçilir; gol müziği + bölüm + geri al" },
-  { type: "goalProAway", family: "goalPro", label: "GOL · deplasman (tür → golcü → asist)", icon: "ball", group: "reji", size: "1x1", sizes: ALL, hint: "Deplasman golü: tür → golcü (no + fotoğraf) → asist (atlanabilir)" },
+  { type: "goalProHome", family: "goalPro", label: "GOL · ev sahibi (tür → golcü, asist isteğe bağlı)", icon: "ball", group: "reji", size: "1x1", sizes: ALL, hint: "Tık: tekrar klibi hemen başlar; gol türü, golcü, asist seçilir; gol müziği + bölüm + geri al" },
+  { type: "goalProAway", family: "goalPro", label: "GOL · deplasman (tür → golcü, asist isteğe bağlı)", icon: "ball", group: "reji", size: "1x1", sizes: ALL, hint: "Deplasman golü: tür → golcü (no + fotoğraf) → asist (atlanabilir)" },
   { type: "goalProBoth", family: "goalPro", label: "GOL · iki takım (bölünmüş)", icon: "ball", group: "reji", size: "2x1", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "İki yarım: takım GOL'ü; genişte hızlı tür çipleri (sağ / sol / kafa / penaltı)" },
+  { type: "goalQuickHome", family: "goalPro", label: "HIZLI GOL · ev sahibi (tür → golcü)", icon: "zap", group: "reji", size: "1x1", sizes: ALL, hint: "Tür → golcü; asist sorulmaz. Klip ve gol müziği basınca başlar" },
+  { type: "goalQuickAway", family: "goalPro", label: "HIZLI GOL · deplasman (tür → golcü)", icon: "zap", group: "reji", size: "1x1", sizes: ALL, hint: "Tür → golcü; asist sorulmaz" },
+  { type: "goalQuickBoth", family: "goalPro", label: "HIZLI GOL · iki takım (tür → golcü)", icon: "zap", group: "reji", size: "2x1", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "İki yarım; asist sorulmaz, genişte hızlı tür çipleri" },
+  { type: "goalKindHome", family: "goalPro", label: "GOL · ev sahibi (yalnız tür, golcü sonra)", icon: "ball", group: "reji", size: "1x1", sizes: ALL, hint: "Yalnız gol türü; “Golcü sonra” ile beklet, rozetten golcüyü seç" },
+  { type: "goalKindAway", family: "goalPro", label: "GOL · deplasman (yalnız tür, golcü sonra)", icon: "ball", group: "reji", size: "1x1", sizes: ALL, hint: "Yalnız gol türü; golcü sonra seçilebilir" },
+  { type: "goalKindBoth", family: "goalPro", label: "GOL · iki takım (yalnız tür çipleri)", icon: "ball", group: "reji", size: "2x1", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Takım başına tür çipleri: tık = o türde gol, golcü isteğe bağlı" },
   { type: "scorePro", family: "goalPro", label: "Skor kartı · + / −", icon: "trophy", group: "reji", size: "2x1", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Takım renkleri, skor, saat; + gol akışı, − son golü geri al" },
   { type: "cardPro", family: "cardPro", label: "Kart (renk → takım → oyuncu → neden)", icon: "tag", group: "reji", size: "2x1", sizes: ["1x1", "1x2", "2x1", "2x2", "3x2"], hint: "Sarı / kırmızı; büyükte takım × renk ızgarası; neden isteğe bağlı" },
   { type: "subPro", family: "subPro", label: "Değişiklik (çıkan → giren)", icon: "swap", group: "reji", size: "2x1", sizes: ALL, hint: "Takım → sahadaki oyuncular (çıkan) → yedekler (giren)" },
@@ -105,6 +111,8 @@ export const RAIL_WIDGETS = [
   // ── ses ──
   { type: "fader", family: "fader", label: "Kanal fader'ı", icon: "sliders", group: "ses", size: "1x2", sizes: ALL, hint: "Tek kanal: sessiz, solo, seviye, ölçer · sağ tık / basılı tut: kanal seç" },
   { type: "miniMixer", family: "fader", label: "Mini karıştırıcı (2–6 kanal)", icon: "sliders", group: "ses", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2", "4x2"], hint: "Seçtiğin kanallar yan yana; genişledikçe kanal sayısı artar" },
+  { type: "outMute", family: "outMute", label: "DIŞ SES · dışarı giden tüm sesleri kapat", icon: "volumeX", group: "ses", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "Hoparlör / kulaklık susar (gol müziği, müzik, dinleme, tekrar); yayın değişmez · sağ tık: yayın dahil", hotkey: "outMute" },
+  { type: "outMuteMeter", family: "outMute", label: "DIŞ SES · seviye ölçerli", icon: "volume", group: "ses", size: "2x1", sizes: ["1x2", "2x1", "2x2", "3x2"], hint: "Dışarı giden ses düğmesi + dinleme seviye ölçeri; kapsam seçimi (yalnız dışarı / yayın dahil)", hotkey: "outMute" },
   { type: "masterKill", family: "masterKill", label: "Ana çıkış + tümünü kapat", icon: "broadcast", group: "ses", size: "1x2", sizes: ALL, hint: "Master fader, stereo ölçer, TÜMÜNÜ KAPAT" },
   { type: "micDuck", family: "mic", label: "Mikrofon + müzik kısma", icon: "mic", group: "ses", size: "1x1", sizes: ALL, hint: "Mikrofon açılınca müzik kısılır, kapanınca geri gelir · sağ tık: kısma dB" },
   { type: "audioRoute", family: "audioRoute", label: "Yayına giden ses (hızlı)", icon: "grid", group: "ses", size: "2x1", sizes: ["2x1", "2x2", "3x2"], hint: "Canlı / tekrar / video / özet sırasında MİK · VİDEO · MÜZİK; sahne başına mikrofon" },
