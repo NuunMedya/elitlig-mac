@@ -151,7 +151,7 @@ export const MACRO_STEPS = [
   S("scorePlus", "mac", "Skor + (gol)", "plus", [{ key: "side", label: "Takım", kind: "side" }, { key: "player", label: "Golcü", kind: "select", choices: [["prompt", "Çalışırken sor"], ["none", "Oyuncusuz"], ["var", "Değişkenden ({oyuncu})"]] }]),
   S("scoreMinus", "mac", "Skor − (son golü geri al)", "undo", [{ key: "side", label: "Takım", kind: "side" }]),
   // ── panel ──
-  S("openPanel", "panel", "Panel aç", "board", [{ key: "panel", label: "Panel", kind: "panel" }, { key: "where", label: "Nerede", kind: "select", choices: [["layout", "Yerleşimde"], ["kontrol", "Kontrol merkezinde"]] }]),
+  S("openPanel", "panel", "Panel / parça / ayar aç", "board", [{ key: "panel", label: "Hedef", kind: "panel" }, { key: "where", label: "Nerede", kind: "select", choices: [["layout", "Yerleşimde"], ["float", "Yüzen pencerede"], ["kontrol", "Kontrol merkezinde"]] }]),
   // ── akış · mantık ──
   S("wait", "akis", "Bekle (ms)", "timer", [{ key: "ms", label: "Süre (ms)", kind: "ms" }]),
   S("waitUntil", "akis", "Bekle · koşul olana dek", "timer", [...COND_P, { key: "timeoutMs", label: "En çok (ms)", kind: "ms" }]),

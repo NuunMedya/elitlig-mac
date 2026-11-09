@@ -264,7 +264,7 @@ export const SETTINGS_TARGETS = [
 
 const PANEL_OPEN_GROUP = {
   yonetim: "mac", yonetimMaclar: "mac", yonetimReji: "mac", yonetimKadro: "mac", yonetimMacsonu: "mac", yonetimTakimlar: "mac", olaylar: "mac",
-  tekrar: "tekrar", acilar: "tekrar", ses: "ses", golMuzigi: "ses", olcer: "ses",
+  tekrar: "tekrar", acilar: "tekrar", ses: "ses", golMuzigi: "ses", muzikCalar: "ses", olcer: "ses",
   yayin: "yayin", bolumler: "yayin", yukleme: "yayin", led: "led", ledPvw: "led", var: "kip", roportaj: "kip", ozet: "kip",
   pvw: "sahne", pgm: "sahne", gecis: "sahne", sahneSerit: "sahne", sahne: "sahne",
 };

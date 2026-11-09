@@ -133,3 +133,11 @@
 .me select, .me input.me-p, .me-f input, .me-name, .me-search, .me-pal__tabs input { width: auto !important; }
 .me-name, .me-search { width: 100% !important; }
 .me-st select, .me-st input.me-p { min-width: 0; }
+.me-prompt__card { background: #17151f !important; color: #f4f4f8; border-color: rgba(255, 255, 255, 0.16) !important; }
+.me-prompt__card small { color: rgba(244, 244, 248, 0.6) !important; }
+.me-prompt__g button { background: #262335 !important; border-color: rgba(255, 255, 255, 0.18) !important; color: #fff !important; }
+.me-prompt__g button:hover { background: #3a3352 !important; border-color: #8b5cf6 !important; }
+.me-prompt__card input { background: #262335; color: #fff; border: 1px solid rgba(255,255,255,.2); border-radius: 8px; padding: 6px 10px; }
+.wg-bank { display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; align-items: stretch !important; justify-content: flex-start !important; gap: 6px; }
+.wg-bank__folders { flex: none; align-items: center; }
+.wg-bank__g { flex: 1 1 auto; min-height: 0; }

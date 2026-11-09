@@ -13,7 +13,7 @@ import { comboLabel, comboOf, normalizeCombo } from "../../../lib/studio/hotkeys
 import { SCOREBOARD_VARIANTS } from "../../../lib/studio/graphics/variants";
 import { TRANSITION_KINDS } from "../../../lib/studio/transitions";
 import { LED_CONTENTS } from "../led/ledFx";
-import { LAYOUT_PANELS } from "../layout/layoutModel";
+import { LAYOUT_PANELS, OPEN_TARGETS } from "../layout/layoutModel";
 import { trackName } from "../music/musicModel";
 import {
   CONDITIONS, EVENT_CODES, MACRO_COLORS, MACRO_ICONS, MACRO_MODES, MACRO_STEPS, MACRO_TEMPLATES, STEP_GROUPS, buildTree, condMeta, describeStep,
@@ -83,7 +83,7 @@ function StepParam({ p, s, onChange, ctx }) {
     case "track": return sel((ctx?.music?.tracks || []).map((t, i) => [t.id, `${i + 1}. ${trackName(t)}`]), ctx?.music?.tracks?.length ? "Parça seç…" : "Liste boş");
     case "macro": return sel(getMacros().map((m) => [m.id, m.name]), "Makro seç…");
     case "strip": return sel((ctx?.mixer?.strips || [{ id: "mic", label: "Mikrofon" }, { id: "music", label: "Müzik" }, { id: "media", label: "Tekrar / Video" }]).map((x) => [x.id, x.label]), "Kanal seç…");
-    case "panel": return sel(LAYOUT_PANELS.filter((x) => !x.multi).map((x) => [x.key, x.label]), "Panel seç…");
+    case "panel": return sel((OPEN_TARGETS?.length ? OPEN_TARGETS.map((t) => [t.id, t.label]) : LAYOUT_PANELS.filter((x) => !x.multi).map((x) => [x.key, x.label])), "Hedef seç…");
     case "event": return sel(EVENT_CODES);
     case "side": return sel([["home", ctx?.event?.homeName || "Ev sahibi"], ["away", ctx?.event?.awayName || "Deplasman"], ["prompt", "Çalışırken sor"], ["var", "Değişkenden ({takım})"]]);
     case "cond": return sel(CONDITIONS.map((c) => [c.key, c.label]));

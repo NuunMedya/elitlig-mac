@@ -43,7 +43,7 @@
 .mu-set__val { font-variant-numeric: tabular-nums; min-width: 52px; }
 .mu-set select { font-size: 12px; padding: 3px 6px; width: auto !important; flex: none; }
 .mu-set .mu-set__rng { width: 160px !important; flex: none; }
-.wmu:not(.wx-tile) { flex-direction: column !important; align-items: stretch !important; justify-content: flex-start !important; gap: 6px; }
+.wmu:not(.wx-tile) { display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; align-items: stretch !important; justify-content: flex-start !important; gap: 6px; }
 .wmu:not(.wx-tile) > * { min-width: 0; }
 
 /* liste */

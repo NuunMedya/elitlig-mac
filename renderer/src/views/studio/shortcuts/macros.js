@@ -574,7 +574,14 @@ export async function runStep(s, ctx, rt = null) {
     }
     case "scoreMinus": { if (!C.goalUndo) return false; const side = await sideOf(s, R); await C.goalUndo(side); return true; }
     /* panel */
-    case "openPanel": if (!C.openPanel || !s.panel) return false; C.openPanel(s.panel, s.where === "kontrol" ? "kontrol" : undefined); return true;
+    case "openPanel": {
+      if (!s.panel) return false;
+      const where = s.where === "kontrol" || s.where === "float" ? s.where : "layout";
+      if (C.openTarget) { C.openTarget(s.panel, where); return true; } // paneller / parçalar / ayarlar (go:<kimlik>)
+      if (!C.openPanel) return false;
+      C.openPanel(s.panel, where === "kontrol" ? "kontrol" : undefined);
+      return true;
+    }
     /* akış */
     case "wait": await sleep(Math.max(0, Number(s.ms) || 0), R); return true;
     case "waitUntil": {
