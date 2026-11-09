@@ -28,6 +28,7 @@ import { MAC_WIDGETS } from "./wMac";
 import { SAHNE_WIDGETS } from "./wSahne";
 import { GENEL_WIDGETS } from "./wGenel";
 import { MUZIK_WIDGETS } from "./wMuzik";
+import { MUZIK_PRO_WIDGETS } from "./wMuzikPro";
 import { PANEL_WIDGETS } from "./wPanels";
 import "./widgetsOps.css";
 import "./widgetsPro.css";
@@ -370,6 +371,7 @@ export const WIDGET_IMPL = {
   ...LED_WIDGETS, ...ROPORTAJ_WIDGETS, ...OZET_WIDGETS, ...MAC_WIDGETS, ...SAHNE_WIDGETS, ...GENEL_WIDGETS,
   // müzik çalar (./wMuzik): liste, parça düğmeleri, müziği kes, ses, yayına ver
   ...MUZIK_WIDGETS,
+  ...MUZIK_PRO_WIDGETS,
   // panel açma düğmeleri (./wPanels): yerleşimde yerine koy / Kontrol merkezinde aç
   ...PANEL_WIDGETS,
 };

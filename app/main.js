@@ -380,7 +380,9 @@ function createMainWindow() {
     icon: path.join(ASSETS, "icon.png"),
     // Yayın Stüdyosu bu pencerede: gizli / küçültülmüş / örtülüyken de program tuvali
     // çizilsin ve MediaRecorder parça üretsin (yayın sürerken studio/index.js ayrıca açar).
-    webPreferences: { ...secureWebPreferences(), backgroundThrottling: false },
+    // autoplayPolicy: müzik çaların gizli YouTube oynatıcısı tıklamadan sonra eşzamansız (oynatıcı
+    // hazır olunca) çalar; Electron varsayılanı da budur, açıkça yazılır (bkz. music/useMusicPlayer).
+    webPreferences: { ...secureWebPreferences(), backgroundThrottling: false, autoplayPolicy: "no-user-gesture-required" },
   });
   mainWindow = win;
   guardNavigation(win);

@@ -17,8 +17,10 @@
 //   invoke studio:music:armCapture (mode)   → { ok, mode } (sonraki getDisplayMedia bu kaynağı alır)
 //   invoke studio:music:capability          → { platform, frameAudio, loopback }
 //   invoke studio:music:oembed (url)        → { ok, title, author } (YouTube oEmbed; CSP arayüzde engeller)
+//   invoke studio:music:playlist (listId)   → { ok, title, items: [{ videoId, title, durationSec }], more, source } (./ytplaylist)
 //   olay   studio:music:hostEvent           (gizli pencereden: { deck, type: state|tick|error|ready, … })
 const path = require("node:path");
+const { createPlaylistFetcher } = require("./ytplaylist");
 
 const HOST_FILE = path.join(__dirname, "musichost.html");
 const HOST_PRELOAD = path.join(__dirname, "musichost-preload.js");
@@ -111,6 +113,8 @@ function createMusicHost({ BrowserWindow, ipcMain, fetchImpl = globalThis.fetch,
     }
   }
 
+  const playlist = createPlaylistFetcher({ fetchImpl });
+
   const capability = () => ({ platform, frameAudio: Boolean(BrowserWindow), loopback: platform === "win32" });
 
   function register() {
@@ -126,13 +130,14 @@ function createMusicHost({ BrowserWindow, ipcMain, fetchImpl = globalThis.fetch,
     ipcMain.handle("studio:music:armCapture", (event, mode) => { target = event.sender; return arm(mode, parentOf(event)); });
     ipcMain.handle("studio:music:capability", () => capability());
     ipcMain.handle("studio:music:oembed", (_e, url) => oembed(url));
+    ipcMain.handle("studio:music:playlist", (_e, listId) => playlist(listId).catch((e) => ({ ok: false, error: e?.message || "Liste okunamadı." })));
     ipcMain.on("musichost:event", (event, msg) => {
       if (!alive() || event.sender !== win.webContents) return;
       if (msg && typeof msg === "object") forward(msg);
     });
   }
 
-  return { register, ensure, send, close, arm, takeCapture, oembed, capability, get window() { return win; } };
+  return { register, ensure, send, close, arm, takeCapture, oembed, playlist, capability, get window() { return win; } };
 }
 
 module.exports = { createMusicHost, HOST_FILE, ARM_TTL_MS };

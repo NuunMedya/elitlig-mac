@@ -7,3 +7,4 @@
 export { useMusicPlayer } from "./useMusicPlayer";
 export { default as MusicPanel, NowPlaying } from "./MusicPanel";
 export * from "./musicModel";
+export * from "./playlistModel";

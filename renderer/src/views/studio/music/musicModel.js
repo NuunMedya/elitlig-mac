@@ -10,6 +10,7 @@
 // geçişte bitişten crossfadeMs önce iki parça eğriye göre karışır.
 // YouTube bağlantı / zaman ayrıştırması gol müziğiyle ortaktır (../goalmusic/goalMusic).
 import { formatTime, parseTime, parseYoutubeUrl } from "../goalmusic/goalMusic";
+import { findPlayable, itemTrack, normalizePlaylistEntry, playlistStep, splitItemId } from "./playlistModel";
 
 export { formatTime, parseTime, parseYoutubeUrl };
 export const MUSIC_KEY = "studio.music.v1";
@@ -62,7 +63,8 @@ const pct = (v, d) => { const n = Number(v); return Number.isFinite(n) ? Math.ro
 export function normalizeMusicTrack(t) {
   const x = t && typeof t === "object" ? t : { url: t };
   const air = AIR_CHOICES.some((a) => a.key === x.air) ? x.air : "inherit";
-  const base = { id: String(x.id || newTrackId()), title: String(x.title || "").slice(0, 100), volume: pct(x.volume, 100), air };
+  const base = { id: String(x.id || newTrackId()).replace(/~/g, "_"), title: String(x.title || "").slice(0, 100), volume: pct(x.volume, 100), air, ...(x.fav ? { fav: true } : {}) };
+  if (x.kind === "playlist") return normalizePlaylistEntry(x, base);
   let start = parseTime(x.start);
   let end = parseTime(x.end);
   if (x.kind === "file" || (!x.url && x.fileUrl)) {
@@ -205,7 +207,63 @@ export function airSupport(track, capability, airMode = "frame") {
   return { ok: false, how: null, reason: "Bu sistemde müzik penceresinin sesi yakalanamıyor. Yerel ses dosyası (mp3 / m4a / wav) ekle." };
 }
 
-export const trackName = (t) => (t ? t.title || (t.kind === "file" ? t.name : `youtu.be/${t.videoId}`) || "Parça" : "");
+export const trackName = (t) => (t ? t.title || (t.kind === "file" ? t.name : t.kind === "playlist" ? "YouTube listesi" : `youtu.be/${t.videoId}`) || "Parça" : "");
+/** Liste girişini çalmaya başlarken ilk parça (liste: sırasına / karışığa göre; boş liste → null). */
+export function entryStart(entry, dir = 1, rand = Math.random) {
+  if (!entry) return null;
+  if (entry.kind !== "playlist") return entry;
+  const st = playlistStep(entry, -1, dir, { rand });
+  return st.index >= 0 ? itemTrack(entry, entry.items[st.index]) : null;
+}
+
+/**
+ * Sıradaki parça (liste parçaları dahil). cur: çalan parça (sanal olabilir) ya da null.
+ * history: son çalınan sanal kimlikler (karışık listede tekrar etmesin).
+ * → parça | null (liste sonu, "Döngü yok")
+ */
+export function nextTrack(config, cur, dir = 1, { auto = false, rand = Math.random, history = [] } = {}) {
+  const list = config?.tracks || [];
+  if (!list.length) return null;
+  const startFrom = (i, d) => {
+    // boş listeleri atla (en çok bir tur)
+    for (let k = 0, j = i; k < list.length; k += 1) {
+      const t = entryStart(list[j], d, rand);
+      if (t) return t;
+      j = nextIndex({ ...config, shuffle: false, repeat: "all" }, j, d);
+    }
+    return null;
+  };
+  if (!cur) return startFrom(dir < 0 ? list.length - 1 : 0, dir);
+  if (cur.playlistId) {
+    const pi = list.findIndex((t) => t.id === cur.playlistId);
+    const pl = list[pi];
+    if (pl) {
+      const sp = splitItemId(cur.id);
+      const ci = pl.items.findIndex((x) => x.v === sp?.v);
+      const hist = history.filter((h) => h.startsWith(`${pl.id}~`)).map((h) => splitItemId(h).v);
+      const st = playlistStep(pl, ci, dir, { auto, rand, history: hist });
+      if (st.index >= 0) return itemTrack(pl, pl.items[st.index]);
+      const ni = nextIndex({ ...config, repeat: config.repeat === "one" ? "all" : config.repeat }, pi, dir, { auto, rand });
+      if (ni < 0) return null;
+      if (ni === pi && list.length === 1 && auto && pl.repeat === "off") return null;
+      return startFrom(ni, dir);
+    }
+  }
+  const i = list.findIndex((t) => t.id === cur.id);
+  const ni = nextIndex(config, i, dir, { auto, rand });
+  if (ni < 0) return null;
+  if (ni === i) return list[i];
+  return startFrom(ni, dir);
+}
+
+/** Kimlikten çalınacak parça: üst düzey parça, liste parçası ya da liste girişi (→ ilk parçası). */
+export function resolvePlayable(config, id, rand = Math.random) {
+  const p = findPlayable(config, id);
+  if (p) return p;
+  const e = (config?.tracks || []).find((t) => t.id === id);
+  return e ? entryStart(e, 1, rand) : null;
+}
+
 export const trackRange = (t) => (t ? `${formatTime(t.start || 0)}${t.end != null ? ` – ${formatTime(t.end)}` : " →"}` : "");
 
 export function readMusic(storage) {
