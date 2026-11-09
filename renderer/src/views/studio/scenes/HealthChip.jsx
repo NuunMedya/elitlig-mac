@@ -10,6 +10,8 @@ import React, { memo, useEffect, useRef, useState } from "react";
 import { Icon } from "../../../components/ui";
 import { bottleneckCause, networkQueueSec, streamHealth } from "../../../lib/studio/broadcast";
 import { goalStressText } from "../../../lib/studio/goalStress";
+import { limitingStage } from "../../../lib/studio/renderBudget";
+import { loadSnapshot } from "../perf/renderLoad";
 
 const kb = (n) => (Number.isFinite(Number(n)) ? `${Math.round(n)} kbps` : "—");
 const kbOf = (bytes) => (bytes >= 1024 * 1024 ? `${(bytes / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.round((Number(bytes) || 0) / 1024)} KB`);
@@ -35,6 +37,10 @@ function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encodi
   if (goalStress && !goalStress.ok && Date.now() - goalStress.at < 5 * 60_000) warnings.push(`Son golde yayın zorlandı: ${goalStressText(goalStress)}.`);
   const n = status.network || null;
   const cause = bottleneckCause({ status, draw, enc, targetFps, encoding });
+  // Hangi aşama fps'i sınırlıyor: çizim / kodlama / arayüz yükü (ana iş parçacığı) — en çok yük bindirenlerle.
+  const load = open ? loadSnapshot() : null;
+  const stage = open ? limitingStage({ targetFps, draw, enc: wc, load }) : null;
+  const engineText = draw.engine === "worker" ? `ayrı iş parçacığı${draw.mainBase ? " · kip tabanı ana iş parçacığında" : ""}` : "ana iş parçacığı";
   const fps = wc ? wc.encodedFps : h.fps;
   const label = encoding
     ? `${fps} fps${h.bitrateKbps != null ? ` · ${h.bitrateKbps} kbps` : ""}${!wc && h.speed != null ? ` · ${h.speed.toFixed(2)}×` : ""}`
@@ -48,9 +54,16 @@ function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encodi
         <div className="st-health__pop" role="dialog" aria-label="Yayın tanılama">
           <strong>Yayın tanılama</strong>
           {encoding && <p className={`st-health__cause is-${cause.tone}`}><b>{cause.label}</b>{cause.detail ? ` — ${cause.detail}` : ""}</p>}
+          {stage && <p className={`st-health__cause is-${stage.stage === "ok" ? "ok" : "warn"}`}><b>Sınırlayan aşama: {stage.label}</b>{stage.detail ? ` — ${stage.detail}` : ""}</p>}
           <dl>
+            <dt>Çizim motoru</dt><dd>{engineText}</dd>
             <dt>Kodlama yolu</dt><dd>{!encoding ? "—" : wc ? `Tek kodlama · ${wc.hardware ? "donanım" : "yazılım"} · ${wc.bitrateMode === "constant" ? "CBR" : "VBR"}` : `Eski (MediaRecorder + ${status.encoder || "ffmpeg"})`}</dd>
-            <dt>Program çizimi</dt><dd>{draw.fps || 0} / {targetFps} fps · en uzun {draw.drawMs || 0} ms</dd>
+            <dt>Program çizimi</dt><dd>{draw.fps || 0} / {targetFps} fps{Number.isFinite(draw.unique) ? ` · yeni kare ${draw.unique}` : ""} · ort. {draw.avgMs ?? "—"} ms · en uzun {draw.drawMs || 0} ms</dd>
+            {draw.engine === "worker" && <><dt>Çizim ayrıntısı</dt><dd>taban {draw.baseMs ?? "—"} ms · grafik {draw.gfxMs ?? "—"} ms · kodlayıcıya verme {draw.encSubmitMs ?? "—"} ms · kaynak {draw.srcFps ?? "—"} fps ({draw.sources ?? 0}){draw.mainBase ? ` · kip tabanı ${draw.basesIn ?? 0} fps` : ""}</dd></>}
+            {load && <>
+              <dt>Arayüz yükü</dt><dd className={load.busyPct >= 75 ? "text-red" : ""}>ana iş parçacığı %{load.busyPct ?? "?"} meşgul · uzun kareler {load.long.msPerSec} ms/sn (en uzun {load.long.maxMs} ms) · {load.activeLoops} ikincil çizim</dd>
+              {load.offenders.length > 0 && <><dt>En çok yük</dt><dd><ol className="st-health__top">{load.offenders.map((o) => <li key={`${o.kind}:${o.name}`}>{o.name} — {o.msPerSec} ms/sn{o.fps ? ` · ${o.fps} fps` : ""}</li>)}</ol></dd></>}
+            </>}
             <dt>Çizim takılması</dt><dd className={draw.stalls ? "text-red" : ""}>{draw.stalls || 0} (son sn) · {draw.totalStalls || 0} toplam</dd>
             {wc && <>
               <dt>Kodlanan</dt><dd>{wc.encodedFps} fps · {kb(wc.outKbps)}</dd>

@@ -562,6 +562,8 @@ input[type="range"] { accent-color: color-mix(in srgb, var(--acc), var(--ink-to)
 .st-health__cause.is-ok b { color: var(--green-text); }
 .st-health__cause.is-warn b { color: var(--amber-text); }
 .st-health__cause.is-bad b { color: var(--red-text); }
+.st-health__top { margin: 0; padding-left: 16px; text-align: left; font-family: inherit; color: var(--text); }
+.st-health__top li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px; }
 .st-speedtest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 8px; }
 .st-iv { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 11px; border-radius: 10px; border: 1px solid rgba(96, 165, 250, 0.5); background: var(--blue-soft); color: var(--blue-text); font-weight: 800; font-size: 12px; white-space: nowrap; }
 .st-iv:disabled { opacity: 0.45; }

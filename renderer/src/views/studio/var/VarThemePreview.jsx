@@ -2,6 +2,7 @@
 // (drawVarPreview) küçük bir tuvalde, sahte saha görüntüsüyle. animate: true ise
 // ~30 kare/sn oynar (nabız, tarama, karar animasyonu); değilse tek kare.
 import React, { useEffect, useRef } from "react";
+import { canvasLoop } from "../perf/renderLoad";
 import logoInline from "../../../assets/elitlig-beyaz.png?inline";
 import { drawVarPreview } from "./drawVar";
 import { onStudioFontsReady } from "../../../lib/studio/fonts";
@@ -47,16 +48,7 @@ export default function VarThemePreview({ theme, layout = "two", state = "review
       const offFonts = onStudioFontsReady(onLoad);
       return () => { im?.removeEventListener?.("load", onLoad); offFonts(); };
     }
-    let raf = 0;
-    let last = 0;
-    const loop = (t) => {
-      raf = requestAnimationFrame(loop);
-      if (t - last < 33) return;
-      last = t;
-      paint(t, false);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return canvasLoop("VAR tema önizlemesi", { fps: 15, el: () => ref.current }, (t) => paint(t, false));
   }, [theme, layout, state, decision, width, height, animate, key]);
   return <canvas ref={ref} className={`vth-canvas ${className}`} style={fluid ? { width: "100%", height: "auto", aspectRatio: `${width} / ${height}` } : { width, height }} aria-label={title || "VAR teması önizlemesi"} />;
 }

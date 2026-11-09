@@ -7,6 +7,7 @@
 // Hepsi karıştırıcının kendi işlevleriyle çalışır (ctx.mixer = useStudioAudio:
 // setStrip, setMaster, setKillAll, setRoute, setScene, music, update) — kopya kural yok.
 import React, { useEffect, useRef, useState } from "react";
+import { canvasLoop } from "../perf/renderLoad";
 import { Icon } from "../../../components/ui";
 import { FADER_MAX_DB, FADER_MIN_DB, PLAYBACK_CONTEXTS, ROUTE_GROUPS, dbText, patchStrip, routingFor } from "../../../lib/studio/audio";
 import { levelFromSamples } from "../../../lib/studio/compose";
@@ -23,17 +24,17 @@ export function Meter({ getAnalyser, muted, vertical = false }) {
   const get = useRef(getAnalyser);
   get.current = getAnalyser;
   useEffect(() => {
-    let raf = 0; let buf = null; let peak = 0;
-    const loop = () => {
+    let buf = null; let peak = 0; let last = performance.now();
+    const loop = (now) => {
+      const decay = Math.max(1.5, ((now - last) / 1000) * 90);
+      last = now;
       const a = get.current?.();
       let pct = 0;
       if (a) { if (!buf || buf.length !== a.fftSize) buf = new Float32Array(a.fftSize); a.getFloatTimeDomainData(buf); pct = levelFromSamples(buf).pct; }
-      peak = Math.max(pct, peak - 1.5);
+      peak = Math.max(pct, peak - decay);
       if (ref.current) { ref.current.style.setProperty("--lvl", `${pct.toFixed(1)}%`); ref.current.style.setProperty("--peak", `${peak.toFixed(1)}%`); }
-      raf = requestAnimationFrame(loop);
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return canvasLoop("Kısayol ses ölçeri", { fps: 15, el: () => ref.current }, loop);
   }, []);
   return <span ref={ref} className={`wx-meter ${vertical ? "is-v" : ""} ${muted ? "is-muted" : ""}`} aria-hidden="true"><i /><b /></span>;
 }

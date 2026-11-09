@@ -16,14 +16,33 @@ export const setImageLoadListener = (fn) => { onAnyLoad = typeof fn === "functio
 function candidates(url) {
   if (/^(data|blob):/i.test(url)) return [url];
   if (/^https?:\/\//i.test(url)) {
-    const proxied = typeof window !== "undefined" && window.elitlig ? [`elitlig-media://m/${encodeURIComponent(url)}`] : [];
+    // Masaüstü medya vekili: pencerede window.elitlig; çizim işçisinde ana taraf bayrağı (globalThis.__elitligMediaProxy).
+    const proxied = (typeof window !== "undefined" && window.elitlig) || globalThis.__elitligMediaProxy ? [`elitlig-media://m/${encodeURIComponent(url)}`] : [];
     return [...proxied, url];
   }
   return [url];
 }
 
+/** Çizim işçisi (DOM yok): fetch → ImageBitmap (CORS'suz yanıt okunamaz: tuval kirlenmez). */
+function loadBitmap(url, entry) {
+  const list = candidates(url);
+  const tryAt = (i) => {
+    if (i >= list.length) { entry.state = "fail"; return; }
+    fetch(list[i], /^(data|blob):/i.test(list[i]) ? undefined : { mode: "cors" })
+      .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.blob(); })
+      .then((b) => createImageBitmap(b))
+      .then((bmp) => { entry.img = bmp; entry.state = "ok"; onAnyLoad?.(url); })
+      .catch(() => tryAt(i + 1));
+  };
+  tryAt(0);
+}
+
 function load(url, entry) {
-  if (typeof Image === "undefined") { entry.state = "fail"; return; }
+  if (typeof Image === "undefined") {
+    if (typeof fetch === "function" && typeof createImageBitmap === "function" && typeof OffscreenCanvas === "function") loadBitmap(url, entry);
+    else entry.state = "fail";
+    return;
+  }
   const list = candidates(url);
   const tryAt = (i) => {
     if (i >= list.length) { entry.state = "fail"; return; }
@@ -65,6 +84,18 @@ export function getImage(src) {
     load(url, entry);
   }
   return entry.state === "ok" ? entry.img : null;
+}
+
+/**
+ * Hazır görseli önbelleğe koy (çizim işçisi: ana pencere yüklediği görseli ImageBitmap
+ * olarak gönderir — işçide uzak adres CSP / CORS yüzünden yüklenemeyebilir).
+ */
+export function putImage(url, img) {
+  if (!url || !img) return;
+  const prev = cache.get(String(url));
+  if (prev?.img && prev.img !== img) { try { prev.img.close?.(); } catch { /* yoksay */ } }
+  cache.set(String(url), { img, state: "ok" });
+  onAnyLoad?.(url);
 }
 
 /** Önceden yükle (snapshot oluşturulurken). */

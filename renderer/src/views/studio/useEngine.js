@@ -34,7 +34,7 @@ export const STALL_MS = 4000;
 const RESTART_GAP_MS = 10000;
 const STATS_REPORT_MS = 5000;
 
-export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subscribeFrames = null, getDrawStats = null, onError }) {
+export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subscribeFrames = null, getRemoteEncoder = null, getDrawStats = null, onError }) {
   const [status, setStatus] = useState({ state: "idle" });
   const [since, setSince] = useState(null);
   const [mode, setMode] = useState(null); // "live" | "rehearsal"
@@ -136,6 +136,8 @@ export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subs
         audioBitrateKbps: opts.audioBitrateKbps, keyframeSec: opts.keyframeSec || 2, videoConfig: wcConfigRef.current, audioConfig: wcAudioConfigRef.current,
         onData: (buf) => { lastDataRef.current = Date.now(); studio()?.pushChunk?.(buf); },
         onFatal: (reason) => fallbackToLegacy(reason),
+        // İşçi motoru: görüntü çizim işçisinde kodlanır (ana iş parçacığı yükünden bağımsız).
+        remoteEncoder: getRemoteEncoder?.() || null,
       });
     } catch {
       fallbackToLegacy("CONFIGURE");
@@ -145,7 +147,7 @@ export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subs
     wcRef.current = { pipeline, unsubscribe };
     lastDataRef.current = Date.now();
     return true;
-  }, [fallbackToLegacy, getAudioTrack, getCanvas, stopWebCodecs, subscribeFrames]);
+  }, [fallbackToLegacy, getAudioTrack, getCanvas, getRemoteEncoder, stopWebCodecs, subscribeFrames]);
 
   const startRecorder = useCallback(() => {
     const opts = optsRef.current;

@@ -17,7 +17,7 @@ import { Field, Icon, Kbd } from "../../../components/ui";
 import { BITRATE_PRESETS, FPS_CHOICES, RESOLUTION_CHOICES, encodingPreset, recommendedBitrate } from "../../../lib/studio/broadcast";
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../../lib/studio/transitions";
 import { WORKSPACES, FIXED_SHORTCUTS } from "../../../lib/studio/scenesWorkspace";
-import { AUDIO_KBPS_CHOICES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, PIPELINES, RTMP_PUBLISHERS, STREAM_DELAY_CHOICES, RECORD_QUALITIES, RESERVED_KEYS, UI_SCALES, UI_THEMES, bindHotkey, keyText, recordEstimate } from "./settings";
+import { AUDIO_KBPS_CHOICES, COMPOSITOR_ENGINES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, PIPELINES, RTMP_PUBLISHERS, STREAM_DELAY_CHOICES, RECORD_QUALITIES, RESERVED_KEYS, UI_SCALES, UI_THEMES, bindHotkey, keyText, recordEstimate } from "./settings";
 import QualityPresets from "../QualityPresets";
 import { RAIL_SIZES, RAIL_WIDGETS, addWidget, moveWidget, removeWidget, resizeWidget, sizeKey, sizesOf, widgetOf } from "../shortcuts/railModel";
 import { RailCatalog } from "../shortcuts/ShortcutRail";
@@ -185,6 +185,9 @@ function SettingsPage({
         </Section>
         <Section title="Kodlama yolu" sub="Tek kodlama (WebCodecs): görüntü bir kez, donanımda kodlanır; ffmpeg yalnız kopyalar (OBS gibi). Sorun olursa yayın kesilmeden eski yola geçilir.">
           <div className="st-choices">{PIPELINES.map((p) => <Choice key={p.key} on={settings.stream.pipeline === p.key} title={p.label} text={p.hint} onClick={() => set("stream", { pipeline: p.key })} />)}</div>
+        </Section>
+        <Section title="Çizim motoru" sub="Program karesinin nerede çizildiği. Ayrı iş parçacığında arayüz yükü (paneller, küçük resimler, ölçerler) yayın fps'ini düşürmez; kodlama da orada yapılır. Yeni ayar stüdyo yeniden açılınca geçerli.">
+          <div className="st-choices">{COMPOSITOR_ENGINES.map((p) => <Choice key={p.key} on={settings.stream.compositor === p.key} title={p.label} text={p.hint} onClick={() => set("stream", { compositor: p.key })} />)}</div>
         </Section>
         <Section title="Kodlayıcı" sub="Eski kodlama yolunda ffmpeg'in kodlayıcısı. Uygulama sürümü desteklemiyorsa otomatik seçim kullanılır.">
           <div className="st-choices">{ENCODER_PREFS.map((e) => <Choice key={e.key} on={settings.stream.encoder === e.key} title={e.label} text={e.hint} onClick={() => set("stream", { encoder: e.key })} />)}</div>

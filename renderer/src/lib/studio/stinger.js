@@ -367,11 +367,11 @@ function paintLogo(ctx, logo, pal, cx, cy, size) {
 let glintCanvas = null;
 function paintLogoGlint(ctx, logo, pal, cx, cy, size, g) {
   const [iw, ih] = logoSize(logo);
-  if (!iw || !ih || typeof document === "undefined") return;
+  if (!iw || !ih || (typeof document === "undefined" && typeof OffscreenCanvas === "undefined")) return;
   const k = Math.min(size / iw, size / ih);
   const w = Math.max(2, Math.ceil(iw * k));
   const h = Math.max(2, Math.ceil(ih * k));
-  if (!glintCanvas) glintCanvas = document.createElement("canvas");
+  if (!glintCanvas) glintCanvas = typeof document !== "undefined" ? document.createElement("canvas") : new OffscreenCanvas(64, 64); // işçide OffscreenCanvas
   if (glintCanvas.width < w || glintCanvas.height < h) { glintCanvas.width = Math.ceil(w / 64) * 64; glintCanvas.height = Math.ceil(h / 64) * 64; }
   const c = glintCanvas.getContext("2d");
   c.clearRect(0, 0, w + 2, h + 2);

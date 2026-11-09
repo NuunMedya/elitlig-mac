@@ -2,6 +2,7 @@
 // pencereyi kaplayan katman; program / önizleme tuvali kare kare kopyalanır
 // (asıl tuval yerinde kalır, karıştırıcı etkilenmez). Esc ya da çift tık kapatır.
 import React, { useEffect, useMemo, useRef } from "react";
+import { canvasLoop } from "../perf/renderLoad";
 import { Icon } from "../../../components/ui";
 import Monitor from "./Monitor";
 
@@ -10,15 +11,12 @@ export function useMirror(source) {
   const canvas = useMemo(() => document.createElement("canvas"), []);
   useEffect(() => {
     if (!source) return undefined;
-    let raf = 0;
     const loop = () => {
-      raf = requestAnimationFrame(loop);
       if (!source.width) return;
       if (canvas.width !== source.width || canvas.height !== source.height) { canvas.width = source.width; canvas.height = source.height; }
       try { canvas.getContext("2d", { alpha: false }).drawImage(source, 0, 0); } catch { /* yoksay */ }
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return canvasLoop("Tam ekran ayna", { fps: 30, el: canvas }, loop);
   }, [source, canvas]);
   return canvas;
 }

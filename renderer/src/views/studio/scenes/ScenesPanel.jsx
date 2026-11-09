@@ -15,6 +15,8 @@
 //   SceneRail          dikey sahne listesi (eski "Büyük program" düzeni)
 //   SourceRows         kaynak listesi (Sahneler sekmesi ve sahne düzenleyicisi)
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { canvasLoop } from "../perf/renderLoad";
+import { SECONDARY_FPS } from "../../../lib/studio/renderBudget";
 import { createPortal } from "react-dom";
 import { Field, Icon, MenuButton, Modal } from "../../../components/ui";
 import { FITS, TEMPLATE_CATEGORIES, layersTopFirst, sourceKindIcon, sourceKindLabel, sourceUsage, templateOf, templatePreview, templateSourceIds, templatesOfCategory, uiIndexToArray } from "../../../lib/studio/scenes";
@@ -575,20 +577,14 @@ export function useEditorCanvas(configRef, runtimeRef, sceneId, overrideRef, mat
     canvas.height = Math.round((w * H) / W);
   }, [canvas, W, H, maxW]);
   useEffect(() => {
-    let raf = 0;
-    let last = 0;
     const loop = (now) => {
-      raf = requestAnimationFrame(loop);
-      if (now - last < 32) return;
-      last = now;
       const cfg = configRef.current;
       const sc = cfg?.scenes.find((x) => x.id === sceneId) || null;
       const ctx = canvas.getContext("2d", { alpha: false });
       drawScene(ctx, sc, cfg?.sources || [], runtimeRef.current, canvas.width, canvas.height, { now, placeholders: true, override: overrideRef.current, matchClockMs: matchClockRef?.current?.() ?? null });
       if (extraRef?.current) { ctx.save(); try { extraRef.current(ctx, canvas.width, canvas.height, now); } catch { /* yoksay */ } ctx.restore(); }
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return canvasLoop("Sahne düzenleyici", { fps: SECONDARY_FPS.editor, el: canvas }, loop);
   }, [canvas, configRef, extraRef, matchClockRef, overrideRef, runtimeRef, sceneId]);
   return canvas;
 }

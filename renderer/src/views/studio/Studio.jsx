@@ -446,7 +446,12 @@ export default function Studio({ auth, go }) {
     pgmFxRef.current = v;
     setPgmFxState(v);
   }, []);
-  const comp = useCompositor({ width: preset.width, height: preset.height, fps: preset.fps, configRef, runtimeRef: src.runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef, modesRef, pgmFxRef });
+  // Çizim işçisi için grafik anlık görüntüsü ve maç saati (düz veri; işçide aynı drawGraphics çizer).
+  const workerSnapRef = useRef(null);
+  workerSnapRef.current = gRef.current ? gRef.current.snapshotRef?.current || gRef.current.snapshot || null : null;
+  const timerRef = useRef(null);
+  timerRef.current = timer || null;
+  const comp = useCompositor({ width: preset.width, height: preset.height, fps: preset.fps, configRef, runtimeRef: src.runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef, modesRef, pgmFxRef, engine: settings.stream.compositor, snapshotRef: workerSnapRef, timerRef, workerGraphics: Boolean(drawGraphicsSafe) });
   /** LED aynası için programın küçük JPEG karesi. */
   const ledFrameRef = useRef(null);
   ledFrameRef.current = () => {
@@ -458,8 +463,10 @@ export default function Studio({ auth, go }) {
 
   /* ───────── kodlayıcı ve YouTube ───────── */
   const onEngineError = useCallback((m) => toast(m, { tone: "error", timeout: 6000 }), [toast]);
-  const engine = useEngine({ getVideoTrack: comp.getVideoTrack, getAudioTrack: mixer.audioTrack, getCanvas: comp.getCanvas, subscribeFrames: comp.subscribeFrames, getDrawStats: comp.getStats, onError: onEngineError });
+  const engine = useEngine({ getVideoTrack: comp.getVideoTrack, getAudioTrack: mixer.audioTrack, getCanvas: comp.getCanvas, subscribeFrames: comp.subscribeFrames, getRemoteEncoder: comp.getRemoteEncoder, getDrawStats: comp.getStats, onError: onEngineError });
   engineStatusRef.current = engine.status;
+  // Tanılama kancası (geliştirici konsolu / ölçüm): çizim + kodlama sayaçları.
+  try { globalThis.__elitligStudio = { draw: comp.getStats, enc: engine.getEncodeStats, engine: comp.engine }; } catch { /* yoksay */ }
   const goalStress = useGoalStress({ active: engine.active, getDrawStats: comp.getStats, getEncodeStats: engine.getEncodeStats, getStatus: () => engineStatusRef.current });
   goalMarkRef.current = goalStress.mark;
   const yt = useYoutube(matchId, { encodingLive: engine.mode === "live" && engine.active });

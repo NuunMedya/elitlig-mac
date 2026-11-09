@@ -8,6 +8,8 @@
 //   MetersTile    program ses şeridi (varsa) ya da mikrofon ölçeri
 //   ClockTile     saat + maç dakikası
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { canvasLoop } from "../perf/renderLoad";
+import { SECONDARY_FPS } from "../../../lib/studio/renderBudget";
 import { Icon } from "../../../components/ui";
 import { resolveScene } from "../../../lib/studio/scenes";
 import { stripGrid } from "../../../lib/studio/stageGrid";
@@ -106,19 +108,14 @@ function LedMonitorInner({ led, configRef, runtimeRef, graphicsRef, matchClockRe
 
   useEffect(() => {
     if (web) return undefined;
-    let raf = 0;
-    let last = 0;
     const loop = (now) => {
-      raf = requestAnimationFrame(loop);
-      if (now - last < 66 || document.hidden || !canvas.isConnected) return;
-      last = now;
       const cfg = configRef.current;
       const { id, off } = targetRef.current;
       const ctx = canvas.getContext("2d", { alpha: false });
       const W = canvas.width;
       const H = canvas.height;
       const scene = off || !id ? null : resolveScene(cfg, id);
-      drawScene(ctx, scene, cfg?.sources || [], runtimeRef.current, W, H, { now, matchClockMs: matchClockRef?.current?.() ?? null });
+      drawScene(ctx, scene, cfg?.sources || [], runtimeRef.current, W, H, { now, matchClockMs: matchClockRef?.current?.() ?? null, noFx: true });
       const snap = graphicsRef?.current;
       if (scene && snap && drawGraphicsSafe) { try { drawGraphicsSafe(ctx, { width: W, height: H, now: Date.now(), sceneId: id, target: "led" }, snap); } catch { /* yoksay */ } }
       if (!scene) {
@@ -128,8 +125,8 @@ function LedMonitorInner({ led, configRef, runtimeRef, graphicsRef, matchClockRe
         ctx.fillText(off ? "LED kapalı (siyah)" : "LED için sahne yok", W / 2, H / 2);
       }
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    // LED önizleme ~8 fps, görünürken (gerçek LED çıkışı kendi penceresinde tam hızda).
+    return canvasLoop("LED önizleme", { fps: SECONDARY_FPS.ledPreview, el: canvas }, loop);
   }, [canvas, configRef, graphicsRef, matchClockRef, runtimeRef, web]);
 
   const value = web ? "web" : p.route === "scene" ? `scene:${p.sceneId}` : p.route;
@@ -197,10 +194,8 @@ export const AnglesTile = memo(function AnglesTile({ replays, meta, sources, cur
 function MicMeter({ mixer, muted }) {
   const ref = useRef(null);
   useEffect(() => {
-    let raf = 0;
     let buf = null;
     const loop = () => {
-      raf = requestAnimationFrame(loop);
       const a = mixer?.micAnalyser?.(true);
       const el = ref.current;
       if (!a || !el) return;
@@ -209,8 +204,7 @@ function MicMeter({ mixer, muted }) {
       const { peakDb } = samplesLevel(buf);
       el.style.width = `${meterFraction(peakDb) * 100}%`;
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return canvasLoop("Mikrofon ölçeri (pano)", { fps: SECONDARY_FPS.meter, el: () => ref.current }, loop);
   }, [mixer]);
   return <div className={`stg-meter ${muted ? "is-muted" : ""}`}><span><Icon name={muted ? "micOff" : "mic"} size={11} /> Mikrofon</span><span className="stg-meter__bar"><i ref={ref} /></span></div>;
 }

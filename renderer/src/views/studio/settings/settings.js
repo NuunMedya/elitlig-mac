@@ -17,8 +17,9 @@
 // düzenler (tek doğruluk kaynağı).
 export const SETTINGS_KEY = "studio.settings.v1";
 import { PIPELINES, normalizePipeline } from "../../../lib/studio/encodepath";
+import { COMPOSITOR_ENGINES, normalizeCompositorEngine } from "../../../lib/studio/renderBudget";
 import { DEFAULT_OPS, normalizeOps } from "./opsDefaults";
-export { PIPELINES };
+export { PIPELINES, COMPOSITOR_ENGINES };
 
 export const ENCODER_PREFS = [
   { key: "auto", label: "Otomatik (önerilen)", hint: "Donanım kodlayıcı varsa o, yoksa x264" },
@@ -100,7 +101,8 @@ export const DEFAULT_SETTINGS = {
   v: 3,
   // pipeline: kodlama yolu — "auto" | "webcodecs" (tek kodlama) | "legacy" (MediaRecorder + ffmpeg)
   // audioKbps 192: AAC 128 kbps'de 16 kHz üstü belirgin kesilir (ölçüm: kaynak −41,9 dB → 128k −49,7 / 192k −46,0 dB).
-  stream: { encoder: "auto", keyframeSec: 2, audioKbps: 192, pipeline: "auto", delaySec: 0, publisher: "auto" },
+  // compositor: çizim motoru — "auto" | "worker" (ayrı iş parçacığı) | "main" (ana iş parçacığı; eski yol)
+  stream: { encoder: "auto", keyframeSec: 2, audioKbps: 192, pipeline: "auto", delaySec: 0, publisher: "auto", compositor: "auto" },
   record: { enabled: false, dir: null, quality: "stream", customKbps: 10000, customHeight: 1080 },
   // tekrar klibi 15 sn: önizlemede giriş–çıkışla istenen bölüm seçilir. directTake: R kısayolu
   // son tekrarı önizlemeye yükleyip AYNI GEÇİŞ yoluyla hemen yayına alır [önizleme-geçiş]
@@ -171,6 +173,7 @@ export function normalizeSettings(raw) {
       pipeline: normalizePipeline(r.stream?.pipeline),
       delaySec: pick(Number(r.stream?.delaySec), STREAM_DELAY_CHOICES, d.stream.delaySec),
       publisher: pick(r.stream?.publisher, RTMP_PUBLISHERS.map((p) => p.key), d.stream.publisher),
+      compositor: normalizeCompositorEngine(r.stream?.compositor),
     },
     record: {
       enabled: bool(r.record?.enabled, d.record.enabled),

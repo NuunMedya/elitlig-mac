@@ -13,6 +13,8 @@
 // target="program": tüm denetimler YAYINDAKİ tekrara anında uygulanır (useReplayMode › decks.program).
 // [önizleme-geçiş] target="preview": yalnız önizleme; YAYINA AL Studio'nun tek GEÇİŞ yolunu çağırır.
 import React, { memo, useEffect, useRef, useState } from "react";
+import { canvasLoop } from "../perf/renderLoad";
+import { SECONDARY_FPS } from "../../../lib/studio/renderBudget";
 import { Icon } from "../../../components/ui";
 import { replayTitle } from "../../../lib/studio/replays";
 import { DEFAULT_VIEW, clipTime, isZoomed, panBy, zoomAt, zoomRect, clampView } from "./replayView";
@@ -50,9 +52,7 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
 
   // Küçük harita (yakınlaşınca).
   useEffect(() => {
-    let raf = 0;
     const loop = () => {
-      raf = requestAnimationFrame(loop);
       const D = deckRef.current;
       const el = D.el?.();
       const m = mapRef.current;
@@ -66,8 +66,7 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
       ctx.strokeStyle = "#fbbf24"; ctx.lineWidth = 2;
       ctx.strokeRect((r.sx / el.videoWidth) * W + 1, (r.sy / el.videoHeight) * H + 1, (r.sw / el.videoWidth) * W - 2, (r.sh / el.videoHeight) * H - 2);
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return canvasLoop("Tekrar küçük haritası", { fps: SECONDARY_FPS.replayThumb, el: () => mapRef.current }, loop);
   }, []);
 
   // Tekerlek / kıstırma (pasif olmayan dinleyici: sayfa kaymasın).

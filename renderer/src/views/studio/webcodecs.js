@@ -11,6 +11,11 @@
 // ffmpeg x264/VideoToolbox yerine tek donanım kodlaması), MediaRecorder'ın
 // titreşen zaman damgaları yerine sabit ızgara, ffmpeg'de kodlama yükü yok.
 //
+// İşçi motorunda (useCompositor engine "worker") görüntü çizim işçisinde kodlanır
+// (remoteEncoder): kare ızgarası, anahtar kare ve kuyruk sınırı işçide; buraya yalnız
+// kodlanmış parçalar gelir (mkv birleştirme + ses burada). Ana iş parçacığı meşgulken
+// kodlanan kare hızı düşmez; zaman damgaları işçinin ızgarasından.
+//
 // Hata (kodlayıcı kapandı, yapılandırma reddedildi, SPS değişti …): onFatal →
 // useEngine eski yola (MediaRecorder + yeniden kodlama) geçer; yayın kesilmez
 // (yalnız ffmpeg yeniden başlar, aktarıcı RTMP bağlantısını korur).
@@ -92,9 +97,18 @@ export async function probeWebCodecs({ width, height, fps, videoBitrateKbps, aud
   return { ok: false, reason: "NO_H264_ENCODER" };
 }
 
-export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height, audioBitrateKbps = 192, keyframeSec = 2, videoConfig, audioConfig = null, onData, onFatal, now = () => performance.now() }) {
-  const clock = createFrameClock(fps);
-  const keys = createKeyframePlanner(fps, Math.min(2, keyframeSec || 2));
+export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height, audioBitrateKbps = 192, keyframeSec = 2, videoConfig, audioConfig = null, onData, onFatal, remoteEncoder = null, now = () => performance.now() }) {
+  // Uzak (işçi) kodlayıcıda saat ve anahtar kare planı işçidedir: burada vekilleri.
+  const remoteClock = { t0: null };
+  let remote = null;
+  let remoteStats = null;
+  const clock = remoteEncoder ? {
+    next: () => null,
+    elapsedMs: (t) => (remoteClock.t0 === null ? 0 : t - remoteClock.t0),
+    started: () => remoteClock.t0 !== null,
+    stats: () => ({ frames: remoteStats?.frames ?? 0, gaps: remoteStats?.gaps ?? 0, skipped: remoteStats?.skipped ?? 0 }),
+  } : createFrameClock(fps);
+  const keys = remoteEncoder ? { due: () => false, force: () => remote?.forceKey(), gop: Math.round(fps * Math.min(2, keyframeSec || 2)) } : createKeyframePlanner(fps, Math.min(2, keyframeSec || 2));
   const st = {
     framesIn: 0, framesEncoded: 0, encodeDropped: 0, keyframes: 0, bytesOut: 0, maxQueue: 0,
     audioChunks: 0, audioDropped: 0, audioGaps: 0, audioGapMs: 0, audioReadLagMaxMs: 0, restarts: 0, latencyMs: 0, maxLatencyMs: 0, errors: 0,
@@ -152,8 +166,8 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
 
   /* -------------------------------- görüntü -------------------------------- */
 
-  const venc = new window.VideoEncoder({
-    output: (chunk, meta) => {
+  /** Kodlanmış görüntü parçası (yerel EncodedVideoChunk ya da işçiden gelen { tsUs, key, data }). */
+  function onVideoChunk(chunk, meta) {
       if (dead) return;
       if (meta?.decoderConfig?.colorSpace && !colorSpace) colorSpace = { ...meta.decoderConfig.colorSpace };
       const desc = meta?.decoderConfig?.description;
@@ -176,8 +190,8 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
       const tsMs = chunk.timestamp / 1000;
       if (tsMs + 0.5 < lastVideoMs) { fatal("REORDER"); return; } // B-kare beklenmez
       lastVideoMs = tsMs;
-      const data = new Uint8Array(chunk.byteLength);
-      chunk.copyTo(data);
+      let data = chunk.bytes || null;
+      if (!data) { data = new Uint8Array(chunk.byteLength); chunk.copyTo(data); }
       queue(muxer.block(1, tsMs, key, data));
       st.framesEncoded += 1;
       win.frames += 1;
@@ -190,14 +204,27 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
         if (lat > st.maxLatencyMs) st.maxLatencyMs = lat;
       }
       if (submitted.size > 120) submitted.clear();
-    },
-    error: (e) => fatal("VIDEO_ENCODER", e),
-  });
-  try { venc.configure(videoConfig); } catch (e) { dead = true; throw e; }
+  }
+
+  let venc = null;
+  if (remoteEncoder) {
+    remote = remoteEncoder.open({ config: videoConfig, fps, keyframeSec: Math.min(2, keyframeSec || 2), maxQueue: MAX_ENCODE_QUEUE }, {
+      onChunk: (m) => {
+        if (m.colorSpace && !colorSpace) colorSpace = m.colorSpace;
+        onVideoChunk({ timestamp: m.tsUs, type: m.key ? "key" : "delta", bytes: new Uint8Array(m.data), byteLength: m.data.byteLength }, m.desc ? { decoderConfig: { description: m.desc } } : null);
+      },
+      onClock: (t0Local) => { remoteClock.t0 = t0Local; },
+      onError: (reason, message) => fatal(reason === "WORKER" ? "WORKER" : reason || "VIDEO_ENCODER", message),
+    });
+    if (!remote) { dead = true; throw new Error("REMOTE_ENCODER"); }
+  } else {
+    venc = new window.VideoEncoder({ output: onVideoChunk, error: (e) => fatal("VIDEO_ENCODER", e) });
+    try { venc.configure(videoConfig); } catch (e) { dead = true; throw e; }
+  }
 
   /** Karıştırıcı bir kare çizdi (useCompositor aboneliği). */
   function onFrame(nowMs) {
-    if (dead || venc.state !== "configured") return;
+    if (dead || !venc || venc.state !== "configured") return;
     const slot = clock.next(nowMs);
     if (!slot) return;
     st.framesIn += 1;
@@ -414,6 +441,14 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
     },
     stats() {
       const t = now();
+      if (remote) {
+        const r = remote.stats();
+        if (r) {
+          remoteStats = r;
+          st.framesIn = r.framesIn; st.encodeDropped = r.encodeDropped; st.maxQueue = r.maxQueue;
+          st.latencyMs = r.latencyMs; st.maxLatencyMs = r.maxLatencyMs;
+        }
+      }
       if (t - win.at >= 1000) {
         win.fps = Math.round((win.frames * 1000) / (t - win.at));
         win.kbps = Math.round((win.bytes * 8) / (t - win.at));
@@ -426,7 +461,8 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
         bitrateMode: videoConfig.bitrateMode,
         colorSpace,
         audioKbps: audioConfig ? Math.round(audioConfig.bitrate / 1000) : null,
-        queue: dead ? 0 : venc.encodeQueueSize,
+        queue: dead ? 0 : remote ? remoteStats?.queue ?? 0 : venc.encodeQueueSize,
+        encodeIn: remote ? "worker" : "main",
         encodedFps: win.fps,
         outKbps: win.kbps,
         ...clock.stats(),
@@ -446,7 +482,8 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
       try { reader?.cancel(); } catch { /* yoksay */ }
       stopWorkerAudio();
       try { track?.stop(); } catch { /* yoksay */ }
-      try { if (venc.state !== "closed") venc.close(); } catch { /* yoksay */ }
+      try { remote?.close(); } catch { /* yoksay */ }
+      try { if (venc && venc.state !== "closed") venc.close(); } catch { /* yoksay */ }
       try { if (aenc && aenc.state !== "closed") aenc.close(); } catch { /* yoksay */ }
     },
   };

@@ -5,6 +5,7 @@
 //   4. Logo geçişleri: markanın renkleri ve logosuyla (Marka sekmesinden)
 // Monitörlerin yanındaki geçiş paneli yalnız GEÇİŞ + hızlı tür seçimi tutar.
 import React, { memo, useEffect, useRef } from "react";
+import { canvasLoop } from "../perf/renderLoad";
 import { Field, Icon } from "../../../components/ui";
 import { TRANSITION_KINDS, drawTransitionStinger, isStingerKind, transitionFrame, transitionKind, transitionMs } from "../../../lib/studio/transitions";
 
@@ -50,22 +51,17 @@ export function paintTransitionSample(ctx, kind, p, logo, branding) {
 function Sample({ kind, ms, brandRef }) {
   const ref = useRef(null);
   useEffect(() => {
-    let raf = 0;
     const t0 = performance.now();
     const dur = Math.max(300, ms || 600);
     const cycle = dur + 900;
-    let last = 0;
     const loop = (now) => {
-      raf = requestAnimationFrame(loop);
       const c = ref.current;
-      if (!c || c.offsetParent === null || now - last < 33) return;
-      last = now;
+      if (!c || c.offsetParent === null) return;
       const t = (now - t0) % cycle;
       const p = t < 450 ? 0 : Math.min(1, (t - 450) / dur);
       paintTransitionSample(c.getContext("2d"), kind, p, brandRef?.current?.logo || null, brandRef?.current?.branding || null);
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return canvasLoop("Geçiş örnekleri", { fps: 20, el: () => ref.current }, loop);
   }, [kind, ms, brandRef]);
   return <canvas ref={ref} width={W} height={H} className="st-trs__canvas" />;
 }

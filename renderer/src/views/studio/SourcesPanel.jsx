@@ -49,7 +49,7 @@ export function SourceThumb({ source, runtimeRef, width = 96 }) {
       const ctx = c.getContext("2d");
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, c.width, c.height);
-      drawSource(ctx, srcRef.current, runtimeRef.current.get(srcRef.current.id), { x: 0, y: 0, w: c.width, h: c.height }, srcRef.current.kind === "image" ? "contain" : "cover", { placeholders: true });
+      drawSource(ctx, srcRef.current, runtimeRef.current.get(srcRef.current.id), { x: 0, y: 0, w: c.width, h: c.height }, srcRef.current.kind === "image" ? "contain" : "cover", { placeholders: true, noFx: true });
     };
     draw();
     const t = setInterval(draw, 600);

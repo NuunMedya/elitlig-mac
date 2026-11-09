@@ -14,6 +14,8 @@
 //              her şeritte YAYINDA / neden kapalı rozeti
 // Ölçerler tek rAF döngüsünde DOM'u doğrudan günceller (React çizimi yok).
 import AudioFiltersDialog from "./live/AudioFiltersDialog";
+import { canvasLoop } from "./perf/renderLoad";
+import { SECONDARY_FPS } from "../../lib/studio/renderBudget";
 import { filtersSummary } from "../../lib/studio/audioFilters";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Field, Icon, Kbd } from "../../components/ui";
@@ -34,10 +36,12 @@ export function LevelMeter({ getAnalyser, muted, compact = false }) {
   const ref = useRef(getAnalyser);
   ref.current = getAnalyser;
   useEffect(() => {
-    let raf = 0;
     let buf = null;
     let peak = 0;
-    const loop = () => {
+    let last = performance.now();
+    const loop = (now) => {
+      const decay = Math.max(1.5, ((now - last) / 1000) * 90); // tepe ~%90 / sn düşer (kare hızından bağımsız)
+      last = now;
       const a = ref.current?.();
       let pct = 0;
       if (a) {
@@ -45,15 +49,14 @@ export function LevelMeter({ getAnalyser, muted, compact = false }) {
         a.getFloatTimeDomainData(buf);
         pct = levelFromSamples(buf).pct;
       }
-      peak = Math.max(pct, peak - 1.5);
+      peak = Math.max(pct, peak - decay);
       if (bar.current) {
         bar.current.style.setProperty("--lvl", `${pct.toFixed(1)}%`);
         bar.current.style.setProperty("--peak", `${peak.toFixed(1)}%`);
       }
-      raf = requestAnimationFrame(loop);
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    // Ölçer 15 fps, görünmüyorsa çizilmez (arayüz yükü; yayın ayrı iş parçacığında).
+    return canvasLoop("Ses ölçeri (üst çubuk)", { fps: SECONDARY_FPS.meter, el: () => bar.current }, loop);
   }, []);
   return <span ref={bar} className={`st-meter ${muted ? "is-muted" : ""} ${compact ? "st-meter--compact" : ""}`} aria-hidden="true"><i /><b /></span>;
 }
@@ -62,7 +65,6 @@ export function LevelMeter({ getAnalyser, muted, compact = false }) {
 export function useMeterBank() {
   const items = useRef(new Map()); // key → { get, el, state }
   useEffect(() => {
-    let raf = 0;
     let buf = null;
     let last = performance.now();
     const loop = () => {
@@ -111,10 +113,9 @@ export function useMeterBank() {
           el.classList.toggle("is-clipped", it.clipShown);
         }
       }
-      raf = requestAnimationFrame(loop);
     };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    // Tüm şerit ölçerleri tek döngüde, 15 fps (balistik dt ile: kare hızından bağımsız).
+    return canvasLoop("Ses karıştırıcı ölçerleri", { fps: SECONDARY_FPS.meter }, loop);
   }, []);
   return useCallback((key, get) => (el) => {
     if (!el) { const it = items.current.get(key); if (it) it.el = null; return; }
