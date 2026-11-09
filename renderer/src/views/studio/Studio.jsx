@@ -126,7 +126,7 @@ import { COVER_SECTION } from "./youtube/cover/CoverSection";
 import { VAR_THEME_SECTION } from "./settings/VarThemeSection";
 import { useStudioSettings } from "./settings/useStudioSettings";
 import { patchOps } from "./settings/opsDefaults";
-import { HOTKEY_ACTIONS, keyText, localRecordOptions, recordEstimate, recordQualityOf, stepScale } from "./settings/settings";
+import { HOTKEY_ACTIONS, keyText, localRecordOptions, recordEstimate, recordQualityOf, stepScale, themeTone } from "./settings/settings";
 // ── alt panel çalışma alanı (sütunlar, parçalar) + ayar şablonları ──
 import { useDock } from "./dock/useDock";
 import { panelOf } from "./dock/dockModel";
@@ -1171,8 +1171,10 @@ export default function Studio({ auth, go }) {
   // Renk teması (Ayarlar › Görünüm): <html data-st-theme> — gövdeye taşınan pencereler de alır.
   useEffect(() => {
     const el = document.documentElement;
-    if (settings.view.theme && settings.view.theme !== "gece") el.dataset.stTheme = settings.view.theme; else delete el.dataset.stTheme;
-    return () => { delete el.dataset.stTheme; };
+    // Her zaman yazılır (gece dahil): gövdeye taşınan menüler / bildirimler de stüdyo belirteçlerini alır.
+    el.dataset.stTheme = settings.view.theme || "gece";
+    el.dataset.stTone = themeTone(settings.view.theme);
+    return () => { delete el.dataset.stTheme; delete el.dataset.stTone; };
   }, [settings.view.theme]);
   // ⌘ + / ⌘ − / ⌘ 0 (Windows'ta Ctrl): arayüz ölçeği %70…%125 (uygulama menüsünün yakınlaştırması yerine).
   const scaleRef = useRef(settings.view.scale);

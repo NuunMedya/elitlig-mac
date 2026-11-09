@@ -341,8 +341,10 @@ function SettingsPage({
           </div>
         </Section>
         <Section title="Renk teması" sub="Panellerin, sekmelerin ve düğmelerin renkleri. Yayına giden görüntü (skorbord, grafikler) değişmez.">
-          <div className="st-themes">
-            {UI_THEMES.map((t) => (
+          {[["dark", "Koyu temalar · gece maçı, karanlık reji"], ["light", "Açık temalar · aydınlık oda, gündüz (monitör ekranları koyu kalır)"]].map(([tone, title]) => (
+          <div key={tone} className="st-themes" role="group" aria-label={title}>
+            <h6 className="st-themes__h">{title}</h6>
+            {UI_THEMES.filter((t) => (t.tone === "light" ? "light" : "dark") === tone).map((t) => (
               <button key={t.key} type="button" className={`st-theme ${settings.view.theme === t.key ? "is-on" : ""}`} onClick={() => set("view", { theme: t.key })} aria-pressed={settings.view.theme === t.key} data-theme-key={t.key}>
                 <span className="st-theme__pic" style={{ background: t.sw[0] }} aria-hidden="true">
                   <i style={{ background: t.sw[1] }}><b style={{ background: t.sw[2] }} /><b style={{ background: t.sw[1], boxShadow: `inset 0 -2px 0 ${t.sw[2]}` }} /></i>
@@ -353,6 +355,7 @@ function SettingsPage({
               </button>
             ))}
           </div>
+          ))}
         </Section>
         <Section title="Arayüz">
           <Field label="Arayüz ölçeği · ⌘ + / ⌘ − / ⌘ 0 (Windows: Ctrl)">

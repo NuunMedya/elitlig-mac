@@ -16,6 +16,8 @@ import { Icon, MenuButton } from "../../../components/ui";
 import { addItem, applyGrid, boardPanelId, componentOf, dropRemoved, normalizeItem, pushRemoved, removeItem, resizeItem, setBoardCols } from "./layoutModel";
 import { useLayoutCtx } from "./ctx";
 import { itemLabel } from "./components";
+import { WIDGET_IMPL } from "../shortcuts/widgets";
+import { clearIntent, intentOf, openPop } from "../shortcuts/wkit";
 
 const Grid = WidthProvider(GridLayout);
 
@@ -74,7 +76,15 @@ function BoardItem({ item, boardId, boards, edit, ctx, pop, setPop, onRemove, on
   const meta = componentOf(item.t);
   const label = itemLabel(item, ctx);
   const popOpen = pop?.i === item.i;
-  const togglePop = useCallback(() => setPop((p) => (p?.i === item.i ? null : { i: item.i, anchor: ref.current, wide: false })), [item.i, setPop]);
+  // Seçenek alanı olmayan parçacıkta "seçenekler" niyeti → yalnız renk ve biçim paneli (style).
+  const togglePop = useCallback(() => {
+    const impl = WIDGET_IMPL[meta?.widget];
+    const style = Boolean(impl) && intentOf(item.i)?.mode === "options" && !impl.options;
+    if (style) clearIntent(item.i);
+    setPop((p) => (p?.i === item.i ? null : { i: item.i, anchor: ref.current, wide: false, style }));
+  }, [item.i, meta?.widget, setPop]);
+  // Sağ tık (parçacık kendisi işlemediyse): renk ve biçim / seçenekler.
+  const onContextMenu = meta?.widget && !edit ? (e) => { e.preventDefault(); openPop({ id: item.i }, togglePop, { mode: "options" }); } : undefined;
   const others = boards.filter((b) => b.id !== boardId);
   const menu = [
     ...SIZE_PRESETS.map(([w, h, l]) => ({ label: `Boyut ${l}`, icon: "grid", onClick: () => onResize(item.i, w, h) })),
@@ -88,7 +98,7 @@ function BoardItem({ item, boardId, boards, edit, ctx, pop, setPop, onRemove, on
   let body = null;
   try { body = ctx.renderComponent(item, { boardId, popOpen, togglePop, setPopWide: (v) => setPop((p) => (p ? { ...p, wide: v } : p)) }); } catch (e) { body = <p className="st-hint st-pad">{label}: çizilemedi ({String(e?.message || e)})</p>; }
   return (
-    <div ref={ref} className={`lw-item ${edit ? "is-edit" : ""}`} data-t={item.t} data-i={item.i} data-type={meta?.widget || undefined}
+    <div ref={ref} className={`lw-item ${edit ? "is-edit" : ""}`} data-t={item.t} data-i={item.i} data-type={meta?.widget || undefined} onContextMenu={onContextMenu}
       onPointerDownCapture={() => { if (meta?.panel) ctx.onActivate?.(meta.panel); }}>
       <div className="lw-item__body">{body}</div>
       {edit && (
@@ -208,7 +218,7 @@ export default function Board({ boardId, panelId }) {
     return { w: Math.min(board.cols, d.item?.w || d.w || m.size[0]), h: d.item?.h || d.h || m.size[1] };
   };
   const popItem = pop ? board.items.find((x) => x.i === pop.i) : null;
-  const popper = popItem ? ctx.widgetPopover?.(popItem, { onClose: () => setPop(null), setWide: (v) => setPop((p) => (p ? { ...p, wide: v } : p)) }) : null;
+  const popper = popItem ? ctx.widgetPopover?.(popItem, { onClose: () => setPop(null), setWide: (v) => setPop((p) => (p ? { ...p, wide: v } : p)), styleOnly: Boolean(pop.style) }) : null;
   const colsMenu = [1, 2, 3, 4, 6, 8, 12, 16, 24].map((n) => ({ label: `${n} sütun${n === board.cols ? " ✓" : ""}`, icon: "grid", onClick: () => setBoard((b) => setBoardCols(b, n)) }));
 
   return (

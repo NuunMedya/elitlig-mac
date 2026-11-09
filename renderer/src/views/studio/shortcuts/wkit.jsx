@@ -16,6 +16,9 @@ export function openPop(item, togglePop, intent = {}) {
   if (item?.id) intents.set(item.id, { mode: "flow", ...intent });
   togglePop?.();
 }
+/** Niyete bakar (tüketmez) · niyeti siler. */
+export const intentOf = (id) => intents.get(id) || null;
+export const clearIntent = (id) => { intents.delete(id); };
 /** Açılır panel ilk çizimde okur (bir kez). */
 export function useIntent(item) {
   const [v] = useState(() => { const x = intents.get(item?.id) || { mode: "flow" }; intents.delete(item?.id); return x; });

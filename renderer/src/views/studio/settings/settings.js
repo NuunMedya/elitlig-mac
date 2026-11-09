@@ -84,13 +84,18 @@ export function stepScale(cur, dir) {
   const at = i < 0 ? UI_SCALES.indexOf(100) : i;
   return UI_SCALES[Math.min(UI_SCALES.length - 1, Math.max(0, at + (dir > 0 ? 1 : -1)))];
 }
-/** Panel arayüzü renk temaları (studio.css: .studio[data-st-theme]). sw: önizleme renkleri [zemin, yüzey, vurgu, ikinci vurgu]. */
+/** Panel arayüzü renk temaları (studio.css: <html data-st-theme / data-st-tone>); tone: "light" açık tema. sw: önizleme renkleri [zemin, yüzey, vurgu, ikinci vurgu]. */
 export const UI_THEMES = [
   { key: "gece", label: "Gece mavisi", hint: "Koyu mor-lacivert, mor vurgu (varsayılan)", sw: ["#07040b", "#1d1229", "#8b5cf6", "#c026d3"] },
   { key: "grafit", label: "Grafit", hint: "Nötr gri, gök mavisi vurgu: göz yormaz", sw: ["#0b0c0e", "#1c1e22", "#38bdf8", "#94a3b8"] },
   { key: "okyanus", label: "Okyanus", hint: "Derin lacivert-yeşil, turkuaz vurgu", sw: ["#03101a", "#0f2433", "#14b8a6", "#0ea5e9"] },
   { key: "kirmizi", label: "Kırmızı reji", hint: "Siyah zemin, kırmızı vurgu (karanlık reji odası)", sw: ["#0a0505", "#1f1012", "#ef4444", "#f97316"] },
+  { key: "acik", label: "Açık", tone: "light", hint: "Nötr gri-beyaz, mor vurgu: aydınlık oda, gündüz", sw: ["#e6e8ee", "#ffffff", "#6d28d9", "#a21caf"] },
+  { key: "kagit", label: "Kağıt", tone: "light", hint: "Sıcak krem zemin, kiremit vurgu: göz yormayan açık", sw: ["#e9e2d4", "#fffdf8", "#b9410e", "#a16207"] },
+  { key: "buz", label: "Buz", tone: "light", hint: "Soğuk mavi-beyaz, deniz mavisi vurgu", sw: ["#dfe8f2", "#fbfdff", "#0369a1", "#0e7490"] },
 ];
+/** Temanın tonu: "light" | "dark" (<html data-st-tone>; açık temada görüntü adaları koyu kalır). */
+export const themeTone = (key) => (UI_THEMES.find((t) => t.key === key)?.tone === "light" ? "light" : "dark");
 export const DEFAULT_SETTINGS = {
   v: 3,
   // pipeline: kodlama yolu — "auto" | "webcodecs" (tek kodlama) | "legacy" (MediaRecorder + ffmpeg)

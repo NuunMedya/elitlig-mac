@@ -43,7 +43,7 @@
 /* simgesiz dar yan şerit yok: simgeler kapalıyken yalnız yazı */
 
 /* ── grup menüsü › Sekme biçimi penceresi ── */
-.lw-tsd { position: absolute; top: 46px; right: 16px; z-index: 40; width: 380px; max-height: calc(100% - 60px); overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 14px; background: var(--surface); border: 1px solid rgba(var(--acc-rgb), 0.45); box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55); }
+.lw-tsd { position: absolute; top: 46px; right: 16px; z-index: 40; width: 380px; max-height: calc(100% - 60px); overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 14px; background: var(--surface); border: 1px solid rgba(var(--acc-rgb), 0.45); box-shadow: 0 22px 60px rgba(var(--shade-rgb), 0.55); }
 .lw-tsd__head { display: flex; align-items: center; gap: 7px; }
 .lw-tsd__head small { color: var(--faint); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lw-tsd__foot { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; }
@@ -89,5 +89,5 @@
 .lw-tabset__groups .st-seg button { padding: 2px 7px; font-size: 11px; }
 .lw-tabset__edit { flex: 1 1 100%; display: flex; flex-direction: column; gap: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
 .lw-tsd .st-switch { width: 36px !important; height: 20px !important; min-width: 36px; margin: 0; background: var(--surface-3) !important; box-shadow: inset 0 0 0 1px var(--border-strong) !important; }
-.lw-tsd .st-switch:checked { background: var(--acc) !important; box-shadow: none !important; }
+.lw-tsd .st-switch:checked { background: var(--acc) !important; box-shadow: none !important; color: var(--acc-on); }
 .lw-tsd .st-switch::before { display: none; }

@@ -8,6 +8,8 @@
 import React, { useState } from "react";
 import { Icon } from "../../../components/ui";
 import { Chip, FlowNote, openPop, useIntent } from "./wkit";
+import { WIDGET_COLORS, WIDGET_STYLES, normColor, normStyle, textOn, wStyleAttrs } from "./wStyle";
+import "./wStyle.css";
 
 /** Kart (div) için sağ tık → seçenekler. */
 export const optMenu = (item, togglePop) => ({
@@ -88,8 +90,40 @@ function Field({ f, value, onChange, ctx }) {
   return null;
 }
 
+/**
+ * Renk + biçim seçici. value { c, s } (null: varsayılan — öğede grup rengi, grupta parçacığın kendi
+ * rengi); onChange({ c } | { s }). Önizleme hapı etkin sonucu gösterir.
+ */
+export function WStyleEditor({ value, onChange, noneLabel = "Varsayılan", hint }) {
+  const c = normColor(value?.c);
+  const s = normStyle(value?.s);
+  const custom = c && c !== "theme" && !WIDGET_COLORS.some(([k]) => k === c);
+  const pv = wStyleAttrs(c || s ? { c: c || "theme", s: s || "soft" } : null);
+  return (
+    <div className="wsty">
+      <div className="wsty__sw" role="radiogroup" aria-label="Renk">
+        <button type="button" className={`is-none ${!c ? "is-on" : ""}`} onClick={() => onChange({ c: null })} title={noneLabel} aria-label={noneLabel} aria-checked={!c} role="radio">{!c ? <Icon name="check" size={12} /> : null}</button>
+        <button type="button" className={`is-theme ${c === "theme" ? "is-on" : ""}`} onClick={() => onChange({ c: "theme" })} title="Tema rengi (temayla değişir)" aria-label="Tema rengi" aria-checked={c === "theme"} role="radio">{c === "theme" ? <Icon name="check" size={12} /> : null}</button>
+        {WIDGET_COLORS.map(([k, l]) => (
+          <button key={k} type="button" className={c === k ? "is-on" : ""} style={{ "--sw": k, "--sw-on": textOn(k) }} onClick={() => onChange({ c: k })} title={l} aria-label={l} aria-checked={c === k} role="radio">{c === k ? <Icon name="check" size={12} /> : null}</button>
+        ))}
+        <label className={custom ? "is-on" : ""} title="Serbest renk"><input type="color" value={custom ? c : "#ff7a00"} onChange={(e) => onChange({ c: e.target.value })} aria-label="Serbest renk" /></label>
+      </div>
+      <div className="wsty__row">
+        <span>Biçim</span>
+        <div className="wo-chips">
+          {!s ? null : <button type="button" onClick={() => onChange({ s: null })}>{noneLabel}</button>}
+          {WIDGET_STYLES.map(([k, l]) => <button key={k} type="button" className={(s || (c ? "soft" : null)) === k ? "is-on" : ""} onClick={() => onChange({ s: k })}>{l}</button>)}
+        </div>
+        <em className={`wsty__pv ${pv.className}`} style={pv.style}><i />Önizleme</em>
+      </div>
+      {hint && <p className="wsty__hint">{hint}</p>}
+    </div>
+  );
+}
+
 /** Seçenek paneli: değerleri anında kaydeder. */
-export function OptionsForm({ ctx, item, fields, onClose, note }) {
+export function OptionsForm({ ctx, item, fields, onClose, note, noStyle = false }) {
   const [vals, setVals] = useState(() => optsOf(item, fields));
   const save = (k, v) => {
     setVals((x) => ({ ...x, [k]: v }));
@@ -100,6 +134,12 @@ export function OptionsForm({ ctx, item, fields, onClose, note }) {
     <div className="wx-flow wo">
       <FlowNote icon="sliders">{note || "Düğme seçenekleri · değişiklik hemen kaydedilir."}</FlowNote>
       {fields.filter((f) => !f.when || f.when(vals, ctx)).map((f) => <Field key={f.key} f={f} value={vals[f.key]} ctx={ctx} onChange={(v) => save(f.key, v)} />)}
+      {!noStyle && (
+        <div className="wo-row is-style">
+          <span className="wo-row__l"><strong>Renk ve biçim</strong><small>Bu düğmenin rengi · boş: grubun rengi (Kutu ekle › grup başlığı)</small></span>
+          <WStyleEditor value={{ c: vals.wc, s: vals.ws }} noneLabel="Grup rengi" onChange={(p) => { if ("c" in p) save("wc", p.c); if ("s" in p) save("ws", p.s); }} />
+        </div>
+      )}
       <div className="wo-foot">
         <button type="button" className="btn btn--xs btn--ghost" onClick={() => { fields.forEach((f) => save(f.key, typeof f.def === "function" ? f.def() : f.def)); }}><Icon name="undo" size={11} /> Varsayılan</button>
         <button type="button" className="btn btn--xs btn--primary" onClick={onClose}><Icon name="check" size={11} /> Tamam</button>

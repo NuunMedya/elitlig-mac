@@ -1,12 +1,12 @@
 /* Panel açma düğmeleri (./wPanels): yön hücreye göre — dikeyde alt alta, yatayda yan yana. */
 .st-w.wx.wp-open { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 6px; text-align: center; cursor: pointer; min-width: 0; min-height: 0; overflow: hidden; }
 .st-w.wx.wp-open .wp-open__ic { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: rgba(var(--acc-rgb), 0.18); color: var(--acc-text); }
-.st-w.wx.wp-open.is-on .wp-open__ic { background: rgba(34, 197, 94, 0.18); color: #86efac; }
+.st-w.wx.wp-open.is-on .wp-open__ic { background: rgba(34, 197, 94, 0.18); color: var(--green-text); }
 .st-w.wx.wp-open .wp-open__t { min-width: 0; max-width: 100%; display: flex; flex-direction: column; gap: 1px; line-height: 1.15; }
 .st-w.wx.wp-open strong { font-size: 11.5px; font-weight: 850; letter-spacing: 0.03em; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
 .st-w.wx.wp-open small { font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-w.wx.wp-open em { font-style: normal; font-size: 9.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-w.wx.wp-open em.is-on { color: #86efac; }
+.st-w.wx.wp-open em.is-on { color: var(--green-text); }
 .st-w.wx.wp-open .wp-open__cc { position: absolute; top: 5px; right: 5px; color: var(--acc-text); }
 /* küçük kare: yalnız simge + ad */
 .st-w.wx.wp-open.is-small em { display: none; }

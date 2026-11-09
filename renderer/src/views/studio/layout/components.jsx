@@ -22,6 +22,8 @@ import { ManagePart } from "../manage/ManageDock";
 import { AnglesTile, ClockTile, MetersTile } from "../stage/StageTiles";
 import { WIDGET_IMPL } from "../shortcuts/widgets";
 import { OrientCtx, useOrient } from "../shortcuts/wkit";
+import { OptionsForm } from "../shortcuts/wOptions";
+import { resolveWStyle, wStyleAttrs } from "../shortcuts/wStyle";
 import "../shortcuts/orient.css";
 import { RAIL_SIZES, boardWidgetSize, widgetOf } from "../shortcuts/railModel";
 import { componentOf } from "./layoutModel";
@@ -122,17 +124,23 @@ function WidgetItem({ item, ctx, extra }) {
   const full = orient || shape.slice(3);
   const o = full.split(" ")[0];
   const flags = full.slice(o.length);
+  // Renk ve biçim: öğe seçeneği (o.wc / o.ws) ya da grubun varsayılanı (Kutu ekle › grup rengi).
+  const ws = wStyleAttrs(resolveWStyle(item.o, ctx.layout?.wstyle?.[widgetOf(type)?.group]));
   return (
-    <div ref={ref} className={`st-ri lw-ri is-s${sk} ${big ? "is-2" : "is-1"} ${shape} wo-${o}${flags}`} data-type={type} data-orient={o}>
+    <div ref={ref} className={`st-ri lw-ri is-s${sk} ${big ? "is-2" : "is-1"} ${shape} wo-${o}${flags} ${ws.className}`} style={ws.style} data-type={type} data-orient={o}>
       <OrientCtx.Provider value={o}>{body}</OrientCtx.Provider>
     </div>
   );
 }
 
 /** Parçacığın açılır paneli: { title, body } ya da null. */
-export function widgetPopover(item, { onClose, setWide }, ctx) {
+export function widgetPopover(item, { onClose, setWide, styleOnly = false }, ctx) {
   const type = componentOf(item.t)?.widget;
   const impl = WIDGET_IMPL[type];
+  // Seçeneksiz parçacık (sağ tık): yalnız renk ve biçim paneli (Board: pop.style).
+  if (impl && styleOnly) {
+    return { title: "Renk ve biçim", body: <OptionsForm ctx={ctx.railCtx} item={{ id: item.i, type, opts: item.o || {} }} fields={[]} onClose={onClose} note="Düğmenin rengi ve biçimi · değişiklik hemen kaydedilir." /> };
+  }
   if (!impl?.popover) return null;
   return { title: impl.popTitle || widgetOf(type)?.label, body: impl.popover({ ctx: ctx.railCtx, item: { id: item.i, type, w: 2, h: 2, opts: item.o || {} }, onClose, setWide }) };
 }

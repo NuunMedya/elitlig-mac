@@ -1,0 +1,63 @@
+/* Düğme rengi ve biçimi (./wStyle.js): pano hücresi (.lw-ri) --wc / --wc-rgb / --wc-on taşır,
+   içindeki parçacık kabuğu (.st-w) boyanır. Dolu: renk zemin, yazı kontrasta göre beyaz / koyu;
+   çerçeve: yüzey zemin, kalın renkli kenar; yumuşak: renkli ton. Durum halkaları (yayında /
+   önizlemede / hazır) korunur. */
+.lw-ri.has-wc > .st-w.st-w.st-w { --c: var(--wc); --c-rgb: var(--wc-rgb); }
+
+/* yumuşak */
+.lw-ri.wc-soft > .st-w.st-w.st-w { border-color: rgba(var(--wc-rgb), 0.6); background: linear-gradient(160deg, rgba(var(--wc-rgb), 0.3), rgba(var(--wc-rgb), 0.12) 75%), var(--surface); }
+.lw-ri.wc-soft > button.st-w.st-w.st-w:hover:not(:disabled) { border-color: var(--wc); background: linear-gradient(160deg, rgba(var(--wc-rgb), 0.4), rgba(var(--wc-rgb), 0.16) 75%), var(--surface); }
+
+/* çerçeve */
+.lw-ri.wc-outline > .st-w.st-w.st-w { border: 2px solid var(--wc); background: var(--surface); }
+.lw-ri.wc-outline > button.st-w.st-w.st-w:hover:not(:disabled) { background: linear-gradient(160deg, rgba(var(--wc-rgb), 0.14), transparent 80%), var(--surface); }
+
+/* dolu: iç parçalar (başlık, simge kutusu, çipler) dolgunun üstünde yazı rengini kullanır */
+.lw-ri.wc-fill > .st-w.st-w.st-w {
+  --c: var(--wc-on); --c-rgb: var(--wc-on-rgb);
+  --text: var(--wc-on); --text-2: var(--wc-on);
+  --muted: rgba(var(--wc-on-rgb), 0.86); --faint: rgba(var(--wc-on-rgb), 0.78);
+  --acc-text: var(--wc-on); --ink-rgb: var(--wc-on-rgb); --ink-mix: 0%;
+  --border: rgba(var(--wc-on-rgb), 0.22); --border-strong: rgba(var(--wc-on-rgb), 0.38);
+  color: var(--wc-on);
+  border-color: color-mix(in srgb, var(--wc) 80%, #000);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--wc) 92%, #fff), var(--wc) 55%, color-mix(in srgb, var(--wc) 86%, #000));
+}
+.lw-ri.wc-fill > button.st-w.st-w.st-w:hover:not(:disabled) { filter: brightness(1.07); }
+.lw-ri.wc-fill > .st-w.st-w.st-w.is-on { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--wc); }
+
+/* panel açma düğmesi: simge kutusu ve "ekranda" yazısı */
+.lw-ri.has-wc > .st-w.wx.wp-open .wp-open__ic { background: rgba(var(--wc-rgb), 0.2); color: color-mix(in srgb, var(--wc), var(--ink-to) var(--ink-mix)); }
+.lw-ri.wc-fill > .st-w.wx.wp-open .wp-open__ic { background: rgba(var(--wc-on-rgb), 0.18); color: var(--wc-on); }
+.lw-ri.wc-fill > .st-w.wx.wp-open :is(em, em.is-on, .wp-open__top, .wp-open__cc) { color: var(--wc-on); }
+.lw-ri.wc-fill > .st-w.wx.wp-open em.is-on::before { content: "● "; }
+
+/* ───────── seçici (seçenek paneli, katalog grup rengi) ───────── */
+.wsty { display: flex; flex-direction: column; gap: 7px; }
+.wsty__sw { display: grid; grid-template-columns: repeat(8, 24px); gap: 5px; }
+.wsty__sw button { width: 24px; height: 24px; padding: 0; border-radius: 7px; border: 2px solid transparent; background: var(--sw); box-shadow: inset 0 0 0 1px rgba(var(--ink-rgb), 0.18); cursor: pointer; display: grid; place-items: center; color: var(--sw-on, var(--on-strong)); }
+.wsty__sw button:hover { transform: scale(1.08); }
+.wsty__sw button.is-on { border-color: var(--text); box-shadow: 0 0 0 2px var(--surface) inset; }
+.wsty__sw button.is-none { background: repeating-linear-gradient(45deg, var(--surface-3) 0 4px, var(--surface) 4px 8px); color: var(--muted); }
+.wsty__sw button.is-theme { background: linear-gradient(135deg, var(--acc), var(--acc-2)); }
+.wsty__sw label { position: relative; width: 24px; height: 24px; border-radius: 7px; overflow: hidden; border: 2px solid transparent; background: conic-gradient(#e11d48, #eab308, #16a34a, #0284c7, #7c3aed, #e11d48); cursor: pointer; }
+.wsty__sw label.is-on { border-color: var(--text); }
+.wsty__sw label input { position: absolute; inset: -6px; width: 40px; height: 40px; opacity: 0; cursor: pointer; }
+.wsty__row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.wsty__row > span { font-size: 11px; color: var(--muted); min-width: 44px; }
+.wsty__pv { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 8px; font: 800 11px var(--font); letter-spacing: 0.04em; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); }
+.wsty__pv.wc-soft { border-color: rgba(var(--wc-rgb), 0.6); background: linear-gradient(160deg, rgba(var(--wc-rgb), 0.3), rgba(var(--wc-rgb), 0.12)), var(--surface); }
+.wsty__pv.wc-outline { border: 2px solid var(--wc); }
+.wsty__pv.wc-fill { background: var(--wc); border-color: var(--wc); color: var(--wc-on); }
+.wsty__pv i { width: 10px; height: 10px; border-radius: 3px; background: var(--wc, var(--muted)); }
+.wsty__pv.wc-fill i { background: var(--wc-on); }
+.wsty__hint { margin: 0; font-size: 10.5px; color: var(--muted); line-height: 1.3; }
+
+/* katalog: grup rengi */
+.lw-cat__sec h6 .lw-gcol { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--muted); font: 700 10.5px var(--font); letter-spacing: 0; text-transform: none; cursor: pointer; }
+.lw-cat__sec h6 .lw-gcol:hover, .lw-cat__sec h6 .lw-gcol.is-open { color: var(--text); border-color: var(--acc); }
+.lw-cat__sec h6 .lw-gcol i { width: 11px; height: 11px; border-radius: 3px; background: var(--wc, transparent); box-shadow: inset 0 0 0 1px rgba(var(--ink-rgb), 0.3); }
+.lw-gcol__pop { margin: 0 0 8px; padding: 10px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface-2); max-width: 420px; }
+.lw-cat__sec h6.lw-cat__gh { flex-wrap: wrap; }
+.lw-cat__gh > .lw-gcol__pop { flex-basis: 100%; text-transform: none; letter-spacing: 0; color: var(--text); font-size: 12px; margin-top: 6px; }
+.wo-row.is-style { gap: 8px; }

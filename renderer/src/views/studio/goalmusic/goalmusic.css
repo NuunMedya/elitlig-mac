@@ -6,7 +6,7 @@
 .gm-grow { flex: 1; }
 .gm-auto { font-size: 12px; }
 .gm-vol { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11.5px; }
-.gm-vol input { width: 120px; accent-color: var(--green); }
+.gm-vol input { width: 120px; accent-color: color-mix(in srgb, var(--green), var(--ink-to) var(--ink-mix)); }
 .gm-vol b { width: 26px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
 .gm-teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 @media (max-width: 900px) { .gm-teams { grid-template-columns: minmax(0, 1fr); } }
@@ -17,11 +17,11 @@
 .gm-team__name { flex: 1; min-width: 0; font-weight: 800; font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gm-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); }
 .gm-seg > button { border: 0; background: none; color: var(--muted); font-size: 11px; font-weight: 750; padding: 3px 8px; border-radius: 6px; }
-.gm-seg > button.is-on { background: color-mix(in srgb, var(--c) 30%, var(--surface-2)); color: #fff; }
+.gm-seg > button.is-on { background: color-mix(in srgb, var(--c) 30%, var(--surface-2)); color: var(--on-strong); }
 .gm-tracks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .gm-track { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 8px; border: 1px solid transparent; background: var(--surface); min-width: 0; }
 .gm-track.is-active { border-color: color-mix(in srgb, var(--c) 70%, transparent); }
-.gm-track__pick input { accent-color: var(--c); }
+.gm-track__pick input { accent-color: color-mix(in srgb, var(--c), var(--ink-to) var(--ink-mix)); }
 .gm-track__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .gm-track__main small { font-size: 10.5px; color: var(--faint); font-family: var(--mono, ui-monospace, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gm-track__title { padding: 2px 6px !important; font-size: 12px !important; font-weight: 650; background: transparent !important; border-color: transparent !important; }
@@ -33,11 +33,11 @@
 .gm-add { display: flex; align-items: center; gap: 6px; }
 .gm-add__url { flex: 1; min-width: 0; }
 .gm-muted { margin: 0; color: var(--muted); font-size: 11.5px; }
-.gm-err { margin: 0; color: #fda4af; font-size: 11.5px; }
+.gm-err { margin: 0; color: var(--red-text); font-size: 11.5px; }
 .gm-team__go .btn { justify-content: center; height: 38px; font-weight: 800; }
-.gm-play { background: color-mix(in srgb, var(--c) 24%, var(--surface)); border-color: var(--c); color: #fff; }
+.gm-play { background: color-mix(in srgb, var(--c) 24%, var(--surface)); border-color: var(--c); color: var(--on-strong); }
 .gm-play:hover:not(:disabled) { background: color-mix(in srgb, var(--c) 38%, var(--surface)); }
-.gm-stop { background: var(--green); border-color: var(--green); color: #04150a; }
+.gm-stop { background: var(--green); border-color: var(--green); color: var(--on-bright); }
 
 /* kısayol düğmeleri */
 .gm-btns { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
@@ -46,7 +46,7 @@
 .gm-btn.is-away { --c: var(--st-away); }
 .gm-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--c) 28%, var(--surface)); }
 .gm-btn:disabled { opacity: 0.45; cursor: default; }
-.gm-btn.is-on { background: var(--green); border-color: var(--green); color: #04150a; }
+.gm-btn.is-on { background: var(--green); border-color: var(--green); color: var(--on-bright); }
 .gm-btns.is-compact .gm-btn { height: 26px; padding: 0 8px; font-size: 11px; }
 .gm-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
 .gm-bars b { width: 3px; background: currentColor; border-radius: 1px; animation: gmBar 0.8s ease-in-out infinite; }
@@ -60,30 +60,30 @@
 .gm-dur__label { font-size: 11px; font-weight: 750; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .gm-dur__chips { display: inline-flex; flex-wrap: wrap; gap: 3px; }
 .gm-dur__chips > button { border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 750; padding: 3px 8px; border-radius: 7px; cursor: pointer; font-variant-numeric: tabular-nums; }
-.gm-dur__chips > button.is-on { background: color-mix(in srgb, var(--c) 30%, var(--surface-2)); border-color: var(--c); color: #fff; }
+.gm-dur__chips > button.is-on { background: color-mix(in srgb, var(--c) 30%, var(--surface-2)); border-color: var(--c); color: var(--on-strong); }
 .gm-dur__chips > button:disabled { opacity: 0.45; cursor: default; }
 .gm-dur__custom { width: 64px !important; text-align: center; padding: 3px 4px !important; font-size: 11.5px !important; }
 .gm-dur__custom.is-on { box-shadow: 0 0 0 1px var(--c); }
 
 /* çalarken: bütün gol müziği düğmeleri "MÜZİĞİ KES" */
-.gm-btn.is-kill { background: #dc2626; border-color: #fca5a5; color: #fff; font-weight: 850; letter-spacing: 0.02em; }
+.gm-btn.is-kill { background: #dc2626; border-color: #fca5a5; color: var(--on-strong); font-weight: 850; letter-spacing: 0.02em; }
 .gm-btn.is-kill:hover { background: #b91c1c; }
-.btn.is-kill { background: #dc2626; border-color: #fca5a5; color: #fff; font-weight: 850; }
+.btn.is-kill { background: #dc2626; border-color: #fca5a5; color: var(--on-strong); font-weight: 850; }
 .btn.is-kill:hover:not(:disabled) { background: #b91c1c; }
 .gm-btn__time { font-variant-numeric: tabular-nums; font-weight: 800; opacity: 0.9; }
 
 /* sahnenin üstünde ortada büyük "MÜZİĞİ KES" hapı */
-.gm-pill { --c: var(--st-home, #3b82f6); position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 900; display: flex; flex-direction: column; min-width: 300px; max-width: calc(100vw - 32px); border-radius: 18px; overflow: hidden; background: #dc2626; border: 2px solid #fecaca; box-shadow: 0 10px 34px -8px rgba(0, 0, 0, 0.7), 0 0 0 4px color-mix(in srgb, var(--c) 45%, transparent); animation: gmPillIn 0.18s ease-out; }
+.gm-pill { --c: var(--st-home, #3b82f6); position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 900; display: flex; flex-direction: column; min-width: 300px; max-width: calc(100vw - 32px); border-radius: 18px; overflow: hidden; background: #dc2626; border: 2px solid #fecaca; box-shadow: 0 10px 34px -8px rgba(var(--shade-rgb), 0.7), 0 0 0 4px color-mix(in srgb, var(--c) 45%, transparent); animation: gmPillIn 0.18s ease-out; color: var(--on-strong); }
 .gm-pill.is-away { --c: var(--st-away, #f59e0b); }
 .gm-pill.is-fading { opacity: 0.8; }
-.gm-pill__btn { display: flex; align-items: center; gap: 12px; padding: 10px 18px 9px 14px; border: 0; background: none; color: #fff; cursor: pointer; text-align: left; }
-.gm-pill__btn:hover { background: rgba(0, 0, 0, 0.12); }
-.gm-pill__icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); flex: none; }
+.gm-pill__btn { display: flex; align-items: center; gap: 12px; padding: 10px 18px 9px 14px; border: 0; background: none; color: var(--text); cursor: pointer; text-align: left; }
+.gm-pill__btn:hover { background: rgba(var(--shade-rgb), 0.12); }
+.gm-pill__icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: rgba(var(--ink-rgb), 0.18); flex: none; }
 .gm-pill__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .gm-pill__text strong { font-size: 22px; font-weight: 900; letter-spacing: 0.06em; line-height: 1.05; }
 .gm-pill__text small { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; opacity: 0.95; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-.gm-pill__kbd { margin-left: auto; padding: 3px 8px; border-radius: 6px; background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.35); font: 800 13px/1 var(--mono, ui-monospace, monospace); }
-.gm-pill__bar { display: block; height: 6px; background: rgba(0, 0, 0, 0.28); }
+.gm-pill__kbd { margin-left: auto; padding: 3px 8px; border-radius: 6px; background: rgba(var(--shade-rgb), 0.25); border: 1px solid rgba(var(--ink-rgb), 0.35); font: 800 13px/1 var(--mono, ui-monospace, monospace); }
+.gm-pill__bar { display: block; height: 6px; background: rgba(var(--shade-rgb), 0.28); }
 .gm-pill__bar i { display: block; height: 100%; background: #fff; transition: width 0.2s linear; }
 .gm-pill__bar i.is-open { opacity: 0.35; }
 @keyframes gmPillIn { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }

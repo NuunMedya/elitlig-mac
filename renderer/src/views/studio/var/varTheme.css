@@ -3,27 +3,27 @@
 
 /* Ayarlar: büyük canlı önizleme + tema kartları */
 .vth-stage { display: grid; gap: 10px; }
-.vth-stage__view { position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); background: #05060a; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); }
+.vth-stage__view { position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); background: #05060a; box-shadow: 0 10px 30px rgba(var(--shade-rgb), 0.35); }
 .vth-stage__view .vth-canvas { border-radius: 0; }
 .vth-stage__ctl { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
 .vth-stage__ctl label { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); font-weight: 600; }
 
 .vth-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
-.vth-card { display: flex; flex-direction: column; gap: 7px; padding: 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); color: #fff; text-align: left; cursor: pointer; transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s; }
-.vth-card:hover { transform: translateY(-1px); border-color: rgba(255, 255, 255, 0.28); }
-.vth-card.is-on { border-color: var(--vth-accent, var(--acc)); box-shadow: 0 0 0 1px var(--vth-accent, var(--acc)), 0 8px 22px rgba(0, 0, 0, 0.35); }
+.vth-card { display: flex; flex-direction: column; gap: 7px; padding: 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer; transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s; }
+.vth-card:hover { transform: translateY(-1px); border-color: rgba(var(--ink-rgb), 0.28); }
+.vth-card.is-on { border-color: var(--vth-accent, var(--acc)); box-shadow: 0 0 0 1px var(--vth-accent, var(--acc)), 0 8px 22px rgba(var(--shade-rgb), 0.35); }
 .vth-card .vth-canvas { width: 100% !important; height: auto !important; aspect-ratio: 16 / 9; }
 .vth-card__meta { display: flex; align-items: center; gap: 8px; }
 .vth-card__meta strong { font-size: 12.5px; }
 .vth-card__meta small { display: block; font-size: 11px; color: var(--muted); line-height: 1.35; }
-.vth-card__check { margin-left: auto; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, 0.3); flex: none; display: grid; place-items: center; }
-.vth-card.is-on .vth-card__check { background: var(--vth-accent, var(--acc)); border-color: var(--vth-accent, var(--acc)); }
+.vth-card__check { margin-left: auto; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid rgba(var(--ink-rgb), 0.3); flex: none; display: grid; place-items: center; }
+.vth-card.is-on .vth-card__check { background: var(--vth-accent, var(--acc)); border-color: var(--vth-accent, var(--acc)); color: var(--on-strong); }
 .vth-card.is-on .vth-card__check::after { content: ""; width: 7px; height: 4px; border-left: 2px solid #000; border-bottom: 2px solid #000; transform: rotate(-45deg) translate(1px, -1px); }
 .vth-swatch { display: inline-flex; gap: 2px; flex: none; }
 .vth-swatch i { width: 9px; height: 18px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15); }
 
 /* VAR sekmesi: hızlı tema şeridi */
 .vth-quick { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 6px; }
-.vth-quick__item { display: flex; flex-direction: column; gap: 4px; padding: 5px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-2); color: #fff; font-size: 11px; font-weight: 700; text-align: left; cursor: pointer; }
+.vth-quick__item { display: flex; flex-direction: column; gap: 4px; padding: 5px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 11px; font-weight: 700; text-align: left; cursor: pointer; }
 .vth-quick__item .vth-canvas { width: 100% !important; height: auto !important; aspect-ratio: 16 / 9; border-radius: 5px; }
 .vth-quick__item.is-on { border-color: var(--vth-accent, var(--acc)); box-shadow: 0 0 0 1px var(--vth-accent, var(--acc)); }

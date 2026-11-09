@@ -2,9 +2,9 @@
 .sem-backdrop { position: fixed; inset: 0; z-index: 44; display: grid; place-items: center; background: rgba(6, 2, 14, 0.62); backdrop-filter: blur(2px); animation: fade 0.14s; }
 .sem { position: relative; width: 90vw; height: 90vh; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); min-width: min(760px, calc(100vw - 16px)); min-height: min(480px, calc(100vh - 16px));
   display: flex; flex-direction: column; overflow: hidden; border-radius: 14px; background: var(--bg); border: 1px solid var(--border-strong);
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(var(--acc-rgb), 0.25); animation: pop 0.14s; }
+  box-shadow: 0 30px 90px rgba(var(--shade-rgb), 0.65), 0 0 0 1px rgba(var(--acc-rgb), 0.25); animation: pop 0.14s; }
 .sem.is-max { width: calc(100vw - 16px) !important; height: calc(100vh - 16px) !important; border-radius: 10px; }
-.sem.is-program { box-shadow: 0 30px 90px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 45, 85, 0.5); }
+.sem.is-program { box-shadow: 0 30px 90px rgba(var(--shade-rgb), 0.65), 0 0 0 1px rgba(255, 45, 85, 0.5); }
 .sem__head { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-2); user-select: none; }
 .sem__head .st-editor__name { width: clamp(140px, 22vw, 300px); min-width: 0; height: 30px; padding: 4px 9px !important; font-size: 14px; font-weight: 750; }
 .sem__kicker { font: 800 10.5px var(--font); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
@@ -47,8 +47,8 @@
 .sem-ib:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
 .sem-ib:disabled { opacity: 0.3; cursor: default; }
 .sem-ib.is-on { color: var(--text); }
-.sem-ib.is-lock { color: #f59e0b; }
-.sem-ib.is-danger:hover:not(:disabled) { color: #ef4444; }
+.sem-ib.is-lock { color: var(--amber-ink); }
+.sem-ib.is-danger:hover:not(:disabled) { color: var(--red-ink); }
 
 .sem-lib { border-radius: 10px; background: var(--surface); border: 1px solid var(--border); }
 .sem-lib > summary { cursor: pointer; padding: 7px 9px; font: 800 11px var(--font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 5px; }

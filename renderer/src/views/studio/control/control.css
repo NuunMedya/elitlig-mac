@@ -1,7 +1,7 @@
 /* Yayın Stüdyosu · KONTROL MERKEZİ: tam pencere (Ayarlar gibi) ya da sağda iğneli çekmece. */
 .cc { display: flex; background: var(--bg); min-width: 0; min-height: 0; }
 .cc.is-full { position: absolute; inset: 0; z-index: 28; animation: viewIn 0.16s ease-out; }
-.cc.is-pinned { position: relative; flex: none; max-width: 70%; border-left: 1px solid var(--border); box-shadow: -14px 0 40px rgba(0, 0, 0, 0.35); }
+.cc.is-pinned { position: relative; flex: none; max-width: 70%; border-left: 1px solid var(--border); box-shadow: -14px 0 40px rgba(var(--shade-rgb), 0.35); }
 .cc__grip { position: absolute; left: -3px; top: 0; bottom: 0; width: 7px; z-index: 3; cursor: col-resize; }
 .cc__grip:hover { background: rgba(var(--acc-rgb), 0.45); }
 
@@ -40,7 +40,7 @@
 /* üst çubuk düğmesi */
 .st-ccbtn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 11px; border-radius: 9px; border: 1px solid rgba(var(--acc-rgb), 0.45); background: rgba(var(--acc-rgb), 0.14); color: var(--text); font-size: 12.5px; font-weight: 750; white-space: nowrap; cursor: pointer; }
 .st-ccbtn:hover { background: rgba(var(--acc-rgb), 0.26); }
-.st-ccbtn.is-on { background: var(--acc); border-color: var(--acc); }
+.st-ccbtn.is-on { background: var(--acc); border-color: var(--acc); color: var(--acc-on); }
 .st-ccbtn .ic { color: var(--acc-text); }
-.st-ccbtn.is-on .ic { color: #fff; }
+.st-ccbtn.is-on .ic { color: var(--on-strong); }
 @media (max-width: 1360px) { .st-ccbtn span { display: none; } .st-ccbtn { padding: 0 8px; } }

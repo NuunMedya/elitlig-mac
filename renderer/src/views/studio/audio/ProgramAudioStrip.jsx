@@ -58,11 +58,13 @@ function useWaveBank() {
         ctx.clearRect(0, 0, W, H);
         const bw = W / HISTORY;
         const mid = H / 2;
+        // Sessiz dalga: tema belirteci (açık temada koyu mürekkep; sabit beyaz açık zeminde kaybolur).
+        const mutedFill = it.muted ? (getComputedStyle(c).getPropertyValue("--faint").trim() || "rgba(255,255,255,0.22)") : null;
         for (let k = 0; k < HISTORY; k += 1) {
           const v = it.hist[(it.i + k) % HISTORY];
           if (v <= 0.01) continue;
           const h = Math.max(1, v * (H - 2));
-          ctx.fillStyle = it.muted ? "rgba(255,255,255,0.22)" : v > 0.93 ? "#ff3b5c" : v > 0.75 ? "#fbbf24" : "#34d399";
+          ctx.fillStyle = it.muted ? mutedFill : v > 0.93 ? "#ff3b5c" : v > 0.75 ? "#fbbf24" : "#34d399";
           ctx.fillRect(k * bw, mid - h / 2, Math.max(1, bw - 1), h);
         }
         if (it.muted) {

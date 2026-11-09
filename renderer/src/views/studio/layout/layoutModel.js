@@ -23,6 +23,7 @@
 //   Kaldırılan: { kind: "panel" | "item", id, t?, o?, board?, label, at }   (en yeni başta)
 // İlk açılışta eski şerit (studio.rail.v1), sahne ızgarası (studio.stage.v1) ve alt
 // panel (studio.dock.v1) kayıtlarından göç edilir (migrateLayout).
+import { normalizeGroupStyles } from "../shortcuts/wStyle";
 import { DEFAULT_RAIL, RAIL_GROUPS, RAIL_WIDGETS, widgetOf } from "../shortcuts/railModel";
 
 export const LAYOUT_KEY = "studio.layout.v1";
@@ -474,6 +475,13 @@ export function normalizeTabStyle(raw, { full = false } = {}) {
   for (const k of Object.keys(v)) if (k in r && (k === "icons" ? typeof r.icons === "boolean" : ["accent", "bg", "active"].includes(k) ? v[k] || r[k] === "" : String(v[k]) === String(r[k]))) out[k] = v[k];
   return out;
 }
+/** Düğme grubunun varsayılan rengi / biçimi (layout.wstyle[grup]); patch alanı null → sil. */
+export function setGroupWStyle(layout, group, patch) {
+  const cur = { ...(layout.wstyle?.[group] || {}), ...patch };
+  for (const k of Object.keys(cur)) if (cur[k] == null) delete cur[k];
+  const all = normalizeGroupStyles({ ...(layout.wstyle || {}), [group]: cur });
+  return { ...layout, wstyle: all };
+}
 /** Grubun etkin biçimi: genel varsayılan + grup ayarı. */
 export const tabStyleOf = (layout, gid) => normalizeTabStyle({ ...(layout?.tabDefault || {}), ...(layout?.tabs?.[gid] || {}) }, { full: true });
 /** Grup biçimini değiştir (patch); varsayılana dönen alanlar silinir. gid null → genel varsayılan. */
@@ -492,7 +500,7 @@ export function setTabStyle(layout, gid, patch) {
   return { ...layout, tabs };
 }
 
-export const EMPTY_LAYOUT = Object.freeze({ v: 1, rev: 2, dock: null, boards: {}, removed: [], mins: {}, preset: null, autoHide: true, tabs: {}, tabDefault: {} });
+export const EMPTY_LAYOUT = Object.freeze({ v: 1, rev: 2, dock: null, boards: {}, removed: [], mins: {}, preset: null, autoHide: true, tabs: {}, tabDefault: {}, wstyle: {} });
 
 export function normalizeLayout(raw) {
   const r = raw && typeof raw === "object" ? raw : {};
@@ -510,7 +518,7 @@ export function normalizeLayout(raw) {
     const s = normalizeTabStyle(v);
     if (Object.keys(s).length && String(g).length <= 40) tabs[g] = s;
   }
-  return { v: 1, rev: Number(r.rev) || 0, dock, boards, removed, mins, preset: typeof r.preset === "string" ? r.preset : null, autoHide: r.autoHide !== false, tabs, tabDefault: normalizeTabStyle(r.tabDefault) };
+  return { v: 1, rev: Number(r.rev) || 0, dock, boards, removed, mins, preset: typeof r.preset === "string" ? r.preset : null, autoHide: r.autoHide !== false, tabs, tabDefault: normalizeTabStyle(r.tabDefault), wstyle: normalizeGroupStyles(r.wstyle) };
 }
 
 export function loadLayout(storage) {
