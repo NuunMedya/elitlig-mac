@@ -2,9 +2,11 @@
    yazı kalınlığı, renkler, simgeler. Sınıflar ve değişkenler grup öğesinde (Workspace.applyTabStyle):
    lw-tp-<yer> · lw-ts-<s|m|l> · lw-ts-noicons · --lw-tab-weight / -accent / -accent-rgb / -bg / -active */
 
-.dockview-theme-studio :is(.lw-ts-s, .lw-ts-m, .lw-ts-l) { --lw-tab-h: 30px; --lw-tab-fs: 12.5px; --lw-side-w: 132px; }
-.dockview-theme-studio .lw-ts-s { --lw-tab-h: 24px; --lw-tab-fs: 11px; --lw-side-w: 104px; }
-.dockview-theme-studio .lw-ts-l { --lw-tab-h: 38px; --lw-tab-fs: 14px; --lw-side-w: 168px; }
+.dockview-theme-studio :is(.lw-ts-s, .lw-ts-m, .lw-ts-l) { --lw-tab-h: calc(30px * var(--ui-z, 1)); --lw-tab-fs: 12.5px; --lw-side-w: calc(132px * var(--ui-z, 1)); }
+.dockview-theme-studio .lw-ts-s { --lw-tab-h: calc(24px * var(--ui-z, 1)); --lw-tab-fs: 11px; --lw-side-w: calc(104px * var(--ui-z, 1)); }
+.dockview-theme-studio .lw-ts-l { --lw-tab-h: calc(38px * var(--ui-z, 1)); --lw-tab-fs: 14px; --lw-side-w: calc(168px * var(--ui-z, 1)); }
+/* Arayüz ölçeği (Workspace: .lw-root zoom 1/ölçek): yazı .lw-tab'ın kendi zoom'uyla ölçeklenir,
+   şerit boyu / eni yukarıdaki --ui-z hesabıyla (dockview'un kendi öğelerine zoom verilmez). */
 
 /* ortak: boy, yazı, kalınlık, renkler */
 .dockview-theme-studio [class*="lw-ts-"] .dv-tabs-and-actions-container { height: var(--lw-tab-h); font-size: var(--lw-tab-fs); background: var(--lw-tab-bg, var(--dv-tabs-and-actions-container-background-color)); }

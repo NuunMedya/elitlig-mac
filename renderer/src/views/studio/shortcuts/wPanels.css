@@ -27,3 +27,4 @@
 .lw-ri:not(.wn):not(.ws) .st-w.wx.wp-open em { font-size: 10.5px; }
 .lw-ri.wo-tall:not(.wn) .st-w.wx.wp-open .wp-open__ic { width: 64px; height: 64px; }
 .st-w.wx.wp-open { align-content: center; }
+.st-w.wx.wp-open .wp-open__top { font-size: 9px; font-weight: 750; letter-spacing: 0.06em; text-transform: uppercase; color: var(--acc-text); opacity: 0.85; }
