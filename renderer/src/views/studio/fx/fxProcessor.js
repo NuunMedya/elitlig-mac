@@ -1,9 +1,11 @@
 // Yayın Stüdyosu — GÖRÜNTÜ AYARI işlemcisi (kaynak karesini efektle işler).
 //
 // TEK paylaşılan WebGL2 bağlamı (OffscreenCanvas; yoksa gizli <canvas>) her kaynağın
-// karesini tek geçişte işler: kroma anahtarı, pozlama / sıcaklık / renk tonu, gama,
-// kontrast / parlaklık / doygunluk / ton / tek renk (3×3 dönüşüm), negatif, kenar
-// karartma, keskinlik, çevir / döndür. Bulanıklık yarım çözünürlükte iki geçişli
+// karesini tek geçişte işler: gürültü azaltma (kenar koruyan 5×5; renk gürültüsü tam,
+// parlaklık gürültüsü ayara göre), kroma anahtarı, pozlama / sıcaklık / renk tonu, gama,
+// gölgeler, kontrast / parlaklık / doygunluk / ton / tek renk (3×3 dönüşüm), canlılık
+// (cilt korumalı), parlak alanlar (yumuşak omuz), mat, negatif, kenar karartma, rengi koruyan
+// yumuşak kırpma, keskinlik, çevir / döndür. Bulanıklık yarım çözünürlükte iki geçişli
 // (yatay + dikey) Gauss. Sonuç transferToImageBitmap ile kopyasız alınır (DOM tuvalinde
 // kaynağa özel 2D tuvale kopyalanır).
 //
@@ -59,6 +61,12 @@ uniform vec2 u_key;
 uniform float u_sim;
 uniform float u_smooth;
 uniform float u_spill;
+uniform bool u_tone;
+uniform float u_sh;
+uniform float u_hl;
+uniform float u_vib;
+uniform float u_fade;
+uniform float u_dn;
 out vec4 o;
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 vec2 mapUv(vec2 p) {
@@ -69,11 +77,80 @@ vec2 mapUv(vec2 p) {
   if (u_rot == 270) return vec2(1.0 - y, x);
   return vec2(x, y);
 }
+// videoFx.js toneShadowsHighlights / vibranceOf / softClip ile aynı formüller.
+vec3 shadowsT(vec3 c) {
+  if (u_sh != 0.0) {
+    float l = max(0.0, dot(c, LUMA));
+    float ws = 1.0 - smoothstep(0.0, 0.55, l); ws *= ws;
+    float p = u_sh >= 0.0 ? 1.0 / (1.0 + 0.8 * u_sh) : 1.0 - 0.8 * u_sh;
+    c += vec3((pow(l, p) - l) * ws);
+  }
+  return c;
+}
+vec3 highlightsT(vec3 c) {
+  if (u_hl != 0.0) {
+    float l = max(1e-5, dot(c, LUMA));
+    float lt = l;
+    if (u_hl < 0.0) {
+      float s = -u_hl;
+      float k = 0.78 - 0.2 * s;
+      if (l > k) { float x = (l - k) / (1.0 - k); lt = k + (1.0 - k) * (x / (1.0 + 0.6 * s * x)); }
+    } else {
+      lt = l + u_hl * 0.3 * smoothstep(0.4, 1.0, l) * max(0.0, 1.0 - l);
+    }
+    c *= lt / l;
+  }
+  return c;
+}
+vec3 vibrance(vec3 c) {
+  float mx = max(c.r, max(c.g, c.b));
+  float mn = min(c.r, min(c.g, c.b));
+  float sat = mx > 1e-5 ? (mx - mn) / mx : 0.0;
+  float skin = 0.0;
+  if (c.r > c.g && c.g > c.b) {
+    float h = (c.g - c.b) / max(1e-5, c.r - c.b);
+    skin = clamp(1.0 - abs(h - 0.45) / 0.35, 0.0, 1.0) * (1.0 - smoothstep(0.55, 0.85, sat));
+  }
+  float k = 1.0 + u_vib * (1.0 - smoothstep(0.0, 0.7, sat)) * (1.0 - 0.75 * skin);
+  float l = dot(c, LUMA);
+  return vec3(l) + (c - vec3(l)) * k;
+}
+vec3 softClip(vec3 c) {
+  const float KNEE = 0.92;
+  float mx = max(c.r, max(c.g, c.b));
+  if (mx <= KNEE) return c;
+  float x = (mx - KNEE) / (1.0 - KNEE);
+  float target = KNEE + (1.0 - KNEE) * (x / (1.0 + x));
+  float l = min(target, max(0.0, dot(c, LUMA)));
+  float t = mx - l > 1e-6 ? (target - l) / (mx - l) : 0.0;
+  return vec3(l) + (c - vec3(l)) * t;
+}
+// Kenar koruyan (iki taraflı) 5×5 yumuşatma: renk gürültüsü tamamen, parlaklık gürültüsü u_dn oranında.
+vec3 denoise(vec2 uv, vec3 c) {
+  float sig = 0.025 + 0.085 * u_dn;
+  vec3 acc = vec3(0.0);
+  float ws = 0.0;
+  for (int j = -2; j <= 2; j++) {
+    for (int i = -2; i <= 2; i++) {
+      vec3 n = texture(u_src, uv + vec2(float(i), float(j)) * u_texel).rgb;
+      vec3 d = n - c;
+      float w = exp(-float(i * i + j * j) / 5.12) * exp(-dot(d, d) / (2.0 * sig * sig));
+      acc += n * w;
+      ws += w;
+    }
+  }
+  vec3 den = acc / ws;
+  float lc = dot(c, LUMA);
+  float ld = dot(den, LUMA);
+  float L = mix(lc, ld, clamp(0.35 + 0.65 * u_dn, 0.0, 1.0));
+  return vec3(L) + (den - vec3(ld));
+}
 vec2 cbcr(vec3 c) { return vec2(-0.1146 * c.r - 0.3854 * c.g + 0.5 * c.b + 0.5, 0.5 * c.r - 0.4542 * c.g - 0.0458 * c.b + 0.5); }
 void main() {
   vec2 uv = mapUv(v_out);
   vec4 s = texture(u_src, uv);
   vec3 c = u_useBlur ? texture(u_blur, uv).rgb : s.rgb;
+  if (!u_useBlur && u_dn > 0.0) c = denoise(uv, c);
   if (!u_useBlur && u_sharp > 0.0) {
     vec3 n = texture(u_src, uv + vec2(u_texel.x, 0.0)).rgb + texture(u_src, uv - vec2(u_texel.x, 0.0)).rgb
            + texture(u_src, uv + vec2(0.0, u_texel.y)).rgb + texture(u_src, uv - vec2(0.0, u_texel.y)).rgb;
@@ -89,12 +166,17 @@ void main() {
   }
   c *= u_gains;
   c = pow(max(c, vec3(0.0)), vec3(u_invGamma));
+  if (u_sh != 0.0) c = shadowsT(c);
   c = u_M * c + u_off;
+  if (u_vib != 0.0) c = vibrance(c);
+  if (u_hl != 0.0) c = highlightsT(c);
+  if (u_fade > 0.0) c = max(c, vec3(0.0)) * (1.0 - 0.1 * u_fade) + 0.075 * u_fade;
   if (u_invert) c = 1.0 - c;
   if (u_vig > 0.0) {
     float d = distance(v_out, vec2(0.5)) * 1.4142;
     c *= 1.0 - u_vig * smoothstep(0.35, 1.05, d);
   }
+  if (u_tone) c = softClip(c);
   c = clamp(c, 0.0, 1.0);
   float A = a * s.a;
   o = vec4(c * A, A);
@@ -272,6 +354,12 @@ function renderGL(entry, d, fx) {
   gl.uniform1i(L.u_invert, U.invert ? 1 : 0);
   gl.uniform1f(L.u_vig, U.vignette);
   gl.uniform1f(L.u_sharp, U.sharpen);
+  gl.uniform1i(L.u_tone, U.tone ? 1 : 0);
+  gl.uniform1f(L.u_sh, U.shadows);
+  gl.uniform1f(L.u_hl, U.highlights);
+  gl.uniform1f(L.u_vib, U.vibrance);
+  gl.uniform1f(L.u_fade, U.fade);
+  gl.uniform1f(L.u_dn, U.denoise);
   gl.uniform1i(L.u_chroma, U.chroma ? 1 : 0);
   if (U.chroma) {
     gl.uniform2fv(L.u_key, U.chroma.keyCbCr);
@@ -375,10 +463,10 @@ function frameInfo(el) {
 
 const isStatic = (el) => (typeof HTMLImageElement !== "undefined" && el instanceof HTMLImageElement) || (typeof ImageBitmap !== "undefined" && el instanceof ImageBitmap);
 
-/** 2D yedek yolun yapamadığı ayar var mı (keskinlik, yeşil perde). */
+/** 2D yedek yolun yapamadığı ayar var mı (keskinlik, yeşil perde, gürültü azaltma, ton, canlılık, mat). */
 function needsGL(fx) {
   const f = resolveFx(fx);
-  return f.sharpen > 0 || f.chroma.on;
+  return f.sharpen > 0 || f.chroma.on || f.denoise > 0 || f.shadows !== 0 || f.highlights !== 0 || f.vibrance !== 0 || f.fade > 0;
 }
 
 /** Etkin arka uç: "webgl2" | "webgl2-yazılım" | "2d". */

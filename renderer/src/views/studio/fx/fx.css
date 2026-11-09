@@ -75,3 +75,9 @@ button.vfx-chip.is-add:disabled { opacity: 0.45; cursor: default; }
 
 /* sahne kutusu sağ tık menüsü */
 .vfx-ctx { position: fixed; z-index: 1300; }
+
+/* yayın görünümleri (hazır ayar grubu) ve otomatik beyaz ayarı */
+.vfx__looks { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; padding: 6px 0 2px; border-top: 1px dashed var(--border); }
+.vfx__looks-t { flex: 1 1 100%; display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--acc-text); }
+.vfx__auto { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.vfx__auto small { color: var(--muted); font-size: 11px; }

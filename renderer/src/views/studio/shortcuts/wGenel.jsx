@@ -2,15 +2,15 @@
 // kayıt boyutu), bit hızı değiştir, kodlama yolu, programın ekran görüntüsü, kronometre /
 // geri sayım, istem kartları (notlar), MAKRO düğmesi ve makro bankası (+ makro düzenleyici).
 // Makrolar ./macros.js'te (paylaşılan depo, adım kataloğu, çalıştırıcı).
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Icon } from "../../../components/ui";
 import { BITRATE_PRESETS } from "../../../lib/studio/broadcast";
 import { PIPELINES } from "../../../lib/studio/encodepath";
-import { SCOREBOARD_VARIANTS } from "../../../lib/studio/graphics/variants";
-import { LED_CONTENTS } from "../led/ledFx";
 import { Chip, FlowNote, Head, Pill, Ring, Shell, openPop, useNow, usePress } from "./wkit";
 import { useLocal } from "./localStore";
-import { MACRO_COLORS, MACRO_STEPS, describeStep, getMacros, macroRunning, newMacroId, normalizeStep, runMacro, setMacros, stepMeta, useMacroRuns, useMacros } from "./macros";
+import { comboLabel } from "../../../lib/studio/hotkeys";
+import { describeStep, getMacros, macroRunning, macroToggled, runMacro, stopMacro, useMacroRuns, useMacros } from "./macros";
+import { MacroEditor } from "./MacroEditor";
 import { SW_ZERO, TIMER_PRESETS, normalizeCues, swElapsed, swLap, swText, swToggle } from "./opsLogic";
 import { optMenu, withOptions } from "./wOptions";
 
@@ -214,120 +214,89 @@ function CueCards({ ctx, item, w, h, togglePop, popOpen }) {
   );
 }
 
-/* ═════════════════════════ MAKRO DÜZENLEYİCİ ═════════════════════════ */
-
-function StepParam({ p, value, onChange, scenes }) {
-  if (p.kind === "scene") return <select value={value || ""} onChange={(e) => onChange(e.target.value)}><option value="">Sahne seç…</option>{scenes.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>;
-  if (p.kind === "select") return <select value={value ?? ""} onChange={(e) => onChange(e.target.value)}>{p.choices.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>;
-  if (p.kind === "variant") return <select value={value || ""} onChange={(e) => onChange(e.target.value)}><option value="">Çeşit seç…</option>{SCOREBOARD_VARIANTS.map((v) => <option key={v.key} value={v.key}>{v.label}</option>)}</select>;
-  if (p.kind === "led") return <select value={value || "scene"} onChange={(e) => onChange(e.target.value)}>{LED_CONTENTS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}</select>;
-  if (p.kind === "bool") return <label className="wm-bool"><input type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} /> {p.label}</label>;
-  if (p.kind === "number") return <input type="number" min={0} value={value || 0} onChange={(e) => onChange(Number(e.target.value))} />;
-  return <input value={value || ""} placeholder={p.label} onChange={(e) => onChange(e.target.value)} />;
-}
-
-/** Makro düzenleyici (açılır panel ve Ayarlar › Makrolar). */
-export function MacroEditor({ ctx, initialId = null, compact = false }) {
-  const macros = useMacros();
-  const [sel, setSel] = useState(initialId || macros[0]?.id || null);
-  const m = macros.find((x) => x.id === sel) || null;
-  const scenes = ctx?.scenes || [];
-  const patch = (fn) => setMacros((list) => list.map((x) => (x.id === sel ? fn(x) : x)));
-  const add = () => { const id = newMacroId(); setMacros((l) => [...l, { id, name: `Makro ${l.length + 1}`, color: MACRO_COLORS[l.length % MACRO_COLORS.length], steps: [] }]); setSel(id); };
-  const runIt = async () => { if (!m || !ctx) return; const r = await runMacro(m, ctx, { delayMs: ctx.ops?.macro?.stepDelayMs ?? 300 }); ctx.toast?.(r.ok ? `“${m.name}” çalıştı.` : `“${m.name}”: ${r.skipped.length} adım yapılamadı (${r.skipped.map((i) => i + 1).join(", ")}).`, { tone: r.ok ? "success" : "warn", timeout: 3500 }); };
-  return (
-    <div className={`wg-me ${compact ? "is-compact" : ""}`}>
-      <aside className="wg-me__list">
-        {macros.map((x) => <button key={x.id} type="button" className={x.id === sel ? "is-on" : ""} onClick={() => setSel(x.id)}><i style={{ background: x.color }} /><span>{x.name}</span><small>{x.steps.length}</small></button>)}
-        <button type="button" className="is-add" onClick={add}><Icon name="plus" size={12} /> Yeni makro</button>
-      </aside>
-      {m ? (
-        <section className="wg-me__body">
-          <div className="wx-row is-text">
-            <input value={m.name} maxLength={40} onChange={(e) => patch((x) => ({ ...x, name: e.target.value }))} aria-label="Makro adı" />
-            <span className="wg-me__colors">{MACRO_COLORS.map((c) => <button key={c} type="button" className={m.color === c ? "is-on" : ""} style={{ background: c }} onClick={() => patch((x) => ({ ...x, color: c }))} aria-label="Renk" />)}</span>
-          </div>
-          <ol className="wg-me__steps">
-            {m.steps.map((s, i) => {
-              const meta = stepMeta(s.type);
-              return (
-                <li key={i}>
-                  <b>{i + 1}</b>
-                  <select value={s.type} onChange={(e) => patch((x) => ({ ...x, steps: x.steps.map((y, j) => (j === i ? normalizeStep({ type: e.target.value }) : y)) }))}>
-                    {MACRO_STEPS.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
-                  </select>
-                  {meta?.p.map((p) => <StepParam key={p.key} p={p} value={s[p.key]} scenes={scenes} onChange={(v) => patch((x) => ({ ...x, steps: x.steps.map((y, j) => (j === i ? normalizeStep({ ...y, [p.key]: v }) : y)) }))} />)}
-                  <span className="wg-me__tools">
-                    <button type="button" className="wx-icon" disabled={i === 0} onClick={() => patch((x) => { const n = [...x.steps]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; return { ...x, steps: n }; })} title="Yukarı"><Icon name="chevronUp" size={12} /></button>
-                    <button type="button" className="wx-icon" onClick={() => patch((x) => ({ ...x, steps: x.steps.filter((_, j) => j !== i) }))} title="Adımı sil"><Icon name="x" size={12} /></button>
-                  </span>
-                </li>
-              );
-            })}
-            {!m.steps.length && <li className="wx-hint">Adım yok: aşağıdan ekle.</li>}
-          </ol>
-          <div className="wg-me__add">
-            {MACRO_STEPS.map((t) => <button key={t.type} type="button" onClick={() => patch((x) => ({ ...x, steps: [...x.steps, normalizeStep({ type: t.type })] }))} title={`${t.label} adımı ekle`}><Icon name={t.icon} size={11} /> {t.label}</button>)}
-          </div>
-          <div className="wx-row is-actions">
-            <button type="button" className="wx-btn" disabled={!ctx} onClick={runIt}><Icon name="play" size={12} /> Dene</button>
-            <button type="button" className="wx-btn" onClick={() => { const id = newMacroId(); setMacros((l) => [...l, { ...m, id, name: `${m.name} (kopya)` }]); setSel(id); }}><Icon name="copy" size={12} /> Çoğalt</button>
-            <button type="button" className="wx-btn is-danger" onClick={() => { setMacros((l) => l.filter((x) => x.id !== m.id)); setSel(null); }}><Icon name="trash" size={12} /> Sil</button>
-          </div>
-        </section>
-      ) : <p className="wx-hint">Makro seç ya da yeni makro oluştur.</p>}
-    </div>
-  );
-}
-
 /* ═════════════════════════ MAKRO DÜĞMESİ · BANKASI ═════════════════════════ */
+// Düzenleyici ./MacroEditor.jsx'te (Ayarlar › Makrolar da onu kullanır).
 
-async function fire(ctx, m) {
+const stepsText = (m) => m.steps.map((s) => describeStep(s)).join(" → ");
+/** Düğme / banka: makronun kipine göre çalıştır (aç / kapa makrosunda sıradaki dizi). */
+async function fire(ctx, m, { seq = null } = {}) {
   if (!m) return;
-  if (ctx.ops?.macro?.confirmRun && ctx.ask && !(await ctx.ask({ title: `“${m.name}” çalışsın mı?`, message: m.steps.map((s, i) => `${i + 1}. ${describeStep(s, { sceneName: (id) => ctx.scenes?.find((x) => x.id === id)?.name })}`).join("\n"), confirmLabel: "Çalıştır" }))) return;
-  const r = await runMacro(m, ctx, { delayMs: ctx.ops?.macro?.stepDelayMs ?? 300 });
-  if (!r.ok && r.skipped.length) ctx.toast?.(`“${m.name}”: ${r.skipped.length} adım yapılamadı.`, { tone: "warn", timeout: 3000 });
+  if (macroRunning(m.id)) { stopMacro(m.id); return; } // çalışırken dokun: durdur
+  const which = seq || (m.mode === "toggle" && macroToggled(m.id) ? "off" : "on");
+  const list = which === "off" ? m.offSteps : m.steps;
+  if (ctx.ops?.macro?.confirmRun && ctx.ask && !(await ctx.ask({ title: `“${m.name}” çalışsın mı?`, message: list.map((s, i) => `${i + 1}. ${describeStep(s, { sceneName: (id) => ctx.scenes?.find((x) => x.id === id)?.name })}`).join("\n"), confirmLabel: "Çalıştır" }))) return;
+  const r = await runMacro(m, ctx, { delayMs: ctx.ops?.macro?.stepDelayMs ?? 300, seq: which });
+  if (r.error) ctx.toast?.(`“${m.name}”: ${r.error}`, { tone: "warn", timeout: 3500 });
+  else if (!r.ok && r.skipped.length) ctx.toast?.(`“${m.name}”: ${r.skipped.length} adım yapılamadı.`, { tone: "warn", timeout: 3000 });
 }
+export { fire as fireMacroButton };
 function MacroFlow({ ctx, item, intent, setWide }) {
   useEffect(() => { setWide?.(true); }, [setWide]);
   return <MacroEditor ctx={ctx} initialId={intent?.macroId || item?.opts?.macroId} compact />;
 }
-function MacroBtn({ ctx, item, w, h, togglePop }) {
+/** Basılı tut: basınca açılış, bırakınca (çalışanı durdurup) kapanış adımları. */
+function useHold(ctx, m) {
+  const down = useRef(false);
+  if (!m) return {};
+  const start = (e) => { if (e.button != null && e.button !== 0) return; down.current = true; e.currentTarget.setPointerCapture?.(e.pointerId); runMacro(m, ctx, { delayMs: ctx.ops?.macro?.stepDelayMs ?? 0, seq: "on" }); };
+  const end = () => { if (!down.current) return; down.current = false; stopMacro(m.id); setTimeout(() => runMacro(m, ctx, { delayMs: 0, seq: "off" }), 30); };
+  return { onPointerDown: start, onPointerUp: end, onPointerCancel: end, onLostPointerCapture: end, onKeyDown: (e) => { if ((e.key === " " || e.key === "Enter") && !down.current) start({ button: 0, currentTarget: e.currentTarget }); }, onKeyUp: (e) => { if (e.key === " " || e.key === "Enter") end(); } };
+}
+function MacroBtn({ ctx, item, w, h, togglePop, force = null }) {
   const macros = useMacros();
   useMacroRuns();
-  const m = macros.find((x) => x.id === item.opts?.macroId) || macros[0];
+  const m = macros.find((x) => x.id === item.opts?.macroId) || (force ? macros.find((x) => x.mode === force) : null) || macros[0];
   const run = m ? macroRunning(m.id) : null;
-  const press = usePress(() => (m ? fire(ctx, m) : openPop(item, togglePop, {})), () => openPop(item, togglePop, { mode: "options" }));
+  const mode = force || m?.mode || "once";
+  const on = m ? macroToggled(m.id) : false;
+  const press = usePress(() => (m ? fire(ctx, m, mode === "toggle" ? { seq: on ? "off" : "on" } : {}) : openPop(item, togglePop, {})), () => openPop(item, togglePop, { mode: "options" }));
+  const hold = useHold(ctx, m);
+  const handlers = mode === "hold" && m ? { ...hold, onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); openPop(item, togglePop, { mode: "options" }); } } : press;
+  const sub = run ? `adım ${run.step + 1}/${run.total} · dokun: durdur` : !m ? "oluştur" : mode === "toggle" ? (on ? "AÇIK · dokun: kapat" : "KAPALI · dokun: aç") : mode === "hold" ? "basılı tut" : `${m.steps.length} adım`;
+  const kbd = m?.hotkey && ctx.hints ? comboLabel(m.hotkey, ctx.platform || "darwin") : null;
   return (
-    <Shell as="button" tone="violet" w={w} h={h} state={run ? "air" : null} className="wx-tile wg-mb" style={{ "--mc": m?.color }} {...press} title={m ? `${m.name}: ${m.steps.map((s) => describeStep(s)).join(" → ")} · sağ tık: düzenle` : "Makro yok · tık: oluştur"}>
-      <Icon name={run ? "refresh" : "zap"} size={h >= 2 ? 26 : 20} strokeWidth={2.2} />
+    <Shell as="button" tone="violet" w={w} h={h} state={run || (mode === "toggle" && on) ? "air" : null} className={`wx-tile wg-mb${mode === "toggle" && on ? " is-toggle-on" : ""}`} style={{ "--mc": m?.color }} {...handlers} title={m ? `${m.name}${m.desc ? ` — ${m.desc}` : ""}: ${stepsText(m)} · sağ tık: seçenekler` : "Makro yok · tık: oluştur"}>
+      {kbd && <span className="wg-mb__kbd">{kbd}</span>}
+      <Icon name={run ? "refresh" : mode === "toggle" ? (on ? "check" : m?.icon || "zap") : m?.icon || "zap"} size={h >= 2 ? 26 : 20} strokeWidth={2.2} />
       <strong className="wx-t">{m ? m.name : "MAKRO"}</strong>
-      <small className="wx-s">{run ? `adım ${run.step + 1}/${m.steps.length}` : m ? `${m.steps.length} adım` : "oluştur"}</small>
+      <small className="wx-s">{sub}</small>
     </Shell>
   );
 }
 function MacroBank({ ctx, item, w, h, togglePop }) {
   const macros = useMacros();
   useMacroRuns();
-  const n = w >= 4 ? 8 : w >= 3 ? 6 : 4;
+  const folders = [...new Set(macros.map((x) => x.folder).filter(Boolean))];
+  const [folder, setFolder] = useState(item.opts?.folder || "");
+  const shown = macros.filter((x) => !folder || x.folder === folder);
+  const cols = w >= 4 ? 4 : w >= 3 ? 3 : 2;
+  const n = cols * (h >= 2 ? 3 : 2);
   return (
     <Shell tone="violet" w={w} h={h} className="wg-bank" {...optMenu(item, togglePop)}>
       <Head icon="zap" label="MAKROLAR" right={<button type="button" className="wx-gear" onClick={() => openPop(item, togglePop, {})} title="Makroları düzenle"><Icon name="pencil" size={11} /></button>} />
-      <div className={`wg-bank__g is-c${w >= 4 ? 4 : w >= 3 ? 3 : 2}`}>
-        {macros.slice(0, n).map((m) => {
+      {folders.length > 1 && item.opts?.folders !== false && (
+        <div className="wg-bank__folders">
+          <button type="button" className={!folder ? "is-on" : ""} onClick={() => setFolder("")}>Tümü</button>
+          {folders.slice(0, w >= 3 ? 6 : 3).map((f) => <button key={f} type="button" className={folder === f ? "is-on" : ""} onClick={() => setFolder(f)}>{f}</button>)}
+        </div>
+      )}
+      <div className={`wg-bank__g is-c${cols}`}>
+        {shown.slice(0, n).map((m) => {
           const run = macroRunning(m.id);
+          const tog = m.mode === "toggle" && macroToggled(m.id);
           return (
-            <button key={m.id} type="button" className={run ? "is-run" : ""} style={{ "--mc": m.color }} onClick={() => fire(ctx, m)} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openPop(item, togglePop, { macroId: m.id }); }} title={`${m.steps.map((s) => describeStep(s)).join(" → ")} · sağ tık: düzenle`}>
-              <strong>{m.name}</strong><small>{run ? `adım ${run.step + 1}/${m.steps.length}` : `${m.steps.length} adım`}</small>
+            <button key={m.id} type="button" className={`${run ? "is-run" : ""}${tog ? " is-tog" : ""}`} style={{ "--mc": m.color }} onClick={() => fire(ctx, m)} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openPop(item, togglePop, { macroId: m.id }); }} title={`${m.desc ? `${m.desc} · ` : ""}${stepsText(m)} · sağ tık: düzenle`}>
+              <strong><Icon name={m.icon} size={11} /> {m.name}</strong><small>{run ? `adım ${run.step + 1}/${run.total}` : m.mode === "toggle" ? (tog ? "AÇIK" : "kapalı") : `${m.steps.length} adım`}</small>
             </button>
           );
         })}
-        {!macros.length && <span className="st-w__empty">Makro yok.</span>}
+        {!shown.length && <span className="st-w__empty">Makro yok.</span>}
       </div>
     </Shell>
   );
 }
 
+const macroChoice = (mode = null) => () => getMacros().filter((m) => !mode || m.mode === mode).map((m) => [m.id, m.name]);
 
 export const GENEL_WIDGETS = {
   streamHealth: withOptions({ render: (p) => <StreamHealth {...p} /> }, [{ key: "spark", label: "Bit hızı eğrisi", type: "bool", def: true }]),
@@ -344,7 +313,18 @@ export const GENEL_WIDGETS = {
     { key: "slot", label: "Sıra (birden çok kopya için)", type: "select", def: 1, choices: [[1, "1"], [2, "2"]] },
   ]),
   macro: withOptions({ popTitle: "Makro düzenleyici", popover: (p) => <MacroFlow {...p} />, render: (p) => <MacroBtn {...p} /> }, [
-    { key: "macroId", label: "Bu düğmenin makrosu", type: "select", def: null, choices: () => getMacros().map((m) => [m.id, m.name]) },
-  ], { note: "Makroyu düzenlemek için: Makro bankası (kalem) ya da Ayarlar › Makrolar." }),
-  macroBank: withOptions({ popTitle: "Makro düzenleyici", popover: (p) => <MacroFlow {...p} />, render: (p) => <MacroBank {...p} /> }, [], { note: "Makrolara tık: çalışır · sağ tık: düzenle. Adımlar arası bekleme: Ayarlar › Makrolar." }),
+    { key: "macroId", label: "Bu düğmenin makrosu", type: "select", def: null, choices: macroChoice() },
+  ], { note: "Makronun kipi (tek sefer / aç-kapa / basılı tut) düzenleyicide. Çalışırken dokun: durdur." }),
+  macroToggle: withOptions({ popTitle: "Makro düzenleyici", popover: (p) => <MacroFlow {...p} />, render: (p) => <MacroBtn {...p} force="toggle" /> }, [
+    { key: "macroId", label: "Bu düğmenin makrosu", type: "select", def: null, choices: macroChoice() },
+  ], { note: "1. dokunuş açılış, 2. dokunuş kapanış adımlarını çalıştırır (düzenleyicide Kapanış sekmesi)." }),
+  macroHold: withOptions({ popTitle: "Makro düzenleyici", popover: (p) => <MacroFlow {...p} />, render: (p) => <MacroBtn {...p} force="hold" /> }, [
+    { key: "macroId", label: "Bu düğmenin makrosu", type: "select", def: null, choices: macroChoice() },
+  ], { note: "Basılı tuttukça açılış adımları; bırakınca kapanış adımları (ör. spiker konuşsun: mikrofon aç + müziği kıs)." }),
+  macroBank: withOptions({ popTitle: "Makro düzenleyici", popover: (p) => <MacroFlow {...p} />, render: (p) => <MacroBank {...p} /> }, [
+    { key: "folder", label: "Başlangıç klasörü", type: "select", def: "", choices: () => [["", "Tümü"], ...[...new Set(getMacros().map((m) => m.folder).filter(Boolean))].map((f) => [f, f])] },
+    { key: "folders", label: "Klasör sekmeleri", type: "bool", def: true },
+  ], { note: "Makrolara tık: çalışır (çalışırken: durdur) · sağ tık: düzenle. Adımlar arası bekleme: Ayarlar › Makrolar." }),
 };
+
+export { MacroEditor };

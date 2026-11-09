@@ -11,7 +11,7 @@ import { GOAL_MUSIC_MODES, MAX_TRACKS, PLAY_SEC_PRESETS, formatTime, normalizePl
 import "./goalmusic.css";
 
 /** Zaman alanı: "1:23" yazılır, odak çıkınca saniyeye çevrilir. */
-function TimeInput({ value, onChange, placeholder, label }) {
+export function TimeInput({ value, onChange, placeholder, label }) {
   const [draft, setDraft] = useState(formatTime(value));
   const [bad, setBad] = useState(false);
   useEffect(() => { setDraft(formatTime(value)); setBad(false); }, [value]);

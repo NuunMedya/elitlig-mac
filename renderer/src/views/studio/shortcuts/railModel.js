@@ -155,6 +155,13 @@ export const RAIL_WIDGETS = [
   // ── müzik ──
   { type: "musicPlayer", family: "music", label: "Müzik çalar", icon: "music", group: "muzik", size: "2x2", sizes: ALL, hint: "Dosya seç, çal / duraklat / durdur, ilerleme, seviye, döngü" },
   { type: "goalMusicPro", family: "goalMusic", label: "Gol müziği · takım + ses", icon: "music", group: "muzik", size: "2x2", sizes: ALL, hint: "Takım müziğini çal, ses seviyesi, otomatik, MÜZİĞİ KES" },
+  // müzik çalar (liste: YouTube + dosya; ./wMuzik)
+  { type: "musicDeck", family: "playlist", label: "Müzik çalar · liste", icon: "music", group: "muzik", size: "2x2", sizes: [...ALL, "3x2", "4x2"], hint: "Çal / duraklat, önceki / sonraki, Geçiş, MÜZİĞİ KES, ilerleme, ses" },
+  { type: "musicTrack", family: "playlist", label: "Parça düğmesi", icon: "music", group: "muzik", size: "1x1", sizes: ALL, hint: "Belirli parçayı başlangıç saniyesinden çal (çalarken geçişle) · sağ tık: parça" },
+  { type: "musicBank", family: "playlist", label: "Parça bankası", icon: "list", group: "muzik", size: "2x2", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Listedeki parçalar düğme ızgarasında" },
+  { type: "musicKill", family: "playlist", label: "Müziği kes", icon: "stop", group: "muzik", size: "1x1", sizes: ALL, hint: "Çalan müziği (ve gol müziğini) kısarak kes · basılı tut: hemen" },
+  { type: "musicVolume", family: "playlist", label: "Müzik sesi", icon: "sliders", group: "muzik", size: "2x1", sizes: ALL, hint: "Müzik çaların genel ses düzeyi" },
+  { type: "musicAir", family: "playlist", label: "Müzik · yayına ver", icon: "broadcast", group: "muzik", size: "1x1", sizes: ALL, hint: "Müzik yalnız hoparlör ↔ yayına da" },
   // ══════════ işletim düğmeleri (./wLed, ./wRoportaj, ./wOzet, ./wMac, ./wSahne, ./wGenel) ══════════
   // ── LED ekran ──
   { type: "ledPower", family: "ledOps", label: "LED aç / kapat · ekran başına", icon: "overview", group: "led", size: "2x1", sizes: [...ALL, "3x2"], hint: "Ekrana dokun: LED o ekranda açılır; tık: aç / kapat" },
@@ -227,7 +234,9 @@ export const RAIL_WIDGETS = [
   { type: "openOlay", family: "openPanel", label: "OLAY GİR paneli aç", icon: "pencil", group: "panel", size: "1x1", sizes: ALL, hint: "Olay gir panelini aç / öne getir" },
   { type: "openKontrol", family: "openPanel", label: "KONTROL MERKEZİ", icon: "command", group: "panel", size: "2x1", sizes: ALL, hint: "Tüm paneller ve yayın düzenlemeleri tek yerde (paneller ekrandan kaldırılsa da)" },
   { type: "openPanel", family: "openPanel", label: "Panel aç (seçmeli)", icon: "board", group: "panel", size: "1x1", sizes: ALL, multi: true, hint: "Seçenekten panel seç; ekranda ya da Kontrol merkezinde açar" },
-  { type: "macroBank", family: "macro", label: "Makro bankası + düzenleyici", icon: "zap", group: "genel", size: "2x2", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Tüm makrolar; kalem: makro düzenleyici" },
+  { type: "macroBank", family: "macro", label: "Makro bankası + düzenleyici", icon: "zap", group: "genel", size: "2x2", sizes: ["2x1", "2x2", "3x2", "4x2"], hint: "Tüm makrolar (klasör sekmeli ızgara); kalem: makro düzenleyici" },
+  { type: "macroToggle", family: "macro", label: "Makro · aç / kapa", icon: "zap", group: "genel", size: "1x1", sizes: ALL, hint: "1. dokunuş açılış, 2. dokunuş kapanış adımları (ör. VAR akışı)" },
+  { type: "macroHold", family: "macro", label: "Makro · basılı tut", icon: "zap", group: "genel", size: "1x1", sizes: ALL, hint: "Basılı tuttukça çalışır, bırakınca kapanış adımları (ör. spiker konuşsun)" },
 ];
 
 export const widgetOf = (type) => RAIL_WIDGETS.find((w) => w.type === type) || null;

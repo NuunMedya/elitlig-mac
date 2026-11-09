@@ -485,7 +485,7 @@ export function useStudioAudio({ sources, settings } = {}) {
 
   /** Uzak akışı (telefon WebRTC sesi) şeride bağlar; { setOn } döner. */
   const streamsRef = useRef(new Map()); // stream → { source, gate }
-  const attachStream = useCallback((stream, { strip, on = false } = {}) => {
+  const attachStream = useCallback((stream, { strip, on = false, group = "live" } = {}) => {
     const G = g.current;
     if (!G || !stream || !stream.getAudioTracks().length) return null;
     let n = streamsRef.current.get(stream);
@@ -499,7 +499,7 @@ export function useStudioAudio({ sources, settings } = {}) {
     }
     if (n.strip !== strip) {
       try { n.gate.disconnect(); } catch { /* yoksay */ }
-      const s = stripNode(strip, "live");
+      const s = stripNode(strip, group);
       if (s) n.gate.connect(s.input);
       n.strip = strip;
     }
@@ -635,6 +635,7 @@ export function useStudioAudio({ sources, settings } = {}) {
     levelInfo: () => g.current?.levelInfo || null,
     setMonitor,
     attachMedia,
+    attachStream,
     // sahne başına ses, genel kapatma, yayındaki kanallar
     programSceneId,
     scenes: sceneList,

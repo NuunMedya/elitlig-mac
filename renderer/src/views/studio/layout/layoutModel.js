@@ -69,6 +69,7 @@ export const LAYOUT_PANELS = [
   { key: "olaylar", label: "Olay gir", icon: "pencil", group: "islem", hint: "Olay türü → oyuncu → kaydet" },
   { key: "bolumler", label: "Bölümler", icon: "flag", group: "islem", hint: "YouTube bölüm işaretleri" },
   { key: "golMuzigi", label: "Gol müziği", icon: "music", group: "islem", hint: "Takım başına gol müziği, çal / durdur" },
+  { key: "muzikCalar", label: "Müzik çalar", icon: "music", group: "islem", hint: "Müzik listesi (YouTube + dosya), geçiş, sonraki / önceki, yayına da ver" },
   { key: "yukleme", label: "Yükleme günlüğü", icon: "upload", group: "islem", hint: "Gol klibi yüklemeleri ve bağlantı denemesi" },
   { key: "board", label: "Pano", icon: "grid", group: "pano", multi: true, hint: "Serbest bileşen panosu: düğmeler, ses şeritleri, tekrar parçaları…" },
   // Maç yönetiminin sekmeleri ayrı paneller (birleşik "Maç yönetimi" de kalır; durum ortak).
@@ -214,6 +215,122 @@ export function widgetSize(key) {
 export const componentOf = (key) => LAYOUT_COMPONENTS.find((c) => c.key === key) || null;
 /** Pano öğesinin parçacık şerit boyutu sınıfı ("2x1"…), en / boy birimine göre. */
 export const widgetSizeKey = (it) => `${it.w >= 2 ? 2 : 1}x${it.h >= 4 ? 2 : 1}`;
+
+/* ───────────────────────── panel açma hedefleri (düğmeler) ─────────────────────────
+ * Her panel, her panel PARÇASI (Maç yönetimi › Kadro, Reji › skor ve saat, Tekrar › liste,
+ * Yayın › YouTube kartı / bölümler / kayıt…), her Kontrol merkezi bölümü ve her Ayarlar
+ * bölümü için bir "aç" düğmesi. Kayıtlardan (LAYOUT_PANELS, LAYOUT_COMPONENTS, aşağıdaki
+ * CONTROL_SECTIONS / SETTINGS_TARGETS) ÜRETİLİR: yeni panel / parça eklenince düğmesi de gelir.
+ *
+ *   hedef  { id, group, label, icon, hint, kind: "panel" | "part" | "cc" | "ayar", panel?, comp?, parent?, section? }
+ *          id: panel anahtarı ("yonetimKadro"), parça anahtarı ("part:tekrar:list", "reji.home"),
+ *          "cc:<bölüm>" (Kontrol merkezi) ya da "ayar:<bölüm>" (Ayarlar)
+ *   nerede "layout" (yerinde: ekranda yerine koy / öne getir) · "kontrol" (Kontrol merkezinde)
+ *          · "float" (yüzen pencerede) · "ayarlar" (Ayarlar sayfasında)
+ * Parçacık türü "go:<id>" (kısayol panoları ve Kutu ekle › "Aç · …" grupları).
+ */
+export const OPEN_GROUPS = [
+  { key: "mac", label: "Maç yönetimi · Reji", icon: "board" },
+  { key: "tekrar", label: "Tekrar", icon: "repeat" },
+  { key: "ses", label: "Ses ve müzik", icon: "sliders" },
+  { key: "yayin", label: "Yayın", icon: "broadcast" },
+  { key: "sahne", label: "Sahneler · ekranlar · kaynaklar", icon: "layers" },
+  { key: "led", label: "LED ekran", icon: "overview" },
+  { key: "kip", label: "VAR · Röportaj · Özet", icon: "target" },
+  { key: "grafik", label: "Grafik ayarları", icon: "trophy" },
+  { key: "ayar", label: "Ayarlar bölümleri", icon: "sliders" },
+  { key: "kontrol", label: "Kontrol merkezi bölümleri", icon: "command" },
+];
+/** Kontrol merkezi bölümleri (Studio.jsx ccSections ile aynı anahtarlar; yoksa Kontrol merkezi ilk bölümü açar). */
+export const CONTROL_SECTIONS = [
+  ["yayin", "Yayın", "broadcast"], ["bolumler", "Bölümler", "flag"], ["ayar:yayin", "Yayın ayarları · kodlama", "sliders"], ["ayar:kayit", "Kayıt ayarları", "download"], ["ayar:kapak", "YouTube kapağı", "image"],
+  ["sahne", "Sahneler", "layers"], ["kaynaklar", "Kaynaklar", "camera"], ["ayar:gecis", "Geçişler", "swap"],
+  ["tekrar", "Tekrar", "repeat"], ["ayar:tekrar", "Tekrar ayarları", "repeat"],
+  ["yonetim", "Maç yönetimi (tümü)", "board"], ["yonetimMaclar", "Maçlar", "calendar"], ["yonetimReji", "Reji", "zap"], ["yonetimKadro", "Kadro", "shirt"], ["yonetimMacsonu", "Maç sonu", "award"], ["yonetimTakimlar", "Takımlar & oyuncular", "users"], ["olaylar", "Olay gir", "pencil"], ["ayar:mac", "Reji / Maç ayarları", "board"],
+  ["ses", "Ses", "mic"], ["golMuzigi", "Gol müziği", "music"],
+  ["ayar:skorbord", "Skorbord", "trophy"], ["ayar:altyazi", "Altyazı", "list"], ["ayar:marka", "Marka & ön ayarlar", "palette"], ["ayar:sponsor", "Sponsor & linkler", "handshake"], ["ayar:var", "VAR teması", "palette"],
+  ["var", "VAR", "target"], ["roportaj", "Röportaj", "users"], ["ayar:roportaj", "Röportaj ayarları", "users"], ["ozet", "Özet", "sparkles"], ["ayar:ozet", "Özet ayarları", "sparkles"],
+  ["led", "LED ekran", "overview"], ["ayar:led", "LED ayarları", "overview"],
+  ["yukleme", "Yükleme günlüğü", "upload"], ["ayar:makro", "Makrolar", "zap"], ["ayar:serit", "Kısayollar panosu", "zap"], ["ayar:kisayol", "Klavye kısayolları", "command"],
+].map(([key, label, icon]) => ({ key, label, icon }));
+/** Ayarlar sayfası bölümleri (SettingsPage SETTINGS_SECTIONS + Studio ek bölümleri). grafik: Grafik grubunda. */
+export const SETTINGS_TARGETS = [
+  ["yayin", "Yayın", "broadcast"], ["kayit", "Kayıt", "download"], ["kapak", "YouTube kapağı", "image"], ["tekrar", "Tekrar", "repeat"], ["gecis", "Geçiş", "swap"],
+  ["led", "LED ekran", "overview"], ["roportaj", "Röportaj", "users"], ["ozet", "Özet", "sparkles"], ["mac", "Reji / Maç", "board"], ["makro", "Makrolar", "zap"],
+  ["gorunum", "Görünüm", "grid"], ["bildirim", "Bildirimler", "bell"], ["serit", "Kısayollar panosu", "zap"], ["panel", "Panel parçaları", "eye"], ["kisayol", "Klavye kısayolları", "command"],
+  ["sablon", "Ayar şablonları", "copy"], ["gelismis", "Gelişmiş", "sliders"], ["ses", "Ses (ayarlar)", "mic"], ["yerlesim", "Ekran yerleşimi", "board"],
+  ["skorbord", "Skorbord", "trophy", true], ["altyazi", "Altyazı", "list", true], ["marka", "Marka & ön ayarlar", "palette", true], ["sponsor", "Sponsor & linkler", "handshake", true], ["var", "VAR teması", "palette", true],
+].map(([key, label, icon, grafik]) => ({ key, label, icon, grafik: Boolean(grafik) }));
+
+const PANEL_OPEN_GROUP = {
+  yonetim: "mac", yonetimMaclar: "mac", yonetimReji: "mac", yonetimKadro: "mac", yonetimMacsonu: "mac", yonetimTakimlar: "mac", olaylar: "mac",
+  tekrar: "tekrar", acilar: "tekrar", ses: "ses", golMuzigi: "ses", muzikCalar: "ses", olcer: "ses",
+  yayin: "yayin", bolumler: "yayin", yukleme: "yayin", led: "led", ledPvw: "led", var: "kip", roportaj: "kip", ozet: "kip",
+  pvw: "sahne", pgm: "sahne", gecis: "sahne", sahneSerit: "sahne", sahne: "sahne",
+};
+const COMP_OPEN_GROUP = { ses: "ses", golmuzik: "ses", tekrar: "tekrar", maclar: "mac", reji: "mac", kadro: "mac", macsonu: "mac", yayin: "yayin", led: "led", kip: "kip", ekran: "sahne" };
+const MG_TAB_PANEL = { maclar: "yonetimMaclar", kadro: "yonetimKadro", macsonu: "yonetimMacsonu", reji: "yonetimReji" };
+/** Parçanın ait olduğu panel (Kontrol merkezinde hangi bölüm açılır, yerleşimde nerenin yanına konur). */
+export function partParent(key) {
+  const c = componentOf(key);
+  if (!c) return null;
+  if (c.part) return c.panel;
+  const [head, tab] = String(key).split(".");
+  if (head === "reji") return "yonetimReji";
+  if (head === "mg") return MG_TAB_PANEL[tab] || "yonetim";
+  if (head === "ses") return "ses";
+  if (head === "golmuzik") return "golMuzigi";
+  if (head === "tekrar") return "tekrar";
+  if (key === "olaygir") return "olaylar";
+  return null;
+}
+const ccKeys = () => new Set(CONTROL_SECTIONS.map((x) => x.key));
+function buildOpenTargets() {
+  const out = [];
+  for (const p of LAYOUT_PANELS) {
+    const group = PANEL_OPEN_GROUP[p.key];
+    if (!group || p.multi) continue;
+    out.push({ id: p.key, kind: "panel", panel: p.key, group, label: p.label, icon: p.icon, hint: p.hint || "" });
+  }
+  const panelKeys = new Set(LAYOUT_PANELS.map((p) => p.key));
+  for (const c of LAYOUT_COMPONENTS) {
+    if (c.widget || c.multi || panelKeys.has(c.key) || !isKnownPanelId(compPanelId(c.key))) continue;
+    const group = c.key === "olaygir" ? "mac" : COMP_OPEN_GROUP[c.group];
+    if (!group) continue;
+    out.push({ id: c.key, kind: "part", comp: c.key, parent: partParent(c.key), group, label: c.label, icon: c.icon || "grid", hint: c.hint || "Panelin bu parçası tek başına" });
+  }
+  for (const s of SETTINGS_TARGETS) {
+    out.push({ id: `ayar:${s.key}`, kind: "ayar", section: s.key, group: s.grafik ? "grafik" : "ayar", label: s.grafik ? s.label : `Ayarlar › ${s.label}`, icon: s.icon, hint: "Ayarlar sayfasının bu bölümü", cc: ccKeys().has(`ayar:${s.key}`) });
+  }
+  for (const s of CONTROL_SECTIONS) {
+    out.push({ id: `cc:${s.key}`, kind: "cc", section: s.key, group: "kontrol", label: `Kontrol merkezi › ${s.label}`, icon: s.icon, hint: "Kontrol merkezinde bu bölüm" });
+  }
+  return out;
+}
+export const OPEN_TARGETS = buildOpenTargets();
+export const openTargetOf = (id) => OPEN_TARGETS.find((t) => t.id === id) || null;
+/** Hedefin "nerede açılsın" seçenekleri ([anahtar, etiket]); ilki varsayılan. */
+export function openWheres(t) {
+  if (!t) return [];
+  if (t.kind === "cc") return [["kontrol", "Kontrol merkezinde"]];
+  if (t.kind === "ayar") return t.cc ? [["ayarlar", "Ayarlar sayfasında"], ["kontrol", "Kontrol merkezinde"]] : [["ayarlar", "Ayarlar sayfasında"]];
+  return [["layout", "Yerinde (ekranda; kaldırıldıysa son yerine)"], ["kontrol", "Kontrol merkezinde"], ["float", "Yüzen pencerede"]];
+}
+/** Parça → yerleşimdeki panel kimliği. */
+export const openTargetPanelId = (t) => (t?.kind === "part" ? compPanelId(t.comp) : t?.kind === "panel" ? t.panel : null);
+
+// Kısayol parçacığı olarak kayıt: "go:<id>" (railModel kataloğuna ve pano bileşenlerine eklenir).
+const OPEN_SIZES = ["1x1", "1x2", "2x1", "2x2"];
+for (const g of OPEN_GROUPS) {
+  if (!RAIL_GROUPS.some((x) => x.key === `go-${g.key}`)) RAIL_GROUPS.push({ key: `go-${g.key}`, label: `Aç · ${g.label}`, icon: g.icon });
+  COMPONENT_GROUPS.push({ key: `w-go-${g.key}`, label: `Panel aç · ${g.label}` });
+}
+for (const t of OPEN_TARGETS) {
+  const type = `go:${t.id}`;
+  const w = { type, family: "openTarget", label: `${t.label} · aç`, icon: t.icon, group: `go-${t.group}`, size: "1x1", sizes: OPEN_SIZES, hint: t.hint, target: t.id };
+  if (!RAIL_WIDGETS.some((x) => x.type === type)) RAIL_WIDGETS.push(w);
+  LAYOUT_COMPONENTS.push({ key: `w:${type}`, widget: type, group: `w-go-${t.group}`, label: w.label, icon: t.icon, hint: t.hint, size: widgetSize("2x1"), min: [1, 1], multi: true });
+}
 
 /* ───────────────────────── panolar ───────────────────────── */
 
