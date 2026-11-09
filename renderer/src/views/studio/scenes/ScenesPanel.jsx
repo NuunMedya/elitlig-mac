@@ -25,6 +25,7 @@ import { BAD, FX_KINDS, STATUS_TEXT, SourceThumb } from "../SourcesPanel";
 import SceneEditOverlay from "./SceneEditOverlay";
 import Monitor from "./Monitor";
 import "./scenes.css";
+import { Splitter } from "../dock/PanelFrame";
 
 /** Sürükle-bırak sıralama yardımcısı (HTML5). */
 function useDragSort(onDrop) {
@@ -374,8 +375,12 @@ function SceneInlineEditorInner({ config, configRef, runtimeRef, scene, selected
         {actions.onEditFull && <button type="button" className="btn btn--xs" onClick={() => actions.onEditFull(scene.id)} title="Büyük düzenleyici: tuval, katmanlar, görünüm, sahne ayarları, geri al"><Icon name="overview" size={11} /> Büyük düzenleyici</button>}
         <button type="button" className="icon-btn icon-btn--xs" onClick={onClose} title="Paneli kapat" aria-label="Paneli kapat"><Icon name="x" size={13} /></button>
       </header>
+      {/* Sol: katmanlar + dönüşüm (alt alta, boşluk bırakmaz) · sağ: tuval (genişliğe göre 16:9). */}
       <div className="sie__body">
-        <LayersList config={config} scene={scene} selectedId={selectedLayerId} actions={{ ...actions, onSelectLayer }} compact />
+        <div className="sie__left">
+          <LayersList config={config} scene={scene} selectedId={selectedLayerId} actions={{ ...actions, onSelectLayer }} compact />
+          <LayerProps config={config} scene={scene} layer={layer} runtimeRef={runtimeRef} outW={outW} outH={outH} actions={actions} />
+        </div>
         <div className="sie__right">
           <div className="sie__stage">
             <Monitor canvas={canvas} className={`st-editor__screen ${isProgram ? "is-program" : ""}`}>
@@ -383,7 +388,6 @@ function SceneInlineEditorInner({ config, configRef, runtimeRef, scene, selected
                 overrideRef={overrideRef} sourceName={sourceName} outW={outW} outH={outH} />
             </Monitor>
           </div>
-          <LayerProps config={config} scene={scene} layer={layer} runtimeRef={runtimeRef} outW={outW} outH={outH} actions={actions} />
         </div>
       </div>
     </section>
@@ -524,6 +528,7 @@ function ScenesTabInner({ config, configRef, runtimeRef, register, version, stud
         </section>
         {!list && config.scenes.length > 0 && <p className="scn-help">Tık: önizleme · çift tık: yayına al · 1–9: kısayol · sağ tık: menü</p>}
       </div>
+      {showInline && !narrow && <Splitter id="sahne:edit" side="after" label="Sahneler ↔ katman düzenleyici" />}
       {showInline && (
         <SceneInlineEditor config={config} configRef={configRef} runtimeRef={runtimeRef} scene={scene} selectedLayerId={selectedLayerId} onSelectLayer={onSelectLayer}
           outW={outW} outH={outH} overrideRef={overrideRef} matchClockRef={matchClockRef}

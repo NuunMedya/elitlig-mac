@@ -27,6 +27,7 @@ import { PendingNote } from "./replayUploadUi"; // [gol-klip]
 import { DeckAngles, DeckExtras, DeckSeq, DeckSpeed, DeckTarget, DeckTime, DeckTimeline, DeckTransport, DeckZoom, angleShort, useDeckClock } from "./modes/replayDeckUi";
 import "./modes/replayEditor.css";
 import { Part, usePanelParts } from "./dock/parts";
+import { Splitter } from "./dock/PanelFrame";
 
 const STINGERS = [{ key: "cut", label: "Kesme" }, ...TRANSITIONS.filter((t) => t.stinger)];
 const FILTERS = [{ key: "all", label: "Tümü" }, { key: "goal", label: "Goller" }, { key: "moment", label: "Anlar" }, { key: "star", label: "★" }];
@@ -154,6 +155,7 @@ function ReplayPanelInner({ api }) {
                 onSend={send} solo={!showHead} live={api.live} />
             </Part>
           )}
+          {showList && (showGrid || showQueue) && <Splitter id="tekrar:side" side="after" label="Pozisyonlar ↔ önizleme sütunu" />}
           {(showGrid || showQueue) && (
             <div className="rpx-side">
               {showGrid && (
