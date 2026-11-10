@@ -4,7 +4,7 @@
 // Projelerdeki tarihler (adımlar, son tarihler, proje başlangıç/bitiş, soru
 // son tarihleri, görüşme takipleri) proje rengiyle, şerit ve simgeyle görünür;
 // tıklayınca projeye gider. "Projeler" düğmesiyle açılıp kapanır.
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Empty, ErrorNote, Field, Icon, Modal, OfflineNote, Segmented, ViewHeader, useConfirm, useResult } from "../components/ui";
 import { del, patch, post, tempId, useCommand, useResource } from "../api";
 import {
@@ -21,7 +21,7 @@ const writeJson = (key, value) => { try { localStorage.setItem(key, JSON.stringi
 
 const HOUR_PX = 44;
 
-export default function Agenda({ arg, go }) {
+export default function Agenda({ arg, argSeq, go }) {
   const [view, setView] = useState(() => localStorage.getItem("agenda:view") || "month");
   const [cursor, setCursor] = useState(() => new Date());
   const [editing, setEditing] = useState(arg === "new" ? { draft: {} } : null);
@@ -31,6 +31,8 @@ export default function Agenda({ arg, go }) {
   const setShowProjects = (v) => { setShowProjectsState(v); writeJson("agenda:projects", v); };
   const toggleProject = (id) => setHiddenProjectsState((cur) => { const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]; writeJson("agenda:hiddenProjects", next); return next; });
   const result = useResult();
+  // Ajanda açıkken paletten "Yeni etkinlik" seçilince.
+  useEffect(() => { if (arg === "new") setEditing({ draft: {} }); }, [arg, argSeq]);
   const range = useMemo(() => rangeFor(view, cursor), [view, cursor]);
   const data = useResource("/api/tools/events", { from: range.from.toISOString(), to: range.to.toISOString(), todos: showTodos ? undefined : "0" });
 

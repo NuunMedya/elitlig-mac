@@ -24,7 +24,7 @@ const Highlighted = ({ text, query }) => highlight(text, query).map((p, i) => (p
 
 const PRINT_CSS = "body{font:12pt/1.6 -apple-system,'Segoe UI',sans-serif;color:#111;margin:18mm}h1{font-size:22pt;margin:0 0 4pt}.meta{color:#666;font-size:9pt;margin:0 0 14pt}blockquote{border-left:3px solid #999;margin:0 0 10pt;padding:2pt 10pt;color:#444}pre{background:#f4f4f4;padding:8pt;border-radius:6pt}table{border-collapse:collapse}td,th{border:1px solid #bbb;padding:4pt 8pt}.nt-md__list.is-tasks{list-style:none;padding-left:0}.nt-md__task{display:flex;gap:6pt}.nt-md__wiki{border:0;background:none;padding:0;font:inherit;text-decoration:underline}code{background:#f1f1f1;padding:0 3pt;border-radius:3pt}";
 
-export default function NotesView({ arg, go }) {
+export default function NotesView({ arg, argSeq, go }) {
   const result = useResult();
   const confirm = useConfirm();
   const toast = useToast();
@@ -91,12 +91,13 @@ export default function NotesView({ arg, go }) {
   useEffect(() => {
     if (arg && typeof arg === "object" && arg.notebook) setScope({ list: "all", notebookId: Number(arg.notebook), tag: "" });
     else if (arg && typeof arg !== "object" && !["new", "template"].includes(arg)) setSelected(Number(arg) || arg);
-  }, [arg]);
+  }, [arg, argSeq]);
+  // "Yeni not" / "Şablondan yeni not": Not Defteri zaten açıkken de çalışır (argSeq).
   useEffect(() => {
     if (arg === "new") create();
     if (arg === "template") setDialog({ kind: "templates" });
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, []);
+  }, [arg, argSeq]);
   useEffect(() => {
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "." && current) { e.preventDefault(); setFocus((v) => !v); }

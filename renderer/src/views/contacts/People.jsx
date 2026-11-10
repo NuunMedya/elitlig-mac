@@ -35,7 +35,7 @@ const writeJson = (key, value) => { try { localStorage.setItem(key, JSON.stringi
 const cardRow = (card, member) => (card.member_user_id ? memberRow(member || { id: Number(card.member_user_id), name: card.name, categories: [] }, card) : manualRow(card));
 const refMember = (r) => ({ id: r.member_user_id, name: r.name, phone: r.phone, email: r.email, city: r.city, categories: r.categories || [] });
 
-export default function People({ arg, go, tabs, onTeam }) {
+export default function People({ arg, argSeq, go, tabs, onTeam }) {
   const result = useResult();
   const toast = useToast();
   const confirm = useConfirm();
@@ -55,6 +55,8 @@ export default function People({ arg, go, tabs, onTeam }) {
   const [onlyPhone, setOnlyPhone] = useState(false);
   const [city, setCity] = useState("");
   const [selected, setSelected] = useState(arg && arg !== "new" ? `m${arg}` : null);
+  // Paletten açılan, listede (henüz) olmayan kişi kartı (ör. üyeye bağlı kart).
+  const [pinnedRow, setPinnedRow] = useState(null);
   const [editing, setEditing] = useState(arg === "new" ? { initial: {} } : null);
   const [dialog, setDialog] = useState(null);
   const [picking, setPicking] = useState(false);
@@ -98,6 +100,22 @@ export default function People({ arg, go, tabs, onTeam }) {
     if (!ids.length) return;
     Promise.all(ids.map((id) => get(`/api/tools/contacts/directory/${id}`))).then((list) => setFavMembers((m) => ({ ...m, ...Object.fromEntries(list.filter((r) => r.ok).map((r) => [r.data.item.id, r.data.item])) })));
   }, [smart, cards, memberAccess, favMembers]);
+
+  // Rehber açıkken paletten kişi / "Yeni kişi" seçilince açık görünüm güncellenir.
+  const cardsReady = Boolean(manualRes.data);
+  useEffect(() => {
+    if (!arg) return;
+    if (arg === "new") { setEditing({ initial: {} }); return; }
+    const card = cards.find((c) => String(c.id) === String(arg));
+    if (card?.member_user_id) {
+      const row = cardRow(card, members.items.find((m) => Number(m.id) === Number(card.member_user_id)));
+      setPinnedRow(row);
+      setSelected(row.key);
+    } else {
+      setPinnedRow(null);
+      setSelected(`m${arg}`);
+    }
+  }, [arg, argSeq, cardsReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const reload = () => { manualRes.reload({ quiet: true }); audRes.reload({ quiet: true }); setAudRefs({}); };
 
@@ -145,7 +163,7 @@ export default function People({ arg, go, tabs, onTeam }) {
     return [...map.entries()].map(([label, list]) => ({ label, rows: list }));
   }, [rows, smart, group, sort, audiences, memberAudiences]);
   const letters = new Set(groups.filter((g) => g.letter).map((g) => g.label));
-  const known = useMemo(() => new Map([...rows, ...manualRows, ...memberRows].map((r) => [r.key, r])), [rows, manualRows, memberRows]);
+  const known = useMemo(() => new Map([...(pinnedRow ? [pinnedRow] : []), ...rows, ...manualRows, ...memberRows].map((r) => [r.key, r])), [rows, manualRows, memberRows, pinnedRow]);
   const current = known.get(selected) || null;
   useEffect(() => {
     if (!current) return;

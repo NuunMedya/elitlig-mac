@@ -30,7 +30,7 @@ const SECTIONS = [
 const SECTION_KEY = "equipment:section";
 const readSection = () => { try { return localStorage.getItem(SECTION_KEY) || "pano"; } catch { return "pano"; } };
 
-export default function Equipment({ arg }) {
+export default function Equipment({ arg, argSeq }) {
   const toast = useToast();
   const result = useResult();
   const metaRes = useResource(`${BASE}/meta`);
@@ -50,7 +50,7 @@ export default function Equipment({ arg }) {
     if (typeof arg === "string" && SECTIONS.some((s) => s.value === arg)) go(arg);
     if (arg && typeof arg === "object" && arg.id) setOpenId(arg.id);
     if (arg === "new") setDialog({ type: "form", item: null });
-  }, [arg, go]);
+  }, [arg, argSeq, go]);
   const bump = useCallback(() => { setVersion((v) => v + 1); holdersRes.reload({ quiet: true }); }, [holdersRes]);
   const offerReceipt = useCallback((items) => toast(`${items.length} kalem teslim edildi.`, { tone: "success", timeout: 8000, action: { label: "Tutanağı yazdır", run: () => printReceipt(items) } }), [toast]);
   const openByCode = async (code) => {

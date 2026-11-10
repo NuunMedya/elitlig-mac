@@ -20,7 +20,7 @@ import { KINDS, KIND_ICON, LABEL_COLORS, STATUSES, dateBucket, dueOf, endOfDay, 
 const store = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
 const save = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* yoksay */ } };
 
-export default function Todos({ arg, go }) {
+export default function Todos({ arg, argSeq, go }) {
   const result = useResult();
   const toast = useToast();
   const confirm = useConfirm();
@@ -51,6 +51,11 @@ export default function Todos({ arg, go }) {
   const scopeProject = String(scope).startsWith("project:") ? scopeChoices.find((p) => `project:${p.id}` === scope) : null;
   const scoped = useMemo(() => items.filter((t) => scopeMatches(t, scope)), [items, scope]);
   useCommand("new", () => setComposer({}));
+  // Yapılacaklar açıkken paletten iş / "Yeni görev" seçilince.
+  useEffect(() => {
+    if (arg === "new") setComposer({});
+    else if (arg && Number(arg)) setSelected(Number(arg));
+  }, [arg, argSeq]); // eslint-disable-line react-hooks/exhaustive-deps
   useCommand("find", () => document.getElementById("todo-search")?.focus());
   useEffect(() => {
     const onKey = (e) => {
