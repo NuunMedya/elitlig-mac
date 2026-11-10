@@ -4,6 +4,10 @@
 //   - DocPreview: sunucunun ürettiği A4 yatay sunum / teklif HTML'i; PDF olarak
 //     diske kaydet (window.elitlig.pdf), yazdır, herkese açık bağlantı.
 //   - SaleDialog: kabul / satıldı → kazanıldı + gelir kaydı + portföy.
+import { useExportDone } from "../../../components/ExportButton";
+import { renderReport } from "../../../lib/export";
+import { htmlToReport } from "../../../lib/export/htmlToReport";
+import { deliverExport, getLogo } from "../../../lib/export/platform";
 import React, { useCallback, useEffect, useState } from "react";
 import { Field, Icon, Modal, useToast } from "../../../components/ui";
 import { del, get, request, useResource } from "../../../api";
@@ -96,7 +100,13 @@ export function DocPreview({ title, path, pid, shareRef = null, shares = [], can
   }, [path]);
   const pdf = async () => {
     const r = await window.elitlig.pdf(doc.html, fileSafe(doc.title || title), { landscape: true });
-    if (r?.ok) toast("PDF kaydedildi.", { tone: "success", action: r.path ? { label: "Göster", run: () => window.elitlig.file?.reveal?.(r.path) } : null });
+    if (r?.ok) toast("PDF kaydedildi.", { tone: "success", action: r.path ? { label: "Göster", run: () => window.elitlig.files.reveal(r.path) } : null });
+  };
+  const exportDone = useExportDone();
+  const word = async () => {
+    const out = renderReport(htmlToReport(doc.html, doc.title || title), "docx", { ...(await getLogo()), fileName: fileSafe(doc.title || title) });
+    const r = await deliverExport(out);
+    if (r?.ok) exportDone({ ...r, fileName: out.fileName, format: "docx" });
   };
   const share = async () => {
     const res = await call({ method: "POST", path: `${salesPath(pid)}/shares`, body: shareRef });
@@ -116,6 +126,7 @@ export function DocPreview({ title, path, pid, shareRef = null, shares = [], can
         <span className="muted small spacer">{doc?.offline ? "Çevrimdışı: son kaydedilen hâli gösteriliyor." : "PDF A4 yatay olarak kaydedilir."}</span>
         {shareRef && canEdit && <button type="button" className="btn" onClick={share}><Icon name="link" size={13} /> {live.length ? "Yeni bağlantı" : "Paylaşım bağlantısı"}</button>}
         <button type="button" className="btn" disabled={!doc} onClick={() => window.elitlig.print(doc.html, doc.title)}><Icon name="printer" size={13} /> Yazdır</button>
+        <button type="button" className="btn" disabled={!doc} onClick={word}><Icon name="file" size={13} /> Word olarak kaydet</button>
         <button type="button" className="btn btn--primary" disabled={!doc} onClick={pdf}><Icon name="download" size={13} /> PDF olarak kaydet</button>
       </>}>
       {live.slice(0, 3).map((s) => <ShareRow key={s.id} share={s} onRevoke={canEdit ? revoke : null} />)}

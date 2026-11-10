@@ -9,6 +9,8 @@
 // saat / maç), takım arama ve "Yeni talep". Yazmalar sitedeki uçlara gider
 // (/api/match-requests/admin/*) ve bağlantı ister; okumalar çevrimdışıyken
 // önbellekten gelir.
+import ExportButton from "../../components/ExportButton";
+import { planningCells, planningReport } from "../../lib/export/reports";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorNote, Icon, Modal, OfflineNote, useConfirm, useToast } from "../../components/ui";
 import { request, useResource } from "../../api";
@@ -271,6 +273,7 @@ export default function Desk({ header = null }) {
         <span className="spacer" />
         {!denied && <div className="pl-nav__search"><TeamPicker teams={allTeams} value="" onChange={(v) => v && openTeam(v)} placeholder="Takım ara (telefondaki takım)…" /></div>}
         {!denied && <button type="button" className="btn btn--sm btn--primary" onClick={() => openNew({ kind: "match_request" })}><Icon name="plus" size={13} /> Yeni talep</button>}
+        {!denied && <ExportButton id="planning" title="Saha ve maç planlama" text="" report={() => planningReport({ requests: rows, cells: planningCells(venues.map((v) => ({ venue: v, cells: boards.selected[v.public_id]?.cells || [] }))), week: Object.values(boards.selected).find(Boolean)?.week_start || week })} />}
         {!denied && <button type="button" className="icon-btn" title="Sahalar" onClick={() => setVenuesOpen(true)}><Icon name="sliders" size={15} /></button>}
         <button type="button" className="icon-btn" title="Yenile" disabled={busy} onClick={() => { venuesRes.reload({ quiet: true }); refreshAll(); }}><Icon name="refresh" size={15} /></button>
       </nav>

@@ -39,6 +39,15 @@ export const printReceipt = (assignments, { pdf = false, giver = "" } = {}) => {
   const title = `Zimmet-tutanagi-${String(assignments[0]?.holder_name || "").replace(/[^\wçğıöşüÇĞİÖŞÜ-]+/g, "-")}`;
   return pdf ? window.elitlig.pdf(html, title) : window.elitlig.print(html, title);
 };
+/** Zimmet tutanağı Word (.docx): tutanak HTML'i ortak dışa aktarmayla belgeye çevrilir. */
+export const saveReceiptDocx = async (assignments, { giver = "" } = {}) => {
+  const [{ renderReport }, { htmlToReport }, { deliverExport, getLogo }] = await Promise.all([import("../../lib/export"), import("../../lib/export/htmlToReport"), import("../../lib/export/platform")]);
+  const report = htmlToReport(receiptHtml({ assignments, giver }), "Zimmet tutanağı");
+  const out = renderReport(report, "docx", { ...(await getLogo()), fileName: `Zimmet-tutanagi-${String(assignments[0]?.holder_name || "").replace(/[^\wçğıöşüÇĞİÖŞÜ-]+/g, "-")}` });
+  const r = await deliverExport(out);
+  if (r?.ok && r.path) window.elitlig.files.reveal(r.path);
+  return r;
+};
 export const printLabels = async (items, size = "small", pdf = false) => {
   let origin = "";
   try { origin = (await window.elitlig.app.info())?.siteOrigin || ""; } catch { /* yoksay */ }

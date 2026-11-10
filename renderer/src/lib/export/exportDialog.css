@@ -1,0 +1,119 @@
+/* Ortak "Dışa aktar" penceresi ve menüsü (xp-*). BU DOSYA iki depoda AYNIDIR. */
+.xp-layer, .xp-menu {
+  --xp-bg: #ffffff;
+  --xp-bg-2: #f7f6fb;
+  --xp-border: rgba(40, 20, 80, 0.12);
+  --xp-text: #1a1530;
+  --xp-muted: #625d7a;
+  --xp-brand: #7c3aed;
+  --xp-brand-2: #c026d3;
+  --xp-soft: rgba(124, 58, 237, 0.1);
+  --xp-danger: #be123c;
+}
+@media (prefers-color-scheme: dark) {
+  .xp-layer, .xp-menu {
+    --xp-bg: #1d1a28;
+    --xp-bg-2: #252131;
+    --xp-border: rgba(255, 255, 255, 0.12);
+    --xp-text: #f3f1fa;
+    --xp-muted: #aaa5bd;
+    --xp-brand: #a78bfa;
+    --xp-soft: rgba(167, 139, 250, 0.16);
+    --xp-danger: #fb7185;
+  }
+}
+.xp-layer {
+  position: fixed; inset: 0; z-index: 4000; display: grid; place-items: center; padding: 16px;
+  background: rgba(15, 8, 30, 0.45); backdrop-filter: blur(2px);
+  font: 13px/1.45 -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif; color: var(--xp-text);
+}
+.xp-layer *, .xp-menu * { box-sizing: border-box; }
+.xp-dialog {
+  width: min(640px, 100%); max-height: min(88vh, 860px); display: flex; flex-direction: column;
+  background: var(--xp-bg); border: 1px solid var(--xp-border); border-radius: 16px;
+  box-shadow: 0 24px 70px -10px rgba(20, 5, 50, 0.45); overflow: hidden; margin: 0;
+}
+.xp-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px 10px; border-bottom: 1px solid var(--xp-border); }
+.xp-head > div { flex: 1; min-width: 0; }
+.xp-head h2 { margin: 0; font-size: 17px; }
+.xp-head p { margin: 2px 0 0; color: var(--xp-muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xp-x { border: 0; background: transparent; color: var(--xp-muted); font-size: 22px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 8px; }
+.xp-x:hover { background: var(--xp-soft); color: var(--xp-text); }
+.xp-body { padding: 14px 18px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+.xp-formats { display: grid; grid-template-columns: repeat(auto-fit, minmax(86px, 1fr)); gap: 8px; }
+.xp-formats button {
+  display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 10px 6px; cursor: pointer;
+  border: 1.5px solid var(--xp-border); border-radius: 12px; background: var(--xp-bg-2); color: var(--xp-text); font: inherit;
+}
+.xp-formats button small { color: var(--xp-muted); font-size: 11px; }
+.xp-formats button.is-on { border-color: var(--xp-brand); background: var(--xp-soft); box-shadow: 0 0 0 3px var(--xp-soft); }
+.xp-formats button:focus-visible, .xp-btn:focus-visible, .xp-chip:focus-within, .xp-radio:focus-within { outline: 2px solid var(--xp-brand); outline-offset: 2px; }
+.xp-hint { margin: -4px 0 0; color: var(--xp-muted); font-size: 12px; }
+.xp-error { margin: 0; color: var(--xp-danger); font-weight: 600; }
+.xp-group { border: 1px solid var(--xp-border); border-radius: 12px; padding: 8px 12px 10px; margin: 0; min-width: 0; }
+.xp-group legend { padding: 0 4px; font-weight: 700; font-size: 12px; color: var(--xp-muted); text-transform: uppercase; letter-spacing: 0.3px; }
+.xp-row { display: flex; align-items: center; gap: 8px; }
+.xp-wrap { flex-wrap: wrap; }
+.xp-row select, .xp-row input[type="date"], .xp-inline select, .xp-file input {
+  font: inherit; color: var(--xp-text); background: var(--xp-bg-2); border: 1px solid var(--xp-border); border-radius: 8px; padding: 5px 8px; min-width: 0;
+}
+.xp-dash { color: var(--xp-muted); }
+.xp-chip, .xp-radio {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; cursor: pointer; user-select: none;
+  border: 1px solid var(--xp-border); background: var(--xp-bg-2); font-size: 12.5px;
+}
+.xp-chip input, .xp-radio input { margin: 0; accent-color: var(--xp-brand); }
+.xp-chip.is-on, .xp-radio.is-on { border-color: color-mix(in srgb, var(--xp-brand) 55%, transparent); background: var(--xp-soft); }
+.xp-chip.is-disabled, .xp-radio.is-disabled { opacity: 0.6; cursor: default; }
+.xp-mini { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; }
+.xp-mini > button { border: 0; background: none; padding: 0; color: var(--xp-brand); cursor: pointer; font: inherit; }
+.xp-mini > button:hover { text-decoration: underline; }
+.xp-inline { display: inline-flex; align-items: center; gap: 6px; color: var(--xp-muted); margin-left: auto; }
+.xp-mini .xp-inline { margin-left: auto; }
+.xp-row .xp-inline { margin-left: 0; }
+.xp-file { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; color: var(--xp-muted); font-size: 12px; }
+.xp-file span { display: flex; align-items: center; gap: 4px; }
+.xp-file input { flex: 1; }
+.xp-file em { font-style: normal; color: var(--xp-muted); }
+.xp-foot { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--xp-border); background: var(--xp-bg-2); }
+.xp-count { flex: 1; color: var(--xp-muted); font-size: 12px; }
+.xp-btn {
+  font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--xp-border); background: var(--xp-bg); color: var(--xp-text);
+}
+.xp-btn--primary { border-color: transparent; color: #fff; background: linear-gradient(135deg, var(--xp-brand), var(--xp-brand-2)); }
+.xp-btn:disabled { opacity: 0.55; cursor: default; }
+
+/* Basit açılır menü (web düğmesi) */
+.xp-trigger { position: relative; display: inline-flex; }
+.xp-menu {
+  position: absolute; z-index: 3900; top: calc(100% + 6px); right: 0; min-width: 210px; padding: 6px;
+  background: var(--xp-bg); color: var(--xp-text); border: 1px solid var(--xp-border); border-radius: 12px;
+  box-shadow: 0 14px 40px -8px rgba(20, 5, 50, 0.35); display: flex; flex-direction: column; gap: 2px;
+  font: 13px/1.4 -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+}
+.xp-menu.is-left { right: auto; left: 0; }
+.xp-menu button {
+  display: flex; align-items: center; gap: 10px; text-align: left; padding: 7px 10px; border: 0; border-radius: 8px;
+  background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+.xp-menu button:hover, .xp-menu button:focus-visible { background: var(--xp-soft); outline: none; }
+.xp-menu button small { margin-left: auto; color: var(--xp-muted); font-size: 11px; }
+.xp-menu hr { border: 0; border-top: 1px solid var(--xp-border); margin: 4px 2px; }
+.xp-badge { display: inline-grid; place-items: center; min-width: 38px; padding: 2px 4px; border-radius: 6px; font-size: 10.5px; font-weight: 800; color: #fff; }
+.xp-badge--pdf { background: #dc2626; } .xp-badge--xlsx { background: #15803d; } .xp-badge--docx { background: #1d4ed8; }
+.xp-badge--csv { background: #475569; } .xp-badge--md { background: #7c3aed; } .xp-badge--json { background: #b45309; }
+
+/* Web düğmesi ve bildirim */
+.xp-open {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 10px; cursor: pointer;
+  font: 600 13px/1.2 -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+  border: 1px solid rgba(40, 20, 80, 0.16); background: #fff; color: #1a1530;
+}
+.xp-open:hover { border-color: #7c3aed; color: #6d28d9; }
+@media (prefers-color-scheme: dark) { .xp-open { background: #1d1a28; color: #f3f1fa; border-color: rgba(255, 255, 255, 0.16); } }
+.xp-notice {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 3800; white-space: nowrap; padding: 6px 10px; border-radius: 8px;
+  background: #1a1530; color: #fff; font: 12px/1.3 -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.xp-menu.is-floating { position: fixed; right: auto; z-index: 4100; max-height: calc(100vh - 24px); overflow: auto; }

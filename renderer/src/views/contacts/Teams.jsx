@@ -6,6 +6,8 @@ import { Empty, ErrorNote, Icon, MenuButton, OfflineNote, Spinner, useResult, us
 import { get, post, tempId, useDebounced } from "../../api";
 import { formatDate, prettyPhone, waNumber } from "../../lib/helpers";
 import { mediaUrl } from "../../lib/chatUtils";
+import ExportButton from "../../components/ExportButton";
+import { tableReport } from "../../lib/export/reports";
 import { cityCounts, matchLine, matchResult, phonesText, pushRecent, recordText, teamContacts, teamCsv, teamInitials, teamMeta, teamVCards, waLinks, winRate } from "../../lib/teamUtils";
 
 const SORTS = [["name", "Ada göre"], ["city", "İle göre"], ["members", "Üye sayısı"], ["matches", "Maç sayısı"], ["newest", "En yeni"]];
@@ -172,10 +174,14 @@ function TeamDetail({ id, go }) {
         </div>
         <div className="team-card__actions">
           <button type="button" className="btn btn--primary" onClick={makeGroup} title="Başkanlar ve hesabı olan oyuncularla Mesajlar'da grup"><Icon name="users" /> Takımla grup kur</button>
-          <MenuButton text="Dışa aktar" icon="download" items={[
+          <ExportButton id="team-contacts" title={t.team_name}
+            report={() => tableReport({ title: `${t.team_name} — Takım rehberi`, filters: [t.city].filter(Boolean), groupBy: "role",
+              summary: [{ label: "Kişi", value: contacts.length, type: "number" }, { label: "Maç", value: t.total_matches || 0, type: "number" }],
+              columns: [{ key: "name", label: "Ad soyad" }, { key: "role", label: "Rol" }, { key: "position", label: "Mevki" }, { key: "phone", label: "Telefon" }, { key: "email", label: "E-posta" }, { key: "city", label: "İl" }],
+              rows: contacts })}
+            extraItems={[
             { label: "Mac Kişiler'e aktar (.vcf)", icon: "user", onClick: () => save(`${t.team_name}.vcf`, teamVCards(data), "vCard") },
-            { label: "Excel / CSV", icon: "grid", onClick: () => save(`${t.team_name}.csv`, teamCsv(data), "CSV") },
-            "-",
+            { label: "Excel / CSV (eski biçim)", icon: "grid", onClick: () => save(`${t.team_name}.csv`, teamCsv(data), "CSV") },
             { label: "Telefonları kopyala", icon: "copy", disabled: !contacts.some((c) => c.phone), onClick: () => { navigator.clipboard.writeText(phonesText(contacts)); toast("Telefonlar kopyalandı.", { tone: "success" }); } },
           ]} />
           {contacts.some((c) => c.phone) && <MenuButton text="WhatsApp" icon="message" items={waLinks(contacts).map((l) => ({ label: l.name, icon: "message", onClick: () => openUrl(l.url) }))} />}

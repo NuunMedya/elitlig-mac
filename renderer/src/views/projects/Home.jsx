@@ -2,6 +2,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Empty, ErrorNote, Icon, MenuButton, OfflineNote, Segmented, Spinner, ViewHeader } from "../../components/ui";
 import { useCommand, useResource } from "../../api";
+import ExportButton from "../../components/ExportButton";
+import { projectsListReport } from "../../lib/export/reports";
 import { dueLabel, formatWhen, groupFollowups, PROJECT_STATUS_TONE } from "../../lib/projectUtils";
 import { includesTr } from "../../lib/helpers";
 import { Avatar, BASE, ProjectBadge, Progress, ROLE_LABEL, label, money } from "./common";
@@ -44,6 +46,9 @@ export default function Home({ section, newProject, nonce, onSection, onOpen, go
   return (
     <div className="view view--projects">
       <ViewHeader icon="layers" title="Projeler" subtitle="Süreçlerinizi adım adım yönetin: sorumlular, sonuçlar, aranan kişiler, sorular ve portföy tek yerde.">
+        {items.length > 0 && <ExportButton id="projects-list" title="Projeler"
+          scopes={[{ value: "view", label: `Listedekiler (${shown.length})` }, { value: "all", label: `Tümü (${items.length})` }]}
+          report={({ scope: sc }) => projectsListReport(sc === "all" ? items : shown, { filters: sc === "all" ? [] : [status && label(meta.project_statuses, status), q && `"${q}"`].filter(Boolean), statusLabel: (k) => label(meta.project_statuses, k) })} />}
         <button type="button" className="btn btn--primary" onClick={() => setCreating(true)}><Icon name="plus" /> Yeni proje</button>
       </ViewHeader>
       <nav className="acc-tabs" aria-label="Projeler bölümleri">

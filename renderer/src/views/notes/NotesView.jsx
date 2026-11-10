@@ -16,6 +16,9 @@ import NoteEditor from "./NoteEditor";
 import MarkdownView from "./MarkdownView";
 import { EventDialog, LinksDialog, NotebookDialog, ShareDialog, TaskDialog, TemplatePicker, VersionsDialog } from "./dialogs";
 import "./notes.css";
+import ExportButton, { useExportDone } from "../../components/ExportButton";
+import ExportDialog from "../../lib/export/ExportDialog";
+import { noteReport, notesReport } from "../../lib/export/reports";
 
 const LIST_ICONS = { notes: "note", pin: "pin", clock: "clock", check: "checkSquare", share: "users", archive: "archive", trash: "trash" };
 const readLocal = (key, fallback) => { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } };
@@ -38,6 +41,8 @@ export default function NotesView({ arg, argSeq, go }) {
   const [justCreated, setJustCreated] = useState(null);
   const [focus, setFocus] = useState(false);
   const [dialog, setDialog] = useState(null);
+  const [noteExport, setNoteExport] = useState(null);
+  const exportDone = useExportDone();
   const [projects, setProjects] = useState([]);
   const [contacts, setContacts] = useState([]);
   const searchRef = useRef(null);
@@ -176,6 +181,7 @@ export default function NotesView({ arg, argSeq, go }) {
     if (kind === "markdown") return saveText(`${fileSafe(note.title)}.md`, noteToMarkdown(note, { notebooks }), "md", "Markdown");
     if (kind === "print") return window.elitlig.print(await noteHtml(note), note.title || "Not");
     if (kind === "pdf") return window.elitlig.pdf(await noteHtml(note), fileSafe(note.title));
+    if (kind === "docx" || kind === "export") { setNoteExport({ note, format: kind === "docx" ? "docx" : "pdf" }); return undefined; }
     if (kind === "reload") { const r = await get(`/api/tools/notes/${note.id}`); if (r.ok) { replace(r.data.item); setSelected(null); setTimeout(() => setSelected(note.id), 0); } return undefined; }
     if (kind === "leave") {
       if (!(await confirm({ title: "Paylaşımdan ayrıl", message: "Bu not artık listenizde görünmeyecek.", confirmLabel: "Ayrıl" }))) return undefined;
@@ -239,7 +245,10 @@ export default function NotesView({ arg, argSeq, go }) {
           <div className="row-gap">
             <select className="select-sm" value={sort} onChange={(e) => { setSort(e.target.value); writeLocal("notes:sort", e.target.value); }} aria-label="Sıralama" disabled={Boolean(query.trim())}>{SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select>
             <Segmented value={layout} onChange={(v) => { setLayout(v); writeLocal("notes:layout", v); }} size="sm" ariaLabel="Görünüm" options={[{ value: "list", icon: "list", label: "", title: "Liste" }, { value: "grid", icon: "grid", label: "", title: "Izgara" }]} />
-            <MenuButton icon="download" label="Dışa aktar" items={[{ label: "Listedekileri Markdown olarak kaydet", icon: "download", onClick: exportAll }]} />
+            <ExportButton id="notes" title="Not Defteri" text="" print={false} formats={["pdf", "docx", "md", "xlsx", "csv"]}
+              extraItems={[{ label: "Listedekileri Markdown olarak kaydet (eski)", icon: "download", onClick: exportAll }]}
+              scopes={[{ value: "view", label: `Listedekiler (${results.length})` }, { value: "all", label: `Tüm notlar (${notes.filter((n) => !n.archived).length})` }]}
+              report={({ scope: sc }) => notesReport(sc === "all" ? notes.filter((n) => !n.archived) : results.map((r) => r.note), { title: `Not Defteri — ${sc === "all" ? "Tüm notlar" : scopeTitle}`, filters: query.trim() && sc !== "all" ? [`"${query.trim()}"`] : [], notebookOf: (n) => (n.notebook_id != null ? notebookPath(notebooks, n.notebook_id) : "") })} />
           </div>
         </div>
         <OfflineNote offline={notesRes.offline} savedAt={notesRes.savedAt} />
@@ -283,6 +292,9 @@ export default function NotesView({ arg, argSeq, go }) {
         )}
       </section>
 
+      {noteExport && <ExportDialog id="note" title={noteExport.note.title || "Not"} formats={["pdf", "docx", "md"]} initialFormat={noteExport.format}
+        report={() => noteReport(noteExport.note, { notebook: noteExport.note.notebook_id != null ? notebookPath(notebooks, noteExport.note.notebook_id) : "" })}
+        onClose={() => setNoteExport(null)} onDone={exportDone} />}
       {dialog?.kind === "templates" && <TemplatePicker onClose={() => setDialog(null)} onPick={async (key) => { setDialog(null); await create(key); }} />}
       {dialog?.kind === "notebook" && <NotebookDialog initial={dialog.initial} notebooks={notebooks} onClose={() => setDialog(null)} onDelete={deleteNotebook} onSaved={(item, edited) => { setDialog(null); setNotebooks((list) => (edited ? list.map((nb) => (nb.id === item.id ? { ...nb, ...item } : nb)) : [...list, item])); if (!edited) pick({ list: "all", notebookId: item.id, tag: "" }); }} />}
       {dialog?.kind === "share" && <ShareDialog note={dialog.note} onClose={() => setDialog(null)} onSaved={(shares) => { replace({ ...dialog.note, share_count: shares.length }); setDialog(null); }} />}

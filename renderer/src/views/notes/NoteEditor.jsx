@@ -263,6 +263,8 @@ export default function NoteEditor({ note, notes = [], notebooks = [], projects 
     "-",
     { label: "Markdown olarak kaydet", icon: "download", onClick: () => onAction("markdown", draft) },
     { label: "PDF olarak kaydet", icon: "file", onClick: () => onAction("pdf", draft) },
+    { label: "Word olarak kaydet (.docx)", icon: "file", onClick: () => onAction("docx", draft) },
+    { label: "Dışa aktar…", icon: "download", onClick: () => onAction("export", draft) },
     { label: "Yazdır", icon: "printer", onClick: () => onAction("print", draft) },
     { label: "Panoya kopyala", icon: "copy", onClick: () => onAction("copy", draft) },
     draft.kind === "checklist" && !readOnly && { label: "Maddeleri metne çevir", icon: "list", onClick: () => change({ kind: "text", body: checklistToBody(latest.current), checklist: [] }) },

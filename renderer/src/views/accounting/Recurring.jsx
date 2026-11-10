@@ -19,6 +19,8 @@ import {
   FREQUENCIES, KINDS, currentMonth, daysText, endModeOf, frequencyLabel, kindOf, monthShort, monthTitle, occStatusLabel, recurringCsv, shiftMonth, withBalance,
 } from "../../lib/recurringUtils";
 import { AccountStrip, Kpi } from "./common";
+import ExportButton from "../../components/ExportButton";
+import { recurringReport } from "../../lib/export/reports";
 
 const moneyInput = (v) => (v == null || v === "" ? "" : String(v).replace(".", ","));
 const OPEN = ["overdue", "due_soon", "upcoming"];
@@ -92,7 +94,11 @@ export default function Recurring({ accounts = [], startBalance = null, onTransf
           { value: "cashflow", label: "Nakit akışı", icon: "trend" },
         ]} />
         <span className="spacer" />
-        <MenuButton icon="download" label="Dışa aktar" items={[{ label: "Tanımlar (CSV / Excel)", icon: "download", onClick: exportCsv }]} />
+        <ExportButton id="recurring" title="Düzenli ödemeler"
+          scopes={[{ value: "view", label: `Süzülmüş tanımlar (${shownItems.length})` }, { value: "all", label: `Tüm tanımlar (${items.length})` }]}
+          report={({ scope: sc }) => recurringReport({ items: sc === "all" ? items : shownItems, occurrences: d?.occurrences || [], flow, summary, month },
+            { title: `Düzenli ödemeler — ${monthTitle(month)}`, filters: sc === "all" ? [] : [filter.kind && kindOf(filter.kind).label, { active: "Aktif", passive: "Durdurulan", all: "" }[filter.status] ?? "", filter.query && `"${filter.query}"`].filter(Boolean), kindLabel: (k) => kindOf(k).label, freqLabel: frequencyLabel, occStatus: occStatusLabel, monthTitle })}
+          extraItems={[{ label: "Tanımlar — CSV (klasik)", icon: "download", onClick: exportCsv }]} />
         <button type="button" className="btn btn--primary" onClick={() => setEditing(blankItem("bill"))}><Icon name="plus" /> Düzenli ödeme</button>
       </div>
       <AccountStrip accounts={accounts} scope="personal" onTransfer={onTransfer} onManage={onManageAccounts} />

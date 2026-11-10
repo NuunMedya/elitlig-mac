@@ -9,6 +9,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Empty, ErrorNote, Icon, OfflineNote, Segmented, Spinner, ViewHeader, useConfirm, useToast } from "../../components/ui";
 import { request, useCommand, useDebounced, useResource } from "../../api";
+import ExportButton from "../../components/ExportButton";
+import { requestsReport } from "../../lib/export/reports";
 import {
   REQUEST_STATUSES, actionResultText, actorTarget, categoryIcon, categoryTabs, dismissBody, groupRequestsByDay, requestTime, splitActions,
 } from "../../lib/requestUtils";
@@ -84,6 +86,12 @@ export default function Requests({ arg, go }) {
     <div className="view view--requests" data-tool="requests">
       <ViewHeader icon="inbox" title="Talepler" subtitle={total == null ? "Yönetime gelen onay bekleyen talepler" : total ? `${total} talep onay bekliyor · takım ve üyelerden gelen başvurular, değişiklikler ve onaylar` : "Onay bekleyen talep yok"}>
         <div className="search-box rq-search"><Icon name="search" size={14} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Talep ara…" onKeyDown={(e) => e.key === "Escape" && setQ("")} /></div>
+        <ExportButton id="requests" title="Talepler" text="" report={() => requestsReport(items, {
+          title: `Talepler — ${REQUEST_STATUSES.find(([v]) => v === status)?.[1] || ""}`,
+          filters: [tabs.find((t) => t.active)?.label, query.trim() && `"${query.trim()}"`].filter(Boolean),
+          statusLabel: (v) => REQUEST_STATUSES.find(([k]) => k === v)?.[1] || v,
+          typeLabel: (k) => (summary?.categories || []).find((c) => c.key === k)?.label || tabs.find((t) => t.key === k)?.label || k,
+        })} />
         <button type="button" className="btn btn--sm" onClick={reload} title="Yenile (⌘R)"><Icon name="refresh" size={14} /> Yenile</button>
         <button type="button" className="btn btn--sm btn--ghost" onClick={() => window.elitlig.app.openWeb("/yonetim/talepler")} title="Sitede aç"><Icon name="external" size={14} /> Sitede</button>
       </ViewHeader>

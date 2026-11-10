@@ -15,6 +15,8 @@ import Drawer from "./Drawer";
 import { MatchAssign, TeamOverview } from "./Team";
 import { isAllDayDue, projectOptions, scopeMatches, validScope } from "../../lib/projectAgenda";
 import "./todoProjects.css";
+import ExportButton from "../../components/ExportButton";
+import { todosReport } from "../../lib/export/reports";
 import { KINDS, KIND_ICON, LABEL_COLORS, STATUSES, dateBucket, dueOf, endOfDay, groupRows, isDelegated, matchesSearch, orderAfterDrop, sortColumn, viewsFor } from "./todoUtils";
 
 const store = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
@@ -172,6 +174,12 @@ export default function Todos({ arg, argSeq, go }) {
           <div className="row-gap">
             {cat.canAssignCrew && <button type="button" className="btn" onClick={() => setAssignOpen(true)}><Icon name="ball" /> Maç görevlendir</button>}
             {cat.canAssign && <button type="button" className="btn btn--soft" onClick={() => setComposer({ audience: "team" })}><Icon name="team" /> Görev ata</button>}
+            <ExportButton id="todos" title="Yapılacaklar"
+              scopes={[{ value: "view", label: `Şu anki görünüm (${shown.length})` }, { value: "all", label: `Tüm kartlar (${scoped.length})` }]}
+              report={({ scope: sc }) => todosReport(sc === "all" ? scoped : shown, {
+                title: `Yapılacaklar — ${sc === "all" ? "Tüm kartlar" : view.label}`,
+                filters: [scopeProject ? scopeProject.name : scope === "personal" ? "Kişisel" : scope === "projects" ? "Projeler" : "", sc === "all" ? "" : KINDS.find((k) => k.key === kind && k.key)?.label, sc === "all" || !q ? "" : `"${q}"`].filter(Boolean),
+              })} />
             <button type="button" className="btn btn--primary" onClick={() => setComposer({})}><Icon name="plus" /> Yeni iş</button>
           </div>
         </header>

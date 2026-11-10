@@ -7,6 +7,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Empty, ErrorNote, Field, Icon, Modal, OfflineNote, Segmented, ViewHeader, useConfirm, useResult } from "../components/ui";
 import { del, patch, post, tempId, useCommand, useResource } from "../api";
+import ExportButton from "../components/ExportButton";
+import { agendaReport } from "../lib/export/reports";
 import {
   CATEGORIES, RECURRENCES, REMINDERS, WEEKDAYS, categoryOf, colorOf, eventPayload, itemsOnDay,
   monthGrid, rangeFor, sameDay, shiftCursor, startOfDay, timeBox, titleFor, weekDays,
@@ -90,6 +92,8 @@ export default function Agenda({ arg, argSeq, go }) {
           <Icon name="layers" size={13} /> Projeler{(data.data?.projects || []).length > 0 && <b>{data.data.projects.length}</b>}
         </button>
         <button type="button" className="btn btn--sm" title="Projeleri dönemleriyle zaman çizelgesinde planlayın" onClick={() => go("projects", { section: "timeline" })}><Icon name="calendar" size={13} /> Proje takvimi</button>
+        <ExportButton id="agenda" title="Ajanda" text="" extraItems={[{ label: "Takvim dosyası (.ics)", icon: "calendar", onClick: exportIcs }]}
+          report={() => agendaReport(items, { title: `Ajanda — ${titleFor(view, cursor)}`, filters: [{ month: "Ay", week: "Hafta", day: "Gün", list: "Liste" }[view] + " görünümü", showTodos ? "görevler dahil" : "", showProjects ? "proje tarihleri dahil" : ""].filter(Boolean), groupBy: view === "day" ? "" : "day" })} />
         <button type="button" className="icon-btn" title="Mac Takvim'ine aktar (.ics)" onClick={exportIcs}><Icon name="download" /></button>
         <button type="button" className="btn btn--primary" onClick={() => setEditing({ draft: {} })}><Icon name="plus" /> Etkinlik</button>
       </ViewHeader>

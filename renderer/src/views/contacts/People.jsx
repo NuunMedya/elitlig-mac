@@ -7,7 +7,7 @@
 // çoklu seçimle toplu kitle atama. Sağda ayrıntı (ContactPanel).
 // vCard / CSV içe ve dışa aktarma, yinelenenleri birleştirme.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Empty, ErrorNote, Icon, MenuButton, OfflineNote, Spinner, ViewHeader, useConfirm, useResult, useToast } from "../../components/ui";
+import { Empty, ErrorNote, Icon, OfflineNote, Spinner, ViewHeader, useConfirm, useResult, useToast } from "../../components/ui";
 import { del, get, patch, post, request, tempId, useCommand, useDebounced, useResource } from "../../api";
 import {
   ALPHABET, ELITLIG_CATEGORIES, SYSTEM_AUDIENCE, contactMatches, contactsToCsv, contactsToVcf, contactToVcf, digitsOf, findDuplicates,
@@ -19,6 +19,9 @@ import ContactEditor from "./ContactEditor";
 import { AudienceDialog, BulkAudienceDialog, DuplicatesDialog, ImportDialog, audienceIcon } from "./RehberDialogs";
 import { Avatar } from "./Avatar";
 import "./contacts.css";
+import ExportButton from "../../components/ExportButton";
+import { contactsReport } from "../../lib/export/reports";
+import { normalizeContact } from "../../lib/contactCore";
 
 const PAGE = 60;
 const SMART = [
@@ -218,13 +221,13 @@ export default function People({ arg, argSeq, go, tabs, onTeam }) {
       <ViewHeader icon="users" title="Rehber" subtitle={`${elitlig?.count != null ? `${elitlig.count} Elitlig kişisi · ` : ""}${cards.length} kişiniz · ${manualAuds.length} hedef kitle`}>
         {tabs}
         <button type="button" className="btn" onClick={() => setDialog({ kind: "import" })}><Icon name="upload" size={14} /> İçe aktar</button>
-        <MenuButton icon="download" label="Dışa aktar" items={[
+        <ExportButton id="contacts" title="Rehber"
+          scopes={[{ value: "view", label: "Listedeki kişiler" }, ...(pickedRows.length ? [{ value: "picked", label: `Seçili kişiler (${pickedRows.length})` }] : [])]}
+          report={async ({ scope: sc }) => contactsReport((sc === "picked" ? pickedRows : await collectAll()).map((r) => normalizeContact(rowContact(r, audNames(r)))), { title: `Rehber — ${scopeTitle}`, filters: [query ? `"${query}"` : "", city || ""].filter(Boolean) })}
+          extraItems={[
           { label: "Mac Kişiler / telefon (.vcf)", icon: "download", onClick: () => exportAs("vcf") },
-          { label: "Excel / CSV", icon: "grid", onClick: () => exportAs("csv") },
-          "-",
           { label: "Telefonları kopyala", icon: "phone", onClick: () => exportAs("phones") },
           { label: "E-postaları kopyala", icon: "mail", onClick: () => exportAs("emails") },
-          "-",
           { label: "Yinelenen kişileri bul", icon: "copy", onClick: () => setDialog({ kind: "dupes", groups: findDuplicates(cards) }) },
         ]} />
         <button type="button" className="btn btn--primary" onClick={() => setEditing({ initial: { audience_ids: manualSelected.map(Number) } })}><Icon name="userPlus" size={14} /> Yeni kişi</button>
