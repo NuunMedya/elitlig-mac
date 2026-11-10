@@ -11,6 +11,7 @@ import { AccountSelectField } from "../../components/finance";
 import { ACTIVITY_ICONS, Avatar, StagePill, dayHeading, fromLocalInput, label, money, toLocalInput } from "./common";
 import { QuestionItem } from "./Questions";
 import { useProjectFinance } from "./Budget";
+import { LeadSalesActions } from "./proposals/LeadSales";
 
 const CONTACT_TYPES = [["call", "Arama", "phone"], ["whatsapp", "WhatsApp", "message"], ["email", "E-posta", "mail"], ["meeting", "Görüşme", "users"], ["visit", "Ziyaret", "map"], ["sms", "SMS", "message"]];
 
@@ -105,6 +106,7 @@ export default function LeadPanel({ ctx, lead, onClose, step = null }) {
         <button type="button" className="ca-btn ca-btn--wa" disabled={!wa} onClick={() => window.elitlig.app.openExternal(wa)}><Icon name="message" size={16} /><span>WhatsApp</span><small>{wa ? "mesaj yaz" : "—"}</small></button>
         <button type="button" className="ca-btn ca-btn--mail" disabled={!mail} onClick={() => window.elitlig.app.openExternal(mail)} title={lead.email}><Icon name="mail" size={16} /><span>E-posta</span><small>{lead.email || "e-posta yok"}</small></button>
       </div>
+      {!supplier && <LeadSalesActions ctx={ctx} lead={lead} />}
 
       <section className="drawer__section">
         <h4>Aşama {lead.portfolio_id && <span className="pill pill--green pill--xs"><Icon name="briefcase" size={10} /> Portföyde</span>}</h4>

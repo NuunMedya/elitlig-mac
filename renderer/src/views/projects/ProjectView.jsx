@@ -14,6 +14,8 @@ import Activity from "./Activity";
 import { ProjectPortfolio } from "./Portfolio";
 import Settings from "./Settings";
 import Budget from "./Budget";
+import ProposalsTab from "./proposals/Proposals";
+import SponsorshipTab from "./proposals/Sponsorship";
 
 const TABS = [
   { key: "overview", label: "Genel bakış", icon: "overview" },
@@ -23,6 +25,8 @@ const TABS = [
   { key: "questions", label: "Sorular", icon: "help" },
   { key: "activity", label: "İletişim", icon: "activity" },
   { key: "portfolio", label: "Portföy", icon: "briefcase" },
+  { key: "proposals", label: "Teklifler", icon: "file" },
+  { key: "sponsorship", label: "Sponsorluk", icon: "award" },
   { key: "settings", label: "Ayarlar", icon: "sliders" },
 ];
 
@@ -138,6 +142,8 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
           {tab === "questions" && <Questions ctx={ctx} highlight={route.question} />}
           {tab === "activity" && <Activity ctx={ctx} />}
           {tab === "portfolio" && <ProjectPortfolio ctx={ctx} />}
+          {tab === "proposals" && <ProposalsTab ctx={ctx} />}
+          {tab === "sponsorship" && <SponsorshipTab ctx={ctx} />}
           {tab === "settings" && <Settings ctx={ctx} onDeleted={() => onBack()} openProject={(pid) => setRoute({ id: pid, tab: "overview", nonce: Date.now() })} />}
         </div>
       </div>
