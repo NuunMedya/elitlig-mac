@@ -10,7 +10,7 @@
 // (/api/match-requests/admin/*) ve bağlantı ister; okumalar çevrimdışıyken
 // önbellekten gelir.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Icon, Modal, OfflineNote, useConfirm, useToast } from "../../components/ui";
+import { ErrorNote, Icon, Modal, OfflineNote, useConfirm, useToast } from "../../components/ui";
 import { request, useResource } from "../../api";
 import { buildInbox, callCreatePayload, cellKey, deskKpis, isPastCell, isPastWithDetail, localIso, slotBody, suggestionToTask, weekStartOf } from "../../lib/planningUtils";
 import { A, TeamPicker, useDeskCall } from "./shared";
@@ -279,7 +279,10 @@ export default function Desk({ header = null }) {
       {denied && (
         <div className="notice notice--warn pl-denied"><Icon name="lock" size={14} /><div><strong>“Saha ve maç planlama” yetkisi gerekiyor.</strong><p className="small">Sahaları, programı, talepleri ve takım listelerini görmek için yönetim panelinde “Sahalar — görüntüle” (venues.view), işlem yapmak için “Sahalar — yönet” (venues.manage) yetkisi verilmelidir.</p></div></div>
       )}
-      {!denied && (venuesRes.loading && !venuesRes.data ? <div className="pl-skeleton">{[0, 1, 2].map((i) => <i key={i} />)}</div> : !venues.length ? (
+      {!denied && (venuesRes.loading && !venuesRes.data ? <div className="pl-skeleton">{[0, 1, 2].map((i) => <i key={i} />)}</div> : venuesRes.error && !venuesRes.data ? (
+        // Sunucu hatası "Henüz saha eklenmedi" gibi görünüyordu.
+        <ErrorNote error={venuesRes.error} onRetry={() => venuesRes.reload()} />
+      ) : !venues.length ? (
         <div className="empty"><span className="empty__icon"><Icon name="map" size={28} /></span><strong>Henüz saha eklenmedi.</strong><button type="button" className="btn btn--primary" onClick={() => setVenuesOpen(true)}><Icon name="plus" size={13} /> İlk sahayı ekle</button></div>
       ) : (
         <div className="pl-main">

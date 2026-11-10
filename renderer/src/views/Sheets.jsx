@@ -22,7 +22,8 @@ export default function Sheets({ arg, argSeq, go }) {
   useCommand("new", () => { if (!openId) setPicker(true); });
   // Tablolar açıkken paletten başka tablo / "Yeni tablo" seçilince.
   useEffect(() => {
-    if (arg === "new") { setOpenId(null); setPicker(true); } else if (arg) setOpenId(arg);
+    // Kenar çubuğundan "Tablolar"a yeniden tıklamak açık tablodan listeye döner (kayıt kapanışta yapılır).
+    if (arg === "new") { setOpenId(null); setPicker(true); } else if (arg) setOpenId(arg); else if (argSeq) setOpenId(null);
   }, [arg, argSeq]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const items = useMemo(() => (list.data?.items || []).filter((s) => includesTr(s.title, query)), [list.data, query]);
