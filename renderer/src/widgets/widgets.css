@@ -1,140 +1,509 @@
-/* Masaüstü widget'ları: şeffaf pencere, yuvarlak köşeli cam kart. Tema: data-wtheme (auto | light | dark). */
+/* Masaüstü widget'ları — macOS Sonoma / Sequoia masaüstü widget'ları görsel dili.
+ * Standart boyutlar (app/widgets/catalog.js): küçük 170² · orta 364×170 · büyük 364² · ekstra büyük 752×364.
+ * 22 nokta köşe, cam malzeme (macOS vibrancy / Windows 11 acrylic: data-glass="1") ya da yarı saydam
+ * degrade, sistem yazı tipi, tek büyük ana değer + küçük ikincil satırlar, tür başına uygulama rengi.
+ * Tema: data-wtheme (auto | light | dark). Soluk masaüstü görünümü: data-dim="1".
+ * Düzenleme kipi (macOS "Widget'ları Düzenle"): .is-editing. */
 html[data-window="widget"], html[data-window="widget"] body, html[data-window="widget"] #root { height: 100%; margin: 0; background: transparent !important; overflow: hidden; }
-html[data-window="widget"] {
-  --w-bg: 255, 255, 255; --w-fg: #17142a; --w-muted: #6b6880; --w-line: rgba(23, 20, 42, 0.1); --w-soft: rgba(23, 20, 42, 0.06);
-  --w-accent: #7c3aed; --w-accent-2: #db2777; --w-green: #059669; --w-red: #dc2626; --w-amber: #d97706;
+html[data-window="widget"], .wg.wg-preview {
+  --w-bg: 250, 250, 252; --w-bg2: 236, 236, 242; --w-fg: #1d1d1f; --w-muted: #6e6e73; --w-faint: #a1a1a6; --w-line: rgba(0, 0, 0, 0.08); --w-soft: rgba(0, 0, 0, 0.05); --w-soft2: rgba(0, 0, 0, 0.08);
+  --w-accent: #007aff; --w-accent-2: #af52de; --w-green: #28a745; --w-red: #ff3b30; --w-amber: #ff9500; --w-blue: #007aff;
+  --w-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --w-round: ui-rounded, "SF Pro Rounded", -apple-system, "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --w-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
 }
+/* varsayılan uygulama rengi (türe özgü renk .wg--<tür> ile ezer; önizlemede de çalışsın diye kapsayıcıda) */
+html[data-window="widget"], .wg-gallery__stage, .wg-gallery { --tint: #007aff; }
 @media (prefers-color-scheme: dark) {
-  html[data-window="widget"]:not([data-wtheme="light"]) {
-    --w-bg: 28, 26, 40; --w-fg: #f4f2ff; --w-muted: #a8a3c0; --w-line: rgba(255, 255, 255, 0.12); --w-soft: rgba(255, 255, 255, 0.07);
-    --w-accent: #a78bfa; --w-accent-2: #f472b6; --w-green: #34d399; --w-red: #f87171; --w-amber: #fbbf24;
+  html[data-window="widget"]:not([data-wtheme="light"]), .wg.wg-preview {
+    --w-bg: 30, 30, 32; --w-bg2: 44, 44, 48; --w-fg: #f5f5f7; --w-muted: #98989d; --w-faint: #636366; --w-line: rgba(255, 255, 255, 0.1); --w-soft: rgba(255, 255, 255, 0.07); --w-soft2: rgba(255, 255, 255, 0.12);
+    --w-accent: #0a84ff; --w-accent-2: #bf5af2; --w-green: #30d158; --w-red: #ff453a; --w-amber: #ff9f0a; --w-blue: #0a84ff;
   }
 }
 html[data-window="widget"][data-wtheme="dark"] {
-  --w-bg: 28, 26, 40; --w-fg: #f4f2ff; --w-muted: #a8a3c0; --w-line: rgba(255, 255, 255, 0.12); --w-soft: rgba(255, 255, 255, 0.07);
-  --w-accent: #a78bfa; --w-accent-2: #f472b6; --w-green: #34d399; --w-red: #f87171; --w-amber: #fbbf24;
+  --w-bg: 30, 30, 32; --w-bg2: 44, 44, 48; --w-fg: #f5f5f7; --w-muted: #98989d; --w-faint: #636366; --w-line: rgba(255, 255, 255, 0.1); --w-soft: rgba(255, 255, 255, 0.07); --w-soft2: rgba(255, 255, 255, 0.12);
+  --w-accent: #0a84ff; --w-accent-2: #bf5af2; --w-green: #30d158; --w-red: #ff453a; --w-amber: #ff9f0a; --w-blue: #0a84ff;
 }
 
-.wg { position: fixed; inset: 0; display: flex; flex-direction: column; border-radius: 16px; overflow: hidden; color: var(--w-fg); font: 13px var(--font); background: rgba(var(--w-bg), var(--wg-alpha, 0.92)); border: 1px solid var(--w-line); backdrop-filter: blur(18px) saturate(1.4); -webkit-user-select: none; user-select: none; }
-.wg__head { display: flex; align-items: center; gap: 5px; padding: 7px 7px 3px 11px; font-size: 10.5px; font-weight: 750; letter-spacing: 0.07em; text-transform: uppercase; color: var(--w-muted); -webkit-app-region: drag; flex: none; cursor: grab; }
-.wg.is-locked .wg__head { -webkit-app-region: no-drag; cursor: default; }
-.wg__head .ic { color: var(--w-accent); }
-.wg__grow { flex: 1; }
-.wg__hb { -webkit-app-region: no-drag; width: 22px; height: 20px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--w-muted); opacity: 0.55; transition: opacity 0.12s, background 0.12s; }
-.wg:hover .wg__hb { opacity: 1; }
-.wg__hb:hover { background: var(--w-soft); color: var(--w-fg); }
-.wg__body { flex: 1; min-height: 0; overflow: auto; padding: 2px 11px 10px; scrollbar-width: thin; }
-.wg__body::-webkit-scrollbar { width: 6px; }
-.wg__body::-webkit-scrollbar-thumb { background: var(--w-line); border-radius: 3px; }
+/* tür başına uygulama rengi (macOS'taki uygulama renkleri gibi) */
+.wg--messages, .wg--requests { --tint: #34c759; }
+.wg--todos, .wg--today { --tint: #007aff; }
+.wg--agenda, .wg--week, .wg--month { --tint: #ff3b30; }
+.wg--projects, .wg--launcher, .wg--dock { --tint: #af52de; }
+.wg--ledger, .wg--rates { --tint: #30b0c7; }
+.wg--equipment { --tint: #ff9500; }
+.wg--contacts { --tint: #8e8e93; }
+.wg--notes, .wg--note, .wg--quickadd { --tint: #ffcc00; }
+.wg--focus, .wg--timer { --tint: #5856d6; }
+.wg--livematch, .wg--matches, .wg--standings { --tint: #34c759; }
+.wg--studio { --tint: #ff2d55; }
+.wg--music { --tint: #fa2d48; }
+.wg--system, .wg--clipboard { --tint: #636366; }
+html[data-wtheme="dark"] .wg--notes, html[data-wtheme="dark"] .wg--note { --tint: #ffd60a; }
 
+/* ------------------------------ kabuk ------------------------------ */
+.wg { position: fixed; inset: 0; display: flex; flex-direction: column; border-radius: 22px; overflow: hidden; color: var(--w-fg); font: 13px/1.3 var(--w-font); -webkit-font-smoothing: antialiased;
+  background: linear-gradient(180deg, rgba(var(--w-bg), var(--wg-alpha, 0.92)) 0%, rgba(var(--w-bg2), var(--wg-alpha, 0.92)) 100%);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  -webkit-app-region: drag; -webkit-user-select: none; user-select: none; cursor: default; transition: filter 0.35s, opacity 0.35s; }
+.wg.is-glass { background: linear-gradient(180deg, rgba(var(--w-bg), calc(var(--wg-alpha, 0.92) * 0.55)) 0%, rgba(var(--w-bg2), calc(var(--wg-alpha, 0.92) * 0.6)) 100%); }
+.wg.is-locked:not(.is-editing) { -webkit-app-region: no-drag; }
+.wg button, .wg input, .wg textarea, .wg select, .wg label, .wg a, .wg table, .wg [role="grid"], .wg .wg-hb-zone { -webkit-app-region: no-drag; }
+.wg button { font-family: inherit; cursor: default; }
+/* masaüstündeyken soluk (tinted), üzerine gelince canlı — macOS'ta pencere arkadayken widget'lar gibi */
+html[data-dim="1"] .wg:not(:hover):not(.is-editing) { filter: saturate(0.15) brightness(1.04); opacity: 0.82; }
+
+.wg__head { display: flex; align-items: center; gap: 5px; padding: 11px 10px 2px 14px; flex: none; min-height: 18px; }
+.wg__head.is-bare { position: absolute; top: 0; right: 0; left: auto; padding: 7px 7px 0 0; z-index: 3; }
+.wg__appicon { width: 17px; height: 17px; border-radius: 5px; display: grid; place-items: center; background: var(--tint); color: #fff; flex: none; }
+.wg__title { font-size: 12.5px; font-weight: 650; color: var(--tint); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wg--notes .wg__title, .wg--note .wg__title, .wg--quickadd .wg__title { color: color-mix(in srgb, var(--tint) 70%, #000); }
+.wg--notes .wg__appicon, .wg--note .wg__appicon, .wg--quickadd .wg__appicon { color: #3a2f00; }
+.wg__pin { color: var(--w-faint); display: grid; }
+.wg__grow { flex: 1; }
+.wg__hb { width: 22px; height: 22px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--w-soft); color: var(--w-muted); opacity: 0; transition: opacity 0.15s, background 0.15s; }
+.wg:hover .wg__hb, .wg__hb:focus-visible { opacity: 1; }
+.wg:not(:hover) .wg__hb:not(:focus-visible) { display: none; }
+.wg__hb:hover { background: var(--w-soft2); color: var(--w-fg); }
+.wg__body { flex: 1; min-height: 0; overflow: auto; padding: 4px 14px 12px; scrollbar-width: none; }
+.wg__body::-webkit-scrollbar { width: 0; }
+.wg--small .wg__body { padding: 4px 13px 12px; }
+.wg.wg-preview { position: relative; inset: auto; flex: none; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.12), inset 0 0 0 0.5px rgba(255, 255, 255, 0.35); }
+
+/* ------------------------------ düzenleme kipi ------------------------------ */
+.wg.is-editing { animation: wg-jiggle 0.32s ease-in-out infinite alternate; outline: 1.5px dashed color-mix(in srgb, var(--w-fg) 35%, transparent); outline-offset: -5px; }
+.wg.is-editing:hover { animation-play-state: paused; }
+@keyframes wg-jiggle { from { transform: rotate(-0.45deg); } to { transform: rotate(0.45deg); } }
+@media (prefers-reduced-motion: reduce) { .wg.is-editing { animation: none; } }
+.wg-edit__remove { position: absolute; top: 7px; left: 7px; z-index: 5; width: 22px; height: 22px; border-radius: 50%; border: 0; display: grid; place-items: center; background: rgba(60, 60, 67, 0.75); color: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3); }
+.wg-edit__remove:hover { background: var(--w-red); }
+.wg-edit__bar { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); z-index: 5; display: flex; gap: 3px; padding: 3px; border-radius: 999px; background: rgba(var(--w-bg), 0.92); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18); white-space: nowrap; }
+.wg-edit__bar button { border: 0; min-width: 26px; height: 22px; padding: 0 7px; border-radius: 999px; background: transparent; color: var(--w-fg); font: 700 10.5px var(--w-font); display: inline-flex; align-items: center; justify-content: center; }
+.wg-edit__bar button.is-on { background: var(--w-accent); color: #fff; }
+.wg-edit__bar button.is-done { background: var(--w-fg); color: rgb(var(--w-bg)); }
+
+/* ------------------------------ ortak öğeler ------------------------------ */
 .wg-muted { color: var(--w-muted); font-size: 11.5px; margin: 2px 0; }
 .wg-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; color: var(--w-muted); font-size: 12px; }
 .wg-empty.is-err .ic { color: var(--w-red); }
-.wg-btn { border: 1px solid var(--w-line); background: var(--w-soft); color: var(--w-fg); border-radius: 7px; padding: 3px 8px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
-.wg-btn:hover { border-color: var(--w-accent); }
-.wg-btn.is-ghost { background: transparent; }
-.wg-link { border: 0; background: none; color: var(--w-accent); font-size: 11.5px; padding: 2px 0; text-align: left; }
+.wg-btn { border: 0; background: var(--w-soft2); color: var(--w-fg); border-radius: 999px; padding: 4px 10px; font-size: 11.5px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+.wg-btn:hover { background: color-mix(in srgb, var(--tint) 22%, transparent); }
+.wg-btn.is-ghost { background: transparent; color: var(--tint); }
+.wg-link { border: 0; background: none; color: var(--tint); font-size: 11.5px; font-weight: 600; padding: 2px 0; text-align: left; }
 .wg-bar { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
 .wg-bar.is-center { justify-content: center; }
-.wg-ib { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--w-soft); color: var(--w-fg); }
+.wg-ib { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--w-soft2); color: var(--w-fg); flex: none; }
+.wg-ib:hover { background: color-mix(in srgb, var(--tint) 22%, transparent); }
 .wg-ib:disabled { opacity: 0.4; }
-.wg-ib.is-main { background: linear-gradient(135deg, var(--w-accent), var(--w-accent-2)); color: #fff; width: 36px; height: 36px; }
+.wg-ib.is-main { background: var(--tint); color: #fff; width: 36px; height: 36px; }
+.wg-ib.is-sm { width: 24px; height: 24px; }
+.wg-ib.is-main.is-sm { width: 26px; height: 26px; }
+.wg-ib.is-wa { color: #25d366; }
 .wg-check { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-.wg-check input { accent-color: var(--w-accent); margin: 0; }
+.wg-check input { accent-color: var(--tint); margin: 0; }
 .wg-settings { display: flex; flex-direction: column; gap: 7px; font-size: 12px; -webkit-user-select: text; user-select: text; }
 .wg-settings label { display: flex; flex-direction: column; gap: 3px; }
 .wg-settings label.wg-check { flex-direction: row; }
-.wg-settings input:not([type]) { border: 1px solid var(--w-line); border-radius: 7px; padding: 5px 8px; background: rgba(var(--w-bg), 1); color: var(--w-fg); font-size: 12.5px; }
+.wg-settings input:not([type]), .wg-settings select { border: 0; border-radius: 8px; padding: 6px 9px; background: var(--w-soft2); color: var(--w-fg); font-size: 12.5px; }
 .wg-zones { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 8px; }
-.wg-progress { height: 5px; border-radius: 3px; background: var(--w-soft); overflow: hidden; }
-.wg-progress i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--w-accent), var(--w-accent-2)); transition: width 0.4s; }
+.wg-progress { height: 5px; border-radius: 3px; background: var(--w-soft2); overflow: hidden; }
+.wg-progress i { display: block; height: 100%; border-radius: 3px; background: var(--tint); transition: width 0.4s; }
 .wg-progress.is-amber i { background: var(--w-amber); }
 .wg-progress.is-red i { background: var(--w-red); }
+.wg-tag { display: inline-block; font-style: normal; font-size: 9.5px; font-weight: 700; padding: 0 5px; margin: 0 4px; border-radius: 5px; background: color-mix(in srgb, var(--tag, var(--tint)) 16%, transparent); color: var(--tag, var(--tint)); vertical-align: 1px; white-space: nowrap; }
+.wg-badge { font-style: normal; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--tint); color: #fff; font-size: 10.5px; font-weight: 700; display: inline-grid; place-items: center; flex: none; }
+.wg-pill { border: 0; background: var(--w-soft2); color: var(--w-fg); border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+.wg-pill.is-alert { background: color-mix(in srgb, var(--w-red) 15%, transparent); color: var(--w-red); }
+.wg-pill.is-muted { color: var(--w-muted); }
+.wg-num { font: 600 12px var(--w-font); font-variant-numeric: tabular-nums; flex: none; }
+.wg-num.is-alert, .is-red { color: var(--w-red); }
+.is-green { color: var(--w-green); }
+.wg-note-line { margin: 4px 0 0; font-size: 11px; color: var(--w-muted); min-height: 14px; }
+.wg-note-line.is-green { color: var(--w-green); } .wg-note-line.is-red { color: var(--w-red); } .wg-note-line.is-amber { color: var(--w-amber); }
+.wg-search { width: 100%; box-sizing: border-box; border: 0; border-radius: 9px; padding: 5px 9px; background: var(--w-soft2); color: var(--w-fg); font-size: 12px; margin-bottom: 4px; -webkit-user-select: text; user-select: text; }
+.wg-search:focus { outline: 2px solid color-mix(in srgb, var(--tint) 55%, transparent); }
+.wg-chips, .wg-seg { display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 4px; }
+.wg-chips button, .wg-seg button { border: 0; background: var(--w-soft); color: var(--w-muted); border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px; }
+.wg-chips button.is-on, .wg-seg button.is-on { background: var(--tint); color: #fff; }
+.wg-chips em { font-style: normal; font-size: 9.5px; background: rgba(255, 255, 255, 0.3); border-radius: 6px; padding: 0 4px; }
+.wg-chips button:not(.is-on) em { background: var(--w-soft2); color: var(--w-fg); }
+.wg-seg.is-center { justify-content: center; margin-top: 6px; }
 
-/* saat */
-.wg-clock { display: flex; flex-direction: column; gap: 1px; }
-.wg-clock__time { font: 700 40px var(--display); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.05; }
-.wg--medium .wg-clock__time { font-size: 46px; }
-.wg-clock__date { font-size: 12.5px; color: var(--w-muted); font-weight: 600; text-transform: capitalize; }
-.wg-zonelist { list-style: none; margin: 8px 0 0; padding: 6px 0 0; border-top: 1px solid var(--w-line); display: flex; flex-direction: column; gap: 3px; }
-.wg-zonelist li { display: grid; grid-template-columns: 14px 1fr auto auto; gap: 6px; align-items: center; font-size: 12px; }
-.wg-zonelist small { color: var(--w-muted); font-size: 10.5px; }
-.wg-zonelist b { font-variant-numeric: tabular-nums; font-family: var(--mono); }
-.wg-zonelist .ic { color: var(--w-amber); }
+/* kahraman düzeni (küçük boyut): tek büyük değer + etiket + satırlar */
+.wg-hero { display: flex; flex-direction: column; align-items: flex-start; width: 100%; height: 100%; border: 0; background: none; color: inherit; padding: 0; text-align: left; min-width: 0; }
+.wg-hero__value { font: 700 40px/1 var(--w-round); letter-spacing: -0.03em; color: var(--tint); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; margin-top: 2px; }
+.wg-hero__value small { font-size: 15px; margin-left: 4px; letter-spacing: 0; font-weight: 600; }
+.wg-hero.is-long .wg-hero__value { font-size: 30px; }
+.wg-hero.is-red .wg-hero__value { color: var(--w-red); }
+.wg-hero.is-green .wg-hero__value { color: var(--w-green); }
+.wg-hero.is-accent .wg-hero__value { color: var(--tint); }
+.wg-hero__label { font-size: 12px; font-weight: 600; color: var(--w-muted); margin-top: 3px; }
+.wg-hero__lines { margin-top: auto; display: flex; flex-direction: column; gap: 1px; min-width: 0; width: 100%; }
+.wg-hero__line { font-size: 12px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--w-fg); }
+.wg-hero__line + .wg-hero__line { color: var(--w-muted); }
 
-/* liste (ajanda, işler, pano, maçlar) */
-.wg-list { display: flex; flex-direction: column; gap: 2px; }
-.wg-list h5 { margin: 4px 0 2px; font-size: 10.5px; font-weight: 750; color: var(--w-accent); text-transform: uppercase; letter-spacing: 0.06em; }
-.wg-row, .wg-clip { display: flex; align-items: center; gap: 7px; width: 100%; border: 0; background: none; color: var(--w-fg); text-align: left; padding: 4px 6px; border-radius: 8px; font-size: 12.5px; min-width: 0; }
+/* listeler */
+.wg-list { display: flex; flex-direction: column; gap: 1px; }
+.wg-list h5, .wg-ledger h5, .wg-month__day h5 { margin: 5px 0 2px; font-size: 11px; font-weight: 700; color: var(--w-muted); }
+.wg-row, .wg-clip { display: flex; align-items: center; gap: 7px; width: 100%; border: 0; background: none; color: var(--w-fg); text-align: left; padding: 4px 6px; margin: 0 -6px; width: calc(100% + 12px); border-radius: 8px; font-size: 12.5px; min-width: 0; }
 .wg-row:hover, .wg-clip:hover, .wg-match:hover { background: var(--w-soft); }
-.wg-row__time { flex: none; width: 54px; font: 600 11px var(--mono); color: var(--w-muted); }
+.wg-row__time { flex: none; min-width: 50px; font-size: 11.5px; font-weight: 600; color: var(--w-muted); font-variant-numeric: tabular-nums; }
 .wg-row__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wg-todo { display: flex; align-items: center; gap: 7px; padding: 4px 4px; border-radius: 8px; font-size: 12.5px; cursor: pointer; }
-.wg-todo:hover { background: var(--w-soft); }
-.wg-todo input { width: 15px; height: 15px; margin: 0; accent-color: var(--w-green); flex: none; }
-.wg-todo small { color: var(--w-muted); font: 11px var(--mono); flex: none; }
-.wg-todo.is-late small { color: var(--w-red); font-family: var(--font); font-weight: 650; }
+.wg-row small { color: var(--w-muted); font-size: 10.5px; flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-row.is-late .wg-row__time, .wg-row.is-late small { color: var(--w-red); font-weight: 600; }
+.wg-row.is-sel { background: color-mix(in srgb, var(--tint) 14%, transparent); }
+.wg-todo { display: flex; align-items: center; gap: 8px; padding: 4px 2px; border-radius: 8px; font-size: 12.5px; border-bottom: 0.5px solid var(--w-line); }
+.wg-todo:last-of-type { border-bottom: 0; }
+.wg-todo input { appearance: none; -webkit-appearance: none; width: 16px; height: 16px; margin: 0; flex: none; border-radius: 50%; border: 1.5px solid var(--w-faint); display: grid; place-items: center; }
+.wg-todo input:checked { border-color: var(--tint); background: radial-gradient(circle, var(--tint) 0 45%, transparent 50%); }
+.wg-todo.is-late input { border-color: var(--w-red); }
+.wg-todo small { color: var(--w-muted); font-size: 11px; flex: none; font-variant-numeric: tabular-nums; }
+.wg-todo.is-late small { color: var(--w-red); font-weight: 600; }
 .wg-todo.is-done .wg-row__text { text-decoration: line-through; color: var(--w-muted); }
-.wg-add input { width: 100%; margin-top: 4px; border: 1px dashed var(--w-line); border-radius: 8px; padding: 5px 8px; background: transparent; color: var(--w-fg); font-size: 12px; }
-.wg-add input:focus { outline: none; border-style: solid; border-color: var(--w-accent); }
+.wg-add input { width: 100%; box-sizing: border-box; margin-top: 5px; border: 0; border-radius: 9px; padding: 6px 9px; background: var(--w-soft); color: var(--w-fg); font-size: 12px; }
+.wg-add input:focus { outline: 2px solid color-mix(in srgb, var(--tint) 55%, transparent); }
 .wg-clip img { width: 30px; height: 22px; object-fit: cover; border-radius: 4px; flex: none; }
 .wg-clip .ic { color: var(--w-muted); flex: none; }
 .wg-clip.is-copied { color: var(--w-green); }
 
-/* not */
+/* saat */
+.wg-clock { height: 100%; display: flex; }
+.wg-clock.is-small { flex-direction: column; justify-content: center; }
+.wg-clock__day { font-size: 13px; font-weight: 700; color: var(--w-red); text-transform: capitalize; }
+.wg-clock__time { font: 300 52px/1 var(--w-round); letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
+.wg-clock.is-small .wg-clock__time { font-size: 50px; margin: 2px 0; }
+.wg-clock__date { font-size: 13px; color: var(--w-muted); font-weight: 600; text-transform: capitalize; }
+.wg-clock.is-wide { align-items: center; gap: 14px; }
+.wg-clock__main { flex: 1; min-width: 0; }
+.wg-clock.is-wide .wg-clock__time { font-size: 60px; }
+.wg-zonelist { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 0.5px solid var(--w-line); display: flex; flex-direction: column; gap: 6px; }
+.wg-zonelist li { display: grid; grid-template-columns: auto auto; column-gap: 8px; font-size: 11.5px; }
+.wg-zonelist span { color: var(--w-muted); font-weight: 600; }
+.wg-zonelist b { font: 500 17px var(--w-round); font-variant-numeric: tabular-nums; grid-row: span 2; align-self: center; }
+.wg-zonelist small { color: var(--w-faint); font-size: 10px; }
+
+/* ajanda */
+.wg-cal-small { width: 100%; height: 100%; border: 0; background: none; color: inherit; padding: 2px 0 0; display: flex; flex-direction: column; align-items: flex-start; text-align: left; }
+.wg-cal-small__day { font-size: 12px; font-weight: 700; color: var(--w-red); text-transform: uppercase; letter-spacing: 0.02em; }
+.wg-cal-small__num { font: 400 46px/1 var(--w-round); letter-spacing: -0.03em; }
+.wg-evt { display: flex; flex-direction: column; margin-top: auto; padding-left: 8px; border-left: 3px solid var(--ev, var(--tint)); font-size: 12px; font-weight: 600; min-width: 0; max-width: 100%; }
+.wg-evt > i { display: none; }
+.wg-evt small { color: var(--w-muted); font-weight: 500; font-size: 11px; }
+.wg-evt.is-row { flex-direction: row; align-items: center; gap: 7px; margin: 2px 0; padding: 3px 6px 3px 8px; width: 100%; border: 0; border-left: 3px solid var(--ev, var(--tint)); border-radius: 0 7px 7px 0; background: color-mix(in srgb, var(--ev, var(--tint)) 10%, transparent); color: var(--w-fg); text-align: left; }
+.wg-evt.is-row small { flex: none; }
+.wg-agenda.is-wide { display: grid; grid-template-columns: 82px 1fr; gap: 10px; height: 100%; }
+.wg-agenda__date { display: flex; flex-direction: column; }
+.wg-agenda__date span { font-size: 12px; font-weight: 700; color: var(--w-red); text-transform: uppercase; }
+.wg-agenda__date b { font: 400 44px/1 var(--w-round); }
+.wg-agenda__date small { color: var(--w-muted); font-weight: 600; text-transform: capitalize; }
+.wg-agenda.is-wide .wg-list h5 { display: none; }
+.wg--agenda .wg__body, .wg--clock .wg__body, .wg--weather .wg__body, .wg--month .wg__body, .wg--livematch .wg__body { padding-top: 12px; }
+
+/* karalama */
 .wg-note { height: 100%; display: flex; flex-direction: column; gap: 4px; }
-.wg-note textarea { flex: 1; min-height: 60px; resize: none; border: 0; background: var(--w-soft); border-radius: 9px; padding: 7px 9px; color: var(--w-fg); font: 12.5px/1.45 var(--font); -webkit-user-select: text; user-select: text; }
-.wg-note textarea:focus { outline: 1px solid var(--w-accent); }
+.wg-note textarea { flex: 1; min-height: 60px; resize: none; border: 0; background: transparent; border-radius: 9px; padding: 2px 0; color: var(--w-fg); font: 13px/1.45 var(--w-font); -webkit-user-select: text; user-select: text; }
+.wg-note textarea:focus { outline: none; }
 .wg-notes { list-style: none; margin: 0; padding: 0; }
 .wg-notes button { border: 0; background: none; color: var(--w-fg); font-size: 12px; padding: 2px 0; text-align: left; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wg-notes button::before { content: "• "; color: var(--w-accent); }
+.wg-notes button::before { content: "• "; color: var(--tint); }
 
 /* müzik */
-.wg-music { display: flex; flex-direction: column; gap: 6px; }
-.wg-music__info { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
-.wg-music__info > span:last-child { display: flex; flex-direction: column; min-width: 0; }
-.wg-music__info strong { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wg-music { display: flex; flex-direction: column; gap: 8px; height: 100%; }
+.wg-music__info { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.wg-music.is-small .wg-music__info { flex-direction: column; align-items: flex-start; }
+.wg-music__info > span:last-child { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
+.wg-music__info strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wg-music__info small { font-size: 11px; color: var(--w-muted); font-variant-numeric: tabular-nums; }
-.wg-music__disc { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: linear-gradient(135deg, var(--w-accent-2), var(--w-accent)); color: #fff; flex: none; }
+.wg-music__disc { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; background: linear-gradient(135deg, #fa2d48, #a21caf); color: #fff; flex: none; box-shadow: 0 3px 10px rgba(250, 45, 72, 0.35); }
 .wg-music.is-playing .wg-music__disc { animation: wg-pulse 1.6s ease-in-out infinite; }
-@keyframes wg-pulse { 50% { transform: scale(0.92); } }
-.wg-music__ctl { display: flex; align-items: center; gap: 4px; justify-content: center; }
+@keyframes wg-pulse { 50% { transform: scale(0.94); } }
+.wg-music__ctl { display: flex; align-items: center; gap: 6px; justify-content: center; }
 
 /* sayaç */
-.wg-timer { display: flex; flex-direction: column; align-items: center; gap: 0; }
-.wg-timer small { font-size: 10.5px; color: var(--w-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
-.wg-timer strong { font: 750 32px var(--mono); font-variant-numeric: tabular-nums; }
-.wg-timer.is-on strong { color: var(--w-accent); }
+.wg-timer { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
+.wg-timer small { font-size: 11px; color: var(--w-muted); font-weight: 700; }
+.wg-timer strong { font: 300 38px var(--w-round); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.wg-timer.is-on strong { color: var(--tint); }
 
 /* sistem */
-.wg-system { display: flex; flex-direction: column; gap: 6px; }
-.wg-meter { display: grid; grid-template-columns: 1fr auto; gap: 2px 6px; font-size: 12px; }
-.wg-meter b { font: 700 12px var(--mono); }
-.wg-meter .wg-progress { grid-column: 1 / -1; }
-.wg-meter small { grid-column: 1 / -1; color: var(--w-muted); font-size: 10.5px; }
+.wg-system { height: 100%; display: flex; flex-direction: column; justify-content: center; }
+.wg-gauges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 8px; }
+.wg-system:not(.is-small) .wg-gauges { grid-template-columns: repeat(4, 1fr); }
+.wg-gauge { display: flex; flex-direction: column; align-items: center; gap: 1px; text-align: center; }
+.wg-gauge__ring { position: relative; width: 50px; height: 50px; }
+.wg-system.is-small .wg-gauge__ring { width: 46px; height: 46px; }
+.wg-gauge__ring svg { width: 100%; height: 100%; }
+.wg-gauge__ring b { position: absolute; inset: 0; display: grid; place-items: center; font: 600 13px var(--w-round); }
+.wg-gauge small { font-size: 10.5px; color: var(--w-muted); font-weight: 600; }
+.wg-gauge .wg-ring__fg { stroke: var(--w-green); }
+.wg-gauge.is-amber .wg-ring__fg { stroke: var(--w-amber); }
+.wg-gauge.is-red .wg-ring__fg { stroke: var(--w-red); }
 
-/* hava */
-.wg-weather__now { display: flex; align-items: center; gap: 10px; }
-.wg-weather__icon { font-size: 38px; line-height: 1; }
-.wg-weather__now strong { display: block; font: 750 32px var(--display); line-height: 1; }
-.wg-weather__now small { color: var(--w-muted); font-weight: 650; font-size: 12px; }
-.wg-weather__text { margin: 4px 0 0; font-size: 12px; color: var(--w-muted); }
-.wg-weather__days { list-style: none; margin: 8px 0 0; padding: 6px 0 0; border-top: 1px solid var(--w-line); display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; text-align: center; font-size: 11.5px; }
-.wg-weather__days li { display: flex; flex-direction: column; gap: 1px; }
-.wg-weather__days b { font-size: 20px; font-weight: 400; }
+/* hava: macOS Hava Durumu gibi gökyüzü degradesi; tüm widget yüzeyi */
+.wg--weather { color: #fff; background: linear-gradient(180deg, #2f7fd6, #61a8ec); }
+.wg--weather:has([data-sky="day-cloud"]) { background: linear-gradient(180deg, #5f7a96, #8ea3b9); }
+.wg--weather:has([data-sky="day-rain"]) { background: linear-gradient(180deg, #4a5a70, #6f8296); }
+.wg--weather:has([data-sky^="night"]) { background: linear-gradient(180deg, #0b1a3a, #263a63); }
+.wg--weather .wg__hb { background: rgba(255, 255, 255, 0.18); color: #fff; }
+.wg-weather { height: 100%; display: flex; flex-direction: column; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+.wg-weather__top { display: flex; flex-direction: column; }
+.wg-weather__place { font-size: 14px; font-weight: 700; display: inline-flex; gap: 4px; align-items: center; }
+.wg-weather__temp { font: 300 46px/1 var(--w-round); letter-spacing: -0.02em; }
+.wg-weather__now { display: flex; align-items: flex-end; gap: 6px; margin-top: auto; }
+.wg-weather__icon { font-size: 20px; line-height: 1; }
+.wg-weather__text { display: flex; flex-direction: column; font-size: 12px; font-weight: 600; }
+.wg-weather__text small { font-weight: 600; opacity: 0.9; }
+.wg-weather:not(.is-small) { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto 1fr auto; }
+.wg-weather:not(.is-small) .wg-weather__now { grid-column: 2; grid-row: 1; flex-direction: column; align-items: flex-end; margin: 0; text-align: right; }
+.wg-weather:not(.is-small) .wg-weather__text { align-items: flex-end; }
+.wg-weather:not(.is-small) .wg-weather__icon { font-size: 26px; }
+.wg-weather__days { grid-column: 1 / -1; grid-row: 3; list-style: none; margin: 8px 0 0; padding: 8px 0 0; border-top: 0.5px solid rgba(255, 255, 255, 0.3); display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; text-align: center; font-size: 12px; font-weight: 600; }
+.wg-weather__days li { display: flex; flex-direction: column; gap: 2px; }
+.wg-weather__days b { font-size: 18px; font-weight: 400; }
+.wg-weather__days small { opacity: 0.75; }
+.wg-weather.is-large .wg-weather__days { grid-row: 2; align-self: end; }
+.wg-weather__extra { grid-column: 1 / -1; font-size: 11px; opacity: 0.85; margin: 6px 0 0; }
+.wg--weather .wg-muted, .wg--weather .wg-empty { color: rgba(255, 255, 255, 0.85); }
 
 /* maçlar */
-.wg-match { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; color: var(--w-fg); text-align: left; padding: 4px 6px; border-radius: 8px; }
+.wg-match { display: flex; align-items: center; gap: 8px; border: 0; background: none; color: var(--w-fg); text-align: left; padding: 4px 6px; margin: 0 -6px; width: calc(100% + 12px); border-radius: 8px; }
 .wg-match__teams { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 12px; }
-.wg-match__teams b { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wg-match__when { flex: none; text-align: right; font: 600 10.5px var(--mono); color: var(--w-muted); display: flex; flex-direction: column; max-width: 110px; }
-.wg-match__when small { font-family: var(--font); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wg-match__score { flex: none; font: 750 15px var(--mono); display: flex; flex-direction: column; align-items: flex-end; }
-.wg-match__score i { font: 800 9px var(--font); font-style: normal; color: #fff; background: var(--w-red); border-radius: 4px; padding: 1px 4px; letter-spacing: 0.06em; }
-.wg-match.is-live { background: color-mix(in srgb, var(--w-red) 9%, transparent); }
+.wg-match__teams b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-match__when { flex: none; text-align: right; font-size: 11px; font-weight: 600; color: var(--w-muted); display: flex; flex-direction: column; max-width: 110px; }
+.wg-match__when small { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-match__score { flex: none; font: 700 16px var(--w-round); display: flex; flex-direction: column; align-items: flex-end; }
+.wg-match__score i, .wg-live { font: 800 9px var(--w-font); font-style: normal; color: #fff; background: var(--w-red); border-radius: 4px; padding: 1px 4px; letter-spacing: 0.06em; flex: none; }
+.wg-match.is-live { background: color-mix(in srgb, var(--w-red) 8%, transparent); }
 
 /* döviz */
-.wg-rates { display: flex; flex-direction: column; gap: 3px; }
-.wg-rate { display: flex; justify-content: space-between; align-items: baseline; padding: 3px 2px; border-bottom: 1px solid var(--w-line); }
+.wg-rates { display: flex; flex-direction: column; gap: 2px; height: 100%; }
+.wg-rates:not(.is-small) { display: grid; grid-template-columns: 1fr 1fr; column-gap: 14px; align-content: start; }
+.wg-rates:not(.is-small) .wg-muted { grid-column: 1 / -1; }
+.wg-rate { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; border-bottom: 0.5px solid var(--w-line); }
 .wg-rate span { font-weight: 700; font-size: 12px; color: var(--w-muted); }
-.wg-rate b { font: 700 15px var(--mono); }
+.wg-rate b { font: 600 17px var(--w-round); font-variant-numeric: tabular-nums; }
+.wg-rate b small { font-size: 11px; color: var(--w-muted); }
+.wg-rates .wg-muted { margin-top: auto; font-size: 10.5px; }
+
+/* mesajlar / talepler / ekipman özet satırı */
+.wg-msgs, .wg-reqs { display: flex; flex-direction: column; gap: 4px; height: 100%; }
+.wg-msgs .wg-list { flex: 1; min-height: 0; }
+.wg-msgs__sum { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 2px; }
+.wg-count { border: 0; background: none; color: var(--w-fg); display: inline-flex; align-items: baseline; gap: 5px; padding: 0 4px 0 0; }
+.wg-count b { font: 700 26px/1 var(--w-round); font-variant-numeric: tabular-nums; color: var(--tint); }
+.wg-count span { font-size: 11.5px; color: var(--w-muted); font-weight: 600; }
+.wg-count.is-alert b { color: var(--w-red); }
+.wg-av { width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center; overflow: hidden; color: #fff; font-weight: 600; background: linear-gradient(180deg, color-mix(in srgb, var(--av, #8e8e93) 75%, #fff), var(--av, #8e8e93)); }
+.wg-av img { width: 100%; height: 100%; object-fit: cover; }
+.wg-chat, .wg-contact { display: flex; align-items: center; gap: 4px; border-radius: 10px; }
+.wg-chat:hover, .wg-contact:hover { background: var(--w-soft); }
+.wg-chat__main, .wg-contact__main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: 0; background: none; color: var(--w-fg); padding: 4px; text-align: left; }
+.wg-chat__text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.wg-chat__top { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+.wg-chat__top b, .wg-chat__text > b { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-chat__top small { margin-left: auto; color: var(--w-muted); font-size: 10.5px; flex: none; }
+.wg-chat__last, .wg-chat__text > small { font-size: 11.5px; color: var(--w-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-chat.is-unread .wg-chat__top b { font-weight: 700; }
+.wg-chat.is-unread .wg-chat__last { color: var(--w-fg); }
+.wg-chat.is-fresh { background: color-mix(in srgb, var(--tint) 13%, transparent); }
+.wg-chat.is-target { box-shadow: inset 0 0 0 1.5px var(--tint); }
+.wg-chat .wg-ib.is-sm { opacity: 0; }
+.wg-chat:hover .wg-ib.is-sm, .wg-chat.is-target .wg-ib.is-sm { opacity: 1; }
+.wg-reply { padding-top: 4px; }
+.wg-reply__to { font-size: 10.5px; color: var(--tint); font-weight: 700; }
+.wg-reply__row { display: flex; gap: 5px; align-items: center; margin-top: 3px; }
+.wg-reply__row input { flex: 1; min-width: 0; border: 0; border-radius: 999px; padding: 6px 11px; background: var(--w-soft2); color: var(--w-fg); font-size: 12.5px; -webkit-user-select: text; user-select: text; }
+.wg-reply__row input:focus { outline: 2px solid color-mix(in srgb, var(--tint) 55%, transparent); }
+/* yeni mesajda vurgu */
+html[data-flash="1"] .wg { animation: wg-flash 1.2s ease-in-out 3; }
+@keyframes wg-flash { 50% { box-shadow: inset 0 0 0 2.5px var(--tint), inset 0 0 26px color-mix(in srgb, var(--tint) 35%, transparent); } }
+
+/* projeler */
+.wg-proj { display: flex; flex-direction: column; gap: 3px; border: 0; background: none; color: var(--w-fg); text-align: left; padding: 5px 6px; margin: 0 -6px; width: calc(100% + 12px); border-radius: 10px; }
+.wg-proj:hover { background: var(--w-soft); }
+.wg-proj__top { display: flex; align-items: center; gap: 6px; }
+.wg-proj__top b { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-proj__top small { font: 600 12px var(--w-round); color: var(--pc, var(--tint)); }
+.wg-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pc, var(--tint)); flex: none; }
+.wg-proj .wg-progress i { background: var(--pc, var(--tint)); }
+.wg-proj__meta { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.wg-proj__meta .wg-tag { margin-left: 0; }
+.wg-proj__meta small { font-size: 10.5px; color: var(--w-muted); }
+.wg-proj__next { font-size: 11px; color: var(--w-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+.wg-proj__next.is-late { color: var(--w-red); }
+.wg-proj-small { width: 100%; height: 100%; border: 0; background: none; color: inherit; padding: 0; display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 1px; min-width: 0; }
+.wg-proj-small__name { font-size: 13px; font-weight: 700; margin-top: auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-proj-small small { font-size: 11px; color: var(--w-muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-proj-small small.is-late { color: var(--w-red); }
+.wg-ringval { position: relative; width: 58px; height: 58px; }
+.wg-ringval svg { width: 100%; height: 100%; }
+.wg-ringval b { position: absolute; inset: 0; display: grid; place-items: center; font: 700 14px var(--w-round); color: var(--pc, var(--tint)); }
+.wg-ringval .wg-ring__fg { stroke: var(--pc, var(--tint)); }
+
+/* muhasebe */
+.wg-ledger { display: flex; flex-direction: column; gap: 7px; }
+.wg-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.wg-kpi { border: 0; border-radius: 12px; background: var(--w-soft); color: var(--w-fg); padding: 6px 8px; display: flex; flex-direction: column; text-align: left; min-width: 0; }
+.wg-kpi small { font-size: 10px; color: var(--w-muted); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wg-kpi b { font: 700 16px var(--w-round); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.02em; }
+.wg-kpi.is-green b { color: var(--w-green); }
+.wg-kpi.is-red b { color: var(--w-red); }
+.wg-ledger__open { display: flex; gap: 14px; flex-wrap: wrap; }
+.wg-ledger__open span { display: flex; flex-direction: column; }
+.wg-ledger__open small { font-size: 10px; color: var(--w-muted); font-weight: 600; }
+.wg-ledger__open b { font: 600 13px var(--w-round); }
+
+/* bugün */
+.wg-today__hi { margin: 0 0 2px; font-weight: 700; font-size: 13px; }
+.wg-today__hi small { color: var(--w-muted); font-weight: 600; text-transform: capitalize; }
+.wg-today h5 { display: flex; align-items: center; gap: 4px; }
+.wg-today h5 em { font-style: normal; background: var(--w-soft2); color: var(--w-fg); border-radius: 6px; padding: 0 5px; font-size: 9.5px; }
+.wg-today h5 em.is-alert { background: color-mix(in srgb, var(--w-red) 15%, transparent); color: var(--w-red); }
+
+/* rehber: favori avatarları */
+.wg-faves { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 6px; height: 100%; align-content: center; }
+.wg-faves.is-medium { grid-template-columns: repeat(4, 1fr); }
+.wg-fave { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+.wg-fave__av { border: 0; background: none; padding: 0; border-radius: 50%; }
+.wg-fave__av .wg-av { box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); font-size: 17px !important; }
+.wg-fave__name { font-size: 11px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-fave__acts { display: flex; gap: 4px; }
+
+/* notlar */
+.wg-noteitem { display: flex; flex-direction: column; gap: 1px; border: 0; background: var(--w-soft); color: var(--w-fg); border-radius: 10px; padding: 5px 9px; text-align: left; margin-bottom: 4px; width: 100%; }
+.wg-noteitem b { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-noteitem b .ic { color: var(--w-amber); }
+.wg-noteitem small { font-size: 11px; color: var(--w-muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.wg-note-small { width: 100%; height: 100%; border: 0; background: none; color: var(--w-fg); padding: 0; display: flex; flex-direction: column; gap: 3px; text-align: left; min-width: 0; }
+.wg-note-small b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.wg-note-small small { font-size: 12px; color: var(--w-muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; line-height: 1.35; }
+.wg-note-small em { margin-top: auto; font-style: normal; font-size: 11px; color: var(--w-faint); font-weight: 600; }
+
+/* hızlı kayıt */
+.wg-quick { display: flex; flex-direction: column; gap: 6px; }
+
+/* odak */
+.wg-focus { display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: center; }
+.wg-focus.is-medium { flex-direction: row; justify-content: space-around; }
+.wg-focus__side { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.wg-focus.is-small .wg-ring { margin-top: -4px; }
+.wg-focus.is-small .wg-bar { margin-top: 0; }
+.wg-focus.is-small .wg-ib { width: 26px; height: 26px; }
+.wg-focus.is-small .wg-ib.is-main { width: 30px; height: 30px; }
+.wg-ring { position: relative; }
+.wg-ring svg { width: 100%; height: 100%; }
+.wg-ring__bg { fill: none; stroke: var(--w-soft2); stroke-width: 7; }
+.wg-ring__fg { fill: none; stroke: var(--tint); stroke-width: 7; stroke-linecap: round; transition: stroke-dashoffset 0.5s linear; }
+.wg-focus.is-short .wg-ring__fg, .wg-focus.is-long .wg-ring__fg { stroke: var(--w-green); }
+.wg-ring__in { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.wg-ring__in small { font-size: 9.5px; color: var(--w-muted); font-weight: 700; }
+.wg-ring__in strong { font: 500 21px var(--w-round); font-variant-numeric: tabular-nums; }
+.wg-focus.is-on .wg-ring__in strong { color: var(--tint); }
+
+/* hafta / ay */
+.wg-cal__head { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.wg-cal__head b { font-size: 13px; text-transform: capitalize; }
+.wg-week__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.wg-week__col { min-width: 0; display: flex; flex-direction: column; gap: 2px; border-radius: 10px; padding: 2px; }
+.wg-week__day { border: 0; background: none; color: var(--w-fg); display: flex; flex-direction: column; align-items: center; padding: 1px 0; }
+.wg-week__day small { font-size: 9.5px; color: var(--w-muted); font-weight: 700; text-transform: uppercase; }
+.wg-week__day b { font: 500 15px var(--w-round); width: 24px; height: 24px; display: grid; place-items: center; }
+.wg-week__col.is-today .wg-week__day b { color: #fff; background: var(--w-red); border-radius: 50%; }
+.wg-week__dots { display: flex; justify-content: center; gap: 2px; }
+.wg-week__dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--tint); }
+.wg-week__ev { border: 0; text-align: left; font-size: 10px; line-height: 1.25; padding: 2px 4px; border-radius: 5px; background: color-mix(in srgb, var(--ev, var(--tint)) 14%, transparent); color: var(--w-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 2px solid var(--ev, var(--tint)); }
+.wg-week__ev.is-proj { --ev: #af52de; }
+.wg-week__ev i { font-style: normal; color: var(--w-muted); margin-right: 2px; font-variant-numeric: tabular-nums; }
+.wg-week.is-xlarge .wg-week__ev { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.wg-month__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 0; text-align: center; }
+.wg-month__wd { font-size: 9.5px; color: var(--w-muted); font-weight: 700; padding-bottom: 1px; }
+.wg-month__d { position: relative; border: 0; background: none; color: var(--w-fg); font: 500 11px var(--w-font); padding: 2px 0 5px; border-radius: 50%; font-variant-numeric: tabular-nums; aspect-ratio: 1; display: grid; place-items: center; }
+.wg-month.is-small .wg-month__d { font-size: 10px; padding: 0 0 3px; }
+.wg-month__d:hover { background: var(--w-soft); }
+.wg-month__d.is-out { color: var(--w-faint); }
+.wg-month__d.is-we { color: var(--w-muted); }
+.wg-month__d.is-today { background: var(--w-red); color: #fff; font-weight: 700; }
+.wg-month__d.is-sel:not(.is-today) { box-shadow: inset 0 0 0 1.5px var(--w-red); }
+.wg-month__dot { position: absolute; left: 50%; bottom: 1px; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 50%; background: var(--w-muted); }
+.wg-month__dot[data-n="2"] { box-shadow: -4px 0 0 var(--w-muted); }
+.wg-month__dot[data-n="3"] { box-shadow: -4px 0 0 var(--w-muted), 4px 0 0 var(--w-muted); }
+.wg-month__d.is-today .wg-month__dot { background: #fff; box-shadow: none; }
+.wg-month.is-small .wg-cal__head .wg-ib { display: none; }
+.wg-month.is-small .wg-cal__head b { color: var(--w-red); font-size: 12px; text-transform: uppercase; }
+.wg-month.is-medium { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr; column-gap: 14px; height: 100%; }
+.wg-month.is-medium .wg-cal__head { grid-column: 1; }
+.wg-month.is-medium .wg-month__grid { grid-column: 1; }
+.wg-month.is-medium .wg-month__d { aspect-ratio: auto; padding: 1px 0 4px; }
+.wg-month.is-medium .wg-month__day { grid-column: 2; grid-row: 1 / span 2; border: 0; margin: 0; padding: 0; }
+.wg-month__day { margin-top: 6px; border-top: 0.5px solid var(--w-line); padding-top: 3px; }
+.wg-month__day h5 { text-transform: capitalize; }
+
+/* canlı maç / puan durumu */
+.wg-score { width: 100%; height: 100%; border: 0; background: none; color: var(--w-fg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: 12px; }
+.wg-score__state { font-size: 11px; color: var(--w-muted); font-weight: 600; display: inline-flex; gap: 4px; align-items: center; }
+.wg-score__row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 6px; width: 100%; }
+.wg-score__team { font-size: 12px; font-weight: 600; text-align: center; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.wg-score strong { font: 700 30px var(--w-round); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.wg-score.is-small .wg-score__row { grid-template-columns: 1fr; gap: 0; }
+.wg-score.is-small .wg-score__team { font-size: 11.5px; -webkit-line-clamp: 1; }
+.wg-score.is-small strong { order: -1; font-size: 34px; }
+.wg-score.is-live strong { color: var(--w-red); }
+.wg-score.is-goal { animation: wg-flash 0.8s ease-in-out 6; }
+.wg-goal { color: var(--w-red); }
+.wg-standings table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.wg-standings th { font-size: 10px; color: var(--w-muted); font-weight: 700; text-align: right; padding: 1px 3px; }
+.wg-standings td { text-align: right; padding: 3px 3px; border-top: 0.5px solid var(--w-line); }
+.wg-standings .is-team { text-align: left; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-standings tr:hover td { background: var(--w-soft); }
+.wg-standings tr.is-mine td { background: color-mix(in srgb, var(--tint) 16%, transparent); font-weight: 700; }
+.wg-standings__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0 0 3px; font-weight: 600; }
+
+/* stüdyo */
+.wg-studio { display: flex; flex-direction: column; gap: 5px; height: 100%; }
+.wg-studio__state { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.wg-studio__state b { font-size: 13px; letter-spacing: 0.02em; }
+.wg-studio__state strong { margin-left: auto; font: 500 22px var(--w-round); font-variant-numeric: tabular-nums; }
+.wg-studio.is-small .wg-studio__state strong { margin-left: 0; width: 100%; font-size: 30px; }
+.wg-studio__dot { width: 10px; height: 10px; border-radius: 50%; background: var(--w-faint); flex: none; }
+.wg-studio.is-red .wg-studio__dot { background: var(--w-red); animation: wg-pulse 1.4s ease-in-out infinite; box-shadow: 0 0 0 4px color-mix(in srgb, var(--w-red) 25%, transparent); }
+.wg-studio.is-red .wg-studio__state b { color: var(--w-red); }
+.wg-studio.is-amber .wg-studio__dot { background: var(--w-amber); }
+.wg-studio.is-blue .wg-studio__dot { background: var(--w-blue); }
+.wg-studio__meta { display: flex; gap: 14px; flex-wrap: wrap; }
+.wg-studio__meta span { display: flex; flex-direction: column; }
+.wg-studio__meta small { font-size: 10px; color: var(--w-muted); font-weight: 600; }
+.wg-studio__meta b { font: 600 13px var(--w-round); }
+.wg-studio .wg-bar { margin-top: auto; }
+
+/* başlatıcı */
+.wg-launch { display: flex; flex-direction: column; gap: 6px; height: 100%; }
+.wg-launch__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.wg-launch.is-small .wg-launch__grid { grid-template-columns: repeat(2, 1fr); gap: 6px; flex: 1; align-content: center; }
+.wg-tile { border: 0; background: none; color: var(--w-fg); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 3px 2px; border-radius: 10px; font-size: 10.5px; font-weight: 600; min-width: 0; }
+.wg-tile > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wg-tile:hover { background: var(--w-soft); }
+.wg-tile__ic { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: linear-gradient(180deg, color-mix(in srgb, var(--tint) 70%, #fff), var(--tint)); color: #fff; box-shadow: 0 2px 5px color-mix(in srgb, var(--tint) 35%, transparent); }
+.wg-launch.is-small .wg-tile > span:last-child { display: none; }
+.wg-launch.is-small .wg-tile__ic { width: 44px; height: 44px; border-radius: 12px; }
+
+/* araç çubuğu (dock) — ızgara dışı yatay şerit */
+.wg--dock { border-radius: 24px; }
+.wg--dock .wg__head { position: absolute; top: 0; right: 2px; padding: 3px; z-index: 2; }
+.wg--dock .wg__body { padding: 0 28px 0 12px; display: flex; align-items: center; overflow: visible; }
+.wg-dock { display: flex; align-items: center; gap: 6px; width: 100%; }
+.wg-dock__btn { position: relative; width: 44px; height: 44px; flex: none; border: 0; border-radius: 12px; background: linear-gradient(180deg, color-mix(in srgb, var(--tint) 70%, #fff), var(--tint)); color: #fff; display: grid; place-items: center; transition: transform 0.14s; box-shadow: 0 2px 6px color-mix(in srgb, var(--tint) 30%, transparent); }
+.wg--medium .wg-dock__btn { width: 52px; height: 52px; border-radius: 14px; }
+.wg-dock__btn:hover { transform: translateY(-2px) scale(1.07); }
+.wg-dock__btn.is-add { background: linear-gradient(180deg, #34c759, #248a3d); }
+.wg-dock__btn .wg-badge { position: absolute; top: -4px; right: -4px; background: var(--w-red); }
+.wg-dock__tip { display: none; }
+.wg-dock__sep { width: 1px; height: 30px; background: var(--w-line); flex: none; margin: 0 2px; }
+.wg.wg-preview, .wg.wg-preview * { -webkit-app-region: no-drag !important; }
+/* genel (styles.css) form stillerini widget içinde ez: sade, temaya uyan alanlar */
+.wg input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), .wg select, .wg textarea { background: var(--w-soft2) !important; color: var(--w-fg) !important; border: 0 !important; box-shadow: none !important; border-radius: 9px !important; font-family: var(--w-font) !important; }
+.wg .wg-reply__row input { border-radius: 999px !important; }
+.wg input:focus, .wg select:focus { outline: 2px solid color-mix(in srgb, var(--tint) 55%, transparent) !important; outline-offset: 0; }
+.wg .wg-note textarea { background: transparent !important; }
+.wg input::placeholder, .wg textarea::placeholder { color: var(--w-faint); }
+.wg.wg-preview { text-align: left; }
+.wg-month.is-large .wg-month__d { aspect-ratio: auto; padding: 3px 0 6px; }

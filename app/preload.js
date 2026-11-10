@@ -391,7 +391,7 @@ contextBridge.exposeInMainWorld("elitlig", {
   // Masaüstü widget'ları (app/widgets): galeri, ekle / kaldır / ayarla, veri kaynakları.
   widgets: {
     state: () => ipcRenderer.invoke("widgets:state"),
-    add: (type, options) => ipcRenderer.invoke("widgets:add", String(type || ""), options && typeof options === "object" ? options : {}),
+    add: (type, options, size) => ipcRenderer.invoke("widgets:add", String(type || ""), options && typeof options === "object" ? options : {}, typeof size === "string" ? size.slice(0, 10) : undefined),
     update: (id, patch) => ipcRenderer.invoke("widgets:update", String(id || ""), patch && typeof patch === "object" ? patch : {}),
     remove: (id) => ipcRenderer.invoke("widgets:remove", String(id || "")),
     setVisible: (on) => ipcRenderer.invoke("widgets:visible", Boolean(on)),
@@ -404,6 +404,17 @@ contextBridge.exposeInMainWorld("elitlig", {
     matches: (opts) => ipcRenderer.invoke("widgets:matches", { city: String(opts?.city || "") }),
     rates: (force) => ipcRenderer.invoke("widgets:rates", Boolean(force)),
     open: (route) => ipcRenderer.invoke("widgets:open", route ? String(route) : null),
+    // Yeni widget verileri: canlı maç, puan durumu (herkese açık API), Yayın Stüdyosu durumu.
+    match: (id) => ipcRenderer.invoke("widgets:match", Number(id) || 0),
+    leagues: () => ipcRenderer.invoke("widgets:leagues"),
+    standings: (opts) => ipcRenderer.invoke("widgets:standings", { leagueId: Number(opts?.leagueId) || 0, seasonId: Number(opts?.seasonId) || 0 }),
+    studio: () => ipcRenderer.invoke("widgets:studio"),
+    // macOS widget mantığı: düzenleme kipi, genel ayarlar (ızgara, soluk görünüm, malzeme, girişte başlat),
+    // masaüstü katmanında yazı alanı için geçici odak.
+    edit: (on) => ipcRenderer.invoke("widgets:edit", on == null ? null : Boolean(on)),
+    settings: (patch) => ipcRenderer.invoke("widgets:settings", patch && typeof patch === "object" ? patch : {}),
+    focus: () => ipcRenderer.invoke("widgets:focus"),
+    focusable: (on) => ipcRenderer.invoke("widgets:focusable", Boolean(on)),
     onChange: on("widgets:changed"),
     onConfig: on("widget:config"),
     onSettings: on("widget:settings"),
@@ -435,6 +446,15 @@ contextBridge.exposeInMainWorld("elitlig", {
     onNav: on("admin:nav"),
     onDownloads: on("admin:downloads"),
     onFocus: on("admin:focus"),
+  },
+  // Hızlı geçiş (app/launcher, ⌃⌥O): araç aç, yeni kayıt, Dock / atlama listesi ile aynı liste.
+  launcher: {
+    state: () => ipcRenderer.invoke("launcher:state"),
+    open: (route, arg) => ipcRenderer.invoke("launcher:open", String(route || ""), arg && typeof arg === "object" ? arg : null),
+    action: (id) => ipcRenderer.invoke("launcher:action", String(id || "")),
+    show: (query) => ipcRenderer.invoke("launcher:show", typeof query === "string" ? query : ""),
+    hide: () => ipcRenderer.invoke("launcher:hide"),
+    onOpen: on("launcher:open"),
   },
   onNavigate: on("navigate"),
   onCommand: on("command"),

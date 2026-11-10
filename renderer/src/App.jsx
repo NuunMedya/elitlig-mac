@@ -133,7 +133,8 @@ function Shell({ auth }) {
     try { localStorage.setItem("route", base); } catch { /* yoksay */ }
   }, []);
 
-  useEffect(() => window.elitlig.onNavigate((key) => key && go(key)), [go]);
+  // Hedef nesne de olabilir (hızlı geçiş: { route, arg }).
+  useEffect(() => window.elitlig.onNavigate((key) => key && (typeof key === "object" ? go(key.route, key.arg || null) : go(key))), [go]);
   useEffect(() => window.elitlig.onCommand((cmd) => {
     if (cmd === "palette") setPalette(true);
     if (cmd === "refresh") { refreshAll(); window.elitlig.sync.flush(); }

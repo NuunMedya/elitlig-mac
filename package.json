@@ -34,6 +34,14 @@
   "build": {
     "appId": "com.elitlig.araclar",
     "productName": "Elitlig Araclar",
+    "protocols": [
+      {
+        "name": "Elitlig Araçlar",
+        "schemes": [
+          "elitlig-araclar"
+        ]
+      }
+    ],
     "copyright": "© Elitlig",
     "directories": {
       "output": "dist",
