@@ -260,6 +260,21 @@ listelenir (`/api/admin/requests`, `/summary`, `/:id/dismiss`).
   ve **İlgili sayfa** elitlig.com'da açılır; **Kapat** talebi elle sonuçlandırır.
 - **Canlı:** yeni ya da sonuçlanan talep socket'ten gelir (ana süreç iletir); rozet kenar çubuğunda,
   Dock'ta, menü çubuğunda ve Bugün kartında. Socket yokken özet dakikada bir yoklanır.
+- **Karar paneli (İncele):** sağ bölmede talebin tüm dosyası (`/api/admin/requests/:id/context`):
+  otomatik denetimler (**Uyarılar**: engel / dikkat / bilgi / geçti — mükerrer talep, başka takımın
+  sezon kadrosu, kadro limiti, transfer hakkı, süren ceza, eksik fotoğraf / doğum tarihi / iletişim,
+  yeni hesap, il uyuşmazlığı, bekleme süresi, dolu saat, kayıt zaten sonuçlanmış…), talebin kendisi
+  (alan alan şu an → istenen, ekler yan yana, not, teklif şartları, saat seçenekleri ve sahadaki
+  durumu, kadro farkı), talep eden (iletişim, hesap yaşı, rol, doğrulama, önceki talepleri ve
+  sonuçları), oyuncu (maç / gol / kart, takımlar, sezon kadroları, cezalar), takım (yönetici, kadro
+  ve lisans limiti göstergesi, transfer hakkı, bekleyen diğer talepleri), **Onaylarsan / Reddedersen**
+  etkisi, zaman çizelgesi (panele bakan yöneticiler dahil). Altta karar notu ve ret gerekçesi
+  şablonları (ret gerekçesiz gönderilmez; not talep sahibine bildirimle gider); maç talebinde saat
+  saat onay. Esc paneli kapatır.
+- **Liste özetleri:** her kartta karar özeti (Engel var / Dikkat / Sorun görünmüyor), engel ve dikkat
+  sayısı, ilk uyarılar; süzgeç (Engelli / Uyarılı / Temiz), sıralama (en yeni, en uzun bekleyen, en
+  riskli). **Toplu işlem:** seçilen taleplerden yalnız engelsiz olanlar toplu onaylanır; toplu ret tek
+  gerekçeyle; toplu kapatma.
 
 ## Rehber: Takımlar
 
