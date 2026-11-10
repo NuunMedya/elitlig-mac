@@ -442,7 +442,12 @@ export async function runStep(s, ctx, rt = null) {
       return (await desk.save(onAirPatch(sp, slot, DURATION_CHOICES[0]?.value ?? "default"), `${sp.name} yayında.`)) !== false;
     }
     case "sponsorOff": if (!g?.desk?.save) return false; return (await g.desk.save({ onAir: null }, null)) !== false;
-    case "sponsorRotate": if (!g?.setSubtitleSettings) return false; g.setSubtitleSettings({ rotateSponsor: Boolean(s.on) }, null); return true;
+    case "sponsorRotate":
+      if (!g?.setSubtitleSettings) return false;
+      // Altyazı sponsoru yoksa dönüşüm açılamaz; makro başarısız sayılır.
+      if (s.on && !g.subtitle?.settings?.sponsorId) return false;
+      g.setSubtitleSettings({ rotateSponsor: Boolean(s.on) }, null);
+      return true;
     /* ses */
     case "micMute": if (!C.mic) return false; if (!C.mic.muted) C.mic.toggle(); return true;
     case "micOn": if (!C.mic) return false; if (C.mic.muted) C.mic.toggle(); return true;
