@@ -51,7 +51,7 @@ export default function Float() {
   const onDrop = async (e) => {
     e.preventDefault();
     setOver(false);
-    const res = await window.elitlig.fileTools.addFiles(e.dataTransfer.files);
+    const res = await window.elitlig.fileTools.addFiles(Array.from(e.dataTransfer.files || [])); // FileList köprüden geçmez: dizi
     if (res.ok) await window.elitlig.float.add(res.files.map((f) => f.path));
   };
   const remove = (paths) => { window.elitlig.float.remove(paths); setSel(new Set()); };

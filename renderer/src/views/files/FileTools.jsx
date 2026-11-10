@@ -116,7 +116,8 @@ export default function FileTools({ arg }) {
     e.preventDefault();
     setDragOver(false);
     const mods = { shift: e.shiftKey, mod: isMac() ? e.metaKey : e.ctrlKey, alt: isMac() ? e.ctrlKey || e.altKey : e.altKey };
-    const res = await ft().addFiles(e.dataTransfer.files);
+    // FileList contextBridge'den geçerken File kimliğini yitirir (yol okunamaz): dizi olarak verilir.
+    const res = await ft().addFiles(Array.from(e.dataTransfer.files || []));
     if (!res.ok || !res.files.length) { toast(res.error?.message || "Dosya eklenemedi.", { tone: "error" }); return; }
     addEntries(res.files);
     // Bırakırken basılı tuş: ilgili çark doğrudan açılır (yalnız bırakılan dosyalar seçili).

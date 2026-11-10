@@ -229,7 +229,8 @@ contextBridge.exposeInMainWorld("elitlig", {
   // Dosya Araçları (app/fileTools): dosyalar yolla izin listesine alınır, işler ana süreçte
   // (ffmpeg, sips, ZIP, PDF) ya da arayüzde (canvas; çıktı client.file ile yazılır).
   fileTools: {
-    // File / FileList (sürükle-bırak, <input type=file>) → izin listesindeki girdiler.
+    // File dizisi (sürükle-bırak, <input type=file>) → izin listesindeki girdiler. FileList
+    // contextBridge'den geçerken File kimliğini yitirir: çağıran Array.from(...) vermeli.
     addFiles: (list) => {
       const paths = [];
       for (const f of Array.from(list || [])) {

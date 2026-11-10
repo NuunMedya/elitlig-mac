@@ -187,7 +187,7 @@ export default function Shelf({ arg }) {
     e.preventDefault();
     setDragOver(false);
     if (e.dataTransfer.files?.length) {
-      const r = await sh().importFiles(e.dataTransfer.files);
+      const r = await sh().importFiles(Array.from(e.dataTransfer.files)); // FileList köprüden geçmez: dizi
       if (r.ok && r.count) toast(`${r.count} görsel kütüphaneye eklendi.`, { tone: "success" });
       else toast("Yalnız görsel dosyaları eklenebilir.", { tone: "warn" });
     } else {

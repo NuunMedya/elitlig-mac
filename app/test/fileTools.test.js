@@ -368,3 +368,14 @@ test("ffmpeg: üretilen kısa videodan MP4 dönüştürme + ses ayıklama + GIF 
   assert.ok(fs.existsSync(src), "kaynak yerinde");
   jobs.dispose();
 });
+
+test("Windows HEIC yedeği: WIC (PowerShell) komutu yolları ortam değişkeniyle geçirir", () => {
+  const cmd = native.wicDecodeCommand({ input: "C:\\Foto lar\\IMG 1'.HEIC", output: "C:\\t\\o.png", env: { SystemRoot: "C:\\Windows" } });
+  if (cmd.file) assert.match(cmd.file, /powershell(\.exe)?$/i); // Windows dışında bulunamaz (null)
+  assert.ok(cmd.args.includes("-NoProfile") && cmd.args.includes("-NonInteractive"));
+  const script = cmd.args[cmd.args.indexOf("-Command") + 1];
+  assert.match(script, /BitmapDecoder\]::Create/);
+  assert.match(script, /PngBitmapEncoder/);
+  assert.ok(!script.includes("IMG 1"), "yol betiğe gömülmez");
+  assert.deepEqual(JSON.parse(cmd.env.ELITLIG_ARGS), { src: "C:\\Foto lar\\IMG 1'.HEIC", dest: "C:\\t\\o.png" });
+});

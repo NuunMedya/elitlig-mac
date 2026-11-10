@@ -207,6 +207,13 @@ function registerFileTools(deps) {
       const res = await native.run(info.path, ["-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-i", file, "-frames:v", "1", out], { timeout: 60000 });
       if (res.ok && fs.existsSync(out)) return out;
     }
+    if (platform === "win32") {
+      // ffmpeg çözemediyse Windows Imaging Component (HEIF Görüntü Uzantıları kuruluysa HEIC dahil).
+      const cmd = native.wicDecodeCommand({ input: file, output: out });
+      const res = await native.run(cmd.file, cmd.args, { timeout: 60000, env: cmd.env });
+      if (res.ok && fs.existsSync(out)) return out;
+      if (/^(heic|heif)$/.test(extOf(file))) throw new Error(`${path.basename(file)} çözülemedi: HEIC fotoğrafları için Microsoft Store'dan “HEIF Görüntü Uzantıları”nı kurun.`);
+    }
     throw new Error(`${path.basename(file)} çözülemedi${IS_MAC ? "" : " (HEIC için güncel ffmpeg gerekir)"}.`);
   }
 
