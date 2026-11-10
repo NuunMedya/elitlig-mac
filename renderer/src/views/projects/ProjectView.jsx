@@ -14,12 +14,17 @@ import Activity from "./Activity";
 import { ProjectPortfolio } from "./Portfolio";
 import Settings from "./Settings";
 import Budget from "./Budget";
+import Costs from "./Costs";
+import Feed from "./Feed";
+import { useFeedUnread } from "./useLifecycle";
 
 const TABS = [
   { key: "overview", label: "Genel bakış", icon: "overview" },
   { key: "process", label: "Süreç", icon: "list" },
   { key: "leads", label: "Kişiler", icon: "users" },
   { key: "budget", label: "Bütçe", icon: "wallet" },
+  { key: "costs", label: "Maliyet", icon: "calculator" },
+  { key: "feed", label: "Akış", icon: "message" },
   { key: "questions", label: "Sorular", icon: "help" },
   { key: "activity", label: "İletişim", icon: "activity" },
   { key: "portfolio", label: "Portföy", icon: "briefcase" },
@@ -34,6 +39,7 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
   const [stepId, setStepId] = useState(route.step || null);
   const [leadId, setLeadId] = useState(route.lead || null);
   const [toolPanel, setToolPanel] = useState(null); // { tool, step }
+  const feedUnread = useFeedUnread(id, { active: tab === "feed" });
   useEffect(() => { setStepId(route.step || null); setLeadId(route.lead || null); }, [route.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setTab = useCallback((key, extra = {}) => setRoute((r) => ({ id: r.id, nonce: r.nonce, tab: key, ...extra })), [setRoute]);
@@ -92,6 +98,7 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
     process: `${st.done}/${st.total - st.skipped}`, leads: data.leads.length || null, questions: ctx.stats.open_questions || null,
     portfolio: data.portfolio.length || null,
   };
+  counts.feed = feedUnread || null;
 
   return (
     <div className="view view--project" style={{ "--pc": item.color }}>
@@ -135,6 +142,8 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
           {tab === "process" && <Process ctx={ctx} selectedId={stepId} focusPhase={route.phase} initialFilter={route.processFilter} />}
           {tab === "leads" && <Leads ctx={ctx} selectedId={leadId} initialFilter={route.leadFilter} initialKind={route.kind} />}
           {tab === "budget" && <Budget ctx={ctx} />}
+          {tab === "costs" && <Costs ctx={ctx} />}
+          {tab === "feed" && <Feed ctx={ctx} />}
           {tab === "questions" && <Questions ctx={ctx} highlight={route.question} />}
           {tab === "activity" && <Activity ctx={ctx} />}
           {tab === "portfolio" && <ProjectPortfolio ctx={ctx} />}

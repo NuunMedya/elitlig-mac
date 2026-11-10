@@ -5,6 +5,7 @@ import { useCommand } from "../../api";
 import { dueLabel, dayKey } from "../../lib/projectUtils";
 import { includesTr, relativeTime } from "../../lib/helpers";
 import { label } from "./common";
+import { BRIEF_FIELD_OPTIONS, briefFieldLabel } from "../../lib/lifecycleUtils";
 
 export default function Questions({ ctx, embedded = false, step = null, highlight = null }) {
   const { questions, steps, leads, settings, meta, canEdit, actions } = ctx;
@@ -39,10 +40,10 @@ export default function Questions({ ctx, embedded = false, step = null, highligh
 }
 
 function QuestionForm({ ctx, categories, defaults, onClose, onSave }) {
-  const [f, setF] = useState({ question: "", category: categories[0] || "", step_id: defaults.step_id || "", lead_id: "", priority: "normal", due_date: "", answer: "" });
+  const [f, setF] = useState({ question: "", category: categories[0] || "", step_id: defaults.step_id || "", lead_id: "", priority: "normal", due_date: "", answer: "", brief_field: "" });
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   return (
-    <form className="card q-form" onSubmit={(e) => { e.preventDefault(); if (!f.question.trim()) return; onSave({ ...f, question: f.question.trim(), answer: f.answer.trim() || undefined, step_id: f.step_id ? Number(f.step_id) : null, lead_id: f.lead_id ? Number(f.lead_id) : null, due_date: f.due_date || null, category: f.category || null }); }}>
+    <form className="card q-form" onSubmit={(e) => { e.preventDefault(); if (!f.question.trim()) return; onSave({ ...f, question: f.question.trim(), answer: f.answer.trim() || undefined, step_id: f.step_id ? Number(f.step_id) : null, lead_id: f.lead_id ? Number(f.lead_id) : null, due_date: f.due_date || null, category: f.category || null, brief_field: f.brief_field || undefined }); }}>
       <textarea rows={2} value={f.question} onChange={set("question")} placeholder="Soru, ihtiyaç ya da açık konu…" autoFocus />
       <div className="form-grid form-grid--3">
         <Field label="Kategori"><select value={f.category} onChange={set("category")}><option value="">—</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</select></Field>
@@ -51,6 +52,7 @@ function QuestionForm({ ctx, categories, defaults, onClose, onSave }) {
         <Field label="Öncelik"><select value={f.priority} onChange={set("priority")}>{ctx.meta.priorities.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}</select></Field>
         <Field label="Son tarih"><input type="date" value={f.due_date} onChange={set("due_date")} /></Field>
         <Field label="Cevap (biliyorsanız)"><input value={f.answer} onChange={set("answer")} placeholder="İsteğe bağlı" /></Field>
+        <Field label="Künyeye bağla" hint="Cevap proje künyesine işlenir"><select value={f.brief_field} onChange={set("brief_field")}><option value="">Bağlı değil</option>{BRIEF_FIELD_OPTIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
       </div>
       <div className="row-gap"><span className="spacer" /><button type="button" className="btn btn--sm" onClick={onClose}>Vazgeç</button><button type="submit" className="btn btn--primary btn--sm" disabled={!f.question.trim()}>Ekle</button></div>
     </form>
@@ -82,6 +84,7 @@ export function QuestionItem({ q, ctx, compact = false, highlight = false }) {
       <div className="q-item__meta">
         <span className={`pill pill--xs ${q.status === "open" ? "pill--amber" : q.status === "answered" ? "pill--green" : ""}`}>{label(meta.question_statuses, q.status)}</span>
         {q.category && <span className="pill pill--xs">{q.category}</span>}
+        {q.brief_field && <button type="button" className="pill pill--xs pill--tool lc-qbrief" onClick={() => ctx.setTab("overview")} title="Cevap proje künyesine işlenir; künye doldurulunca bu soru da cevaplanır"><Icon name="file" size={10} /> Künye: {briefFieldLabel(q.brief_field)}</button>}
         {["high", "urgent"].includes(q.priority) && <span className="pill pill--xs pill--red">{label(meta.priorities, q.priority)}</span>}
         {!compact && step && <button type="button" className="link-btn small" onClick={() => ctx.openStep(step.id)}><Icon name="list" size={11} /> {step.title}</button>}
         {!compact && lead && <button type="button" className="link-btn small" onClick={() => ctx.openLead(lead.id)}><Icon name="user" size={11} /> {lead.name}</button>}

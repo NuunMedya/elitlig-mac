@@ -26,6 +26,9 @@
 const { EventEmitter } = require("node:events");
 
 const FORWARDED_EVENTS = ["chat:message", "chat:conversation", "chat:read", "chat:typing", "chat:deleted", "chat:updated", "chat:admin-inbox", "admin:requests", "call:incoming", "call:ended"];
+// Projeler → Akış: yeni / değişen gönderi ve yorum (sunucu: services/projectFeed.js).
+// Arayüze "chat:event" ile olduğu gibi iletilir; sohbet sayaçlarını etkilemez.
+FORWARDED_EVENTS.push("project:feed");
 const INBOX_PATH = "/api/admin/chat/conversations";
 const EMITTABLE = new Set(["chat:typing", "chat:read"]);
 const POLL_MS = 15000;
