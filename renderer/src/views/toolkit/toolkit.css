@@ -16,7 +16,7 @@ html[data-window="toolkit"] body { --tool: #0891b2; --tool-2: #4f46e5; --tool-so
 .tk-ib.is-on { color: var(--tool-text); background: var(--tool-soft); }
 .tk-ib.is-main { background: linear-gradient(135deg, var(--tool), var(--tool-2)); color: #fff; border-radius: 50%; }
 
-.tk-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 2px 12px 8px; flex: none; }
+.tk-quick { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; padding: 2px 12px 8px; flex: none; }
 .tk-qa-wrap { position: relative; display: flex; }
 .tk-qa { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 4px 6px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); font-size: 11.5px; font-weight: 600; min-width: 0; transition: background 0.12s, border-color 0.12s; }
 .tk-qa span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
@@ -37,7 +37,7 @@ html[data-window="toolkit"] body { --tool: #0891b2; --tool-2: #4f46e5; --tool-so
 .tk-music__info small { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .tk-music .tk-ib.is-main { background: linear-gradient(135deg, #db2777, #7c3aed); }
 
-.tk-tabs { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; padding: 4px 8px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); flex: none; background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
+.tk-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 50px; overflow-x: auto; scrollbar-width: none; gap: 2px; padding: 4px 8px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); flex: none; background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
 .tk-tabs button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 0 4px; border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 10.5px; font-weight: 600; transition: background 0.12s, color 0.12s; }
 .tk-tabs button:hover { color: var(--text); background: var(--surface-3); }
 .tk-tabs button.is-active { color: var(--tool-text); background: var(--tool-soft); }
@@ -190,3 +190,106 @@ input[type="checkbox"].switch:checked::after { transform: translateX(15px); }
 input[type="checkbox"].switch:focus-visible { box-shadow: var(--focus-ring); outline: none; }
 .desk-preview summary { cursor: pointer; font-weight: 600; color: var(--tool-text); margin-bottom: 4px; }
 .desk-preview[open] summary { margin-bottom: 10px; }
+
+.tk-tabs::-webkit-scrollbar { display: none; }
+
+/* ------------------------- ek araçlar (ExtraTools.jsx) ------------------------- */
+.tk-form-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tk-form-row > input:not([type="checkbox"]), .tk-form-row > select { flex: 1; min-width: 90px; }
+.tk-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.tk-check input { margin: 0; accent-color: var(--tool); }
+.tk-lbl { flex: 1; display: flex; align-items: center; gap: 6px; font-weight: 700; color: var(--muted); }
+.tk-lbl input { flex: 1; min-width: 0; font: 600 14px var(--mono); }
+.tk-ok { font-size: 12px; color: var(--green); background: var(--green-soft, color-mix(in srgb, var(--green) 12%, transparent)); border-radius: 8px; padding: 6px 9px; }
+.tk-text textarea.is-mono { font: 12.5px/1.5 var(--mono); }
+.tk-result pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all; font: 12.5px/1.5 var(--mono); padding: 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); -webkit-user-select: text; user-select: text; }
+.tk-result .tk-text__bar { margin-top: 6px; }
+.tk-uuids { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.tk-uuids button { width: 100%; border: 0; background: var(--surface-2); border-radius: 7px; padding: 5px 9px; font: 12.5px var(--mono); color: var(--text); text-align: left; }
+.tk-uuids button:hover { background: var(--tool-soft); }
+.tk-big { font: 750 18px var(--display); padding: 12px; border-radius: 12px; background: var(--tool-soft); color: var(--tool-text); text-align: center; }
+.tk-countdowns { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.tk-countdowns li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.tk-countdowns li.is-done { opacity: 0.7; }
+.tk-countdowns__title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tk-countdowns__title small { color: var(--muted); font-size: 11px; }
+.tk-countdowns__left { font: 750 16px var(--mono); font-variant-numeric: tabular-nums; color: var(--tool-text); }
+.tk-chars { display: flex; flex-direction: column; gap: 8px; }
+.tk-chars__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 4px; }
+.tk-chars__grid.is-recent { grid-template-columns: repeat(auto-fill, minmax(32px, 1fr)); }
+.tk-char { aspect-ratio: 1; border: 1px solid var(--border); background: var(--surface-2); border-radius: 9px; font-size: 19px; display: grid; place-items: center; color: var(--text); padding: 0; transition: background 0.1s, transform 0.08s; }
+.tk-char:hover { background: var(--tool-soft); border-color: color-mix(in srgb, var(--tool) 45%, transparent); }
+.tk-char:active { transform: scale(0.94); }
+
+/* ------------------------- tanıtım kartı ve Bugün şeridi ------------------------- */
+.tk-intro { --tool: #0891b2; --tool-2: #4f46e5; display: flex; gap: 14px; padding: 16px 18px; margin: 0 0 16px; border-radius: var(--r-lg); background: linear-gradient(135deg, color-mix(in srgb, #0891b2 14%, var(--surface)), color-mix(in srgb, #4f46e5 12%, var(--surface))); border: 1px solid color-mix(in srgb, #4f46e5 30%, transparent); }
+.tk-intro__icon { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, #0891b2, #4f46e5); flex: none; }
+.tk-intro__body { flex: 1; min-width: 0; }
+.tk-intro__body > strong { font-size: var(--fs-lg); }
+.tk-intro__steps { margin: 8px 0 10px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; font-size: var(--fs-sm); color: var(--text-2); }
+.tk-intro__steps li { display: flex; gap: 7px; align-items: flex-start; }
+.tk-intro__steps li > .ic { color: #4f46e5; margin-top: 2px; flex: none; }
+.tk-intro__acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.tk-intro.is-compact { margin-bottom: 12px; padding: 12px 14px; }
+.tk-strip { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; padding: 8px 10px; border-radius: var(--r); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-sm, none); flex-wrap: wrap; }
+.tk-strip__head { display: inline-flex; align-items: center; gap: 6px; border: 0; background: linear-gradient(135deg, #0891b2, #4f46e5); color: #fff; border-radius: 9px; padding: 6px 10px; font-weight: 700; font-size: var(--fs-sm); }
+.tk-strip__items { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
+.tk-strip__item { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 5px 9px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); }
+.tk-strip__item:hover { border-color: color-mix(in srgb, #4f46e5 45%, transparent); color: var(--text); }
+.tk-strip__item .ic { color: #0891b2; }
+.tk-strip__item.is-accent .ic { color: #4f46e5; }
+
+/* ------------------------- Araç Takımı tam sayfa ------------------------- */
+[data-tool="toolkit"] { --tool: #0891b2; --tool-2: #4f46e5; }
+.tkp-quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.tkp-qa { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-weight: 600; font-size: var(--fs-sm); text-align: left; }
+.tkp-qa span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tkp-qa .kbd { flex: none; font-size: 10px; }
+.tkp-qa .ic { color: var(--tool); flex: none; }
+.tkp-qa:hover { border-color: color-mix(in srgb, var(--tool) 45%, transparent); background: var(--tool-soft); }
+.tkp-qa.is-on { background: linear-gradient(135deg, color-mix(in srgb, #f59e0b 20%, var(--surface)), var(--surface)); border-color: color-mix(in srgb, #f59e0b 50%, transparent); }
+.tkp { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 16px; align-items: start; }
+.tkp-nav { display: flex; flex-direction: column; gap: 1px; position: sticky; top: 0; }
+.tkp-nav__group { font-size: 10.5px; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding: 12px 10px 4px; }
+.tkp-nav__item { display: flex; align-items: center; gap: 9px; border: 0; background: none; border-radius: 9px; padding: 7px 10px; color: var(--text-2); font-size: var(--fs-md); font-weight: 550; text-align: left; }
+.tkp-nav__item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tkp-nav__item .ic { color: var(--muted); flex: none; }
+.tkp-nav__item:hover { background: var(--surface-3); color: var(--text); }
+.tkp-nav__item.is-active { background: var(--tool-soft); color: var(--tool-text); font-weight: 700; }
+.tkp-nav__item.is-active .ic { color: var(--tool); }
+.tkp-nav__item em { font-style: normal; font-size: 11px; font-weight: 700; background: var(--tool); color: #fff; border-radius: 9px; padding: 0 6px; }
+.tkp-body { padding: 18px 20px 20px; min-width: 0; }
+.tkp-body__head { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
+.tkp-body__head h2 { font-size: var(--fs-xl); margin: 0; }
+.tkp-body__head p { margin: 2px 0 0; font-size: var(--fs-sm); }
+.tkp-body__icon { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--tool), var(--tool-2)); flex: none; }
+.tkp-body__tool { max-width: 760px; }
+.tkp-body__tool .tk-layouts__grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+@media (max-width: 1100px) { .tkp { grid-template-columns: 1fr; } .tkp-nav { position: static; flex-direction: row; flex-wrap: wrap; } .tkp-nav__group { width: 100%; } }
+
+/* widget galerisi */
+.wg-gallery { display: flex; flex-direction: column; gap: 10px; }
+.wg-gallery__bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wg-gallery__bar .kbd { margin-left: 4px; }
+.wg-gallery__theme { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--muted); }
+.wg-gallery__theme select { width: auto; }
+.wg-gallery__h { font-size: 11px; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 8px 0 0; }
+.wg-catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.wg-card { display: flex; align-items: flex-start; gap: 10px; padding: 11px 12px; border-radius: 13px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); text-align: left; transition: border-color 0.12s, transform 0.08s, background 0.12s; }
+.wg-card:hover { border-color: color-mix(in srgb, var(--tool) 50%, transparent); background: var(--tool-soft); }
+.wg-card:active { transform: scale(0.99); }
+.wg-card__icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: linear-gradient(135deg, var(--tool), var(--tool-2)); color: #fff; flex: none; }
+.wg-card__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wg-card__text small { color: var(--muted); font-size: var(--fs-xs); line-height: 1.35; }
+.wg-card__tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.wg-card__tags em { font-style: normal; font-size: 10px; font-weight: 700; color: var(--muted); background: var(--surface-3); border-radius: 5px; padding: 0 5px; }
+.wg-card__tags em.is-on { color: #fff; background: var(--tool); }
+.wg-card__add { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--border-strong); color: var(--tool-text); flex: none; }
+.wgg-list { display: flex; flex-direction: column; }
+.wgg-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.wgg-row:last-child { border-bottom: 0; }
+.wgg-row__name { flex: 1; min-width: 140px; display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
+.wgg-row__name .ic { color: var(--tool); }
+.wgg-row select { width: auto; }
+.wgg-row__op { display: inline-flex; align-items: center; gap: 6px; font: 600 12px var(--mono); color: var(--muted); }
+.wgg-row__op input { width: 90px; accent-color: var(--tool); }

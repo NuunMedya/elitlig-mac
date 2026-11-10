@@ -58,6 +58,7 @@ export default function LayoutTool({ info, onPermission, inPanel = true }) {
   }
   const apply = async (key) => {
     const res = await deskkit()?.layout(key);
+    if (res?.clamped) setResult(res);
     if (res && !res.ok) {
       setResult(res);
       if (res.needsPermission) onPermission?.(await deskkit()?.permission());
@@ -67,6 +68,7 @@ export default function LayoutTool({ info, onPermission, inPanel = true }) {
   return (
     <div className="tk-layouts">
       <PermissionNote permission={info.permission} onChange={onPermission} compact={inPanel} />
+      {info.scope === "own" && <p className="tk-note"><Icon name="info" size={13} /> Bu işletim sisteminde yalnız Elitlig Araçlar pencereleri yerleştirilir (başka uygulamalar macOS ve Windows'ta).</p>}
       {disabled && <p className="tk-note"><Icon name="info" size={13} /> Pencere kısayolları kapalı (Masaüstü araçları). Izgara yine çalışır.</p>}
       {groups.map((g) => (
         <section key={g.name} className="tk-layouts__group" aria-label={g.name}>
@@ -86,6 +88,7 @@ export default function LayoutTool({ info, onPermission, inPanel = true }) {
         </section>
       ))}
       {result && !result.ok && !result.needsPermission && <p className="tk-err" role="alert">{result.error}</p>}
+      {result?.ok && result.clamped && <p className="tk-note" role="status"><Icon name="info" size={13} /> {result.note}</p>}
       {inPanel && <p className="tk-note"><Icon name="info" size={13} /> Panel açılmadan önce öndeki pencere taşınır. Kısayollar her yerde çalışır; sürükleyerek kenara yapıştırma yoktur.</p>}
     </div>
   );

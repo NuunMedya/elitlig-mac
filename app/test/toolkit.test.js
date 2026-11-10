@@ -46,7 +46,8 @@ function harness({ taken = [], trusted = false } = {}) {
 
 test("varsayılan kısayollar kaydedilir; başkasının tuttuğu kısayol 'kullanımda' görünür", async () => {
   const h = harness({ taken: ["Control+Alt+C"] });
-  assert.ok(h.shortcuts.has("Control+Alt+Space"), "araç takımı");
+  assert.ok(h.shortcuts.has("Control+Alt+B"), "araç takımı (Mac: ⌃⌥B; ⌃⌥Boşluk macOS giriş kaynağına ayrılı)");
+  assert.ok(!h.shortcuts.has("Control+Alt+Space"));
   assert.ok(h.shortcuts.has("Control+Alt+Left"));
   assert.ok(!h.shortcuts.has("Control+Alt+T"), "⌃⌥T başka araca ayrıldı");
   const v = await h.invoke("deskkit:settings");
@@ -156,4 +157,51 @@ test("menü: Araç Takımı menüsü düzenleri, müziği ve ayarları içerir",
   assert.equal(left.registerAccelerator, false, "genel kısayol zaten kayıtlı; menü yalnız gösterir");
   assert.ok(m.submenu.some((i) => i.label === "Masaüstü Araçları Ayarları…" && i.accelerator === "CmdOrCtrl+,"));
   assert.ok(m.submenu.some((i) => i.type === "checkbox" && i.label === "Ekranı uyanık tut"));
+});
+
+test("Mac: 2.26.0'dan kalan ⌃⌥Boşluk ayarı ⌃⌥B'ye taşınır; bilinçli seçilen korunur (v2)", async () => {
+  const L = require("../windowLayouts");
+  assert.equal(L.normalizeSettings({ toolkit: { shortcut: "Control+Alt+Space" } }, "darwin").toolkit.shortcut, "Control+Alt+B");
+  assert.equal(L.normalizeSettings({ toolkit: { shortcut: "Control+Alt+Space", v: 2 } }, "darwin").toolkit.shortcut, "Control+Alt+Space", "kullanıcı yeniden seçtiyse");
+  assert.equal(L.normalizeSettings({ toolkit: { shortcut: "Control+Alt+Space" } }, "win32").toolkit.shortcut, "Control+Alt+Space", "Windows'ta sorun yok");
+  assert.equal(L.normalizeSettings(null, "win32").toolkit.shortcut, "Control+Alt+Space");
+  assert.equal(L.normalizeSettings(null, "darwin").widgets.shortcut, "Control+Alt+W");
+  assert.equal(L.normalizeSettings({ widgets: { shortcut: "" } }, "darwin").widgets.shortcut, "", "kapatılabilir");
+  // ⌃⌥B, ⌃⌥W varsayılan pencere kısayollarıyla çakışmaz.
+  assert.deepEqual(L.findConflicts(L.normalizeSettings(null, "darwin")), {});
+  assert.deepEqual(L.findConflicts(L.normalizeSettings(null, "win32")), {});
+  const c = L.findConflicts(L.normalizeSettings({ widgets: { shortcut: "Control+Alt+Left" } }, "darwin"));
+  assert.deepEqual(Object.values(c)[0].sort(), ["leftHalf", "widgets"]);
+});
+
+test("menü çubuğu: Araç Takımı ve widget'lar en üstte; widget kısayolu bağlanınca kaydedilir", async () => {
+  const h = harness();
+  const top = h.dk.trayTopItems();
+  assert.equal(top[0].label, "Araç Takımı paneli");
+  assert.equal(top[0].accelerator, "Control+Alt+B");
+  assert.equal(top[0].registerAccelerator, false);
+  assert.ok(top.some((i) => i.label === "Araç Takımı (uygulamada)"));
+  top.find((i) => i.label === "Araç Takımı (uygulamada)").click();
+  assert.equal(h.shown.at(-1), "toolkit");
+  assert.ok(!h.dk.trayItems().some((i) => String(i.label).startsWith("Araç takımı")), "alttaki eski öğe kaldırıldı (çift kayıt yok)");
+  // Widget modülü bağlanmadan kısayol alınmaz; bağlanınca alınır ve menüde göster/gizle çıkar.
+  assert.ok(!h.shortcuts.has("Control+Alt+W"));
+  let toggles = 0;
+  const added = [];
+  h.dk.attachWidgets({ toggleAll: () => { toggles += 1; }, list: () => [{ id: "a" }], visible: () => true, catalog: () => [{ type: "clock", label: "Saat ve tarih" }], add: (t) => added.push(t) });
+  assert.ok(h.shortcuts.has("Control+Alt+W"));
+  h.shortcuts.get("Control+Alt+W")();
+  assert.equal(toggles, 1);
+  const wmenu = h.dk.trayTopItems().find((i) => i.label === "Masaüstü widget'ları").submenu;
+  assert.equal(wmenu[0].label, "Widget'ları gizle");
+  wmenu.find((i) => i.label === "Widget ekle").submenu[0].click();
+  assert.deepEqual(added, ["clock"]);
+  // Ayarlardan kısayol değişince yeniden kaydedilir.
+  await h.invoke("deskkit:settings:set", { widgets: { shortcut: "Control+Alt+Shift+W" } });
+  assert.ok(h.shortcuts.has("Control+Alt+Shift+W") && !h.shortcuts.has("Control+Alt+W"));
+  // Müzik durumu dinleyicilere (widget'lar) aktarılır.
+  const seen = [];
+  h.dk.onMusicState((s) => seen.push(s.title));
+  h.listeners.get("music:publish")({}, { status: "playing", title: "Marş", trackCount: 1 });
+  assert.deepEqual(seen, ["Marş"]);
 });

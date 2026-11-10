@@ -29,12 +29,15 @@ const Studio = lazy(() => import("./views/studio/Studio"));
 const Equipment = lazy(() => import("./views/equipment/Equipment"));
 const MusicView = lazy(() => import("./music/MusicView"));
 const DeskSettings = lazy(() => import("./views/toolkit/DeskSettings"));
+// Araç Takımı (tam sayfa): panelin araçları + masaüstü widget galerisi.
+const ToolkitPage = lazy(() => import("./views/toolkit/ToolkitPage"));
 // Dosya Araçları ve Ekran Görüntüleri / Pano rafı (yerel; sunucu gerekmez).
 const FileTools = lazy(() => import("./views/files/FileTools"));
 const Shelf = lazy(() => import("./views/shelf/Shelf"));
 
 export const ROUTES = [
   { key: "today", label: "Bugün", icon: "sun", view: Today, shortcut: "⌘1", group: "Günlük" },
+  { key: "toolkit", label: "Araç Takımı", icon: "toolbox", view: ToolkitPage, shortcut: "⇧⌘A", group: "Günlük" },
   { key: "messages", label: "Mesajlar", icon: "message", view: Messages, shortcut: "⇧⌘M", group: "Günlük" },
   { key: "requests", label: "Talepler", icon: "inbox", view: Requests, shortcut: "⇧⌘T", group: "Günlük", needs: "requests" },
   { key: "todos", label: "Yapılacaklar", icon: "checkSquare", view: Todos, shortcut: "⌘2", group: "Günlük" },
@@ -293,7 +296,9 @@ function ShortcutsHelp({ onClose }) {
     ["Mesajlar: ⌥⌘↓ / ⌥⌘↑", "Sonraki / önceki sohbet"],
     ["Mesajlar: Enter / ⇧Enter", "Gönder / yeni satır; ↑ son mesajı düzenler"],
     ["⌃⌥N", "Her yerden hızlı kayıt (uygulama arka plandayken de)"],
-    ["⌃⌥Boşluk", "Araç takımı paneli: pencere düzeni, renk, hesap, metin, QR…"],
+    ["⇧⌘A", "Araç Takımı (tam sayfa): tüm araçlar ve masaüstü widget'ları"],
+    [isMac() ? "⌃⌥B" : "⌃⌥Boşluk", "Araç takımı paneli (her yerden): pencere düzeni, renk, hesap, metin, QR…"],
+    ["⌃⌥W", "Masaüstü widget'larını göster / gizle"],
     ["⌃⌥← → ↑ ↓", "Öndeki pencereyi yarıya yerleştir (⌃⌥U I J K çeyrek, ⌃⌥↩ tam, ⌃⌥⌫ geri al)"],
     ["⇧⌘J", "Müzik (medya tuşları da çalışır)"],
     ["⌘,", "Masaüstü araçları: kısayollar ve ayarlar"],

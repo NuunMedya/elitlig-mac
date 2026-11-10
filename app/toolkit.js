@@ -95,6 +95,8 @@ function registerDeskkit(deps) {
   let panel = null;
   let pinned = false;
   let target = null;
+  let shownAt = 0;
+  let widgets = null; // app/widgets (attachWidgets ile bağlanır)
   const isPanel = (w) => Boolean(panel && w && !panel.isDestroyed() && w.id === panel.id);
 
   const wm = createWindowManager({
@@ -127,7 +129,9 @@ function registerDeskkit(deps) {
     for (const k of Object.keys(failed)) delete failed[k];
     if (suspended) return;
     tryRegister(settings.toolkit.shortcut, "toolkit", () => togglePanel());
-    if (settings.layouts.enabled && wm.supported) {
+    if (widgets) tryRegister(settings.widgets.shortcut, "widgets", () => widgets.toggleAll());
+    // Linux'ta (yalnız kendi pencerelerimiz) ⌃⌥ ok tuşları masaüstü değiştirmeye ayrılı: genel kısayol alınmaz.
+    if (settings.layouts.enabled && wm.supported && wm.scope === "all") {
       for (const [key, acc] of Object.entries(settings.layouts.shortcuts)) {
         tryRegister(acc, key, () => runLayout(key, { source: "shortcut" }));
       }
@@ -172,7 +176,19 @@ function registerDeskkit(deps) {
       webPreferences: webPreferences(),
     });
     guardNavigation(win);
-    win.on("blur", () => { if (settings.toolkit.hideOnBlur && !pinned && !win.webContents.isDevToolsOpened()) win.hide(); });
+    // macOS: tüm masaüstlerinde (Spaces) ve tam ekran uygulamaların üstünde açılır; panel her
+    // zaman kullanıcının o an baktığı masaüstünde görünür (yoksa başka Space'e atlardı).
+    if (isMac) {
+      try { win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true }); } catch { /* eski sürüm */ }
+      try { win.setAlwaysOnTop(true, "floating"); } catch { /* yoksay */ }
+    }
+    // Odak kaybında gizle — ama açıldıktan hemen sonraki blur'ü yok say: menü çubuğu menüsünden
+    // açılınca menünün kapanması ya da uygulama etkinleşirken gelen ara blur paneli anında kapatıyordu.
+    win.on("blur", () => {
+      if (!settings.toolkit.hideOnBlur || pinned || win.webContents.isDevToolsOpened()) return;
+      if (Date.now() - shownAt < 600) { setTimeout(() => { if (!win.isDestroyed() && win.isVisible() && !win.isFocused() && !pinned) win.hide(); }, 900); return; }
+      win.hide();
+    });
     loadRenderer(win, "toolkit");
     panel = win;
     return win;
@@ -188,6 +204,7 @@ function registerDeskkit(deps) {
     const y = Math.round(isMac ? wa.y + 8 : wa.y + wa.height - PANEL_H - 12);
     panel.setPosition(x, y);
     const reveal = () => {
+      shownAt = Date.now();
       panel.show();
       panel.focus();
       panel.webContents.send("deskkit:panel:open", { tab, target: target ? target.kind : null });
@@ -271,10 +288,12 @@ function registerDeskkit(deps) {
     main.webContents.send("music:command", { name: String(name), args: args && typeof args === "object" ? args : {} });
     return { ok: true };
   }
+  const musicListeners = new Set();
   function onMusicPublish(state) {
     const prev = musicState;
     musicState = sanitizeMusicState(state);
     if (panel && !panel.isDestroyed()) panel.webContents.send("music:state", musicState);
+    for (const fn of musicListeners) { try { fn(musicState); } catch { /* yoksay */ } }
     if (prev.status !== musicState.status || prev.title !== musicState.title || prev.trackCount !== musicState.trackCount) {
       refreshTray();
       syncMediaKeys();
@@ -292,6 +311,7 @@ function registerDeskkit(deps) {
     supported: wm.supported,
     platform,
     layouts: L.LAYOUTS.map(({ key, label, group, rect }) => ({ key, label, group, rect })),
+    scope: wm.scope,
     mediaKeys: mediaOn,
   });
   const changed = () => { broadcast("deskkit:settings", view()); rebuildMenu(); refreshTray(); };
@@ -305,6 +325,7 @@ function registerDeskkit(deps) {
         layouts: { ...settings.layouts, ...(p.layouts || {}), shortcuts: { ...settings.layouts.shortcuts, ...(p.layouts?.shortcuts || {}) } },
         toolkit: { ...settings.toolkit, ...(p.toolkit || {}) },
         music: { ...settings.music, ...(p.music || {}) },
+        widgets: { ...settings.widgets, ...(p.widgets || {}) },
       }, platform);
     }
     save();
@@ -370,11 +391,37 @@ function registerDeskkit(deps) {
   };
   const awakeItem = () => ({ label: "Ekranı uyanık tut", type: "checkbox", checked: awakeState().on, click: (item) => setAwake({ on: item.checked }) });
 
-  /** Menü çubuğu simgesinin menüsüne eklenecek öğeler. */
+  const panelAccel = () => (settings.toolkit.shortcut ? { accelerator: settings.toolkit.shortcut, registerAccelerator: false } : {});
+  const widgetsAccel = () => (settings.widgets.shortcut ? { accelerator: settings.widgets.shortcut, registerAccelerator: false } : {});
+  /** Widget alt menüsü: göster/gizle, galeriden ekle, açık widget'lar. */
+  const widgetItems = () => {
+    if (!widgets) return [{ label: "Widget'lar yüklenmedi", enabled: false }];
+    const list = widgets.list();
+    return [
+      { label: list.length ? (widgets.visible() ? "Widget'ları gizle" : "Widget'ları göster") : "Henüz widget yok", enabled: list.length > 0, ...widgetsAccel(), click: () => widgets.toggleAll() },
+      { type: "separator" },
+      { label: "Widget ekle", submenu: widgets.catalog().map((c) => ({ label: c.label, click: () => widgets.add(c.type) })) },
+      { label: "Widget galerisi…", click: () => showMain("toolkit:widgets") },
+    ];
+  };
+
+  /**
+   * Menü çubuğu menüsünün EN ÜSTÜNE eklenecek öğeler (Hızlı kayıt'ın hemen altı): araç takımı
+   * önceki sürümde menünün dibinde kalıyordu, kullanıcı bulamıyordu.
+   */
+  function trayTopItems() {
+    return [
+      { label: "Araç Takımı paneli", ...panelAccel(), click: () => showPanel() },
+      { label: "Araç Takımı (uygulamada)", click: () => showMain("toolkit") },
+      { label: "Masaüstü widget'ları", submenu: widgetItems() },
+      { type: "separator" },
+    ];
+  }
+
+  /** Menü çubuğu simgesinin menüsüne eklenecek öğeler (pencere düzeni, müzik, uyanık tut). */
   function trayItems() {
     const s = musicState;
     return [
-      { label: "Araç takımı…", ...(settings.toolkit.shortcut ? { accelerator: settings.toolkit.shortcut, registerAccelerator: false } : {}), click: () => showPanel() },
       { label: "Pencere düzeni", enabled: wm.supported, submenu: layoutItems(true) },
       { label: musicActive(s) && s.title ? `Müzik · ${s.title}`.slice(0, 48) : "Müzik", submenu: musicItems() },
       awakeItem(),
@@ -387,7 +434,9 @@ function registerDeskkit(deps) {
     return {
       label: "Araç Takımı",
       submenu: [
-        { label: "Araç Takımı Paneli", ...(settings.toolkit.shortcut ? { accelerator: settings.toolkit.shortcut, registerAccelerator: false } : {}), click: () => showPanel() },
+        { label: "Araç Takımı Paneli", ...panelAccel(), click: () => showPanel() },
+        { label: "Araç Takımı (tam sayfa)", click: () => showMain("toolkit") },
+        { label: "Masaüstü Widget'ları", submenu: widgetItems() },
         { type: "separator" },
         { label: "Pencere Düzeni", enabled: wm.supported, submenu: layoutItems(true) },
         { label: "Müzik", submenu: musicItems() },
@@ -400,7 +449,19 @@ function registerDeskkit(deps) {
     };
   }
 
-  return { trayItems, menuTemplate, showPanel, hidePanel, runLayout, settings: () => settings, musicState: () => musicState };
+  /** app/widgets bağlanınca: kısayolu kaydet, menüleri tazele. */
+  function attachWidgets(w) {
+    widgets = w;
+    applyShortcuts();
+    rebuildMenu();
+    refreshTray();
+  }
+
+  return {
+    trayItems, trayTopItems, menuTemplate, showPanel, hidePanel, togglePanel, runLayout, attachWidgets, getRates, awakeState, setAwake,
+    settings: () => settings, musicState: () => musicState,
+    onMusicState: (fn) => { musicListeners.add(fn); return () => musicListeners.delete(fn); },
+  };
 }
 
 module.exports = { registerDeskkit, parseRates, sanitizeMusicState, RATE_SOURCES };
