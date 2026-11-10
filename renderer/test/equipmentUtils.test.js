@@ -46,3 +46,26 @@ describe("ekipman yardımcıları", () => {
     expect(todaySummary(null)).toBeNull();
   });
 });
+
+describe("ekipman bağları", async () => {
+  const { depreciationRows, matchReservationDefaults, personTone } = await import("../src/lib/equipmentUtils");
+  it("Rehber kişisi contact olarak gönderilir (kişi seçici)", () => {
+    expect(holderPayload({ type: "contact", id: 4 }, "", "0312")).toEqual({ holder_type: "contact", holder_contact_id: 4, holder_phone: "0312" });
+    expect(holderPayload({ type: "user", id: 15 })).toEqual({ holder_type: "user", holder_user_id: 15, holder_phone: undefined });
+  });
+  it("maç seçilince rezervasyon adı ve saati maçtan önerilir", () => {
+    const d = matchReservationDefaults({ date: "2026-11-19", time: "21:00", label: "Kartal FK – Yıldız Spor" });
+    expect(d.title).toBe("Kartal FK – Yıldız Spor maçı");
+    expect(d.end - d.start).toBe(6 * 3600000);
+    expect(matchReservationDefaults({ date: "2026-11-19", time: "21:00", label: "X" }, "Final yayını").title).toBe("Final yayını");
+    expect(matchReservationDefaults({})).toBeNull();
+  });
+  it("amortisman raporu satırları ve avatar rengi", () => {
+    const rows = depreciationRows({ year: 2026, rows: [{ asset_tag: "EQ-0001", name: "Kamera", purchase_value: 185000, year_depreciation: 37000, accumulated: 43000, book_value: 142000, expensed: true }], totals: { count: 1, purchase_value: 185000, year_depreciation: 37000, accumulated: 43000, book_value: 142000 } });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]["2026 amortismanı"]).toBe(37000);
+    expect(rows[0]["Gider işlendi"]).toBe("Evet");
+    expect(rows[1].Etiket).toBe("Toplam");
+    expect(personTone("Ayşe")).toBe(personTone("Ayşe"));
+  });
+});

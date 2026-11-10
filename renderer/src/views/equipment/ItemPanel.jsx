@@ -4,6 +4,7 @@ import { Icon, MenuButton, OfflineNote, Segmented, Spinner, useConfirm, useResul
 import { del, post, useResource } from "../../api";
 import { CONDITIONS, EVENT_ICONS, EVENT_LABELS, code39Svg, daysLabel, fmtDateTime, fmtDay, money, num, qtyText } from "../../lib/equipmentUtils";
 import { BASE, CondBadge, Flags, StatusBadge, Thumb, printReceipt, useEq } from "./common";
+import { ExpenseBadge } from "./links";
 
 const Row = ({ label, children, wide }) => (children == null || children === "" || children === "—" ? null : <div className={wide ? "is-wide" : undefined}><dt>{label}</dt><dd>{children}</dd></div>);
 
@@ -102,7 +103,14 @@ export default function ItemPanel({ id, onClose }) {
           <Row label="Miktar">{item.tracking === "bulk" ? `${qtyText(item)} · zimmette ${num(item.assigned_quantity)}${item.min_quantity != null ? ` · min ${num(item.min_quantity)}` : ""}` : "Tekil"}</Row>
           <Row label="Alış">{item.purchase_date ? fmtDay(item.purchase_date) : "—"}</Row>
           <Row label="Fiyat">{item.purchase_price != null ? money(item.purchase_price, item.currency) : "—"}</Row>
-          <Row label="Tedarikçi">{item.supplier || "—"}</Row>
+          <Row label="Tedarikçi">{item.supplier || item.supplier_info?.name ? (
+            <span>{item.supplier || item.supplier_info?.name}
+              {item.supplier_info?.phone || item.supplier_info?.email ? <small className="muted" style={{ display: "block" }}>{[item.supplier_info.person, item.supplier_info.phone, item.supplier_info.email, item.supplier_info.source].filter(Boolean).join(" · ")} · garanti / servis için</small> : null}
+              {item.supplier_info?.missing && <small className="muted" style={{ display: "block" }}>Bağlı Rehber / tedarik kaydı silinmiş.</small>}
+            </span>
+          ) : "—"}</Row>
+          <Row label="Sorumlu">{item.responsible ? `${item.responsible.name}${item.responsible.phone ? ` · ${item.responsible.phone}` : ""}` : "—"}</Row>
+          <Row label="Muhasebe">{item.purchase_price != null ? <ExpenseBadge expense={item.expense} can={can.manage} onPost={() => eq.expense("purchase", item)} /> : "—"}</Row>
           <Row label="Fatura no">{item.invoice_no || "—"}</Row>
           <Row label="Garanti">{item.warranty_until ? `${fmtDay(item.warranty_until)} (${daysLabel(item.warranty.days_left)})` : "—"}</Row>
           <Row label="Sigorta">{item.insurance_until || item.insurance_policy ? `${[item.insurance_company, item.insurance_policy].filter(Boolean).join(" · ")}${item.insurance_until ? ` · ${fmtDay(item.insurance_until)}` : ""}` : "—"}</Row>
@@ -144,6 +152,7 @@ export default function ItemPanel({ id, onClose }) {
       {tab === "maint" && (d.maintenance.length ? d.maintenance.map((m) => (
         <div key={m.id} className="eq-rec"><div><strong>{m.title}</strong><small>{m.kind_label} · {fmtDay(m.performed_at || m.created_at)}{m.vendor ? ` · ${m.vendor}` : ""}</small>{m.description && <small>{m.description}</small>}</div>
           <div className="eq-rec__side"><span className={`pill pill--xs ${m.status === "done" ? "pill--green" : m.status === "cancelled" ? "" : "pill--amber"}`}>{m.status_label}</span>{m.cost != null && <b>{money(m.cost)}</b>}
+            {m.cost > 0 && <ExpenseBadge expense={m.expense} can={can.manage} onPost={() => eq.expense("maintenance", item, m)} />}
             {can.assign && ["open", "in_progress"].includes(m.status) && <button type="button" className="btn btn--sm" onClick={() => eq.maintain(item, m, true)}>Tamamla</button>}</div></div>
       )) : <p className="muted">Bakım kaydı yok.</p>)}
 

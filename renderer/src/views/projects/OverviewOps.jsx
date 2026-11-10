@@ -5,6 +5,7 @@ import { Empty, Icon } from "../../components/ui";
 import { dayKey, dueLabel, formatWhen, groupStepsByPhase, isStepOverdue, leadDueState, outcomeOf, stageOfLead } from "../../lib/projectUtils";
 import { relativeTime } from "../../lib/helpers";
 import { ACTIVITY_ICONS, Avatar, Progress, StagePill, label, money } from "./common";
+import { AllocatedCard } from "../equipment/links";
 
 const STATUS_COLORS = { todo: "#a7a3ba", doing: "#2563eb", waiting: "#d97706", blocked: "#e11d48", done: "#059669", skipped: "#cbd5e1" };
 
@@ -118,6 +119,7 @@ export default function OverviewOps({ ctx }) {
             </ul>
           ) : <p className="muted small">Henüz hareket yok.</p>}
         </section>
+        <AllocatedCard kind="project" id={project?.id} title="Projeye ayrılmış ekipman" />
       </div>
     </div>
   );

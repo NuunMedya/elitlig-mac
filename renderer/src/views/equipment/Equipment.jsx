@@ -6,6 +6,9 @@
 // bakım kaydı ve arıza bildirimi kuyruğa alınır (app/api.js). Zimmet / iade ve
 // rezervasyon stok ve çakışma denetimi gerektirdiği için bağlantı ister.
 // Bildirimler: iade tarihi gelen zimmetim ve bakım zamanı (app/equipmentFeed.js).
+// Bağlar (links.jsx): gruplu kişi seçici (yönetim ekibi / personel / Rehber),
+// fikstürden maç seçici, sistem sahaları / il depoları, tedarikçi ve sorumlu,
+// gider işleme (Ön Muhasebe / hesap), amortisman raporu, Zimmetimdekiler.
 //
 // Kısayollar: ⌘N yeni ekipman, ⌘F ara, ⌘E dışa aktar, ⌘P etiket / tutanak.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -17,20 +20,24 @@ import Inventory from "./Inventory";
 import ItemPanel from "./ItemPanel";
 import { Dashboard, History, Holders, Maintenance, Reservations, Settings } from "./sections";
 import { AssignDialog, FaultDialog, ImportDialog, ItemForm, LabelDialog, MaintenanceDialog, ReserveDialog, ReturnDialog } from "./dialogs";
+import { DepreciationReport, ExpenseDialog, MineSection } from "./links";
+import { saveRowsXlsx } from "../projects/common";
 
 const SECTIONS = [
   { value: "pano", label: "Pano", icon: "overview" },
   { value: "envanter", label: "Envanter", icon: "box" },
+  { value: "zimmetim", label: "Zimmetimdekiler", icon: "checkSquare" },
   { value: "zimmet", label: "Kimde ne var", icon: "user" },
   { value: "rezervasyon", label: "Rezervasyon", icon: "calendar" },
   { value: "bakim", label: "Bakım", icon: "wrench" },
   { value: "gecmis", label: "Hareketler", icon: "activity" },
+  { value: "amortisman", label: "Amortisman", icon: "trend" },
   { value: "ayarlar", label: "Kategori ve konum", icon: "layers", manage: true },
 ];
 const SECTION_KEY = "equipment:section";
 const readSection = () => { try { return localStorage.getItem(SECTION_KEY) || "pano"; } catch { return "pano"; } };
 
-export default function Equipment({ arg, argSeq }) {
+export default function Equipment({ arg, argSeq, go: goRoute }) {
   const toast = useToast();
   const result = useResult();
   const metaRes = useResource(`${BASE}/meta`);
@@ -71,12 +78,14 @@ export default function Equipment({ arg, argSeq }) {
     reserve: (items, reservation = null) => setDialog({ type: "reserve", items, reservation }),
     maintain: (item, record = null, closing = false) => setDialog({ type: "maint", item, record, closing }),
     fault: (item) => setDialog({ type: "fault", item }),
+    expense: (source, item, record = null) => setDialog({ type: "expense", source, item, record }),
+    goTodos: () => goRoute?.("todos"),
     labels: (items) => setDialog({ type: "labels", items }),
     openImport: () => setDialog({ type: "import" }),
     offerReceipt,
     goInventory: (filter = {}, hint = "") => { setPreset({ ...filter, _t: Date.now() }); go("envanter"); if (hint) toast(hint, { tone: "info" }); },
     seedCategories: async () => { const r = await post(`${BASE}/categories/defaults`, {}, { queue: false }); if (result(r, r.ok ? (r.data.added ? `${r.data.added} kategori eklendi.` : "Önerilen kategoriler zaten var.") : null)) metaRes.reload({ quiet: true }); },
-  }), [meta, perms, version, bump, go, metaRes, holdersRes.data, offerReceipt, toast, result]);
+  }), [meta, perms, version, bump, go, metaRes, holdersRes.data, offerReceipt, toast, result, goRoute]);
 
   useCommand("new", () => { if (perms.manage) setDialog({ type: "form", item: null }); });
   useCommand("print", () => { if (openId) setDialog({ type: "labels", items: [{ id: openId, asset_tag: "", name: "" }] }); });
@@ -112,10 +121,12 @@ export default function Equipment({ arg, argSeq }) {
                   <div className="eq-sections"><Segmented value={section} onChange={go} ariaLabel="Ekipman bölümleri" options={sections} /></div>
                   {section === "pano" && <Dashboard />}
                   {section === "envanter" && <Inventory preset={preset} openId={openId} />}
+                  {section === "zimmetim" && <MineSection onPrint={(rows) => printReceipt(rows)} />}
                   {section === "zimmet" && <Holders />}
                   {section === "rezervasyon" && <Reservations />}
                   {section === "bakim" && <Maintenance />}
                   {section === "gecmis" && <History />}
+                  {section === "amortisman" && <DepreciationReport onExport={(name, rows) => saveRowsXlsx(name, rows, "Amortisman", { A: 80, B: 220, C: 160, D: 200 })} />}
                   {section === "ayarlar" && perms.manage && <Settings />}
                 </>
               )}
@@ -127,6 +138,7 @@ export default function Equipment({ arg, argSeq }) {
       {dialog?.type === "return" && <ReturnDialog assignment={dialog.assignment} meta={meta} onClose={close} onDone={done("İade kaydedildi.")} />}
       {dialog?.type === "reserve" && <ReserveDialog items={dialog.items} reservation={dialog.reservation} onClose={close} onDone={done(dialog.reservation ? "Rezervasyon güncellendi." : "Rezervasyon kaydedildi.")} />}
       {dialog?.type === "maint" && <MaintenanceDialog item={dialog.item} record={dialog.record} closing={dialog.closing} onClose={close} onDone={done()} />}
+      {dialog?.type === "expense" && <ExpenseDialog source={dialog.source} item={dialog.item} record={dialog.record} onClose={close} onDone={() => { close(); toast("Gider olarak işlendi.", { tone: "success" }); bump(); }} />}
       {dialog?.type === "fault" && <FaultDialog item={dialog.item} onClose={close} onDone={done()} />}
       {dialog?.type === "labels" && <LabelsFor items={dialog.items} onClose={close} />}
       {dialog?.type === "import" && <ImportDialog onClose={close} onDone={() => { bump(); metaRes.reload({ quiet: true }); }} />}

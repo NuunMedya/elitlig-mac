@@ -6,6 +6,7 @@ import { del, patch, post, useResource } from "../../api";
 import { EVENT_ICONS, EVENT_LABELS, LOCATION_KINDS, daysFrom, daysLabel, fmtDateTime, fmtDay, includesFold, money, num } from "../../lib/equipmentUtils";
 import { BASE, printReceipt, useEq } from "./common";
 import { ExtendDialog } from "./dialogs";
+import { LinkSourcesPanel } from "./links";
 
 const useVersioned = (res) => {
   const eq = useEq();
@@ -319,6 +320,7 @@ export function Settings() {
           <button type="submit" className="btn btn--primary span3" disabled={!loc.name.trim()}><Icon name="plus" size={13} /> Konum ekle</button>
         </form>
       </section>
+      <LinkSourcesPanel />
     </div>
   );
 }
