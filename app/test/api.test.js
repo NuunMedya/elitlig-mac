@@ -127,3 +127,16 @@ test("muhasebe: gelir / gider ekleme ve ödendi yapma kuyruğa girer; silme, yet
   assert.equal(calls.at(-1).url, "https://api.test/api/tools/projects/12/finance/41");
   assert.deepEqual(calls.at(-1).body, { status: "paid" });
 });
+
+test("Not Defteri ve Rehber v2: defter, çöpten geri alma ve hedef kitle yazmaları kuyruğa alınır", () => {
+  const { isQueueable } = require("../api");
+  assert.equal(isQueueable("POST", "/api/tools/notes/notebooks"), true);
+  assert.equal(isQueueable("PATCH", "/api/tools/notes/notebooks/tmp_ab1"), true);
+  assert.equal(isQueueable("POST", "/api/tools/notes/12/restore"), true);
+  assert.equal(isQueueable("POST", "/api/tools/contacts/audiences"), true);
+  assert.equal(isQueueable("POST", "/api/tools/contacts/audiences/4/members"), true);
+  // Paylaşım, sürüm geri yükleme ve kitle birleştirme bağlantı ister.
+  assert.equal(isQueueable("PUT", "/api/tools/notes/12/shares"), false);
+  assert.equal(isQueueable("POST", "/api/tools/notes/12/versions/3/restore"), false);
+  assert.equal(isQueueable("POST", "/api/tools/contacts/audiences/4/merge"), false);
+});
