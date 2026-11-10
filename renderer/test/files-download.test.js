@@ -28,3 +28,15 @@ describe("Bağlantıdan indir", () => {
     for (const [v] of cookieBrowsers(true)) expect(allowed).toContain(v);
   });
 });
+
+describe("Görsel sıkıştırma biçimi", () => {
+  it("PNG / GIF / BMP 'otomatik'te WEBP'ye, JPG / WEBP aynı biçimde sıkıştırılır", async () => {
+    const { compressFormat } = await import("../src/lib/files/runClient");
+    expect(compressFormat("png")).toBe("webp");
+    expect(compressFormat("PNG")).toBe("webp");
+    expect(compressFormat("bmp")).toBe("webp");
+    expect(compressFormat("jpg")).toBe("jpg");
+    expect(compressFormat("jpeg")).toBe("jpg");
+    expect(compressFormat("webp")).toBe("webp");
+  });
+});

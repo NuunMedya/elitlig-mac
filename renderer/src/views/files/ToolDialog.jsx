@@ -114,7 +114,7 @@ export default function ToolDialog({ tool, files, onClose, onStart }) {
         {key === "imgCompress" && (<>
           <Field label={`Kalite: ${o.quality}`} hint="75 çoğu fotoğraf için gözle fark edilmeyen bir küçülme sağlar."><input type="range" min="30" max="95" value={o.quality} onChange={(e) => set({ quality: Number(e.target.value) })} /></Field>
           <Field label="En uzun kenar">{formatSelect(o.maxSide, (maxSide) => set({ maxSide }), [["", "Değiştirme"], ["3840", "3840 px (4K)"], ["2560", "2560 px"], ["1920", "1920 px (Full HD)"], ["1280", "1280 px"], ["1024", "1024 px"]])}</Field>
-          <Field label="Biçim" hint="PNG kayıpsızdır: kalite ayarı PNG'yi küçültmez; WEBP önerilir.">{formatSelect(o.format, (format) => set({ format }), [["same", "Aynı biçim"], ["jpg", "JPG"], ["webp", "WEBP"]])}</Field>
+          <Field label="Biçim" hint="PNG kayıpsızdır, kalite ayarı onu küçültmez: “Otomatik” PNG'yi saydamlığı koruyarak WEBP'ye sıkıştırır; JPG ve WEBP aynı biçimde kalır.">{formatSelect(o.format, (format) => set({ format }), [["same", "Otomatik"], ["jpg", "JPG"], ["webp", "WEBP"]])}</Field>
         </>)}
         {key === "imgCollage" && (<>
           <div className="ft-row">
