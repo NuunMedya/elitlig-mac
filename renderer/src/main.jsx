@@ -9,6 +9,9 @@ const quick = window.location.hash === "#quick";
 // LED çıkış penceresi (Yayın Stüdyosu → LED ekran, 2. monitör): kabuk ve oturum yok.
 const ledOutput = window.location.hash === "#led-output";
 const LedOutput = lazy(() => import("./views/studio/led/LedOutput"));
+// Masaüstü araç takımı paneli (⌃⌥Boşluk): ayrı, çerçevesiz pencere (app/toolkit.js).
+const toolkit = window.location.hash === "#toolkit";
+const Toolkit = lazy(() => import("./views/toolkit/Toolkit"));
 
 // Menüdeki Geri Al / Yinele: yazı alanındaysa yerel geri alma, değilse açık
 // araca (ör. tablo düzenleyicisi) iletilir.
@@ -28,7 +31,7 @@ createRoot(document.getElementById("root")).render(
     {ledOutput ? (
       <Suspense fallback={null}><LedOutput /></Suspense>
     ) : (
-      <ToastProvider>{quick ? <Quick /> : <App />}</ToastProvider>
+      <ToastProvider>{quick ? <Quick /> : toolkit ? <Suspense fallback={null}><Toolkit /></Suspense> : <App />}</ToastProvider>
     )}
   </React.StrictMode>
 );

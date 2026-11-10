@@ -47,6 +47,8 @@ const { createChatLink, buildMultipart, mimeOf } = require("./chat");
 const { accessFromUser, probeAccess, sameAccess } = require("./access");
 const { registerStudio, applyStudioSwitches, STUDIO_SCHEME } = require("./studio");
 const { isAllowedExternal } = require("./links");
+// Masaüstü araç takımı: pencere yerleştirme, araç takımı paneli, uyanık tut, müzik denetimi.
+const { registerDeskkit } = require("./toolkit");
 
 // Sohbet medyası (fotoğraf, ses, belge) bu şemayla ana süreç üzerinden açılır:
 // diskte önbelleklenir, çevrimdışı da görünür; arayüzün güvenlik politikası
@@ -92,6 +94,7 @@ let focus;
 let reminders;
 let chatLink;
 let studio;
+let deskkit = null;
 let chatNotes = new Map();
 let probedAccess = null;
 let requestsInfo = { total: 0, categories: [] };
@@ -307,6 +310,8 @@ function refreshTray() {
   }
   // LED çıkışı açıksa her zaman buradan kapatılabilir (LED ekranı stüdyoyu örtse bile).
   if (studio?.led?.status?.().open) template.push({ label: "LED çıkışını kapat", click: () => studio?.led?.close("MENU") }, { type: "separator" });
+  // Masaüstü araç takımı: panel, pencere düzeni, müzik, ekranı uyanık tut (app/toolkit.js).
+  if (deskkit) template.push(...deskkit.trayItems());
   template.push(
     { label: focusLabel, click: () => focus.command("toggle") },
     ...(state.running || state.remainingMs !== state.totalMs ? [{ label: "Sayacı sıfırla", click: () => focus.command("reset") }] : []),
@@ -582,6 +587,7 @@ function buildMenu() {
         ...(app.isPackaged ? [] : [{ role: "toggleDevTools", label: "Geliştirici Araçları" }]),
       ],
     },
+    ...(deskkit ? [deskkit.menuTemplate()] : []),
     { label: "Pencere", role: "window", submenu: [
       { role: "minimize", label: "Küçült" },
       ...(IS_MAC ? [{ role: "zoom", label: "Büyüt" }, { type: "separator" }, { role: "front", label: "Tümünü Öne Getir" }] : []),
@@ -901,6 +907,12 @@ if (!app.requestSingleInstanceLock()) {
       refreshTray();
     });
 
+    deskkit = registerDeskkit({
+      app, ipcMain, BrowserWindow, globalShortcut, screen, systemPreferences, shell, powerSaveBlocker, net,
+      loadRenderer, webPreferences: secureWebPreferences, guardNavigation, showMain, showQuick, broadcast,
+      getMainWindow: () => mainWindow, refreshTray: () => refreshTray(), rebuildMenu: () => buildMenu(), isMac: IS_MAC,
+      log: (...args) => { if (!app.isPackaged) console.log(...args); },
+    });
     registerIpc();
     buildMenu();
     createTray();

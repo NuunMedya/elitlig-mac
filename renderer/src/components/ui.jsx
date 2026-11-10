@@ -147,6 +147,18 @@ const PATHS = {
   box: "M21 8 12 3 3 8v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8",
   wrench: "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z",
   barcode: "M3 5v14M7 5v14M10 5v14M14 5v14M17 5v14M21 5v14",
+  // Masaüstü araç takımı ve müzik çalar
+  skipBack: "M19 20L9 12l10-8v16zM5 19V5",
+  layout: "M3 3h18v18H3zM3 9h18M9 9v12",
+  droplet: "M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z",
+  type: "M4 7V4h16v3M9 20h6M12 4v16",
+  qr: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h3v3h-3zM20 14v.01M14 20h.01M17 17h4v4h-4M6 6h1v1H6zM17 6h1v1h-1zM6 17h1v1H6z",
+  key: "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zM15.5 7.5l3 3L22 7l-3-3M15.5 7.5L19 4",
+  coffee: "M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3",
+  monitor: "M2 3h20v14H2zM8 21h8M12 17v4",
+  clipboard: "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 2h6v4H9z",
+  toolbox: "M2 9h20v11H2zM8 9V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v4M2 14h20M10 12v4M14 12v4",
+  moon: "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z",
 };
 
 // Sunucudaki şablonların (web) simge adları.

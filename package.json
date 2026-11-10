@@ -64,6 +64,7 @@
       "extendInfo": {
         "NSCameraUsageDescription": "Yayın Stüdyosu'nda kamera görüntüsünü canlı yayına almak için kamera kullanılır.",
         "NSMicrophoneUsageDescription": "Elitlig ekip sohbetindeki sesli aramalar ve Yayın Stüdyosu'ndaki canlı yayın sesi için mikrofon kullanılır.",
+        "NSAppleEventsUsageDescription": "Pencere yerleştirme (Masaüstü araçları) öndeki uygulamanın penceresini System Events ile taşır ve boyutlandırır.",
         "LSApplicationCategoryType": "public.app-category.productivity",
         "CFBundleDisplayName": "Elitlig Araçlar"
       }

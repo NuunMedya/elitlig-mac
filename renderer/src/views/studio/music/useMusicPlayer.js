@@ -25,7 +25,7 @@
 // <audio>.captureStream() ile bağlanır. Bkz. app/studio/musichost.js.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  addMusicTrack, airSupport, deckVolume, entryStart, fadeState, moveMusicTrack, nextTrack, normalizeMusic, readMusic, removeMusicTrack,
+  MUSIC_KEY, addMusicTrack, airSupport, deckVolume, entryStart, fadeState, moveMusicTrack, nextTrack, normalizeMusic, readMusic, removeMusicTrack,
   resolvePlayable, trackName, trackPlan, trackProgress, trackToAir, updateMusicTrack, writeMusic,
 } from "./musicModel";
 import { findPlayable, flatPlayable, mergeItems, parsePlaylistUrl, seededRand, splitItemId } from "./playlistModel";
@@ -39,21 +39,22 @@ const TICK_MS = 100;
 const IDLE = Object.freeze({ status: "idle", trackId: null, entryId: null, playlistId: null, index: -1, itemIndex: -1, itemCount: 0, title: "", elapsedSec: 0, lengthSec: null, ratio: null, remainingSec: null, air: false, nextId: null, fading: false });
 export const DUCK_LEVEL = 50;
 
-export function useMusicPlayer({ mixer = null, toast = null } = {}) {
-  const [config, setConfigState] = useState(() => readMusic(store()));
+// storageKey: listenin localStorage anahtarı (varsayılan stüdyonunki). emptyHint: liste boşken uyarı.
+export function useMusicPlayer({ mixer = null, toast = null, storageKey = MUSIC_KEY, emptyHint = null } = {}) {
+  const [config, setConfigState] = useState(() => readMusic(store(), storageKey));
   const cfgRef = useRef(config);
   cfgRef.current = config;
   const setConfig = useCallback((fn) => setConfigState((c) => {
     const next = normalizeMusic(typeof fn === "function" ? fn(c) : fn);
-    writeMusic(store(), next);
+    writeMusic(store(), next, storageKey);
     cfgRef.current = next;
     return next;
-  }), []);
+  }), [storageKey]);
   useEffect(() => {
-    const onStorage = (e) => { if (e.key === "studio.music.v1") setConfigState(readMusic(store())); };
+    const onStorage = (e) => { if (e.key === storageKey) setConfigState(readMusic(store(), storageKey)); };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  }, [storageKey]);
 
   const toastRef = useRef(toast);
   toastRef.current = toast;
@@ -276,7 +277,7 @@ export function useMusicPlayer({ mixer = null, toast = null } = {}) {
     const track = resolve(target);
     if (!track) {
       const e = typeof target === "string" ? cfgRef.current.tracks.find((t) => t.id === target) : null;
-      say(e?.kind === "playlist" ? "Oynatma listesi henüz açılmadı (Yenile)." : "Müzik listesi boş: Reji › Müzik çalar'dan YouTube bağlantısı, oynatma listesi ya da ses dosyası ekle.");
+      say(e?.kind === "playlist" ? "Oynatma listesi henüz açılmadı (Yenile)." : emptyHint || "Müzik listesi boş: Reji › Müzik çalar'dan YouTube bağlantısı, oynatma listesi ya da ses dosyası ekle.");
       return false;
     }
     const cfg = cfgRef.current;
