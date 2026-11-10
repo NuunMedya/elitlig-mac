@@ -61,6 +61,11 @@ function defaultShortcuts(platform = process.platform) {
   };
 }
 
+/** Araç takımı paneli varsayılan kısayolu: Mac ⌃⌥B (⌃⌥Boşluk macOS giriş kaynağına ayrılı), Windows Ctrl+Alt+Boşluk. */
+const defaultToolkitShortcut = (platform = process.platform) => (platform === "darwin" ? "Control+Alt+B" : "Control+Alt+Space");
+/** Widget'ları göster / gizle. */
+const DEFAULT_WIDGETS_SHORTCUT = "Control+Alt+W";
+
 const MODIFIERS = new Set(["Command", "Cmd", "Control", "Ctrl", "CommandOrControl", "CmdOrCtrl", "Alt", "Option", "AltGr", "Shift", "Super", "Meta"]);
 const NAMED_KEYS = new Set([
   "Left", "Right", "Up", "Down", "Return", "Enter", "Backspace", "Delete", "Space", "Tab", "Escape", "Esc", "Home", "End", "PageUp", "PageDown", "Insert",
@@ -99,7 +104,13 @@ function normalizeSettings(input, platform = process.platform) {
     const v = inShort[key];
     shortcuts[key] = v === "" ? "" : isValidAccelerator(v) ? v : defs[key];
   }
-  const toolkitShortcut = x.toolkit?.shortcut === "" ? "" : isValidAccelerator(x.toolkit?.shortcut) ? x.toolkit.shortcut : "Control+Alt+Space";
+  // macOS'ta ⌃⌥Boşluk sistemin "Giriş menüsünde sonraki kaynak" kısayoludur (Türkçe Q + ABD gibi
+  // iki klavye düzeni olan her Mac'te açık): kayıt "başarılı" görünür ama tuşu sistem yutar ve panel
+  // hiç açılmaz. Mac varsayılanı ⌃⌥B; 2.26.0'dan kalan kayıtlı ⌃⌥Boşluk bir kez (v < 2) taşınır.
+  const toolkitDefault = defaultToolkitShortcut(platform);
+  const legacyMac = platform === "darwin" && x.toolkit?.shortcut === "Control+Alt+Space" && !(Number(x.toolkit?.v) >= 2);
+  const toolkitShortcut = x.toolkit?.shortcut === "" ? "" : legacyMac ? toolkitDefault : isValidAccelerator(x.toolkit?.shortcut) ? x.toolkit.shortcut : toolkitDefault;
+  const widgetsShortcut = x.widgets?.shortcut === "" ? "" : isValidAccelerator(x.widgets?.shortcut) ? x.widgets.shortcut : DEFAULT_WIDGETS_SHORTCUT;
   return {
     layouts: {
       enabled: x.layouts?.enabled == null ? true : Boolean(x.layouts.enabled),
@@ -109,7 +120,10 @@ function normalizeSettings(input, platform = process.platform) {
     toolkit: {
       shortcut: toolkitShortcut,
       hideOnBlur: x.toolkit?.hideOnBlur == null ? true : Boolean(x.toolkit.hideOnBlur),
+      v: 2,
     },
+    // Masaüstü widget'larını göster / gizle (app/widgets).
+    widgets: { shortcut: widgetsShortcut },
     music: {
       mediaKeys: x.music?.mediaKeys == null ? true : Boolean(x.music.mediaKeys),
       // Stüdyo açılınca genel çalar: "pause" (duraklat, çıkınca sürdür) | "keep" (çalmaya devam).
@@ -124,6 +138,7 @@ function findConflicts(settings) {
   const add = (acc, key) => { if (!acc) return; const k = acc.toLowerCase(); map.set(k, [...(map.get(k) || []), key]); };
   for (const [key, acc] of Object.entries(settings.layouts.shortcuts)) add(acc, key);
   add(settings.toolkit.shortcut, "toolkit");
+  add(settings.widgets?.shortcut, "widgets");
   const out = {};
   for (const [acc, keys] of map) if (keys.length > 1) out[acc] = keys;
   return out;
@@ -324,7 +339,7 @@ function acceleratorLabel(acc, platform = process.platform) {
 }
 
 module.exports = {
-  LAYOUTS, LAYOUT_KEYS, layoutOf, defaultShortcuts, isValidAccelerator, normalizeSettings, findConflicts,
+  LAYOUTS, LAYOUT_KEYS, layoutOf, defaultShortcuts, isValidAccelerator, normalizeSettings, findConflicts, defaultToolkitShortcut, DEFAULT_WIDGETS_SHORTCUT,
   displayForRect, orderDisplays, fractionRect, fitInto, centerRect, moveToDisplay, computeLayout, sameRect, rememberBefore,
   invisibleBorders, expandByBorders, dipToPhysical, physicalToDip, acceleratorLabel,
 };

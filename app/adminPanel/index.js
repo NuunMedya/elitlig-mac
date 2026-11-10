@@ -489,7 +489,7 @@ function registerAdminPanel(deps) {
     return {
       label: "Yönetim",
       submenu: [
-        { label: "Yönetim Paneli", accelerator: "CmdOrCtrl+Shift+A", click: () => { showMain("admin"); } },
+        { label: "Yönetim Paneli", accelerator: "CmdOrCtrl+Shift+L", click: () => { showMain("admin"); } },
         ...top.filter((i) => i.path !== navModel.DASHBOARD_PATH).map((i) => ({ label: i.name, click: () => go(i.path) })),
         { label: "Panel Ana Sayfası", click: () => go(navModel.DASHBOARD_PATH), enabled: signedIn() },
         { type: "separator" },

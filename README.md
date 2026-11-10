@@ -9,6 +9,7 @@ uygulamada görünür.
 
 | Kısayol | Araç | Uygulamada |
 | --- | --- | --- |
+| ⇧⌘A | **Araç Takımı** | Kenar çubuğunda en üstte: pencere düzeni, dünya saatleri, sayaç, hızlı hesap ve döviz, **yüzde / KDV**, **tarih farkı / iş günü / geri sayım**, metin dönüştürücü, **emoji ve özel karakter** (ğ ş İ ₺ © ⚽), **dolgu metni**, renk, QR, parola, **JSON biçimlendirici**, **Base64 / URL / HTML**, **UUID**; hızlı not / görev, ekran görüntüsü, pano rafı, ekranı uyanık tut, müzik; **masaüstü widget galerisi**. Aynı araçlar her yerden açılan küçük panelde (Mac ⌃⌥B, Windows Ctrl+Alt+Boşluk) ve menü çubuğu simgesinde |
 | ⇧⌘M | **Mesajlar** | WhatsApp düzeninde ekip mesajlaşması: takım başkanları, oyuncular, üyeler ve yönetimdeki arkadaşlarla birebir sohbet ya da karışık gruplar; okundu tikleri, yanıtla, tepki, ilet, yıldızla, sabitle, düzenle, sil; fotoğraf (albüm ve görüntüleyici), belge, sesli mesaj, anket, konum; yönetim için **hazır içerikler**: günün maçları kartı, “Ben talibim” spiker / reji görev anketi (talip ol, görevlendir), Haftanın Enleri aday anketi; @bahsetme, taslaklar, sohbette ve tüm sohbetlerde arama; grup ve kişi bilgisi, medya-belgeler-bağlantılar; canlı bağlantı, yazıyor…, çevrimiçi / son görülme; yeni mesajda Mac bildirimi; çevrimdışı yazılan metin bağlantı gelince gider. **Üye mesajları** (messages.view): takım, oyuncu ve üyelerin “ElitLig Yönetimi” sohbetleri ortak gelen kutusu olarak aynı ekranda (Takımlar / Oyuncular / Üyeler), yanıt ElitLig Yönetimi adına; **Kayıtlar** (arama kayıtları, messages.calls_view) |
 | ⇧⌘T | **Talepler** | Onay merkezi: profil değişikliği, sahiplenme, yeni üye, transfer, kadro onayı, maç talebi, savunma… kategori sekmeleri (açık talep sayılarıyla), Bekleyen / Bilgilendirme / Sonuçlanan, arama; kartta kim (takım kartı / üye kartı), il, zaman; **Onayla / Reddet** (onay penceresiyle, talep kendiliğinden kapanır), site sayfası düğmeleri, İlgili sayfa, Kapat; yeni talep anında listeye düşer, pencere arka plandaysa Mac bildirimi |
 | ⌘1 | **Bugün** | Bekleyen talepler kartı (kategori kısa yolları), gecikmiş ve bugünkü işler, önümüzdeki 7 gün, bu ayın gelir-gideri, son notlar, odak istatistiği; tek satırda görev ekleme |
@@ -23,10 +24,10 @@ uygulamada görünür.
 | ⌘8 | **Hesap Araçları** | Hesap makinesi (geçmişiyle), KDV, yüzde, iskonto zinciri, masraf bölüştürme, taksit, tarih farkı |
 | ⌘9 | **Odak Sayacı** | Pomodoro, geri sayım, kronometre; maç süresi için hızlı geri sayım |
 | ⇧⌘J | **Müzik** | Uygulama geneli müzik çalar: YouTube bağlantıları ve oynatma listeleri, yerel ses dosyaları (mp3 / m4a / wav, sürükle-bırak), karıştır / tekrarla, geçiş, uyku zamanlayıcısı, kuyruk, arama; kenar çubuğunda mini çalar, menü çubuğu, araç takımı ve medya tuşlarıyla denetim; görünüm değişince susmaz |
-| ⌘, | **Masaüstü araçları** | Araç takımı paneli (⌃⌥Boşluk), Magnet benzeri pencere yerleştirme kısayolları (kaydet / kapat / varsayılan), Erişilebilirlik izni, medya tuşları, stüdyo kuralı, ekranı uyanık tut |
+| ⌘, | **Masaüstü araçları** | Araç takımı paneli (Mac ⌃⌥B, Windows Ctrl+Alt+Boşluk), widget'ları göster / gizle (⌃⌥W), Magnet benzeri pencere yerleştirme kısayolları (kaydet / kapat / varsayılan), Erişilebilirlik izni, medya tuşları, stüdyo kuralı, ekranı uyanık tut |
 | ⇧⌘D | **Dosya Araçları** | Sürükle-bırak / seç / yapıştır, çark ya da kutucuk menüsüyle **Dönüştür · Araçlar · Dosya işlemleri**: görsel (JPG/PNG/WEBP/HEIC/TIFF/BMP/GIF, boyut, döndür, kırp, sıkıştır, ayarlar, işaretle, sansür, çerçeve, kolaj, meta veri temizle, PDF), ses/video (dönüştür, kırp, sıkıştır, hız, sessiz, ses ayıkla, birleştir, böl, kare, normalize, çözünürlük, GIF), PDF (birleştir, böl, sayfa sırala/döndür/sil, sıkıştır), ZIP, SRT↔VTT, metin kodlaması, toplu yeniden adlandırma; iş kuyruğu, son 50 iş, **Float** rafı. Her şey bu bilgisayarda |
 | ⇧⌘P | **Ekran Görüntüleri ve Pano** | Ekran görüntüleri ve kopyalanan görsel / metin / bağlantılar için üç raf (⌃⌥T) ve kütüphane: ızgara/liste, sanal klasörler, etiketler, sabitleme, arama, saklama süresi, çöp kutusu, dışa aktarma, başka uygulamaya sürükleme, önizleme, işaretleme ve kırpma, ekran yakalama (⌃⌥A) |
-| ⇧⌘A | **Yönetim paneli** | elitlig.com yönetim panelinin **tamamı** uygulama içinde, ayrı giriş istemeden: maçlar, toplu düzenleme, saha planlama, personel, ligler, sezonlar, puan durumu, kura, kurallar, takımlar, kadrolar, oyuncular, transferler, piyasa değeri, disiplin, haberler, içerik havuzu, panorama, sponsorlar, üyeler, yönetim kullanıcıları, yetkiler, şehirler, analizler, işlem kayıtları… Kenar çubuğunda Yönetim bölümleri, ⌘K'da tüm yönetim sayfaları ve maç / oyuncu / takım araması, menü çubuğunda **Yönetim** menüsü |
+| ⇧⌘L | **Yönetim paneli** | elitlig.com yönetim panelinin **tamamı** uygulama içinde, ayrı giriş istemeden: maçlar, toplu düzenleme, saha planlama, personel, ligler, sezonlar, puan durumu, kura, kurallar, takımlar, kadrolar, oyuncular, transferler, piyasa değeri, disiplin, haberler, içerik havuzu, panorama, sponsorlar, üyeler, yönetim kullanıcıları, yetkiler, şehirler, analizler, işlem kayıtları… Kenar çubuğunda Yönetim bölümleri, ⌘K'da tüm yönetim sayfaları ve maç / oyuncu / takım araması, menü çubuğunda **Yönetim** menüsü |
 
 ## Web sitesinde olmayan masaüstü özellikleri
 
@@ -539,16 +540,32 @@ anında son ~10 saniye klip olarak kaydedilip oyuncunun profiline yüklenir. Yet
   kodlama ve uçtan uca klip testi yapar. Geliştirmede `ELITLIG_FFMPEG=/yol/ffmpeg` ya da Homebrew
   ffmpeg'i kullanılır. Lisans metni: `Contents/Resources/ffmpeg/LICENSE.txt`.
 
-## Masaüstü araç takımı, pencere yerleştirme ve müzik
+## Masaüstü araç takımı, widget'lar, pencere yerleştirme ve müzik
 
-### Araç takımı paneli (⌃⌥Boşluk)
+Araç takımına üç yoldan ulaşılır:
 
-Menü çubuğu simgesinden (Araç takımı…) ya da her yerden **⌃⌥Boşluk** (Windows: Ctrl+Alt+Space) ile
-açılan küçük, çerçevesiz panel; dışına tıklayınca gizlenir (iğne ile açık tutulur, Esc kapatır,
-⌘1…⌘8 sekme değiştirir). Üstte hızlı işler: **Not / Görev** (Hızlı kayıt penceresi), **Pano**
-(pano ve ekran görüntüsü kütüphanesi — `shelf:show` kanalıyla açılır; o araç yoksa bilgi verir),
-**Ekranı uyanık tut** (süresiz, 30 dk, 1 sa, 2 sa — `powerSaveBlocker`) ve çalan müziğin mini
-denetimi. Sekmeler:
+1. **Uygulamada — Araç Takımı (⇧⌘A)**: kenar çubuğunda Bugün'ün hemen altında. Bütün araçlar tam
+   sayfa, gruplar hâlinde (Masaüstü · Hesap · Metin · Tasarım ve geliştirici) ve **Widget'lar** galerisi.
+   Bugün ekranında Araç Takımı kısayol şeridi; ilk açılışta kısayolları öğreten bir bilgi kartı çıkar.
+2. **Her yerden — Araç takımı paneli**: Mac'te **⌃⌥B**, Windows'ta **Ctrl+Alt+Boşluk** (Masaüstü
+   araçları'nda değiştirilir) ya da menü çubuğu / görev çubuğu simgesi › **Araç Takımı paneli**.
+3. **Menü çubuğu simgesi**: en üstte Araç Takımı paneli, Araç Takımı (uygulamada) ve **Masaüstü
+   widget'ları** (göster / gizle, widget ekle, galeri); altta pencere düzeni, müzik, ekranı uyanık tut.
+
+> Neden Mac'te ⌃⌥B? 2.26.0'daki **⌃⌥Boşluk**, macOS'ta “Giriş menüsünde sonraki kaynağı seç”
+> sistem kısayoludur (Türkçe Q + ABD gibi iki klavye düzeni olan her Mac'te açık): kayıt başarılı
+> görünür ama tuşa sistem el koyar, panel hiç açılmaz. Kayıtlı eski ayar bir kez ⌃⌥B'ye taşınır;
+> isteyen Ayarlar'dan yeniden seçebilir (uyarı gösterilir). Windows'ta Ctrl+Alt+Boşluk sürer.
+
+### Araç takımı paneli
+
+Küçük, çerçevesiz panel; dışına tıklayınca gizlenir (iğne ile açık tutulur, Esc kapatır, ⌘1…⌘9 ilk
+dokuz sekme; sekmeler yatay kayar, ↗ düğmesi aynı aracı tam sayfa açar). macOS'ta tüm masaüstlerinde
+(Spaces) ve tam ekran uygulamaların üstünde açılır; açılırken gelen ara odak kaybı (menü çubuğu
+menüsünün kapanması gibi) paneli artık hemen kapatmaz. Üstte hızlı işler: **Not / Görev** (Hızlı kayıt
+penceresi), **Pano** (raflar, `shelf:show`), **Yakala** (ekran görüntüsü — Raflar'ın ⌃⌥A yakalaması,
+`shelf:capture`; panel önce gizlenir), **Widget** (göster / gizle; hiç yoksa galeriyi açar), **Ekranı
+uyanık tut** (süresiz, 30 dk, 1 sa, 2 sa — `powerSaveBlocker`) ve çalan müziğin mini denetimi. Sekmeler:
 
 - **Düzen** — pencere düzeni ızgarası (aşağıda); panel açılmadan önce öndeki pencere taşınır.
 - **Renk** — ekrandan renk alma (EyeDropper; Mac'te başka uygulamalardan renk almak için Ekran Kaydı
@@ -567,6 +584,52 @@ denetimi. Sekmeler:
   çubuğunda görünür, bitince bildirim gelir.
 - **Parola** — 8–64 karakter, küme seçimi, karışan karakterleri (I l 1 O 0) çıkarma, güç ölçer;
   parolalar yalnız bu bilgisayarda üretilir, saklanmaz.
+- **Yüzde / KDV** — A'nın %B'si, A B'nin yüzde kaçı, değişim, artır / indir; KDV %1 / %10 / %20 dahil ↔
+  hariç. Tevkifat, kredi, maaş gibi hesaplar için Hesap Araçları'na (⌘8) bağlantı.
+- **Tarih** — iki tarih arası (takvim günü, hafta, yıl-ay-gün, **iş günü**: hafta sonu ve resmî tatiller
+  — sabit tatiller + Ramazan / Kurban Bayramı 2025–2028; cumartesi iş günü seçeneği), tarihe gün / iş
+  günü ekle-çıkar, **geri sayım** hedefleri (canlı).
+- **Karakter** — Türkçe harfler, para ve semboller (₺ € © ® ™ ° …), oklar ve klavye işaretleri, spor /
+  yayın, yüz ve iş emojileri; Türkçe adla arama, tıkla-kopyala, son kullanılanlar, biriktirme alanı.
+- **Dolgu** — Lorem ipsum ya da Türkçe örnek metin; paragraf / cümle / sözcük.
+- **JSON** — doğrula (hata satır / sütun), biçimle (2 / 4 boşluk, sekme), sıkıştır, anahtarları sırala.
+- **Kodla** — Base64 (UTF-8 güvenli, URL güvenli), URL kodla / çöz, HTML varlıkları.
+- **UUID** — sürüm 4, toplu (1–50), büyük harf / tiresiz.
+
+Saf yardımcılar `renderer/src/views/toolkit/devTools.js`, `dateTools.js`, `chars.js`; araç listesi
+`toolRegistry.jsx` (panel ve tam sayfa aynı bileşenleri kullanır). Testler `renderer/test/toolkit*.test.js`.
+
+### Masaüstü widget'ları
+
+Masaüstünde duran küçük, çerçevesiz, şeffaf, köşeleri yuvarlak pencereler (Araç Takımı › Widget'lar ›
+**Widget ekle**, ya da menü çubuğu › Masaüstü widget'ları › Widget ekle):
+
+| Widget | İçerik |
+| --- | --- |
+| Saat ve tarih | Yerel saat (isteğe bağlı saniye), tarih; orta boyutta en çok 4 dünya saati |
+| Ajanda | Bugün ve yarının etkinlikleri (`/api/tools/events`); tıklayınca Ajanda |
+| Yapılacaklar | Gecikmiş ve bugünkü işler (`/api/todos`), işaretle → tamamlandı, “Bugüne iş ekle” |
+| Hızlı not | Bu bilgisayarda saklanan karalama; son notlar (orta), Yeni not (Hızlı kayıt) |
+| Müzik çalar | Çalan parça, süre, önceki / çal-duraklat / sonraki |
+| Pano | Raflar'daki son kopyalananlar / ekran görüntüleri; tıkla → yeniden kopyala; Yakala |
+| Sayaç / odak | Odak Sayacı (başlat / duraklat / sıfırla, 5–45 dk hızlı zamanlayıcı) |
+| Sistem | İşlemci, bellek, disk (Node `os` / `fs.statfs`), pil (dizüstünde) |
+| Hava durumu | Şehir seçilir; Open-Meteo (anahtarsız), olmazsa wttr.in; 3 günlük tahmin (orta) |
+| Yaklaşan maçlar | Herkese açık Elitlig API'si: canlı skorlar (`/maclar/live`) ve 10 günlük fikstür (`/maclar/fixtures?date_from&date_to`), şehre göre süzülür; tıklayınca maç sayfası |
+| Döviz kurları | Seçilen para birimlerinin ₺ karşılığı (araç takımıyla aynı kur önbelleği) |
+
+- Başlığından sürüklenir; konum, boyut (küçük / orta), arka plan saydamlığı, katman ve seçenekler
+  `userData/widgets.json`'da saklanır ve **açılışta geri yüklenir** (çıkarılmış ekrandaki widget görünür
+  alana çekilir).
+- **Katman:** *Normal* (diğer pencerelerin altında kalır), *Üstte sabitle*, yalnız macOS'ta *Masaüstüne
+  göm* (masaüstü düzeyi, tıklanmaz — saat, sistem, hava, döviz için). **Kilitle**: sürüklenmez.
+- Dock / görev çubuğunda görünmez (`skipTaskbar`); macOS'ta tüm masaüstlerinde (Spaces) görünür ve
+  Mission Control'de gizlidir. Tema: sisteme uy / açık / koyu.
+- Sağ tık ya da ⋯: boyut, saydamlık, katman, kilit, tema, kaldır; ⚙ (saat, hava, maç, döviz): ayarlar.
+- **⌃⌥W** (Windows Ctrl+Alt+W): tüm widget'ları göster / gizle (Masaüstü araçları'nda değiştirilir).
+- Ağ istekleri ana süreçte yapılır (arayüzün CSP'si dışarıya izin vermez). Ana süreç `app/widgets/`
+  (`catalog.js` saf, `feeds.js`, `system.js`, `index.js`), arayüz `renderer/src/widgets/` (`#widget=<tür>`);
+  test `app/test/widgets.test.js`.
 
 ### Pencere yerleştirme (Magnet benzeri)
 
@@ -600,7 +663,9 @@ diye gösterilir. Kenarlarda ve pencereler arasında isteğe bağlı boşluk (0�
   ile görünmez kenar payı); büyütülmüş pencere önce geri yüklenir, farklı DPI'lı ekrana geçişte ikinci
   turda düzeltilir. Not: bazı ekran kartı sürücüleri Ctrl+Alt+ok tuşlarını ekran döndürme için tutar;
   o durumda kısayol “kullanımda” görünür, Ayarlar'dan değiştirilebilir.
-- Uygulamanın kendi pencereleri doğrudan (izinsiz) taşınır.
+- Uygulamanın kendi pencereleri doğrudan (izinsiz, Electron `setBounds`) taşınır — her sistemde,
+  Linux dahil (orada yalnız kendi pencerelerimiz). Pencerenin en küçük boyutu bölgeden büyükse
+  (ana pencere en az 980 nokta) sağa / alta yaslı düzende pencere kenara geri itilir, ekrandan taşmaz.
 - Pencereyi ekran kenarına **sürükleyince yapıştırma yoktur**: diğer uygulamaların sürüklenmesi
   Electron'dan güvenilir izlenemiyor; kısayol, menü ve ızgara kullanılır.
 - Konum hesapları saf modülde (`app/windowLayouts.js`), betik üretimi `app/windowManager.js`'te;
@@ -623,7 +688,7 @@ Müzik'ten “Çalmaya devam et” seçilebilir. Stüdyonun listesi ve davranı�
 
 ## Yönetim paneli (elitlig.com yönetiminin tamamı)
 
-Kenar çubuğu → **Yönetim paneli** (⇧⌘A) web sitesindeki yönetim panelini uygulamanın içinde açar
+Kenar çubuğu → **Yönetim paneli** (⇧⌘L) web sitesindeki yönetim panelini uygulamanın içinde açar
 (ayrı tarayıcı penceresi değil). Web'de rolünüz ve yetkilerinizle ne görüyorsanız burada da hepsi
 var: maç, oyuncu, takım, lig, sezon, disiplin, içerik, sponsor, üye, yetki ve sistem ekranları.
 

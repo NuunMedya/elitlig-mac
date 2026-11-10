@@ -49,6 +49,8 @@ const { registerStudio, applyStudioSwitches, STUDIO_SCHEME } = require("./studio
 const { isAllowedExternal } = require("./links");
 // Masaüstü araç takımı: pencere yerleştirme, araç takımı paneli, uyanık tut, müzik denetimi.
 const { registerDeskkit } = require("./toolkit");
+// Masaüstü widget'ları (saat, ajanda, yapılacaklar, sistem, hava, maçlar…): app/widgets.
+const { registerWidgets } = require("./widgets");
 // Dosya Araçları (Float rafı dahil) ve Ekran Görüntüleri / Pano rafı: app/fileTools, app/shelf.
 const { registerFileTools } = require("./fileTools");
 const { registerShelf } = require("./shelf");
@@ -104,6 +106,7 @@ let reminders;
 let chatLink;
 let studio;
 let deskkit = null;
+let widgets = null;
 let fileTools;
 let shelf;
 let adminPanel = null;
@@ -307,6 +310,8 @@ function refreshTray() {
     { label: "Uygulamayı aç", click: () => showMain() },
     { label: "Hızlı kayıt…", accelerator: config.QUICK_SHORTCUT, click: () => showQuick() },
     { type: "separator" },
+    // Araç Takımı ve masaüstü widget'ları menünün üstünde (app/toolkit.js trayTopItems).
+    ...(deskkit ? deskkit.trayTopItems() : []),
   ];
   if (signedIn) {
     const unread = chatLink?.unread() || 0;
@@ -516,6 +521,7 @@ function showQuick(kind) {
 
 const ROUTES = [
   ["today", "Bugün", "CmdOrCtrl+1"],
+  ["toolkit", "Araç Takımı", "CmdOrCtrl+Shift+A"],
   ["messages", "Mesajlar", "CmdOrCtrl+Shift+M"],
   ["requests", "Talepler", "CmdOrCtrl+Shift+T"],
   ["todos", "Yapılacaklar", "CmdOrCtrl+2"],
@@ -955,12 +961,21 @@ if (!app.requestSingleInstanceLock()) {
       verifySession: async () => (await api.request({ path: "/api/users/verify", cache: false, queue: false })).ok,
       log: (...args) => { if (!app.isPackaged) console.log(...args); },
     });
+    widgets = registerWidgets({
+      app, ipcMain, BrowserWindow, Menu, screen, net, nativeTheme,
+      loadRenderer, webPreferences: secureWebPreferences, guardNavigation, showMain, broadcast, deskkit, isMac: IS_MAC,
+      publicOrigin: process.env.ELITLIG_PUBLIC_API_ORIGIN || config.API_ORIGIN,
+      refreshTray: () => refreshTray(), rebuildMenu: () => buildMenu(),
+      log: (...args) => { if (!app.isPackaged) console.log(...args); },
+    });
+    deskkit.attachWidgets(widgets);
     registerIpc();
     buildMenu();
     createTray();
     createMainWindow();
     createQuickWindow();
     globalShortcut.register(config.QUICK_SHORTCUT, () => showQuick());
+    widgets.restore();
 
     setInterval(() => focus.tick(), 1000);
     setInterval(() => reminders.check(), 60000);

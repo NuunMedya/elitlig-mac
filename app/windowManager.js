@@ -268,6 +268,7 @@ const ERRORS = {
   fullscreen: "Pencere tam ekran alanında; önce tam ekrandan çıkın.",
   shell: "Masaüstü ve görev çubuğu taşınamaz.",
   unsupported: "Pencere yerleştirme bu işletim sisteminde desteklenmiyor.",
+  ownonly: "Bu işletim sisteminde yalnız Elitlig Araçlar'ın kendi pencereleri yerleştirilebilir.",
   failed: "Pencere taşınamadı.",
 };
 
@@ -352,8 +353,21 @@ function createWindowManager(deps) {
     const res = plan(key, id, current);
     if (res.error) return { ok: false, code: "layout", error: res.error };
     bw.setBounds(res.rect);
+    // Pencerenin en küçük boyutu hedeften büyükse (ör. ana pencere en az 980 nokta) Electron
+    // genişliği büyütür: sağa / alta yaslı düzende pencere ekrandan taşmasın diye kenara geri itilir.
+    const got = bw.getBounds();
+    let rect = got;
+    const wa = res.display?.workArea;
+    if (wa && (got.width > res.rect.width || got.height > res.rect.height)) {
+      const right = res.rect.x + res.rect.width >= wa.x + wa.width - 1;
+      const bottom = res.rect.y + res.rect.height >= wa.y + wa.height - 1;
+      const x = right ? Math.max(wa.x, wa.x + wa.width - got.width) : got.x;
+      const y = bottom ? Math.max(wa.y, wa.y + wa.height - got.height) : got.y;
+      if (x !== got.x || y !== got.y) { bw.setPosition(x, y); rect = { ...got, x, y }; }
+    }
     remember(key, id, current, res.rect);
-    return { ok: true, rect: res.rect };
+    const clamped = rect.width !== res.rect.width || rect.height !== res.rect.height;
+    return { ok: true, rect, ...(clamped ? { clamped: true, note: "Pencerenin en küçük boyutu nedeniyle bölgeye tam sığmadı." } : {}) };
   }
 
   async function applyMac(key, pid, front) {
@@ -425,7 +439,8 @@ function createWindowManager(deps) {
       if (!target) { const own = ownFocused(); if (own) return applyOwn(key, own); }
       if (mac) return applyMac(key, target?.kind === "mac" ? target.pid : null, front);
       if (win) return applyWin(key, target?.kind === "win" ? target.hwnd : null, front);
-      return fail("unsupported");
+      // Diğer sistemler (Linux): yalnız kendi pencerelerimiz (Electron), izin gerekmez.
+      return fail("ownonly");
     } catch (e) {
       log("[pencere]", e);
       return fail("failed", { message: e?.message });
@@ -434,7 +449,9 @@ function createWindowManager(deps) {
 
   return {
     apply, captureTarget, permission, requestPermission, openPermissionSettings,
-    supported: mac || win,
+    // Kendi pencerelerimiz her sistemde taşınır; başka uygulamalar yalnız macOS ve Windows'ta.
+    supported: true,
+    scope: mac || win ? "all" : "own",
     warm: () => (winHelper ? winHelper.warm() : Promise.resolve("OK")),
     dispose: () => winHelper?.dispose(),
     _history: () => history,

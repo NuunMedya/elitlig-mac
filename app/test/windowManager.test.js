@@ -182,10 +182,36 @@ test("Windows: masaüstü / görev çubuğu taşınmaz", async () => {
   wm.dispose();
 });
 
-test("Linux: desteklenmiyor", async () => {
-  const wm = W.createWindowManager({ platform: "linux", screen: fakeScreen([display(1, 0, 0, 100, 100)]), BrowserWindow: noWindows, tmpDir: os.tmpdir() });
-  assert.equal(wm.supported, false);
-  assert.equal((await wm.apply("leftHalf")).code, "unsupported");
+test("Linux: yalnız kendi pencerelerimiz (Electron) yerleştirilir", async () => {
+  const wm = W.createWindowManager({ platform: "linux", screen: fakeScreen([display(1, 0, 0, 1000, 800, 30)]), BrowserWindow: noWindows, tmpDir: os.tmpdir() });
+  assert.equal(wm.supported, true);
+  assert.equal(wm.scope, "own");
+  assert.equal(wm.permission().needed, false);
+  assert.equal((await wm.apply("leftHalf")).code, "ownonly", "başka uygulama yok");
+  // Odaktaki kendi penceremiz taşınır.
+  let bounds = { x: 100, y: 100, width: 500, height: 400 };
+  const bw = { id: 7, isDestroyed: () => false, isFullScreen: () => false, isMaximized: () => false, unmaximize: () => {}, getBounds: () => bounds, setBounds: (r) => { bounds = r; }, focus: () => {} };
+  const own = W.createWindowManager({ platform: "linux", screen: fakeScreen([display(1, 0, 0, 1000, 800, 30)]), BrowserWindow: { getFocusedWindow: () => bw, getAllWindows: () => [bw], fromId: () => bw }, tmpDir: os.tmpdir() });
+  const r = await own.apply("rightHalf");
+  assert.equal(r.ok, true);
+  assert.deepEqual(bounds, { x: 500, y: 30, width: 500, height: 770 });
+  assert.deepEqual(await own.captureTarget(), { kind: "own", id: 7 });
+  await own.apply("restore");
+  assert.deepEqual(bounds, { x: 100, y: 100, width: 500, height: 400 }, "geri al");
+});
+
+test("kendi penceremiz en küçük boyuttan dar bölgeye: sağa yaslı düzen ekrandan taşmaz", async () => {
+  // Ana pencere en az 980 genişlikte: 1600'lük ekranın sağ yarısı (800) sığmaz.
+  let bounds = { x: 100, y: 100, width: 1000, height: 700 };
+  const bw = { id: 3, isDestroyed: () => false, isFullScreen: () => false, isMaximized: () => false, unmaximize: () => {}, getBounds: () => bounds,
+    setBounds: (r) => { bounds = { ...r, width: Math.max(980, r.width) }; }, setPosition: (x, y) => { bounds = { ...bounds, x, y }; }, focus: () => {} };
+  const wm = W.createWindowManager({ platform: "darwin", screen: fakeScreen([display(1, 0, 0, 1600, 1000, 25)]), BrowserWindow: { getFocusedWindow: () => bw, getAllWindows: () => [bw], fromId: () => bw }, tmpDir: os.tmpdir() });
+  const r = await wm.apply("rightHalf");
+  assert.equal(r.ok, true);
+  assert.equal(r.clamped, true);
+  assert.deepEqual(bounds, { x: 620, y: 25, width: 980, height: 975 }, "sağ kenara yaslı");
+  await wm.apply("leftHalf");
+  assert.equal(bounds.x, 0, "sola yaslı düzen olduğu gibi kalır");
 });
 
 test("döviz kuru yanıtları ortak biçime çevrilir", () => {

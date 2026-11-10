@@ -29,6 +29,8 @@ const Studio = lazy(() => import("./views/studio/Studio"));
 const Equipment = lazy(() => import("./views/equipment/Equipment"));
 const MusicView = lazy(() => import("./music/MusicView"));
 const DeskSettings = lazy(() => import("./views/toolkit/DeskSettings"));
+// Araç Takımı (tam sayfa): panelin araçları + masaüstü widget galerisi.
+const ToolkitPage = lazy(() => import("./views/toolkit/ToolkitPage"));
 // Dosya Araçları ve Ekran Görüntüleri / Pano rafı (yerel; sunucu gerekmez).
 const FileTools = lazy(() => import("./views/files/FileTools"));
 const Shelf = lazy(() => import("./views/shelf/Shelf"));
@@ -38,6 +40,7 @@ import AdminNavTree from "./views/admin/AdminNavTree";
 
 export const ROUTES = [
   { key: "today", label: "Bugün", icon: "sun", view: Today, shortcut: "⌘1", group: "Günlük" },
+  { key: "toolkit", label: "Araç Takımı", icon: "toolbox", view: ToolkitPage, shortcut: "⇧⌘A", group: "Günlük" },
   { key: "messages", label: "Mesajlar", icon: "message", view: Messages, shortcut: "⇧⌘M", group: "Günlük" },
   { key: "requests", label: "Talepler", icon: "inbox", view: Requests, shortcut: "⇧⌘T", group: "Günlük", needs: "requests" },
   { key: "todos", label: "Yapılacaklar", icon: "checkSquare", view: Todos, shortcut: "⌘2", group: "Günlük" },
@@ -56,7 +59,7 @@ export const ROUTES = [
   { key: "desk", label: "Masaüstü araçları", icon: "toolbox", view: DeskSettings, shortcut: "⌘,", group: "Yardımcılar" },
   { key: "files", label: "Dosya Araçları", icon: "folder", view: FileTools, shortcut: "⇧⌘D", group: "Yardımcılar" },
   { key: "shelf", label: "Ekran Görüntüleri", icon: "image", view: Shelf, shortcut: "⇧⌘P", group: "Yardımcılar" },
-  { key: "admin", label: "Yönetim paneli", icon: "overview", view: AdminPanel, shortcut: "⇧⌘A", group: "Yönetim", needs: "requests" },
+  { key: "admin", label: "Yönetim paneli", icon: "overview", view: AdminPanel, shortcut: "⇧⌘L", group: "Yönetim", needs: "requests" },
 ];
 const ROUTE_KEYS = new Set([...ROUTES.map((r) => r.key), "account"]);
 
@@ -298,7 +301,9 @@ function ShortcutsHelp({ onClose }) {
     ["Mesajlar: ⌥⌘↓ / ⌥⌘↑", "Sonraki / önceki sohbet"],
     ["Mesajlar: Enter / ⇧Enter", "Gönder / yeni satır; ↑ son mesajı düzenler"],
     ["⌃⌥N", "Her yerden hızlı kayıt (uygulama arka plandayken de)"],
-    ["⌃⌥Boşluk", "Araç takımı paneli: pencere düzeni, renk, hesap, metin, QR…"],
+    ["⇧⌘A", "Araç Takımı (tam sayfa): tüm araçlar ve masaüstü widget'ları"],
+    [isMac() ? "⌃⌥B" : "⌃⌥Boşluk", "Araç takımı paneli (her yerden): pencere düzeni, renk, hesap, metin, QR…"],
+    ["⌃⌥W", "Masaüstü widget'larını göster / gizle"],
     ["⌃⌥← → ↑ ↓", "Öndeki pencereyi yarıya yerleştir (⌃⌥U I J K çeyrek, ⌃⌥↩ tam, ⌃⌥⌫ geri al)"],
     ["⇧⌘J", "Müzik (medya tuşları da çalışır)"],
     ["⌘,", "Masaüstü araçları: kısayollar ve ayarlar"],
@@ -322,7 +327,7 @@ function ShortcutsHelp({ onClose }) {
     ["Tablolar: ⌘Z / ⇧⌘Z", "Geri al / yinele"],
     ["⇧⌘D", "Dosya Araçları (⌘V yapıştır, ⌘↩ çark, ⌘O dosya seç)"],
     ["⇧⌘P", "Ekran Görüntüleri ve Pano kütüphanesi"],
-    ["⇧⌘A", "Yönetim paneli: maç, oyuncu, takım, lig, sezon… elitlig.com yönetiminin tamamı"],
+    ["⇧⌘L", "Yönetim paneli: maç, oyuncu, takım, lig, sezon… elitlig.com yönetiminin tamamı"],
     ["Yönetim: ⌘[ / ⌘] · ⌘R · ⌘F · ⌘P", "Geri / ileri · yenile · sayfada bul · yazdır"],
     ["⌃⌥T / ⌃⌥S", "Raflar: göster/gizle · arama odaklı (her yerden)"],
     ["⌃⌥A", "Ekranı yakala (işaretçinin altındaki ekran)"],

@@ -10,6 +10,8 @@ import { topCategories } from "../lib/requestUtils";
 import { isAllDayDue, isProjectItem, mergeUpcoming, projectKindOf, projectRoute } from "../lib/projectAgenda";
 import "./todos/todoProjects.css";
 import EquipmentToday from "./equipment/EquipmentToday";
+import ToolkitStrip from "./toolkit/ToolkitStrip";
+import ToolkitIntro from "./toolkit/ToolkitIntro";
 
 const useClock = () => {
   const [now, setNow] = useState(() => new Date());
@@ -78,6 +80,8 @@ export default function Today({ go, auth }) {
           </button>
         ))}
       </nav>
+      <ToolkitIntro go={go} />
+      <ToolkitStrip go={go} />
       <OfflineNote offline={overview.offline || todos.offline} savedAt={overview.savedAt || todos.savedAt} />
       <ErrorNote error={overview.error && !overview.data ? overview.error : null} onRetry={overview.reload} />
 

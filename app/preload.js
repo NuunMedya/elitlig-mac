@@ -363,6 +363,26 @@ contextBridge.exposeInMainWorld("elitlig", {
     onAwake: on("deskkit:awake"),
     onPanelOpen: on("deskkit:panel:open"),
   },
+  // Masaüstü widget'ları (app/widgets): galeri, ekle / kaldır / ayarla, veri kaynakları.
+  widgets: {
+    state: () => ipcRenderer.invoke("widgets:state"),
+    add: (type, options) => ipcRenderer.invoke("widgets:add", String(type || ""), options && typeof options === "object" ? options : {}),
+    update: (id, patch) => ipcRenderer.invoke("widgets:update", String(id || ""), patch && typeof patch === "object" ? patch : {}),
+    remove: (id) => ipcRenderer.invoke("widgets:remove", String(id || "")),
+    setVisible: (on) => ipcRenderer.invoke("widgets:visible", Boolean(on)),
+    toggle: () => ipcRenderer.invoke("widgets:toggle"),
+    setTheme: (theme) => ipcRenderer.invoke("widgets:theme", String(theme || "")),
+    self: () => ipcRenderer.invoke("widgets:self"),
+    menu: () => ipcRenderer.invoke("widgets:menu"),
+    system: () => ipcRenderer.invoke("widgets:system"),
+    weather: (city) => ipcRenderer.invoke("widgets:weather", String(city || "")),
+    matches: (opts) => ipcRenderer.invoke("widgets:matches", { city: String(opts?.city || "") }),
+    rates: (force) => ipcRenderer.invoke("widgets:rates", Boolean(force)),
+    open: (route) => ipcRenderer.invoke("widgets:open", route ? String(route) : null),
+    onChange: on("widgets:changed"),
+    onConfig: on("widget:config"),
+    onSettings: on("widget:settings"),
+  },
   // Uygulama geneli müzik çalar: çalar ana pencerede yaşar; panel ve menü çubuğu komut yollar.
   music: {
     publish: (state) => { if (state && typeof state === "object") ipcRenderer.send("music:publish", state); },

@@ -45,7 +45,7 @@ const STUDIO_RULES = [
   { value: "keep", label: "Çalmaya devam et" },
 ];
 
-export default function DeskSettings({ arg }) {
+export default function DeskSettings({ arg, go }) {
   const toast = useToast();
   const [info, setInfo] = useState(null);
   const [awake, setAwake] = useState({ on: false, until: null });
@@ -80,13 +80,15 @@ export default function DeskSettings({ arg }) {
   return (
     <div className="view">
       <ViewHeader icon="toolbox" title="Masaüstü araçları" subtitle="Araç takımı paneli, Magnet benzeri pencere yerleştirme, müzik çalar ve ekranı uyanık tutma. Değişiklikler hemen uygulanır.">
-        <button type="button" className="btn btn--primary" onClick={() => dk.showPanel()}><Icon name="toolbox" size={14} /> Paneli aç <kbd className="kbd">{acceleratorLabel(s.toolkit.shortcut, mac) || "—"}</kbd></button>
+        <button type="button" className="btn" onClick={() => go?.("toolkit")}><Icon name="toolbox" size={14} /> Araç Takımı <kbd className="kbd">{mac ? "⇧⌘A" : "Ctrl+Shift+A"}</kbd></button>
+        <button type="button" className="btn btn--primary" onClick={() => dk.showPanel()}><Icon name="zap" size={14} /> Paneli aç <kbd className="kbd">{acceleratorLabel(s.toolkit.shortcut, mac) || "—"}</kbd></button>
       </ViewHeader>
 
       <div className="desk-grid">
         <section className="card">
           <h3 className="card__title"><Icon name="toolbox" /> Araç takımı paneli</h3>
-          <p className="muted">Menü çubuğu simgesinden ya da her yerden kısayolla açılan küçük panel: pencere düzeni, renk seçici, hesap ve birim / para çevirici, metin dönüştürücü, QR, dünya saatleri, sayaç, parola, hızlı not ve müzik.</p>
+          <p className="muted">Menü çubuğu simgesinden ya da her yerden kısayolla açılan küçük panel: pencere düzeni, renk, hesap ve döviz, yüzde / KDV, tarih ve iş günü, metin, emoji ve özel karakter, dolgu metni, JSON, Base64 / URL, UUID, QR, dünya saatleri, sayaç, parola, ekran görüntüsü, hızlı not ve müzik. Aynı araçlar uygulamada <b>Araç Takımı</b> sayfasında da var.</p>
+          {mac && s.toolkit.shortcut === "Control+Alt+Space" && <p className="tk-err">⌃⌥Boşluk macOS'ta “giriş kaynağını değiştir” kısayoludur; panel açılmayabilir. ⌃⌥B gibi başka bir kısayol seçin.</p>}
           <div className="desk-rows">
             <div className="desk-row">
               <span className="desk-row__label">Paneli aç / kapat</span>
@@ -97,6 +99,22 @@ export default function DeskSettings({ arg }) {
               <span>Odak gidince gizle<p>Panel dışına tıklayınca kapanır (panelde iğne ile açık tutulabilir).</p></span>
               <input type="checkbox" className="switch" checked={s.toolkit.hideOnBlur} onChange={(e) => save({ toolkit: { hideOnBlur: e.target.checked } })} aria-label="Odak gidince gizle" />
             </label>
+          </div>
+        </section>
+
+        <section className="card">
+          <h3 className="card__title"><Icon name="grid" /> Masaüstü widget'ları</h3>
+          <p className="muted">Saat, ajanda, yapılacaklar, hızlı not, müzik, pano, sayaç, sistem, hava durumu, yaklaşan maçlar ve döviz — masaüstünüzde duran küçük pencereler. Konumları hatırlanır, uygulama açılınca geri gelir.</p>
+          <div className="desk-rows">
+            <div className="desk-row">
+              <span className="desk-row__label">Widget'ları göster / gizle</span>
+              <ShortcutRecorder label="Widget'lar" value={s.widgets?.shortcut || ""} conflict={conflictKeys.has("widgets")} onChange={(acc) => save({ widgets: { shortcut: acc } }, acc ? `Kısayol: ${acceleratorLabel(acc, mac)}` : "Kısayol kapatıldı.")} />
+              {info.failed?.widgets && <span className="desk-row__warn"><Icon name="alert" size={12} /> kullanımda</span>}
+            </div>
+          </div>
+          <div className="row-gap">
+            <button type="button" className="btn btn--sm btn--primary" onClick={() => go?.("toolkit:widgets")}><Icon name="plus" size={13} /> Widget ekle / yönet</button>
+            <button type="button" className="btn btn--sm" onClick={() => window.elitlig.widgets?.toggle()}><Icon name="eye" size={13} /> Göster / gizle</button>
           </div>
         </section>
 
