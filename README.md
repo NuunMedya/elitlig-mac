@@ -117,6 +117,17 @@ ile aynıdır (`/api/tools/projects`).
   aramayı planlar (sonuçlar ve gün sayıları proje ayarlarından düzenlenir). Sonraki aksiyon Ajanda'ya
   eklenebilir. Tüm projelerin aranacakları, adımlarım ve açık sorular **Takip** bölümünde ve Bugün
   ekranındaki “Projelerde bugün” kartında toplanır.
+- **Proje takvimi (Gantt).** Projeler → **Takvim** bölümünde bütün projeler satır satır; her projenin
+  tarih aralıklı dönemleri (Fikir, Planlama, Hazırlık, Tanıtım / Satış, Kayıt, Organizasyon / Uygulama,
+  Kapanış ya da serbest ad) renkli çubuk, kilometre taşları (kayıt son günü, kura, açılış maçı, final)
+  elmas. Hafta / ay / çeyrek / yıl ölçeği, bugün çizgisi; çubuğu fareyle sürükleyip taşıma, kenarından
+  uzatıp kısaltma, boş alanda sürükleyerek yeni dönem; sorumlu, ilerleme %, açıklama, bağımlılık
+  ("önce bu bitmeli" uyarısı), kapsadığı aşamalar (adımlar dönemin altında, dönem dışına taşan adım
+  uyarısı). Yoğunluk şeridi aynı günlerde kaç projenin organizasyon evresinde olduğunu gösterir. Proje /
+  evre / sorumlu süzgeci, planı N gün kaydırma (adımlar ve Yapılacaklar kartlarıyla), yazdır / PDF
+  (yatay A4 / A3) ve Excel dönem listesi. Proje başlangıç / bitişi dönemlerden türer. Projenin
+  **Takvim** sekmesi tek projeyi dönem dönem gösterir; yeni projede etkinlik tarihinden geriye dönem
+  planı önerilir. Ajanda ay görünümünde dönemler gün hücrelerinde renkli şerit olarak görünür.
 - **Tedarik görüşmeleri.** Kişiler sekmesinde “Müşteri görüşmeleri | Tedarik görüşmeleri” anahtarı.
   Tedarikçiler (tesis, kupa/madalya, baskı, yayın…) kendi aşamalarıyla (Tedarikçi adayı → Fiyat istendi
   → Fiyat alındı → Değerlendiriliyor → Pazarlık → Anlaşıldı / Vazgeçildi) izlenir; “Fiyat alındı”
