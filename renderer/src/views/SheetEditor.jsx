@@ -5,7 +5,7 @@
 // pano, sütun genişliğini sürükleme, Excel/CSV/PDF dosyaları doğrudan diske,
 // otomatik kayıt; aynı anda başkası düzenlerse değişiklikler birleştirilir.
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Field, Icon, MenuButton, Modal, Spinner, useConfirm, useResult, useToast } from "../components/ui";
+import { Field, Icon, MenuButton, Modal, Spinner, keyLabel, useConfirm, useResult, useToast } from "../components/ui";
 import { get, put, request } from "../api";
 import { FUNCTION_LIST, addr, colName, createEvaluator, formatValue, isNumeric, rangeStats, toCsvText } from "../lib/sheets/sheetEngine";
 import {
@@ -634,12 +634,12 @@ export default function SheetEditor({ id, onClose }) {
 
       {!readOnly && (
         <div className="sheet-toolbar" role="toolbar">
-          <button type="button" className="icon-btn" title="Geri al (⌘Z)" onClick={undo} disabled={!history.current.undo.length}><Icon name="undo" /></button>
-          <button type="button" className="icon-btn" title="Yinele (⇧⌘Z)" onClick={redo} disabled={!history.current.redo.length}><Icon name="redo" /></button>
+          <button type="button" className="icon-btn" title={keyLabel("Geri al (⌘Z)")} onClick={undo} disabled={!history.current.undo.length}><Icon name="undo" /></button>
+          <button type="button" className="icon-btn" title={keyLabel("Yinele (⇧⌘Z)")} onClick={redo} disabled={!history.current.redo.length}><Icon name="redo" /></button>
           <span className="tb-sep" />
-          <button type="button" className={`icon-btn ${activeStyle.b ? "is-on" : ""}`} title="Kalın (⌘B)" onClick={() => toggleStyle("b")}><Icon name="bold" /></button>
-          <button type="button" className={`icon-btn ${activeStyle.i ? "is-on" : ""}`} title="İtalik (⌘I)" onClick={() => toggleStyle("i")}><Icon name="italic" /></button>
-          <button type="button" className={`icon-btn ${activeStyle.u ? "is-on" : ""}`} title="Altı çizili (⌘U)" onClick={() => toggleStyle("u")}><Icon name="underline" /></button>
+          <button type="button" className={`icon-btn ${activeStyle.b ? "is-on" : ""}`} title={keyLabel("Kalın (⌘B)")} onClick={() => toggleStyle("b")}><Icon name="bold" /></button>
+          <button type="button" className={`icon-btn ${activeStyle.i ? "is-on" : ""}`} title={keyLabel("İtalik (⌘I)")} onClick={() => toggleStyle("i")}><Icon name="italic" /></button>
+          <button type="button" className={`icon-btn ${activeStyle.u ? "is-on" : ""}`} title={keyLabel("Altı çizili (⌘U)")} onClick={() => toggleStyle("u")}><Icon name="underline" /></button>
           <span className="tb-sep" />
           {[["left", "alignLeft"], ["center", "alignCenter"], ["right", "alignRight"]].map(([al, icon]) => <button key={al} type="button" className={`icon-btn ${activeStyle.al === al ? "is-on" : ""}`} title="Hizala" onClick={() => apply((b) => styleRange(b, si, range, { al: activeStyle.al === al ? null : al }))}><Icon name={icon} /></button>)}
           <span className="tb-sep" />
@@ -659,7 +659,7 @@ export default function SheetEditor({ id, onClose }) {
             { label: "Sağa sütun ekle", onClick: () => insert("col", true) },
             { label: "Sütunları sil", danger: true, onClick: () => remove("col") },
             "-",
-            { label: "Aşağı doldur (⌘D)", onClick: () => apply((b) => fill(b, si, range, "down")) },
+            { label: keyLabel("Aşağı doldur (⌘D)"), onClick: () => apply((b) => fill(b, si, range, "down")) },
             { label: "Sağa doldur", onClick: () => apply((b) => fill(b, si, range, "right")) },
             { label: sheet.freeze ? "Üst satırı çöz" : "Üst satırı dondur", onClick: () => apply((b) => ({ ...b, sheets: b.sheets.map((s, i) => (i === si ? { ...s, freeze: !s.freeze } : s)) })) },
             { label: "Biçimi temizle", onClick: () => apply((b) => clearRange(b, si, range, { values: false, styles: true })) },
@@ -668,7 +668,7 @@ export default function SheetEditor({ id, onClose }) {
           ]} />
           <button type="button" className="btn btn--xs" title="Seçili sütuna göre A→Z" onClick={() => sort(true)}>A→Z</button>
           <button type="button" className="btn btn--xs" title="Seçili sütuna göre Z→A" onClick={() => sort(false)}>Z→A</button>
-          <button type="button" className="btn btn--xs" title="Otomatik toplam (⌘⇧T ya da ⌥=)" onClick={autoSum}>Σ Toplam</button>
+          <button type="button" className="btn btn--xs" title={keyLabel("Otomatik toplam (⇧⌘T ya da ⌥=)")} onClick={autoSum}>Σ Toplam</button>
           <button type="button" className="btn btn--xs" onClick={() => setFnOpen(true)}>ƒx İşlevler</button>
         </div>
       )}

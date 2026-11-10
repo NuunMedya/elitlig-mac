@@ -8,7 +8,7 @@
 //   Türkiye Geneli      — illerden alınacak maç başı ücretler ve tahsilatlar
 // Her bölüm ayrı düzenlenir; hesaplar arasında (bölümler arası da) virman yapılır.
 import React, { useEffect, useMemo, useState } from "react";
-import { Icon, ViewHeader } from "../../components/ui";
+import { Icon, OfflineNote, ViewHeader } from "../../components/ui";
 import { useResource } from "../../api";
 import Accounts from "./Accounts";
 import Personal from "./Personal";
@@ -64,6 +64,8 @@ export default function Accounting({ arg, argSeq, go }) {
           </button>
         ))}
       </nav>
+      {/* Ön Muhasebe, Düzenli Ödemeler ve Bütçe kendi çevrimdışı notunu gösterir. */}
+      {["accounts", "projects", "match", "national"].includes(current) && <OfflineNote offline={accountsRes.offline} savedAt={accountsRes.savedAt} />}
       {current === "accounts" && <Accounts accountsRes={accountsRes} />}
       {current === "personal" && <Personal arg={ARG_SECTIONS[arg] ? undefined : arg} argSeq={argSeq} {...shared} />}
       {current === "recurring" && <Recurring {...shared} startBalance={personalBalance} onBalanceChange={() => accountsRes.reload({ quiet: true })} />}

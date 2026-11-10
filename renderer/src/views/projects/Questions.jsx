@@ -1,6 +1,6 @@
 // Sorular: ihtiyaçlar, müşteri soruları ve açık konular; satır içinde cevaplanır.
 import React, { useEffect, useMemo, useState } from "react";
-import { Empty, Field, Icon, MenuButton, Segmented, useConfirm } from "../../components/ui";
+import { Empty, Field, Icon, MenuButton, Segmented, keyLabel, useConfirm } from "../../components/ui";
 import { useCommand } from "../../api";
 import { dueLabel, dayKey } from "../../lib/projectUtils";
 import { includesTr, relativeTime } from "../../lib/helpers";
@@ -97,7 +97,7 @@ export function QuestionItem({ q, ctx, compact = false, highlight = false }) {
         <form className="q-item__reply" onSubmit={(e) => { e.preventDefault(); if (answer.trim() !== (q.answer || "")) actions.updateQuestion(q, { answer: answer.trim() }); setOpen(false); }}>
           <textarea rows={2} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="Cevabı yazın…" onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.currentTarget.form.requestSubmit(); } }} />
           <div className="row-gap">
-            <span className="muted small">⌘↩ kaydet</span><span className="spacer" />
+            <span className="muted small">{keyLabel("⌘↩ kaydet")}</span><span className="spacer" />
             {q.status === "answered" && <button type="button" className="btn btn--xs btn--ghost" onClick={() => { actions.updateQuestion(q, { status: "closed" }); setOpen(false); }}>Kapat</button>}
             <button type="submit" className="btn btn--xs btn--primary" disabled={!answer.trim() || answer.trim() === (q.answer || "")}>{q.answer ? "Cevabı güncelle" : "Cevapla"}</button>
           </div>

@@ -4,7 +4,7 @@
 // kelime sayacı, odak modu, geri bağlantılar, proje / kişi bağlantıları.
 // Çevrimdışı yazılanlar kuyruğa alınır (app/api.js QUEUEABLE).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Icon, MenuButton, Segmented } from "../../components/ui";
+import { Icon, MenuButton, Segmented, keyLabel } from "../../components/ui";
 import { patch } from "../../api";
 import { relativeTime } from "../../lib/helpers";
 import MarkdownView from "./MarkdownView";
@@ -134,22 +134,31 @@ export default function NoteEditor({ note, notes = [], notebooks = [], projects 
 
   // Kişisel notta son yazan kazanır (çevrimdışı kuyrukla uyumlu); paylaşılan
   // notta sürüm gönderilir, başkası değiştirdiyse çakışma uyarısı çıkar.
+  // onSaved her kayıttan sonra (notlar listesi değişince) yeni kimlik alır; flush'ı
+  // ona bağlamak bekleme süresini bozuyor ve her tuşta PATCH gönderiyordu
+  // (paylaşılan notta aynı base_version ile üst üste istek → sahte çakışma).
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
+  const inflight = useRef(false);
   const flush = useCallback(async ({ force = false } = {}) => {
     clearTimeout(timer.current);
     const changes = pending.current;
     if (!Object.keys(changes).length) return;
+    // Önceki kayıt sürerken ikinci istek gönderilmez (sürüm sırası korunur).
+    if (inflight.current) { timer.current = setTimeout(() => flush({ force }), 300); return; }
     pending.current = {};
     setState("saving");
-    const res = await patch(`/api/tools/notes/${note.id}`, shared && !force ? { ...changes, base_version: version.current } : changes);
+    inflight.current = true;
+    const res = await patch(`/api/tools/notes/${note.id}`, shared && !force ? { ...changes, base_version: version.current } : changes).finally(() => { inflight.current = false; });
     if (res.ok) {
-      if (res.data?.item) { version.current = res.data.item.version; onSaved?.(res.data.item); } else onSaved?.({ ...latest.current, updatedAt: new Date().toISOString() });
+      if (res.data?.item) { version.current = res.data.item.version; onSavedRef.current?.(res.data.item); } else onSavedRef.current?.({ ...latest.current, updatedAt: new Date().toISOString() });
       if (!Object.keys(pending.current).length) setState(res.queued ? "queued" : "saved");
       setSavedAt(new Date());
     } else {
       pending.current = { ...changes, ...pending.current };
       setState(res.error?.status === 409 ? "conflict" : "error");
     }
-  }, [note.id, onSaved, shared]);
+  }, [note.id, shared]);
 
   const change = useCallback((p) => {
     if (readOnly) return;
@@ -159,7 +168,10 @@ export default function NoteEditor({ note, notes = [], notebooks = [], projects 
     clearTimeout(timer.current);
     timer.current = setTimeout(() => flush(), 800);
   }, [flush, readOnly]);
-  useEffect(() => () => { clearTimeout(timer.current); if (Object.keys(pending.current).length) flush(); }, [flush]);
+  // Yalnız kapanırken (not değişince / görünümden çıkınca) bekleyen değişiklik gönderilir.
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
+  useEffect(() => () => { clearTimeout(timer.current); if (Object.keys(pending.current).length) flushRef.current(); }, []);
   useEffect(() => {
     if (!autoFocus || readOnly) return;
     if ((latest.current.title || "") === "Yeni not" && titleRef.current) { titleRef.current.focus(); titleRef.current.select(); } else ref.current?.focus();
@@ -276,7 +288,7 @@ export default function NoteEditor({ note, notes = [], notebooks = [], projects 
           {readOnly ? (draft.emoji && <span className="nt-emoji__btn has-value">{draft.emoji}</span>) : <EmojiPicker value={draft.emoji} onChange={(emoji) => change({ emoji })} />}
           <input ref={titleRef} className="nt-editor__title" value={draft.title || ""} placeholder="Başlıksız not" readOnly={readOnly} maxLength={200} aria-label="Başlık" onChange={(e) => change({ title: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); ref.current?.focus(); } }} onBlur={() => flush()} />
           {owner && !note.deleted_at && <button type="button" className={`icon-btn ${draft.pinned ? "is-on" : ""}`} title={draft.pinned ? "Sabitlemeyi kaldır" : "Sabitle"} aria-pressed={draft.pinned} onClick={() => change({ pinned: !draft.pinned })}><Icon name="pin" /></button>}
-          <button type="button" className={`icon-btn ${focus ? "is-on" : ""}`} title={focus ? "Odak modundan çık (esc)" : "Odak modu (⌘.)"} aria-pressed={focus} onClick={onToggleFocus}><Icon name="eye" /></button>
+          <button type="button" className={`icon-btn ${focus ? "is-on" : ""}`} title={focus ? "Odak modundan çık (esc)" : keyLabel("Odak modu (⌘.)")} aria-pressed={focus} onClick={onToggleFocus}><Icon name="eye" /></button>
           <MenuButton items={menu} label="Not işlemleri" />
         </div>
         <div className="nt-editor__meta">
@@ -300,7 +312,7 @@ export default function NoteEditor({ note, notes = [], notebooks = [], projects 
       {showWrite && (
         <div className="nt-toolbar" role="toolbar" aria-label="Biçim">
           {FORMAT_BUTTONS.map((b, i) => (b === "|" ? <span key={`s${i}`} className="nt-toolbar__sep" /> : (
-            <button key={b.kind} type="button" className="nt-toolbar__btn" onMouseDown={(e) => e.preventDefault()} onClick={() => format(b.kind)} title={`${b.label} (${b.keys})`} aria-label={b.label}>
+            <button key={b.kind} type="button" className="nt-toolbar__btn" onMouseDown={(e) => e.preventDefault()} onClick={() => format(b.kind)} title={`${b.label} (${keyLabel(b.keys)})`} aria-label={b.label}>
               {b.icon ? <Icon name={b.icon} size={14} /> : <b>{b.text}</b>}
             </button>
           )))}

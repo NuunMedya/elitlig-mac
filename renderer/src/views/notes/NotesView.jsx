@@ -5,7 +5,7 @@
 // ⌘N yeni not, ⌘F ara, ⌘. odak modu. Bağlantı yokken notlar önbellekten
 // açılır; yazılanlar kuyruğa alınır ve bağlantı gelince eşitlenir.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Empty, ErrorNote, Icon, MenuButton, OfflineNote, Segmented, Spinner, useConfirm, useResult, useToast } from "../../components/ui";
+import { Empty, ErrorNote, Icon, MenuButton, OfflineNote, Segmented, Spinner, keyLabel, useConfirm, useResult, useToast } from "../../components/ui";
 import { del, get, patch, post, tempId, useCommand, useResource } from "../../api";
 import { formatDate, relativeTime } from "../../lib/helpers";
 import {
@@ -235,7 +235,7 @@ export default function NotesView({ arg, argSeq, go }) {
       <section className="nt-listpane" aria-label="Notlar">
         <div className="nt-listpane__head">
           <div className="nt-listpane__title"><h2>{scopeTitle}</h2><span className="muted small">{results.length} not</span>{scope.list === "trash" && trashCount > 0 && <button type="button" className="btn btn--sm" onClick={emptyTrash}>Boşalt</button>}</div>
-          <div className="search-box search-box--full"><Icon name="search" size={14} /><input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Notlarda ara (⌘F)" aria-label="Notlarda ara" onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); if (e.key === "Enter" && results[0]) setSelected(results[0].note.id); }} /></div>
+          <div className="search-box search-box--full"><Icon name="search" size={14} /><input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={keyLabel("Notlarda ara (⌘F)")} aria-label="Notlarda ara" onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); if (e.key === "Enter" && results[0]) setSelected(results[0].note.id); }} /></div>
           <div className="row-gap">
             <select className="select-sm" value={sort} onChange={(e) => { setSort(e.target.value); writeLocal("notes:sort", e.target.value); }} aria-label="Sıralama" disabled={Boolean(query.trim())}>{SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select>
             <Segmented value={layout} onChange={(v) => { setLayout(v); writeLocal("notes:layout", v); }} size="sm" ariaLabel="Görünüm" options={[{ value: "list", icon: "list", label: "", title: "Liste" }, { value: "grid", icon: "grid", label: "", title: "Izgara" }]} />

@@ -344,11 +344,11 @@ function EventEditor({ item, draft, onClose, onSaved }) {
         </>)}
         <Field label="Tekrar"><select value={form.recurrence} onChange={set("recurrence")}>{RECURRENCES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></Field>
         {form.recurrence !== "none" ? <Field label="Tekrar bitişi"><input type="date" value={form.repeat_until} onChange={set("repeat_until")} /></Field> : <span />}
-        <Field label="Hatırlatma (Mac bildirimi)"><select value={form.remind_minutes} onChange={set("remind_minutes")}>{REMINDERS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></Field>
+        <Field label="Hatırlatma (masaüstü bildirimi)"><select value={form.remind_minutes} onChange={set("remind_minutes")}>{REMINDERS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></Field>
         <Field label="Renk">
           <div className="color-dots color-dots--lg">
-            <button type="button" className={!form.color ? "is-on" : ""} style={{ background: categoryOf(form.category).color }} onClick={() => setForm({ ...form, color: "" })} title="Türün rengi" />
-            {["#6366f1", "#7c3aed", "#0284c7", "#059669", "#dc2626", "#d97706", "#db2777", "#475569"].map((c) => <button key={c} type="button" className={form.color === c ? "is-on" : ""} style={{ background: c }} onClick={() => setForm({ ...form, color: c })} />)}
+            <button type="button" className={!form.color ? "is-on" : ""} style={{ background: categoryOf(form.category).color }} onClick={() => setForm({ ...form, color: "" })} title="Türün rengi" aria-label="Türün rengi" aria-pressed={!form.color} />
+            {["#6366f1", "#7c3aed", "#0284c7", "#059669", "#dc2626", "#d97706", "#db2777", "#475569"].map((c) => <button key={c} type="button" className={form.color === c ? "is-on" : ""} style={{ background: c }} onClick={() => setForm({ ...form, color: c })} aria-label={`Renk ${c}`} aria-pressed={form.color === c} />)}
           </div>
         </Field>
         <Field label="Açıklama" className="span2"><textarea rows={3} value={form.description} onChange={set("description")} /></Field>
