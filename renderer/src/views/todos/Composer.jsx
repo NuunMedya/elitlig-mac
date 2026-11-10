@@ -4,6 +4,7 @@ import { Field, Icon, Modal, Segmented, useResult } from "../../components/ui";
 import { get, patch, post, tempId, useDebounced } from "../../api";
 import { includesTr, localInput } from "../../lib/helpers";
 import { ALL_AWARD, PRIORITIES, endOfDay } from "./todoUtils";
+import { UNLABELED_LONG, phasePayload, phasesOf } from "../../lib/projectPhases";
 
 /** Oyuncu / takım / maç arama (/api/todos/lookup). */
 export function LinkPicker({ types = ["player", "team", "match"], value, onChange, placeholder }) {
@@ -99,6 +100,9 @@ export default function Composer({ catalog, task, initial = {}, projects = [], o
     due_at: task?.dueAt ? localInput(task.dueAt) : initial.due_at ? localInput(initial.due_at) : "",
     checklist: "",
     project_id: task ? task.project?.id ?? null : initial.project_id ?? null,
+    // Etap etiketi: "" Askıda, id var olan etap, "new" yeni etap (phase_name)
+    phase: task?.project?.phase?.id ?? "",
+    phase_name: "",
   });
   // Bağlanabilecek projeler; düzenlenen kartın projesi listede yoksa da seçenek olarak kalır.
   const projectChoices = useMemo(() => {
@@ -106,7 +110,8 @@ export default function Composer({ catalog, task, initial = {}, projects = [], o
     if (task?.project && !list.some((p) => Number(p.id) === Number(task.project.id))) list.push(task.project);
     return list;
   }, [projects, task]);
-  const projectLinked = ["project_step", "project_followup"].includes(task?.kind);
+  // Görüşme takibi kartının projesi değişmez; proje adımı kartı başka projeye taşınabilir ya da projeden çıkarılabilir.
+  const projectLinked = task?.kind === "project_followup";
   const [link, setLink] = useState(linkOf(task));
   const [assignees, setAssignees] = useState([]);
   const [people, setPeople] = useState([]);
@@ -130,6 +135,10 @@ export default function Composer({ catalog, task, initial = {}, projects = [], o
     setBusy(true);
     const links = { player_id: link?.type === "player" ? link.id : null, team_id: link?.type === "team" ? link.id : null, match_id: link?.type === "match" ? link.id : null };
     if (projectChoices.length && !projectLinked && !isAward) links.project_id = form.project_id || null;
+    if (form.project_id && !isAward && !projectLinked) {
+      const sameProject = editing && Number(task?.project?.id) === Number(form.project_id);
+      Object.assign(links, phasePayload(form.phase, form.phase_name, sameProject ? task?.project?.phase?.id ?? null : undefined));
+    }
     let res;
     if (editing) {
       res = await patch(`/api/todos/${task.id}`, { title: form.title.trim(), body: form.body || null, priority: form.priority, due_at: form.due_at ? new Date(form.due_at).toISOString() : null, ...links });
@@ -182,6 +191,17 @@ export default function Composer({ catalog, task, initial = {}, projects = [], o
               <option value="">Kişisel (projesiz)</option>
               {projectChoices.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
+          </Field>
+        )}
+        {form.project_id && !isAward && !projectLinked && (
+          <Field label="Etap etiketi (projedeki aşama)">
+            <select value={form.phase} onChange={(e) => setForm({ ...form, phase: e.target.value })} aria-label="Etap etiketi">
+              <option value="">{UNLABELED_LONG}</option>
+              {phasesOf(projectChoices, form.project_id).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              <option value="new">+ Yeni etap…</option>
+            </select>
+            {form.phase === "new" && <input value={form.phase_name} maxLength={120} onChange={set("phase_name")} placeholder="Yeni etap adı (projede aşama açılır)" aria-label="Yeni etap adı" />}
+            <span className="muted small">Kart projede bu etabın altında adım olur; etiketsizler “Askıda” grubundadır.</span>
           </Field>
         )}
         {!isAward && <div><span className="field__label">Oyuncu / takım / maç bağla</span><LinkPicker value={link} onChange={setLink} /></div>}

@@ -1,5 +1,7 @@
 // Yapılacaklar: görünümler, gruplama, sıralama ve yardımcılar (saf, testli).
 
+import { phaseGroups } from "../../lib/projectPhases";
+
 export const STATUSES = [
   { key: "open", label: "Yapılacak" },
   { key: "in_progress", label: "Sürüyor" },
@@ -127,7 +129,10 @@ export function groupRows(list, { view, groupBy = "date", now = new Date() } = {
   }
   const delegated = active.filter(isDelegated);
   const mine = active.filter((t) => !isDelegated(t));
-  if (groupBy === "status") {
+  if (groupBy === "phase") {
+    // Etaba göre (proje aşaması): etaplar, Askıda, proje dışı (lib/projectPhases.js).
+    phaseGroups(mine).forEach((g) => push(g.key, g.label, g.items, g.color ? { color: g.color, hint: g.hint } : {}));
+  } else if (groupBy === "status") {
     push("in_progress", "Sürüyor", mine.filter((t) => t.status === "in_progress"));
     push("open", "Yapılacak", mine.filter((t) => t.status === "open"));
   } else {

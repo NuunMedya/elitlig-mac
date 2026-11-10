@@ -66,10 +66,10 @@ export const isFiltering = (f = {}) => Boolean(f.status || f.role || f.assignee 
 const byPosition = (a, b) => (Number(a.position) || 0) - (Number(b.position) || 0) || Number(a.id) - Number(b.id);
 
 /**
- * Adımları aşamalara göre gruplar. Aşamasız adımlar en sonda "Aşamasız" grubunda.
+ * Adımları aşamalara göre gruplar. Aşamasız adımlar en sonda "Askıda (etiketlenmemiş)" grubunda.
  * allSteps verilirse ilerleme süzgeçten bağımsız tüm adımlardan hesaplanır.
  */
-export function groupStepsByPhase(phases = [], steps = [], { allSteps = steps, today = dayKey(), keepEmpty = true } = {}) {
+export function groupStepsByPhase(phases = [], steps = [], { allSteps = steps, today = dayKey(), keepEmpty = true, alwaysLoose = false } = {}) {
   const ordered = [...phases].sort(byPosition);
   const known = new Set(ordered.map((p) => Number(p.id)));
   const groups = ordered.map((phase) => ({
@@ -80,7 +80,8 @@ export function groupStepsByPhase(phases = [], steps = [], { allSteps = steps, t
   }));
   const orphan = steps.filter((s) => s.phase_id == null || !known.has(Number(s.phase_id))).sort(byPosition);
   const orphanAll = allSteps.filter((s) => s.phase_id == null || !known.has(Number(s.phase_id)));
-  if (orphanAll.length || !ordered.length) groups.push({ key: "none", phase: null, steps: orphan, stats: progressOf(orphanAll, today) });
+  // "Askıda (etiketlenmemiş)": etapsız adımlar; Yapılacaklar'da etiketsiz eklenen proje işleri de buraya düşer.
+  if (orphanAll.length || !ordered.length || alwaysLoose) groups.push({ key: "none", phase: null, steps: orphan, stats: progressOf(orphanAll, today) });
   return keepEmpty ? groups : groups.filter((g) => g.steps.length);
 }
 
