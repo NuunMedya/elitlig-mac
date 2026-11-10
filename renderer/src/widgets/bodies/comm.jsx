@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Icon } from "../../components/ui";
 import { chatPreview, isGroupChat, isUnread, listTime, newClientId } from "../../lib/chatUtils";
 import { A, inboxThreads } from "../../lib/inboxUtils";
-import { Avatar, Err, Loading, NeedSession, W, openApp, useAuth, usePoll } from "../common";
+import { Avatar, Err, Loading, NeedSession, W, openApp, useAuth, usePoll, Hero, isBig, pick } from "../common";
 import { chatUnread, recentChats } from "../widgetModel";
 
 const C = "/api/chat";
@@ -102,7 +102,15 @@ export function MessagesWidget({ item, size, settings, update, closeSettings }) 
   const list = recentChats(q.data.personal, q.data.inbox, source);
   const unread = chatUnread(q.data.personal, q.data.inbox, source);
   const inboxUnread = chatUnread([], q.data.inbox, "inbox");
-  const max = size === "medium" ? 6 : 3;
+  const max = pick(size, 0, replyTo ? 1 : 2, replyTo ? 5 : 6);
+  if (size === "small") {
+    const top = list[0];
+    const p0 = top ? chatPreview(top) : null;
+    return (
+      <Hero value={unread} label={unread === 1 ? "okunmamış mesaj" : "okunmamış"} tone={unread ? "accent" : ""} onClick={() => openApp(top ? `messages:${top.id}` : "messages")}
+        lines={top ? [<b key="t">{top.title}</b>, `${p0.prefix}${p0.text}`] : ["Henüz mesaj yok"]} />
+    );
+  }
   const canReply = (c) => item.options.reply !== false && c.can_write !== false && !c.blocked_by_me && (!c._inbox || access.reply);
 
   const open = (c) => { setFresh((s) => { const n = new Set(s); n.delete(Number(c.id)); return n; }); openApp(`messages:${c.id}`); };
@@ -181,8 +189,12 @@ export function RequestsWidget({ size }) {
   }, []);
   if (auth && !auth.signedIn) return <NeedSession />;
   if (auth && !auth.access?.requests) return <div className="wg-empty"><Icon name="lock" size={15} /><span>Talepler yönetim hesaplarına açıktır.</span></div>;
-  const cats = (sum?.categories || []).filter((c) => size === "medium" || Number(c.open) > 0);
   const total = Number(sum?.total) || 0;
+  const cats = (sum?.categories || []).filter((c) => isBig(size) || Number(c.open) > 0);
+  if (size === "small") {
+    const top = cats.filter((c) => Number(c.open) > 0).slice(0, 2).map((c) => `${c.label}: ${c.open}`);
+    return <Hero value={<span data-testid="requests-total">{total}</span>} label="bekleyen talep" tone={total ? "red" : ""} onClick={() => openApp("requests")} lines={top.length ? top : [sum ? "Bekleyen talep yok ✓" : "…"]} />;
+  }
   const refresh = async () => { setBusy(true); await W().requests.refresh().catch(() => {}); setBusy(false); };
   return (
     <div className="wg-reqs">
@@ -192,7 +204,7 @@ export function RequestsWidget({ size }) {
         <button type="button" className="wg-ib is-sm" onClick={refresh} disabled={busy} aria-label="Yenile" title="Yenile"><Icon name="refresh" size={12} /></button>
       </div>
       <div className="wg-list">
-        {cats.length ? cats.slice(0, size === "medium" ? 8 : 4).map((c) => (
+        {cats.length ? cats.slice(0, isBig(size) ? 8 : 2).map((c) => (
           <button key={c.key} type="button" className="wg-row" onClick={() => openApp(`requests:${c.key}`)}>
             <span className="wg-row__text">{c.label}</span><b className={Number(c.open) ? "wg-num is-alert" : "wg-num"}>{c.open || 0}</b>
           </button>

@@ -19,3 +19,10 @@
 .wg-gallery__phead strong { flex: 1; }
 .wg-gallery__sizes { display: inline-flex; gap: 4px; }
 .wg-gallery__stage { display: grid; place-items: center; padding: 20px; border-radius: 12px; max-width: 100%; min-height: 120px; background: radial-gradient(circle at 30% 20%, #8b5cf6 0%, transparent 55%), radial-gradient(circle at 80% 90%, #ec4899 0%, transparent 50%), linear-gradient(135deg, #312e81, #0f172a); overflow: auto; }
+.wg-gallery__opts { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: var(--fs-sm, 13px); }
+.wg-gallery__stage { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-end; justify-content: center; padding: 26px 20px; }
+.wg-gallery__size { border: 0; background: none; padding: 6px; border-radius: 28px; display: flex; flex-direction: column; align-items: center; gap: 8px; color: #fff; font-size: 12px; font-weight: 600; }
+.wg-gallery__size.is-on { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.85); }
+.wg-gallery__size > span { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+.wg-gallery__size[data-size="xlarge"] .wg-preview { zoom: 0.72; }
+.wg-gallery__pinfo { flex-direction: row; align-items: center; }

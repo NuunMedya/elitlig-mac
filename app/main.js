@@ -452,6 +452,8 @@ function createMainWindow() {
   mainWindow = win;
   guardNavigation(win);
   win.once("ready-to-show", () => {
+    // Giriş sırasında başlatıldıysa (widget'lar için) ana pencere gizli kalır.
+    if (widgets?.openedAtLogin?.() && !mainShownOnce) return;
     if (readWinState().maximized) win.maximize();
     win.show();
   });
@@ -471,7 +473,9 @@ function createMainWindow() {
   return win;
 }
 
+let mainShownOnce = false;
 function showMain(route) {
+  mainShownOnce = true;
   if (!mainWindow) createMainWindow();
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
@@ -1004,6 +1008,8 @@ if (!app.requestSingleInstanceLock()) {
     if (authState().signedIn) refreshUser().catch(() => {}).finally(() => chatLink.connect());
 
     powerMonitor.on("resume", () => { setTimeout(() => { keepSessionFresh(); api.flush(); reminders.check(); refreshSummary(); refreshRequests(); chatLink.kick(); }, 3000); });
+    // Masaüstü widget'ları: uyanınca / oturum kilidi açılınca yerinde ve görünür mü (app/widgets).
+    for (const ev of ["resume", "unlock-screen"]) powerMonitor.on(ev, () => setTimeout(() => widgets?.revalidate(), 2500));
     nativeTheme.on("updated", () => broadcast("theme", nativeTheme.shouldUseDarkColors ? "dark" : "light"));
 
     app.setAboutPanelOptions({

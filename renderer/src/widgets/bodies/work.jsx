@@ -4,7 +4,7 @@
 import React, { useMemo, useState } from "react";
 import { Icon } from "../../components/ui";
 import { greeting, groupTodos, includesTr, prettyPhone, waNumber } from "../../lib/helpers";
-import { Avatar, Chips, W, dayStart, dueLabel, fetchData, gate, money, openApp, shortMoney, useDataChanged, usePoll, useSignedIn } from "../common";
+import { Avatar, Chips, W, dayStart, dueLabel, fetchData, gate, money, openApp, shortMoney, useDataChanged, usePoll, useSignedIn, Hero, isBig, pick } from "../common";
 import { activeProjects, filterTodos, projectDigest, quickRecord, todoCounts, upcomingPayments } from "../widgetModel";
 
 const timeOf = (iso) => new Date(iso).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
@@ -65,7 +65,10 @@ export function TodosWidget({ item, size, settings, update, closeSettings }) {
   if (g) return g;
   const list = filterTodos(q.data.items, { filter, project });
   const counts = todoCounts(q.data.items, project);
-  const max = size === "medium" ? 8 : 4;
+  const max = pick(size, 0, 3, 8);
+  if (size === "small") {
+    return <Hero value={counts.today} label={counts.overdue ? `bugün · ${counts.overdue} gecikmiş` : "bugün yapılacak"} tone={counts.overdue ? "red" : "accent"} onClick={() => openApp("todos")} lines={list.slice(0, 2).map((t) => `○ ${t.title}`)} />;
+  }
   const projName = project ? q.data.projects.find((p) => Number(p.id) === Number(project))?.name : null;
   const add = async (e) => {
     e.preventDefault();
@@ -85,7 +88,7 @@ export function TodosWidget({ item, size, settings, update, closeSettings }) {
       {list.length ? list.slice(0, max).map((t) => <TodoRow key={t.id} t={t} done={done.has(t.id)} onCheck={check} />)
         : <p className="wg-muted">{filter === "overdue" ? "Geciken iş yok ✓" : filter === "today" ? "Bugün için iş yok 🎉" : "İş yok."}</p>}
       {list.length > max && <button type="button" className="wg-link" onClick={() => openApp("todos")}>+{list.length - max} iş daha</button>}
-      <form className="wg-add" onSubmit={add}><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={filter === "all" || filter === "upcoming" ? "İş ekle…" : "Bugüne iş ekle…"} aria-label="Yeni iş" /></form>
+      {size !== "medium" && <form className="wg-add" onSubmit={add}><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={filter === "all" || filter === "upcoming" ? "İş ekle…" : "Bugüne iş ekle…"} aria-label="Yeni iş" /></form>}
     </div>
   );
 }
@@ -94,7 +97,7 @@ export function TodosWidget({ item, size, settings, update, closeSettings }) {
 
 export function ProjectsWidget({ size }) {
   const signed = useSignedIn();
-  const max = size === "medium" ? 4 : 2;
+  const max = pick(size, 1, 2, 4);
   const q = usePoll(async () => {
     if (!signed) return null;
     const list = activeProjects((await fetchData("/api/tools/projects", {}, "Projeler alınamadı."))?.items || []);
@@ -105,6 +108,21 @@ export function ProjectsWidget({ size }) {
   useDataChanged("/projects", q.reload);
   const g = gate(signed, q);
   if (g) return g;
+  if (size === "small") {
+    const p = q.data.items[0];
+    if (!p) return <Hero value="—" label="aktif proje yok" lines={[]} onClick={() => openApp("projects:new")} />;
+    const pr = p.stats?.steps?.progress ?? 0;
+    const d = p.digest;
+    const next = d?.upcoming?.[0];
+    return (
+      <button type="button" className="wg-proj-small" style={{ "--pc": p.color || "var(--w-accent)" }} onClick={() => openApp(`projects:${p.id}`)} data-pid={p.id}>
+        <span className="wg-ringval"><svg viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="25" className="wg-ring__bg" /><circle cx="30" cy="30" r="25" className="wg-ring__fg" strokeDasharray={157} strokeDashoffset={157 * (1 - pr / 100)} transform="rotate(-90 30 30)" /></svg><b>%{pr}</b></span>
+        <b className="wg-proj-small__name">{p.name}</b>
+        {d?.phase && <small>Evre {d.phase.index}/{d.phase.total} · {d.phase.name}</small>}
+        {next && <small className={next.overdue ? "is-late" : ""}>{next.title} · {dueLabel(next.due)}</small>}
+      </button>
+    );
+  }
   return (
     <div className="wg-list">
       {q.data.items.length ? q.data.items.map((p) => {
@@ -119,8 +137,8 @@ export function ProjectsWidget({ size }) {
               {d?.phase && <span className="wg-tag" style={d.phase.color ? { "--tag": d.phase.color } : undefined}>Evre {d.phase.index}/{d.phase.total}: {d.phase.name}</span>}
               <small>{s.done ?? 0}/{s.total ?? 0} adım{d?.overdue ? ` · ${d.overdue} gecikmiş` : ""}</small>
             </span>
-            {next && <span className={`wg-proj__next${next.overdue ? " is-late" : ""}`}><Icon name="flag" size={10} /> {next.title} · {dueLabel(next.due)}</span>}
-            {size === "medium" && d?.upcoming?.slice(1, 3).map((u) => <span key={u.id} className={`wg-proj__next${u.overdue ? " is-late" : ""}`}><Icon name="circle" size={8} /> {u.title} · {dueLabel(u.due)}</span>)}
+            {next && size !== "medium" && <span className={`wg-proj__next${next.overdue ? " is-late" : ""}`}><Icon name="flag" size={10} /> {next.title} · {dueLabel(next.due)}</span>}
+            {isBig(size) && d?.upcoming?.slice(1, 3).map((u) => <span key={u.id} className={`wg-proj__next${u.overdue ? " is-late" : ""}`}><Icon name="circle" size={8} /> {u.title} · {dueLabel(u.due)}</span>)}
           </button>
         );
       }) : <p className="wg-muted">Aktif proje yok.</p>}
@@ -140,13 +158,18 @@ export function LedgerWidget({ size }) {
   const q = usePoll(async () => {
     if (!signed) return null;
     const [ov, rec] = await Promise.all([fetchData("/api/tools/overview", {}, "Muhasebe özeti alınamadı."), W().request({ path: "/api/tools/recurring" })]);
-    return { ledger: ov?.ledger || {}, bills: ov?.recurring || null, payments: rec.ok ? upcomingPayments(rec.data, { days: 30, limit: size === "medium" ? 4 : 2 }) : [] };
+    return { ledger: ov?.ledger || {}, bills: ov?.recurring || null, payments: rec.ok ? upcomingPayments(rec.data, { days: 30, limit: isBig(size) ? 4 : 2 }) : [] };
   }, 5 * 60000, [signed, size]);
   useDataChanged(["/ledger", "/recurring", "/finance"], q.reload);
   const g = gate(signed, q);
   if (g) return g;
   const l = q.data.ledger;
   const month = new Date().toLocaleDateString("tr-TR", { month: "long" });
+  if (size === "small") {
+    const [num, ...unit] = shortMoney(l.net).split(" ");
+    return <Hero value={<span data-testid="net">{num}</span>} unit={unit.join(" ")} fit={num.length > 5} label={`net · ${month}`} tone={Number(l.net) < 0 ? "red" : "green"} onClick={() => openApp("ledger")}
+      lines={[<span key="i" className="is-green">↑ <span data-testid="income">{shortMoney(l.income)}</span></span>, <span key="e" className="is-red">↓ <span data-testid="expense">{shortMoney(l.expense)}</span></span>, l.receivable || l.payable ? `Alacak ${shortMoney(l.receivable)} · Borç ${shortMoney(l.payable)}` : null]} />;
+  }
   return (
     <div className="wg-ledger">
       <div className="wg-kpis">
@@ -159,7 +182,7 @@ export function LedgerWidget({ size }) {
         <span><small>Bekleyen borç</small><b className="is-red">{money(l.payable)}</b></span>
         {l.overdue ? <span><small>Vadesi geçen</small><b className="is-red">{money(l.overdue)}</b></span> : null}
       </div>
-      {q.data.payments.length > 0 && (
+      {isBig(size) && q.data.payments.length > 0 && (
         <section><h5>Yaklaşan düzenli ödemeler</h5>
           {q.data.payments.map((p) => (
             <button key={p.key} type="button" className={`wg-row${p.late ? " is-late" : ""}`} onClick={() => openApp("ledger:duzenli")}>
@@ -168,11 +191,11 @@ export function LedgerWidget({ size }) {
           ))}
         </section>
       )}
-      <div className="wg-bar">
+      {isBig(size) && <div className="wg-bar">
         <button type="button" className="wg-btn" onClick={() => W().quick.show("expense")}><Icon name="plus" size={11} /> Gider</button>
         <button type="button" className="wg-btn is-ghost" onClick={() => openApp("ledger:new")}>Gelir / gider</button>
         <button type="button" className="wg-btn is-ghost" onClick={() => openApp("ledger:duzenli")}>Düzenli</button>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -194,7 +217,11 @@ export function EquipmentWidget({ size }) {
   if (g) return g;
   if (q.data.denied) return <div className="wg-empty"><Icon name="lock" size={15} /><span>Ekipman görüntüleme yetkiniz yok.</span></div>;
   const late = q.data.mine.filter((a) => a.overdue);
-  const max = size === "medium" ? 5 : 3;
+  const max = pick(size, 0, 2, 5);
+  if (size === "small") {
+    return <Hero value={<span data-testid="mine">{q.data.mine.length}</span>} label="zimmetim" tone={late.length ? "red" : "accent"} onClick={() => openApp("equipment:zimmet")}
+      lines={[late.length ? <span key="l" className="is-red">{late.length} iade gecikti</span> : "İadeler zamanında", q.data.maint.length ? `${q.data.maint.length} bakım yaklaşıyor` : null]} />;
+  }
   return (
     <div className="wg-list">
       <div className="wg-msgs__sum">
@@ -209,7 +236,7 @@ export function EquipmentWidget({ size }) {
         </button>
       ))}
       {!q.data.mine.length && <p className="wg-muted">Üzerinizde zimmetli ekipman yok.</p>}
-      {size === "medium" && q.data.maint.slice(0, 3).map((m) => (
+      {isBig(size) && q.data.maint.slice(0, 3).map((m) => (
         <button key={`m${m.id}`} type="button" className={`wg-row${m.state === "overdue" ? " is-late" : ""}`} onClick={() => openApp("equipment:bakim")}>
           <span className="wg-row__time"><Icon name="wrench" size={10} /></span><span className="wg-row__text">{m.name}</span><small>{m.state === "overdue" ? `${-m.days_left} gün gecikti` : m.days_left === 0 ? "bugün" : `${m.days_left} gün`}</small>
         </button>
@@ -240,12 +267,17 @@ export function TodayWidget({ size }) {
   if (g) return g;
   const grp = groupTodos(q.data.todos, new Date());
   const work = [...grp.overdue.map((t) => ({ ...t, late: true })), ...grp.today];
-  const maxT = size === "medium" ? 5 : 3;
-  const maxE = size === "medium" ? 4 : 2;
+  const maxT = pick(size, 0, 2, 5);
+  const maxE = pick(size, 0, 1, 4);
+  if (size === "small") {
+    const nextEv = q.data.events.find((e) => e.all_day || new Date(e.occurrence_start || e.start_at) >= new Date());
+    return <Hero value={work.length} label={grp.overdue.length ? `iş · ${grp.overdue.length} gecikmiş` : "iş bugün"} tone={grp.overdue.length ? "red" : "accent"} onClick={() => openApp("today")}
+      lines={[nextEv ? `${nextEv.all_day ? "Gün boyu" : timeOf(nextEv.occurrence_start || nextEv.start_at)} ${nextEv.title}` : `${q.data.events.length} etkinlik`, q.data.pays[0] ? `${q.data.pays[0].name} · ${money(q.data.pays[0].amount)}` : null]} />;
+  }
   const now = new Date();
   return (
     <div className="wg-list wg-today">
-      <p className="wg-today__hi">{greeting(now.getHours())}{q.data.name ? `, ${q.data.name.split(" ")[0]}` : ""} · <small>{now.toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long" })}</small></p>
+      {size !== "medium" && <p className="wg-today__hi">{greeting(now.getHours())}{q.data.name ? `, ${q.data.name.split(" ")[0]}` : ""} · <small>{now.toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long" })}</small></p>}
       <section><h5><Icon name="checkSquare" size={10} /> İşler <em>{work.length}</em>{grp.overdue.length ? <em className="is-alert">{grp.overdue.length} gecikmiş</em> : null}</h5>
         {work.length ? work.slice(0, maxT).map((t) => <TodoRow key={t.id} t={t} done={done.has(t.id)} onCheck={check} />) : <p className="wg-muted">Bugün için iş yok 🎉</p>}
       </section>
@@ -285,7 +317,27 @@ export function ContactsWidget({ size }) {
   const g = gate(signed, q);
   if (g) return g;
   const ext = (url) => W().app.openExternal(url);
-  const max = size === "medium" ? 6 : 3;
+  const max = pick(size, 4, 4, 6);
+  if (!isBig(size) && !term) {
+    // macOS Kişiler widget'ı gibi: favorilerin yuvarlak avatarları; tıkla → WhatsApp / ara.
+    return (
+      <div className={`wg-faves is-${size}`}>
+        {list.slice(0, max).map((c) => (
+          <div key={c.id} className="wg-fave">
+            <button type="button" className="wg-fave__av" onClick={() => openApp(`contacts:${c.id}`)} title={`${c.name}${c.company ? ` · ${c.company}` : ""}`}><Avatar name={c.name} id={c.id} size={size === "small" ? 46 : 50} /></button>
+            <span className="wg-fave__name">{String(c.name).split(" ")[0]}</span>
+            {size === "medium" && c.phone && (
+              <span className="wg-fave__acts">
+                <button type="button" className="wg-ib is-sm" onClick={() => ext(`tel:${String(c.phone).replace(/\s/g, "")}`)} aria-label={`${c.name} ara`} title="Ara"><Icon name="phone" size={11} /></button>
+                <button type="button" className="wg-ib is-sm is-wa" onClick={() => ext(`https://wa.me/${waNumber(c.phone)}`)} aria-label={`${c.name} WhatsApp`} title="WhatsApp"><Icon name="message" size={11} /></button>
+              </span>
+            )}
+          </div>
+        ))}
+        {!list.length && <p className="wg-muted">Rehber boş.</p>}
+      </div>
+    );
+  }
   return (
     <div className="wg-list">
       <input className="wg-search" value={term} onChange={(e) => setTerm(e.target.value)} placeholder="Kişi ara…" aria-label="Kişi ara" />
@@ -298,7 +350,7 @@ export function ContactsWidget({ size }) {
           </button>
           {c.phone && <button type="button" className="wg-ib is-sm" onClick={() => ext(`tel:${String(c.phone).replace(/\s/g, "")}`)} aria-label={`${c.name} ara`} title="Ara"><Icon name="phone" size={12} /></button>}
           {c.phone && <button type="button" className="wg-ib is-sm is-wa" onClick={() => ext(`https://wa.me/${waNumber(c.phone)}`)} aria-label={`${c.name} WhatsApp`} title="WhatsApp"><Icon name="message" size={12} /></button>}
-          {size === "medium" && c.email && <button type="button" className="wg-ib is-sm" onClick={() => ext(`mailto:${c.email}`)} aria-label={`${c.name} e-posta`} title="E-posta"><Icon name="mail" size={12} /></button>}
+          {isBig(size) && c.email && <button type="button" className="wg-ib is-sm" onClick={() => ext(`mailto:${c.email}`)} aria-label={`${c.name} e-posta`} title="E-posta"><Icon name="mail" size={12} /></button>}
         </div>
       ))}
       {!list.length && <p className="wg-muted">{term ? "Bulunamadı." : "Rehber boş."}</p>}
@@ -323,8 +375,18 @@ export function PinnedNotesWidget({ size }) {
   useDataChanged("/notes", q.reload);
   const g = gate(signed, q);
   if (g) return g;
-  const max = size === "medium" ? 5 : 3;
+  const max = pick(size, 1, 2, 5);
   const list = q.data.pinned.length ? q.data.pinned : q.data.recent;
+  if (size === "small") {
+    const n = list[0];
+    return n ? (
+      <button type="button" className="wg-note-small" onClick={() => openApp(`notes:${n.id}`)} style={n.color ? { "--nc": n.color } : undefined}>
+        <b>{n.pinned && <Icon name="pin" size={10} />} {n.title || stripMd(n.body).slice(0, 40) || "Not"}</b>
+        <small>{stripMd(n.body).slice(0, 140)}</small>
+        {list.length > 1 && <em>+{list.length - 1} not</em>}
+      </button>
+    ) : <Hero value="—" label="not yok" lines={[]} onClick={() => W().quick.show("note")} />;
+  }
   const save = async (e) => {
     e.preventDefault();
     const r = quickRecord("note", text);
@@ -341,11 +403,11 @@ export function PinnedNotesWidget({ size }) {
       {list.slice(0, max).map((n) => (
         <button key={n.id} type="button" className="wg-noteitem" onClick={() => openApp(`notes:${n.id}`)} style={n.color ? { "--nc": n.color } : undefined}>
           <b>{n.pinned && <Icon name="pin" size={10} />} {n.title || stripMd(n.body).slice(0, 40) || "Not"}</b>
-          {size === "medium" && n.body && <small>{stripMd(n.body).slice(0, 90)}</small>}
+          {isBig(size) && n.body && <small>{stripMd(n.body).slice(0, 90)}</small>}
         </button>
       ))}
       {!list.length && <p className="wg-muted">Henüz not yok.</p>}
-      <form className="wg-add" onSubmit={save}><input value={text} onChange={(e) => setText(e.target.value)} placeholder="Hızlı not yaz, ↵ kaydet…" aria-label="Hızlı not" /></form>
+      {size !== "medium" && <form className="wg-add" onSubmit={save}><input value={text} onChange={(e) => setText(e.target.value)} placeholder="Hızlı not yaz, ↵ kaydet…" aria-label="Hızlı not" /></form>}
       {msg && <p className="wg-note-line" role="status">{msg}</p>}
     </div>
   );
@@ -382,7 +444,7 @@ export function QuickAddWidget({ size }) {
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder={PH[kind]} aria-label="Hızlı kayıt" />
         <button type="submit" className="wg-ib is-main is-sm" disabled={!text.trim() || busy} aria-label="Kaydet"><Icon name="check" size={12} /></button>
       </div>
-      <p className={`wg-note-line is-${msg?.tone || "muted"}`} role="status">{msg ? msg.text : r?.error ? r.error : r?.dueAt ? `Son tarih: ${new Date(r.dueAt).toLocaleString("tr-TR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : kind === "expense" ? "Bugünün tarihiyle, nakit ödendi." : size === "medium" ? "↵ kaydet · uzun not için ⌃⌥N" : " "}</p>
+      <p className={`wg-note-line is-${msg?.tone || "muted"}`} role="status">{msg ? msg.text : r?.error ? r.error : r?.dueAt ? `Son tarih: ${new Date(r.dueAt).toLocaleString("tr-TR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : kind === "expense" ? "Bugünün tarihiyle, nakit ödendi." : isBig(size) ? "↵ kaydet · uzun not için ⌃⌥N" : " "}</p>
     </form>
   );
 }

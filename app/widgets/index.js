@@ -23,8 +23,11 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const C = require("./catalog");
+const L = require("./layer");
 const { createFeeds } = require("./feeds");
 const { createSystemStats } = require("./system");
+
+const LOGIN_ARG = "--elitlig-login";
 
 function registerWidgets(deps) {
   const {
@@ -43,18 +46,49 @@ function registerWidgets(deps) {
   const feeds = createFeeds({ net, publicOrigin });
   const systemStats = createSystemStats();
   const windows = new Map(); // id → BrowserWindow
+  const glassOf = new Map(); // id → cam malzeme kullanılıyor mu
+  let editing = false; // "Widget'ları düzenle" kipi (kaydedilmez)
   const byWebContents = (wc) => { for (const [id, w] of windows) if (!w.isDestroyed() && w.webContents.id === wc.id) return id; return null; };
   const itemOf = (id) => store.items.find((i) => i.id === id) || null;
-  const canDesktop = isMac; // macOS: masaüstü düzeyi (etkileşimsiz)
-  const levelOf = (it) => (it.level === "desktop" && !canDesktop ? "normal" : it.level);
+  const canEmbed = platform === "darwin"; // macOS: masaüstü arka plan düzeyi (etkileşimsiz)
+  const levelOf = (it) => L.effectiveLevel(it.level, platform);
+  const displays = () => screen.getAllDisplays();
 
+  // Windows: masaüstü katmanındaki widget'ları Z sırasının en altına gönder (SetWindowPos HWND_BOTTOM).
+  const winBottom = platform === "win32" && deps.spawn !== null
+    ? L.createWinBottom({ spawn: deps.spawn || require("node:child_process").spawn, fs, path, tmpDir: path.join(app.getPath("temp"), "elitlig-araclar"), log })
+    : null;
+  const sendToBottom = (ids) => {
+    if (!winBottom) return;
+    const hwnds = [];
+    for (const id of ids) {
+      const it = itemOf(id);
+      const w = windows.get(id);
+      if (!it || !w || w.isDestroyed() || levelOf(it) !== "desktop") continue;
+      try { const h = L.hwndOf(w.getNativeWindowHandle()); if (h) hwnds.push(h); } catch { /* yoksay */ }
+    }
+    winBottom.send(hwnds);
+  };
+
+  const sizeInfo = (c) => {
+    const keys = C.SIZE_KEYS.filter((k) => c.sizes[k]);
+    return { sizes: c.sizes, sizeKeys: c.bar ? Object.keys(c.sizes) : keys, defaultSize: Object.keys(c.sizes)[0], bar: Boolean(c.bar) };
+  };
   const state = () => ({
     visible: store.visible,
     theme: store.theme,
+    grid: store.grid,
+    dim: store.dim,
+    material: store.material,
+    atLogin: store.atLogin,
+    loginSupported: Boolean(app.isPackaged && app.setLoginItemSettings),
+    editing,
     items: store.items,
-    catalog: C.CATALOG.map(({ type, category, label, icon, hint, session, net: needsNet, interactive, settings, sizes }) => ({ type, category, label, icon, hint, session: Boolean(session), net: Boolean(needsNet), interactive: Boolean(interactive), settings: Boolean(settings), sizes })),
+    catalog: C.CATALOG.map(({ type, category, label, icon, hint, session, net: needsNet, interactive, settings, ...c }) => ({ type, category, label, icon, hint, session: Boolean(session), net: Boolean(needsNet), interactive: Boolean(interactive), settings: Boolean(settings), ...sizeInfo(c) })),
     categories: C.CATEGORIES,
-    canDesktop,
+    sizeLabels: C.SIZE_LABELS,
+    canDesktop: canEmbed,
+    canEmbed,
     platform,
     shortcut: deskkit?.settings().widgets?.shortcut || "",
   });
@@ -63,60 +97,80 @@ function registerWidgets(deps) {
     deps.refreshTray?.();
     deps.rebuildMenu?.();
   };
+  const configOf = (it) => ({ item: it, theme: store.theme, editing, dim: store.dim, glass: Boolean(glassOf.get(it.id)), level: levelOf(it), grid: store.grid });
   const sendConfig = (it) => {
     const w = windows.get(it.id);
-    if (w && !w.isDestroyed()) w.webContents.send("widget:config", { item: it, theme: store.theme });
+    if (w && !w.isDestroyed()) w.webContents.send("widget:config", configOf(it));
+  };
+  const sendAll = () => { for (const it of store.items) sendConfig(it); };
+
+  /** Diğer widget'ların dikdörtgenleri (çakışma denetimi). */
+  const othersOf = (id) => store.items.filter((i) => i.id !== id && windows.get(i.id) && !windows.get(i.id).isDestroyed()).map((i) => ({ x: i.x, y: i.y, ...C.sizeOf(i) }));
+  /** Konumu kaydet (mutlak + ekran içi oransal). */
+  const remember = (it, pos) => {
+    const size = C.sizeOf(it);
+    it.x = pos.x;
+    it.y = pos.y;
+    const d = C.displayOf({ ...pos, ...size }, displays());
+    it.disp = d ? C.relativePos({ ...pos, ...size }, d) : null;
   };
 
   /* ------------------------------ pencereler ------------------------------ */
 
   function createWindow(it) {
     const size = C.sizeOf(it);
-    const pos = C.clampToDisplays({ x: it.x, y: it.y, ...size }, screen.getAllDisplays());
-    if (pos.x !== it.x || pos.y !== it.y) { it.x = pos.x; it.y = pos.y; save(); }
-    const level = levelOf(it);
+    const pos = it.disp ? C.resolvePosition(it, size, displays(), { grid: store.grid }) : C.clampToDisplays({ x: it.x, y: it.y, ...size }, displays());
+    if (pos.x !== it.x || pos.y !== it.y || !it.disp) { remember(it, pos); save(); }
+    const { options, glass, level } = L.windowOptions({ level: it.level, material: store.material, platform, locked: it.locked && !editing });
+    glassOf.set(it.id, glass);
     const win = new BrowserWindow({
       x: it.x, y: it.y, width: size.width, height: size.height,
-      show: false,
-      frame: false,
-      transparent: true,
-      backgroundColor: "#00000000",
-      hasShadow: level !== "desktop",
-      resizable: false,
-      minimizable: false,
-      maximizable: false,
-      fullscreenable: false,
-      skipTaskbar: true,
-      movable: !it.locked,
-      roundedCorners: true,
-      alwaysOnTop: level === "top",
+      ...options,
       title: `Widget · ${C.catalogOf(it.type)?.label || it.type}`,
-      ...(level === "desktop" ? { type: "desktop", focusable: false } : {}),
       webPreferences: webPreferences(),
     });
     guardNavigation(win);
     if (isMac) {
-      try { win.setVisibleOnAllWorkspaces(true, { skipTransformProcessType: true }); } catch { /* yoksay */ }
+      // Tüm Spaces'te; tam ekran uygulamaların üstüne çıkmaz; Mission Control'de gizli.
+      try { win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false, skipTransformProcessType: true }); } catch { /* yoksay */ }
       try { win.setHiddenInMissionControl?.(true); } catch { /* yoksay */ }
     }
     if (level === "top") { try { win.setAlwaysOnTop(true, "floating"); } catch { /* yoksay */ } }
+    // Taşıma bitince: ızgaraya hizala, çakışmayı çöz, konumu (ekranla birlikte) kaydet.
     let moveTimer = null;
-    win.on("moved", () => {
+    const settle = () => {
       clearTimeout(moveTimer);
       moveTimer = setTimeout(() => {
         if (win.isDestroyed()) return;
         const cur = itemOf(it.id);
         if (!cur) return;
         const b = win.getBounds();
-        cur.x = b.x;
-        cur.y = b.y;
+        const next = C.arrange(b, othersOf(cur.id), displays(), { grid: store.grid });
+        if (next.x !== b.x || next.y !== b.y) { try { win.setBounds({ ...next, width: b.width, height: b.height }, isMac); } catch { win.setBounds({ ...next, width: b.width, height: b.height }); } }
+        remember(cur, next);
         save();
-      }, 150);
+      }, platform === "linux" ? 350 : 120);
+    };
+    win.on("moved", settle);
+    if (platform === "linux") win.on("move", settle); // Linux'ta yalnız "move" gelir
+    // Masaüstü katmanı: yazı alanı için geçici odak bitince eski hâle dön ve (Windows) en alta in.
+    let hadFocus = false;
+    win.on("focus", () => { hadFocus = true; });
+    win.on("blur", () => {
+      // Yalnız gerçekten odak almışsa (yazı alanı) geri al; başarısız odak denemesi sayılmaz.
+      if (!hadFocus) return;
+      hadFocus = false;
+      const cur = itemOf(it.id);
+      if (!cur || win.isDestroyed() || levelOf(cur) !== "desktop") return;
+      try { win.setFocusable(false); } catch { /* yoksay */ }
+      sendToBottom([cur.id]);
     });
     win.on("closed", () => { if (windows.get(it.id) === win) windows.delete(it.id); });
     win.webContents.on("did-finish-load", () => sendConfig(itemOf(it.id) || it));
     loadRenderer(win, `widget=${it.type}&id=${it.id}`);
-    win.once("ready-to-show", () => { if (store.visible && !win.isDestroyed()) win.showInactive(); });
+    win.once("ready-to-show", () => {
+      if (store.visible && !win.isDestroyed()) { win.showInactive(); sendToBottom([it.id]); }
+    });
     windows.set(it.id, win);
     return win;
   }
@@ -126,41 +180,40 @@ function registerWidgets(deps) {
     windows.delete(id);
     if (w && !w.isDestroyed()) w.destroy();
   };
+  const rebuild = (it) => { destroyWindow(it.id); createWindow(it); };
 
   /** Kayıttaki değişikliği açık pencereye uygula (gerekirse yeniden oluştur). */
   function applyToWindow(it, prev) {
     const w = windows.get(it.id);
     if (!w || w.isDestroyed()) { createWindow(it); return; }
-    // Masaüstü düzeyi pencere türüyle belirlenir: değişince pencere yeniden kurulur.
-    if ((levelOf(prev) === "desktop") !== (levelOf(it) === "desktop")) { destroyWindow(it.id); createWindow(it); return; }
+    // Katman pencere türü / odaklanabilirlik / malzemeyle kurulur: değişince pencere yeniden kurulur.
+    if (levelOf(prev) !== levelOf(it)) { rebuild(it); return; }
     if (prev.size !== it.size) {
       const s = C.sizeOf(it);
       const b = w.getBounds();
-      // Büyüyen widget ekrandan taşmasın (konum kaydedilir).
-      const pos = C.fitInWorkArea({ x: b.x, y: b.y, ...s }, screen.getAllDisplays());
-      if (pos.x !== b.x || pos.y !== b.y) { it.x = pos.x; it.y = pos.y; save(); }
+      // Büyüyen widget ekrandan taşmasın, başkasının üstüne binmesin (ızgara).
+      const pos = C.arrange({ x: b.x, y: b.y, ...s }, othersOf(it.id), displays(), { grid: store.grid });
+      remember(it, pos);
+      save();
       w.setBounds({ x: pos.x, y: pos.y, width: s.width, height: s.height });
     }
-    if (prev.locked !== it.locked) w.setMovable(!it.locked);
-    if (prev.level !== it.level) {
-      if (levelOf(it) === "top") w.setAlwaysOnTop(true, "floating");
-      else w.setAlwaysOnTop(false);
-    }
+    if (prev.locked !== it.locked) w.setMovable(editing || !it.locked);
     sendConfig(it);
   }
 
   /* ------------------------------ işlemler ------------------------------ */
 
-  function add(type, options = {}, sizeKey = "small") {
+  function add(type, options = {}, sizeKey) {
     if (!C.TYPES.has(type)) return { ok: false, error: "Bilinmeyen widget türü." };
     if (store.items.length >= 24) return { ok: false, error: "En çok 24 widget eklenebilir." };
     // Boyut baştan verilirse (galeri önizlemesinde seçilen) yer o boyuta göre aranır.
-    const draft = C.normalizeItem({ id: C.newId(), type, size: sizeKey === "medium" ? "medium" : "small", options });
+    const draft = C.normalizeItem({ id: C.newId(), type, size: C.sizeKeyOf(type, sizeKey), options });
     const size = C.sizeOf(draft);
     const primary = screen.getPrimaryDisplay();
     const existing = store.items.map((i) => ({ x: i.x, y: i.y, ...C.sizeOf(i) }));
-    const pos = C.placeNew(size, existing, primary.workArea);
-    const it = { ...draft, x: pos.x, y: pos.y };
+    const pos = store.grid ? C.placeOnGrid(size, existing, primary.workArea) : C.placeNew(size, existing, primary.workArea);
+    const it = { ...draft };
+    remember(it, pos);
     store.items.push(it);
     if (!store.visible) { store.visible = true; for (const w of windows.values()) if (!w.isDestroyed()) w.showInactive(); }
     saveNow();
@@ -182,6 +235,8 @@ function registerWidgets(deps) {
       ...(p.options ? { options: { ...cur.options, ...p.options } } : {}),
     });
     if (!next) return { ok: false, error: "Geçersiz değer." };
+    // Etkileşimli widget etkileşimsiz katmana konamaz.
+    if (next.level === "embed" && (C.catalogOf(cur.type)?.interactive || !canEmbed)) next.level = cur.level === "embed" ? "desktop" : cur.level;
     const prev = { ...cur };
     Object.assign(cur, next);
     saveNow();
@@ -194,7 +249,9 @@ function registerWidgets(deps) {
     const before = store.items.length;
     store.items = store.items.filter((i) => i.id !== id);
     destroyWindow(id);
+    glassOf.delete(id);
     if (store.items.length !== before) { saveNow(); changed(); }
+    if (!store.items.length && editing) setEditing(false);
     return { ok: true };
   }
 
@@ -204,6 +261,7 @@ function registerWidgets(deps) {
       const w = windows.get(it.id);
       if (store.visible) { if (!w || w.isDestroyed()) createWindow(it); else w.showInactive(); } else if (w && !w.isDestroyed()) w.hide();
     }
+    if (store.visible) sendToBottom(store.items.map((i) => i.id));
     saveNow();
     changed();
     return { ok: true, visible: store.visible };
@@ -217,9 +275,76 @@ function registerWidgets(deps) {
     if (!C.THEMES.includes(theme)) return { ok: false };
     store.theme = theme;
     saveNow();
-    for (const it of store.items) sendConfig(it);
+    sendAll();
     changed();
     return { ok: true, theme };
+  }
+
+  /** "Widget'ları düzenle" (macOS'taki gibi): tüm widget'lar çerçeveli, sabitli olanlar da taşınır, kaldır / boyut düğmeleri. */
+  function setEditing(on) {
+    editing = Boolean(on);
+    for (const it of store.items) {
+      const w = windows.get(it.id);
+      if (!w || w.isDestroyed()) continue;
+      w.setMovable(editing || !it.locked);
+      if (editing && !w.isVisible() && store.visible) w.showInactive();
+    }
+    if (editing && !store.visible) setVisible(true);
+    sendAll();
+    changed();
+    return { ok: true, editing };
+  }
+
+  /** Giriş sırasında başlat (macOS / Windows; yalnız paketli uygulamada sisteme yazılır). */
+  function applyLogin() {
+    if (!app.isPackaged || !app.setLoginItemSettings) return false;
+    try {
+      app.setLoginItemSettings({ openAtLogin: store.atLogin, openAsHidden: true, args: [LOGIN_ARG] });
+      return true;
+    } catch (e) { log("[widget] giriş öğesi", e); return false; }
+  }
+
+  /** Genel ayarlar: ızgara, soluk görünüm, malzeme, girişte başlat. */
+  function setSettings(patch) {
+    const p = patch && typeof patch === "object" ? patch : {};
+    const prevMaterial = store.material;
+    if (p.grid != null) store.grid = Boolean(p.grid);
+    if (p.dim != null) store.dim = Boolean(p.dim);
+    if (p.material && C.MATERIALS.includes(p.material)) store.material = p.material;
+    if (p.atLogin != null) { store.atLogin = Boolean(p.atLogin); applyLogin(); }
+    saveNow();
+    if (prevMaterial !== store.material) { for (const it of store.items) if (windows.get(it.id)) rebuild(it); } else sendAll();
+    if (p.grid) relayout();
+    changed();
+    return { ok: true, ...state() };
+  }
+
+  /** Ekran eklendi / çıkarıldı / çözünürlük değişti: her widget kendi ekranında oransal yerine. */
+  function relayout() {
+    const all = displays();
+    for (const it of store.items) {
+      const w = windows.get(it.id);
+      if (!w || w.isDestroyed()) continue;
+      const size = C.sizeOf(it);
+      const pos = C.resolvePosition(it, size, all, { grid: store.grid });
+      const b = w.getBounds();
+      if (pos.x !== b.x || pos.y !== b.y) w.setBounds({ ...pos, ...size });
+      // Ekran çıkarıldıysa oransal kayıt korunur (geri takılınca eski yerine döner); mutlak konum güncellenir.
+      it.x = pos.x;
+      it.y = pos.y;
+    }
+    save();
+  }
+
+  /** Uyku dönüşü / oturum açılışı: pencereler yerinde ve görünür mü? */
+  function revalidate() {
+    for (const it of store.items) {
+      const w = windows.get(it.id);
+      if (!w || w.isDestroyed()) { if (store.visible) createWindow(it); continue; }
+      if (store.visible && !w.isVisible()) w.showInactive();
+    }
+    relayout();
+    sendToBottom(store.items.map((i) => i.id));
   }
 
   /** Widget'ın sağ tık / ⋯ menüsü (yerel menü: pencere küçük olsa da taşmaz). */
@@ -228,21 +353,25 @@ function registerWidgets(deps) {
     if (!it) return;
     const c = C.catalogOf(it.type);
     const radio = (label, checked, click, extra = {}) => ({ label, type: "radio", checked, click, ...extra });
-    const hasSettings = C.WITH_SETTINGS.has(it.type);
+    const sizeKeys = c.bar ? Object.keys(c.sizes) : C.SIZE_KEYS.filter((k) => c.sizes[k]);
+    const lv = levelOf(it);
     const template = [
       { label: c?.label || "Widget", enabled: false },
-      ...(hasSettings ? [{ label: "Ayarlar…", click: () => win.webContents.send("widget:settings", { open: true }) }] : []),
+      ...(C.WITH_SETTINGS.has(it.type) ? [{ label: "Ayarlar…", click: () => win.webContents.send("widget:settings", { open: true }) }] : []),
       { type: "separator" },
-      { label: "Boyut", submenu: [radio("Küçük", it.size === "small", () => update(id, { size: "small" })), radio("Orta", it.size === "medium", () => update(id, { size: "medium" }))] },
-      { label: "Arka plan saydamlığı", submenu: [100, 90, 80, 65, 50].map((v) => radio(`%${v} opak`, it.opacity === v, () => update(id, { opacity: v }))) },
+      ...(sizeKeys.length > 1 ? [{ label: "Boyut", submenu: sizeKeys.map((k) => radio(c.bar ? (k === "small" ? "Kısa" : "Uzun") : `${C.SIZE_LABELS[k]} (${c.sizes[k].join("×")})`, it.size === k, () => update(id, { size: k }))) }] : []),
+      { label: "Masaüstüne sabitle (sürüklenmez)", type: "checkbox", checked: it.locked, click: (m) => update(id, { locked: m.checked }) },
       { label: "Katman", submenu: [
-        radio("Normal (diğer pencerelerin altında)", levelOf(it) === "normal", () => update(id, { level: "normal" })),
-        radio("Üstte sabitle", levelOf(it) === "top", () => update(id, { level: "top" })),
-        ...(canDesktop ? [radio("Masaüstüne göm (tıklanmaz)", levelOf(it) === "desktop", () => update(id, { level: "desktop" }), { enabled: !c?.interactive || it.level === "desktop" })] : []),
+        radio("Masaüstü (diğer pencerelerin altında, önerilen)", lv === "desktop", () => update(id, { level: "desktop" })),
+        radio("Normal pencere", lv === "normal", () => update(id, { level: "normal" })),
+        radio("Üstte sabit", lv === "top", () => update(id, { level: "top" })),
+        ...(canEmbed ? [radio("Masaüstüne göm (etkileşimsiz)", lv === "embed", () => update(id, { level: "embed" }), { enabled: !c?.interactive || it.level === "embed" })] : []),
       ] },
-      { label: "Kilitle (sürüklenmez)", type: "checkbox", checked: it.locked, click: (m) => update(id, { locked: m.checked }) },
+      { label: "Arka plan saydamlığı", submenu: [100, 90, 80, 65, 50].map((v) => radio(`%${v} opak`, it.opacity === v, () => update(id, { opacity: v }))) },
       { label: "Tema", submenu: [["auto", "Sisteme uy"], ["light", "Açık"], ["dark", "Koyu"]].map(([v, l]) => radio(l, store.theme === v, () => setTheme(v))) },
       { type: "separator" },
+      { label: editing ? "Düzenlemeyi bitir" : "Widget'ları düzenle", click: () => setEditing(!editing) },
+      { label: "Izgaraya hizala", type: "checkbox", checked: store.grid, click: (m) => setSettings({ grid: m.checked }) },
       { label: "Widget galerisi…", click: () => showMain("toolkit:widgets") },
       { label: "Tüm widget'ları gizle", click: () => setVisible(false) },
       { label: "Bu widget'ı kaldır", click: () => remove(id) },
@@ -254,16 +383,38 @@ function registerWidgets(deps) {
 
   const senderWin = (event) => BrowserWindow.fromWebContents(event.sender);
   ipcMain.handle("widgets:state", () => state());
-  ipcMain.handle("widgets:add", (_e, type, options, size) => add(String(type || ""), options && typeof options === "object" ? options : {}, size === "medium" ? "medium" : "small"));
+  ipcMain.handle("widgets:add", (_e, type, options, size) => add(String(type || ""), options && typeof options === "object" ? options : {}, typeof size === "string" ? size : undefined));
   ipcMain.handle("widgets:update", (_e, id, patch) => update(String(id || ""), patch));
   ipcMain.handle("widgets:remove", (_e, id) => remove(String(id || "")));
   ipcMain.handle("widgets:visible", (_e, on) => setVisible(Boolean(on)));
   ipcMain.handle("widgets:toggle", () => toggleAll());
   ipcMain.handle("widgets:theme", (_e, theme) => setTheme(String(theme || "")));
+  ipcMain.handle("widgets:edit", (_e, on) => setEditing(on == null ? !editing : Boolean(on)));
+  ipcMain.handle("widgets:settings", (_e, patch) => setSettings(patch));
   ipcMain.handle("widgets:self", (event) => {
     const id = byWebContents(event.sender);
     const it = id ? itemOf(id) : null;
-    return it ? { ok: true, item: it, theme: store.theme, canDesktop } : { ok: false };
+    return it ? { ok: true, ...configOf(it), canDesktop: canEmbed } : { ok: false };
+  });
+  // Masaüstü katmanında yazı alanı: pencere geçici olarak odaklanabilir olur (blur'da geri alınır).
+  ipcMain.handle("widgets:focus", (event) => {
+    const id = byWebContents(event.sender);
+    const it = id ? itemOf(id) : null;
+    const win = senderWin(event);
+    if (!it || !win || levelOf(it) !== "desktop") return { ok: false };
+    if (win.isFocused?.() && win.isFocusable?.()) return { ok: true, already: true };
+    try { win.setFocusable(true); win.focus(); } catch { /* yoksay */ }
+    return { ok: true };
+  });
+  // Fare yazı alanının üzerine gelince pencere odaklanabilir olur (tıklama klavye odağını doğrudan alır);
+  // ayrılınca (odak almadıysa) yine odaklanamaz. Odak çalınmaz, pencere öne getirilmez.
+  ipcMain.handle("widgets:focusable", (event, on) => {
+    const id = byWebContents(event.sender);
+    const it = id ? itemOf(id) : null;
+    const win = senderWin(event);
+    if (!it || !win || levelOf(it) !== "desktop") return { ok: false };
+    try { if (on) win.setFocusable(true); else if (!win.isFocused?.()) win.setFocusable(false); } catch { /* yoksay */ }
+    return { ok: true, focusable: win.isFocusable?.() };
   });
   ipcMain.handle("widgets:menu", (event) => {
     const id = byWebContents(event.sender);
@@ -290,18 +441,29 @@ function registerWidgets(deps) {
       if (w && !w.isDestroyed()) w.webContents.send("music:state", s);
     }
   });
-  nativeTheme?.on?.("updated", () => { for (const it of store.items) sendConfig(it); });
+  nativeTheme?.on?.("updated", () => sendAll());
+  // Çoklu ekran: ekran eklenince / çıkarılınca / çözünürlük değişince yerleşim yenilenir.
+  let relayoutTimer = null;
+  const relayoutSoon = () => { clearTimeout(relayoutTimer); relayoutTimer = setTimeout(relayout, 400); };
+  for (const ev of ["display-added", "display-removed", "display-metrics-changed"]) screen.on?.(ev, relayoutSoon);
 
   /** Açılışta kayıtlı widget'ları geri yükle. */
   function restore() {
     for (const it of store.items) { try { createWindow(it); } catch (e) { log("[widget]", e); } }
+    applyLogin();
   }
-  app.on("before-quit", () => { if (saveTimer) saveNow(); });
+  /** Uygulama giriş öğesiyle mi açıldı (o zaman ana pencere gizli başlar, yalnız widget'lar)? */
+  const openedAtLogin = () => {
+    try { if (app.getLoginItemSettings?.().wasOpenedAtLogin) return true; } catch { /* yoksay */ }
+    return process.argv.includes(LOGIN_ARG);
+  };
+  app.on("before-quit", () => { if (saveTimer) saveNow(); winBottom?.dispose(); });
 
   return {
-    restore, add, update, remove, setVisible, toggleAll, setTheme,
+    restore, revalidate, relayout, add, update, remove, setVisible, toggleAll, setTheme, setEditing, setSettings, openedAtLogin,
     list: () => store.items,
     visible: () => store.visible && store.items.length > 0,
+    editing: () => editing,
     catalog: () => C.CATALOG,
     state,
     _windows: windows,
@@ -328,4 +490,4 @@ function studioStatus(studio) {
   };
 }
 
-module.exports = { registerWidgets, studioStatus };
+module.exports = { registerWidgets, studioStatus, LOGIN_ARG };

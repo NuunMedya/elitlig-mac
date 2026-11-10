@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../../components/ui";
 import { includesTr } from "../../lib/helpers";
-import { Err, Loading, W, usePoll } from "../common";
+import { Err, Loading, W, usePoll, Hero, isBig, pick } from "../common";
 
 const slug = (s) => String(s || "").toLocaleLowerCase("tr-TR").replace(/ı/g, "i").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-");
 const matchUrl = (m) => (m?.id && m.city ? `/${slug(m.city)}/mac/${m.id}` : "/");
@@ -64,14 +64,14 @@ export function LiveMatchWidget({ item, size, settings, update, closeSettings })
   if (!m) return <Loading />;
   const when = m.start ? new Date(m.start) : null;
   return (
-    <button type="button" className={`wg-score${m.state === "live" ? " is-live" : ""}${goal ? " is-goal" : ""}`} onClick={() => W().app.openWeb(matchUrl(m))} title="Maç sayfasını aç">
+    <button type="button" className={`wg-score is-${size}${m.state === "live" ? " is-live" : ""}${goal ? " is-goal" : ""}`} onClick={() => W().app.openWeb(matchUrl(m))} title="Maç sayfasını aç">
       <span className="wg-score__state">{m.state === "live" ? <i className="wg-live">CANLI</i> : m.state === "done" ? "Maç sonu" : when ? when.toLocaleString("tr-TR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Fikstür"}{goal && <b className="wg-goal"> GOL!</b>}</span>
       <span className="wg-score__row">
         <b className="wg-score__team">{m.home}</b>
         <strong data-testid="score">{m.state === "fixture" ? "–" : `${m.homeScore} : ${m.awayScore}`}</strong>
         <b className="wg-score__team">{m.away}</b>
       </span>
-      {size === "medium" && <small className="wg-muted">{[m.league, m.field, m.city].filter(Boolean).join(" · ")}</small>}
+      {size !== "small" && <small className="wg-muted">{[m.league, m.field, m.city].filter(Boolean).join(" · ")}</small>}
       {q.data && q.error && <small className="wg-muted">Çevrimdışı · son skor</small>}
     </button>
   );
@@ -118,7 +118,7 @@ export function StandingsWidget({ item, size, settings, update, closeSettings })
   if (q.error && !q.data) return <Err text={q.error} onRetry={q.reload} />;
   if (!q.data) return <Loading />;
   const title = leagueName || [q.data.league?.name, q.data.season?.name, q.data.league?.city].filter(Boolean).join(" · ");
-  const max = size === "medium" ? 12 : 7;
+  const max = pick(size, 4, 4, 12);
   const mine = team ? rows.findIndex((r) => r.team === team) : -1;
   const shown = rows.slice(0, max);
   if (mine >= max) shown.push(rows[mine]);
@@ -126,11 +126,11 @@ export function StandingsWidget({ item, size, settings, update, closeSettings })
     <div className="wg-standings">
       <p className="wg-muted wg-standings__title" title={title}>{title}</p>
       <table>
-        <thead><tr><th>#</th><th className="is-team">Takım</th><th>O</th>{size === "medium" && <th>G-B-M</th>}<th>Av</th><th>P</th></tr></thead>
+        <thead><tr><th>#</th><th className="is-team">Takım</th><th>O</th>{isBig(size) && <th>G-B-M</th>}<th>Av</th><th>P</th></tr></thead>
         <tbody>
           {shown.map((r) => (
             <tr key={`${r.rank}-${r.team}`} className={r.team === team ? "is-mine" : ""} onClick={() => update({ options: { team: r.team === team ? "" : r.team } })} title="Tıkla: takımı vurgula">
-              <td>{r.rank}</td><td className="is-team">{r.team}</td><td>{r.played}</td>{size === "medium" && <td>{r.won}-{r.drawn}-{r.lost}</td>}<td>{r.gd > 0 ? `+${r.gd}` : r.gd}</td><td><b>{r.points}</b></td>
+              <td>{r.rank}</td><td className="is-team">{r.team}</td><td>{r.played}</td>{isBig(size) && <td>{r.won}-{r.drawn}-{r.lost}</td>}<td>{r.gd > 0 ? `+${r.gd}` : r.gd}</td><td><b>{r.points}</b></td>
             </tr>
           ))}
         </tbody>

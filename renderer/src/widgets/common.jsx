@@ -124,3 +124,29 @@ export function Chips({ value, options, onChange, label }) {
 
 /** Uygulamada bir görünümü aç (nesne bağımsız değişkenle de). */
 export const openApp = (route, arg) => (arg ? W().launcher?.open(route, arg) : W().widgets.open(route));
+
+/** Büyük ya da ekstra büyük boyut mu (liste düzeni)? */
+export const isBig = (size) => size === "large" || size === "xlarge";
+
+/** Boyuta göre değer: pick(size, küçük, orta, büyük, ekstra büyük). */
+export const pick = (size, small, medium, large = medium, xlarge = large) => ({ small, medium, large, xlarge })[size] ?? medium;
+
+/**
+ * macOS widget'larının küçük boyut düzeni: tek büyük ana değer + etiket + alt satırlar.
+ * value: büyük değer; unit: değerin yanındaki küçük birim; label: değerin üstündeki etiket;
+ * lines: alttaki kısa satırlar (dizi); tone: red | green | amber; onClick: tüm alan tıklanır.
+ */
+export function Hero({ value, unit, label, lines = [], tone = "", onClick, children, fit }) {
+  const Tag = onClick ? "button" : "div";
+  const long = fit ?? (typeof value === "string" && value.length > 5);
+  return (
+    <Tag type={onClick ? "button" : undefined} className={`wg-hero${tone ? ` is-${tone}` : ""}${long ? " is-long" : ""}`} onClick={onClick}>
+      <span className="wg-hero__value" data-testid="hero">{value}{unit ? <small>{unit}</small> : null}</span>
+      {label && <span className="wg-hero__label">{label}</span>}
+      <span className="wg-hero__lines">
+        {lines.filter(Boolean).slice(0, 3).map((l, i) => <span key={i} className="wg-hero__line">{l}</span>)}
+        {children}
+      </span>
+    </Tag>
+  );
+}

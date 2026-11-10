@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { Icon } from "../../components/ui";
 import { formatClock, isoDay } from "../../lib/helpers";
-import { W, dayStart, gate, openApp, useDataChanged, usePoll, useSignedIn } from "../common";
+import { W, dayStart, gate, openApp, useDataChanged, usePoll, useSignedIn, Hero, isBig, pick } from "../common";
 import { monthGrid, weekColumns } from "../widgetModel";
 
 /* ------------------------------ odak ------------------------------ */
@@ -23,11 +23,11 @@ export function FocusWidget({ size }) {
   const elapsed = s.running && stopwatch && s.startedAt ? s.elapsedMs + (now - s.startedAt) : s.elapsedMs;
   const ms = stopwatch ? elapsed : remaining;
   const pct = !stopwatch && s.totalMs ? Math.min(1, 1 - remaining / s.totalMs) : 0;
-  const R = size === "medium" ? 52 : 40;
+  const R = size === "small" ? 46 : 48;
   const C2 = 2 * Math.PI * R;
   const label = stopwatch ? "Kronometre" : s.mode === "timer" ? PHASE.timer : PHASE[s.phase] || "Odak";
   return (
-    <div className={`wg-focus${s.running ? " is-on" : ""} is-${s.phase || "focus"}`}>
+    <div className={`wg-focus is-${size}${s.running ? " is-on" : ""} is-${s.phase || "focus"}`}>
       <div className="wg-ring" style={{ width: R * 2 + 12, height: R * 2 + 12 }}>
         <svg viewBox={`0 0 ${R * 2 + 12} ${R * 2 + 12}`} aria-hidden="true">
           <circle cx={R + 6} cy={R + 6} r={R} className="wg-ring__bg" />
@@ -35,17 +35,19 @@ export function FocusWidget({ size }) {
         </svg>
         <span className="wg-ring__in"><small>{label}</small><strong data-testid="focus-time">{formatClock(ms)}</strong>{s.mode === "pomodoro" && <small>Tur {s.round || 1}{s.stats ? ` · bugün ${s.stats.sessions}` : ""}</small>}</span>
       </div>
+      <div className="wg-focus__side">
       <div className="wg-bar is-center">
         <button type="button" className="wg-ib is-main" onClick={() => cmd("toggle")} aria-label={s.running ? "Duraklat" : "Başlat"}><Icon name={s.running ? "pause" : "play"} size={14} strokeWidth={2.4} /></button>
         {s.mode === "pomodoro" && <button type="button" className="wg-ib" onClick={() => cmd("skip")} aria-label="Sonraki evreye geç" title="Atla"><Icon name="skip" size={13} /></button>}
         <button type="button" className="wg-ib" onClick={() => cmd("reset")} aria-label="Sıfırla" title="Sıfırla"><Icon name="rotate" size={13} /></button>
-        <button type="button" className="wg-ib" onClick={() => openApp("focus")} aria-label="Odak Sayacı'nı aç" title="Odak Sayacı"><Icon name="external" size={12} /></button>
+        {size !== "small" && <button type="button" className="wg-ib" onClick={() => openApp("focus")} aria-label="Odak Sayacı'nı aç" title="Odak Sayacı"><Icon name="external" size={12} /></button>}
       </div>
-      {size === "medium" && (
+      {size !== "small" && (
         <div className="wg-seg is-center" role="radiogroup" aria-label="Sayaç türü">
           {[["pomodoro", "Pomodoro"], ["timer", "Zamanlayıcı"], ["stopwatch", "Kronometre"]].map(([v, l]) => <button key={v} type="button" role="radio" aria-checked={s.mode === v} className={s.mode === v ? "is-on" : ""} onClick={() => cmd("mode", { mode: v })}>{l}</button>)}
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -74,9 +76,9 @@ export function WeekWidget({ size }) {
   const g = gate(signed, q);
   if (g) return g;
   const cols = weekColumns(q.data, now, offset);
-  const max = size === "medium" ? 5 : 3;
+  const max = pick(size, 0, 0, 5, 6);
   return (
-    <div className="wg-week">
+    <div className={`wg-week is-${size}`}>
       <div className="wg-cal__head">
         <button type="button" className="wg-ib is-sm" onClick={() => setOffset((o) => o - 1)} aria-label="Önceki hafta"><Icon name="chevronLeft" size={12} /></button>
         <b>{offset === 0 ? "Bu hafta" : offset === 1 ? "Gelecek hafta" : offset === -1 ? "Geçen hafta" : `${cols[0].date.toLocaleDateString("tr-TR", { day: "numeric", month: "short" })} haftası`}</b>
@@ -89,12 +91,13 @@ export function WeekWidget({ size }) {
         {cols.map((c) => (
           <div key={c.day} className={`wg-week__col${c.today ? " is-today" : ""}`} data-day={c.day}>
             <button type="button" className="wg-week__day" onClick={() => openApp("agenda")}><small>{c.date.toLocaleDateString("tr-TR", { weekday: "short" })}</small><b>{c.date.getDate()}</b></button>
+            {max === 0 && c.items.length > 0 && <span className="wg-week__dots" aria-label={`${c.items.length} etkinlik`}>{c.items.slice(0, 3).map((e, i) => <i key={i} style={e.color ? { background: e.color } : undefined} />)}</span>}
             {c.items.slice(0, max).map((e) => (
               <button key={`${e.id}-${e.occurrence_start || e.start_at}`} type="button" className={`wg-week__ev${e.source === "project" ? " is-proj" : ""}`} style={e.color ? { "--ev": e.color } : undefined} onClick={() => openApp(e.project_id ? `projects:${e.project_id}` : "agenda")} title={e.title}>
-                {!e.all_day && size === "medium" && <i>{new Date(e.occurrence_start || e.start_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}</i>}{e.title}
+                {!e.all_day && isBig(size) && <i>{new Date(e.occurrence_start || e.start_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}</i>}{e.title}
               </button>
             ))}
-            {c.items.length > max && <small className="wg-muted">+{c.items.length - max}</small>}
+            {max > 0 && c.items.length > max && <small className="wg-muted">+{c.items.length - max}</small>}
           </div>
         ))}
       </div>
@@ -116,8 +119,9 @@ export function MonthWidget({ size }) {
   const grid = monthGrid(cur.y, cur.m, q.data, now);
   const move = (n) => setCur((c) => { const d = new Date(c.y, c.m + n, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
   const dayItems = (q.data || []).filter((e) => isoDay(new Date(e.occurrence_start || e.start_at)) === sel);
+  const maxDay = pick(size, 0, 3, 3);
   return (
-    <div className="wg-month">
+    <div className={`wg-month is-${size}`}>
       <div className="wg-cal__head">
         <button type="button" className="wg-ib is-sm" onClick={() => move(-1)} aria-label="Önceki ay"><Icon name="chevronLeft" size={12} /></button>
         <b>{new Date(cur.y, cur.m, 1).toLocaleDateString("tr-TR", { month: "long", year: "numeric" })}</b>
@@ -132,14 +136,15 @@ export function MonthWidget({ size }) {
           </button>
         ))}
       </div>
-      <div className="wg-month__day">
-        {dayItems.length ? dayItems.slice(0, size === "medium" ? 3 : 1).map((e) => (
+      {maxDay > 0 && <div className="wg-month__day">
+        <h5>{new Date(`${sel}T12:00`).toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long" })}</h5>
+        {dayItems.length ? dayItems.slice(0, maxDay).map((e) => (
           <button key={`${e.id}-${e.occurrence_start || e.start_at}`} type="button" className="wg-row" onClick={() => openApp(e.project_id ? `projects:${e.project_id}` : "agenda")}>
             <span className="wg-row__time">{e.all_day ? "Gün boyu" : new Date(e.occurrence_start || e.start_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}</span><span className="wg-row__text">{e.title}</span>
           </button>
-        )) : <p className="wg-muted">{new Date(`${sel}T12:00`).toLocaleDateString("tr-TR", { day: "numeric", month: "long" })}: plan yok</p>}
-        {dayItems.length > (size === "medium" ? 3 : 1) && <small className="wg-muted">+{dayItems.length - (size === "medium" ? 3 : 1)} etkinlik</small>}
-      </div>
+        )) : <p className="wg-muted">Plan yok</p>}
+        {dayItems.length > maxDay && <small className="wg-muted">+{dayItems.length - maxDay} etkinlik</small>}
+      </div>}
     </div>
   );
 }

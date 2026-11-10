@@ -376,7 +376,7 @@ contextBridge.exposeInMainWorld("elitlig", {
   // Masaüstü widget'ları (app/widgets): galeri, ekle / kaldır / ayarla, veri kaynakları.
   widgets: {
     state: () => ipcRenderer.invoke("widgets:state"),
-    add: (type, options, size) => ipcRenderer.invoke("widgets:add", String(type || ""), options && typeof options === "object" ? options : {}, size === "medium" ? "medium" : "small"),
+    add: (type, options, size) => ipcRenderer.invoke("widgets:add", String(type || ""), options && typeof options === "object" ? options : {}, typeof size === "string" ? size.slice(0, 10) : undefined),
     update: (id, patch) => ipcRenderer.invoke("widgets:update", String(id || ""), patch && typeof patch === "object" ? patch : {}),
     remove: (id) => ipcRenderer.invoke("widgets:remove", String(id || "")),
     setVisible: (on) => ipcRenderer.invoke("widgets:visible", Boolean(on)),
@@ -394,6 +394,12 @@ contextBridge.exposeInMainWorld("elitlig", {
     leagues: () => ipcRenderer.invoke("widgets:leagues"),
     standings: (opts) => ipcRenderer.invoke("widgets:standings", { leagueId: Number(opts?.leagueId) || 0, seasonId: Number(opts?.seasonId) || 0 }),
     studio: () => ipcRenderer.invoke("widgets:studio"),
+    // macOS widget mantığı: düzenleme kipi, genel ayarlar (ızgara, soluk görünüm, malzeme, girişte başlat),
+    // masaüstü katmanında yazı alanı için geçici odak.
+    edit: (on) => ipcRenderer.invoke("widgets:edit", on == null ? null : Boolean(on)),
+    settings: (patch) => ipcRenderer.invoke("widgets:settings", patch && typeof patch === "object" ? patch : {}),
+    focus: () => ipcRenderer.invoke("widgets:focus"),
+    focusable: (on) => ipcRenderer.invoke("widgets:focusable", Boolean(on)),
     onChange: on("widgets:changed"),
     onConfig: on("widget:config"),
     onSettings: on("widget:settings"),
