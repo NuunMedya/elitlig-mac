@@ -134,7 +134,7 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
             { label: "Kişiler — CSV", icon: "download", onClick: () => exportLeads("csv") },
           ]} />
         </header>
-        <nav className="proj-tabs" role="tablist" aria-label="Proje bölümleri">
+        <nav className="proj-tabs" role="tablist" aria-label="Proje bölümleri" onWheel={(e) => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) e.currentTarget.scrollLeft += e.deltaY; }}>
           {TABS.map((t) => (
             <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={tab === t.key ? "is-active" : ""} onClick={(e) => { setTab(t.key); e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" }); }}>
               <Icon name={t.icon} size={14} /> {t.label}{counts[t.key] ? <span className="proj-tabs__count">{counts[t.key]}</span> : null}

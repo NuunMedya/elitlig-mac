@@ -330,5 +330,5 @@
 
 /* Proje sekmeleri: 12 sekme dar pencerede taşıp tüm görünümü yatay kaydırıyordu
    (Sponsorluk / Ayarlar görünmüyordu). Şerit kendi içinde kayar. */
-nav.proj-tabs { overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; overscroll-behavior-x: contain; }
-nav.proj-tabs::-webkit-scrollbar { height: 4px; }
+nav.proj-tabs { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain; }
+nav.proj-tabs::-webkit-scrollbar { display: none; }
