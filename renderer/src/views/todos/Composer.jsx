@@ -86,7 +86,7 @@ function useLeagues() {
   return items;
 }
 
-export default function Composer({ catalog, task, initial = {}, onClose, onSaved }) {
+export default function Composer({ catalog, task, initial = {}, projects = [], onClose, onSaved }) {
   const result = useResult();
   const editing = Boolean(task);
   const canAssign = Boolean(catalog?.canAssign) && !editing;
@@ -98,7 +98,15 @@ export default function Composer({ catalog, task, initial = {}, onClose, onSaved
     priority: task?.priority || initial.priority || "normal",
     due_at: task?.dueAt ? localInput(task.dueAt) : initial.due_at ? localInput(initial.due_at) : "",
     checklist: "",
+    project_id: task ? task.project?.id ?? null : initial.project_id ?? null,
   });
+  // Bağlanabilecek projeler; düzenlenen kartın projesi listede yoksa da seçenek olarak kalır.
+  const projectChoices = useMemo(() => {
+    const list = [...projects];
+    if (task?.project && !list.some((p) => Number(p.id) === Number(task.project.id))) list.push(task.project);
+    return list;
+  }, [projects, task]);
+  const projectLinked = ["project_step", "project_followup"].includes(task?.kind);
   const [link, setLink] = useState(linkOf(task));
   const [assignees, setAssignees] = useState([]);
   const [people, setPeople] = useState([]);
@@ -121,6 +129,7 @@ export default function Composer({ catalog, task, initial = {}, onClose, onSaved
     if (!valid) return;
     setBusy(true);
     const links = { player_id: link?.type === "player" ? link.id : null, team_id: link?.type === "team" ? link.id : null, match_id: link?.type === "match" ? link.id : null };
+    if (projectChoices.length && !projectLinked && !isAward) links.project_id = form.project_id || null;
     let res;
     if (editing) {
       res = await patch(`/api/todos/${task.id}`, { title: form.title.trim(), body: form.body || null, priority: form.priority, due_at: form.due_at ? new Date(form.due_at).toISOString() : null, ...links });
@@ -167,6 +176,14 @@ export default function Composer({ catalog, task, initial = {}, onClose, onSaved
         <Segmented size="sm" value={form.priority} onChange={(v) => setForm({ ...form, priority: v })} options={PRIORITIES.map((p) => ({ value: p.key, label: p.label }))} />
         <Field label="Açıklama"><textarea rows={3} value={form.body} onChange={set("body")} /></Field>
         {!editing && !isAward && <Field label="Aşamalar (her satır bir aşama)"><textarea rows={3} value={form.checklist} onChange={set("checklist")} placeholder={"Sahayı ara\nHakemi teyit et"} /></Field>}
+        {projectChoices.length > 0 && !isAward && !projectLinked && (
+          <Field label="Proje (isteğe bağlı)">
+            <select value={form.project_id || ""} onChange={(e) => setForm({ ...form, project_id: e.target.value ? Number(e.target.value) : null })} aria-label="Projeye bağla">
+              <option value="">Kişisel (projesiz)</option>
+              {projectChoices.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </Field>
+        )}
         {!isAward && <div><span className="field__label">Oyuncu / takım / maç bağla</span><LinkPicker value={link} onChange={setLink} /></div>}
         {isAward && <AwardScope value={award} onChange={setAward} />}
         {audience === "team" && (

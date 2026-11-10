@@ -53,3 +53,28 @@ test("düzenli ödeme: çok sayıda bildirim tek bildirimde toplanır", () => {
   assert.equal(out[0].key.length, 5);
   assert.match(out[0].body, /ve 2 tane daha/);
 });
+
+/* ------------------------------ proje adımları ------------------------------ */
+
+const { projectNotifications } = require("../reminders");
+const stepCard = (over = {}) => ({ id: 21, kind: "project_step", title: "Saha kirala", allDay: true, status: "open", dueAt: new Date(2026, 10, 12, 23, 59).toISOString(), project: { name: "Kış Turnuvası", phaseName: "Hazırlık" }, ...over });
+
+test("proje adımının son günü sabah bir kez bildirilir; gece ve bitmiş adımda bildirim yok", () => {
+  assert.deepEqual(projectNotifications({ todos: [stepCard()], now: at(7) }), []);
+  const due = projectNotifications({ todos: [stepCard(), stepCard({ id: 22, status: "done" }), stepCard({ id: 23, dueAt: new Date(2026, 10, 13, 23, 59).toISOString() })], now: at(10) });
+  assert.equal(due.length, 1);
+  assert.equal(due[0].title, "Bugün son gün: Saha kirala");
+  assert.equal(due[0].body, "Kış Turnuvası · Hazırlık");
+  assert.equal(due[0].route, "todos");
+  assert.deepEqual(projectNotifications({ todos: [stepCard()], now: at(15), sent: new Set([due[0].key]) }), []);
+  // 23:59'daki "Zamanı geldi" bildirimi tüm gün proje adımında gösterilmez.
+  assert.deepEqual(dueNotifications({ todos: [stepCard({ dueAt: new Date(at(10) - 60000).toISOString() })], now: at(10) }), []);
+});
+
+test("aynı gün çok proje adımı tek bildirimde toplanır", () => {
+  const todos = [1, 2, 3, 4].map((id) => stepCard({ id, title: `Adım ${id}` }));
+  const due = projectNotifications({ todos, now: at(10) });
+  assert.equal(due.length, 1);
+  assert.equal(due[0].title, "4 proje adımının bugün son günü");
+  assert.equal(due[0].key.length, 4);
+});

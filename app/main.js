@@ -258,7 +258,8 @@ async function refreshSummary() {
     trayInfo.summary = summary.data;
     updateBadge();
   }
-  if (overview.ok) trayInfo.upcoming = overview.data?.upcoming || [];
+  // Yaklaşan: etkinlikler + önümüzdeki 7 günün proje öğeleri (adım, son tarih, görüşme).
+  if (overview.ok) trayInfo.upcoming = [...(overview.data?.upcoming || []), ...(overview.data?.upcoming_projects || [])].sort((a, b) => String(a.occurrence_start).localeCompare(String(b.occurrence_start)));
   refreshTray();
 }
 
@@ -866,7 +867,7 @@ if (!app.requestSingleInstanceLock()) {
         if (!authState().signedIn) return { events: [], todos: [] };
         const now = Date.now();
         const [events, todos, bills] = await Promise.all([
-          api.request({ path: "/api/tools/events", query: { from: new Date(now - 86400000).toISOString(), to: new Date(now + 2 * 86400000).toISOString(), todos: "0" } }),
+          api.request({ path: "/api/tools/events", query: { from: new Date(now - 86400000).toISOString(), to: new Date(now + 2 * 86400000).toISOString(), todos: "0", projects: "0" } }),
           api.request({ path: "/api/todos", query: { view: "mine", status: "active" } }),
           loadBills(now),
         ]);

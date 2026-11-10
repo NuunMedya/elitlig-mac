@@ -7,6 +7,7 @@ import { formatDate, formatTime, relativeDay } from "../../lib/helpers";
 import MatchDesk from "./MatchDesk";
 import { AwardBoard, AwardProposal } from "./Award";
 import { KIND_ICON, LABEL_COLORS, MOMENT_PERIOD, STATUSES } from "./todoUtils";
+import { isAllDayDue, taskProjectRoute } from "../../lib/projectAgenda";
 
 export default function Drawer({ task, catalog, allLabels, onClose, onUpdate, onDelete, onEdit, onReplace, go }) {
   const confirm = useConfirm();
@@ -46,7 +47,7 @@ export default function Drawer({ task, catalog, allLabels, onClose, onUpdate, on
       <h2 className="drawer__title">{task.title}</h2>
       <div className="chips">
         {task.match && <span className="chip"><Icon name="ball" size={11} /> {task.match.label}{task.match.startsAt ? ` · ${relativeDay(task.match.startsAt)} ${formatTime(task.match.startsAt)}` : ""}{task.match.field ? ` · ${task.match.field}` : ""}</span>}
-        {task.dueAt && task.kind !== "match_duty" && <span className={`chip ${task.overdue ? "chip--red" : ""}`}><Icon name="clock" size={11} /> {task.overdue ? "Gecikti · " : "Son: "}{relativeDay(task.dueAt)} {formatTime(task.dueAt)}</span>}
+        {task.dueAt && task.kind !== "match_duty" && <span className={`chip ${task.overdue ? "chip--red" : ""}`}><Icon name="clock" size={11} /> {task.overdue ? "Gecikti · " : "Son: "}{relativeDay(task.dueAt)} {isAllDayDue(task) ? "" : formatTime(task.dueAt)}</span>}
         {task.priority === "high" && <span className="chip chip--red"><Icon name="flag" size={11} /> Yüksek öncelik</span>}
         {task.assignedBy && <span className="chip chip--off">Atayan: {task.assignedBy.name}</span>}
         {!can.isOwner && task.owner && <span className="chip chip--off">Atanan: {task.owner.name}</span>}
@@ -69,6 +70,20 @@ export default function Drawer({ task, catalog, allLabels, onClose, onUpdate, on
       )}
       {task.kind === "sheet_share" && task.sheet && (
         <button type="button" className="info-box info-box--btn" onClick={() => go(`sheets:${task.sheet.id}`)}><Icon name="grid" /><div><strong>{task.sheet.title}</strong><span className="muted small">{task.sheet.sharedBy} paylaştı · {task.sheet.role === "editor" ? "düzenleyebilirsiniz" : "görüntüleyebilirsiniz"}</span><span className="link-btn small">Tabloyu aç →</span></div></button>
+      )}
+      {task.project && (
+        <button type="button" className="info-box info-box--btn proj-box" style={{ "--c": task.project.color || "#6d28d9" }} onClick={() => go("projects", taskProjectRoute(task.project))}>
+          <Icon name={task.kind === "project_followup" ? "phone" : "layers"} />
+          <div>
+            <strong>{task.project.name}{task.project.phaseName ? ` · ${task.project.phaseName}` : ""}</strong>
+            <span className="muted small">
+              {task.kind === "project_step" ? "Projedeki adımdan gelir: burada tamamlarsanız adım da tamamlanır; başlık ve tarih projede değişir."
+                : task.kind === "project_followup" ? "Görüşme takibi: tamamlayınca kişinin sonraki aksiyonu temizlenir; yeni tarih verilince kart yeniden açılır."
+                  : "Bu iş projeye bağlı."}
+            </span>
+            <span className="link-btn small">Projede aç →</span>
+          </div>
+        </button>
       )}
       {task.kind === "match_duty" && <MatchDesk task={task} onChanged={() => onReplace(null)} />}
       {task.kind === "award_nomination" && <AwardProposal key={task.id} task={task} onUpdated={(item) => item && onReplace(item)} />}

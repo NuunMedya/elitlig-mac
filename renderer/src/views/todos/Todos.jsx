@@ -3,6 +3,9 @@
 // görevleri, ekip takibi, etiketler, tamamlanan), hızlı ekleme, gruplu liste,
 // sürükle-bırak pano, kart ayrıntısı (maç masası, haftanın enleri, maç anı),
 // görev atama, maç görevlendirme, arşivleme ve geri alma.
+// Kapsam süzgeci (Tümü / Kişisel / Projeler / tek proje): kişiye atanan proje
+// adımları ve görüşme takipleri sunucuda karta dönüşür; kişisel iş projeye
+// bağlanabilir. Kartlarda proje rozeti görünür (lib/projectAgenda.js).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Empty, ErrorNote, Icon, OfflineNote, Segmented, Spinner, useConfirm, useResult, useToast } from "../../components/ui";
 import { del, patch, post, request, tempId, useCommand, useResource } from "../../api";
@@ -10,6 +13,8 @@ import { formatTime, relativeDay } from "../../lib/helpers";
 import Composer from "./Composer";
 import Drawer from "./Drawer";
 import { MatchAssign, TeamOverview } from "./Team";
+import { isAllDayDue, projectOptions, scopeMatches, validScope } from "../../lib/projectAgenda";
+import "./todoProjects.css";
 import { KINDS, KIND_ICON, LABEL_COLORS, STATUSES, dateBucket, dueOf, endOfDay, groupRows, isDelegated, matchesSearch, orderAfterDrop, sortColumn, viewsFor } from "./todoUtils";
 
 const store = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
@@ -25,11 +30,13 @@ export default function Todos({ arg, go }) {
   const [collapsed, setCollapsed] = useState(() => store("todo:collapsed", { done: true }));
   const [q, setQ] = useState("");
   const [kind, setKind] = useState("");
+  const [scopeRaw, setScopeRaw] = useState(() => store("todo:scope", "all"));
   const [selected, setSelected] = useState(arg && arg !== "new" ? Number(arg) : null);
   const [composer, setComposer] = useState(arg === "new" ? {} : null);
   const [assignOpen, setAssignOpen] = useState(false);
   const list = useResource("/api/todos", { view: "board" });
   const catalog = useResource("/api/todos/catalog");
+  const linkable = useResource("/api/todos/projects");
   const cat = catalog.data || {};
   const items = useMemo(() => list.data?.items || [], [list.data]);
   const quickRef = useRef(null);
@@ -38,6 +45,11 @@ export default function Todos({ arg, go }) {
   useEffect(() => save("todo:view", viewKey), [viewKey]);
   useEffect(() => save("todo:groupBy", groupBy), [groupBy]);
   useEffect(() => save("todo:collapsed", collapsed), [collapsed]);
+  useEffect(() => save("todo:scope", scopeRaw), [scopeRaw]);
+  const scopeChoices = useMemo(() => projectOptions(items, linkable.data?.items || []), [items, linkable.data]);
+  const scope = list.data ? validScope(scopeRaw, scopeChoices) : scopeRaw;
+  const scopeProject = String(scope).startsWith("project:") ? scopeChoices.find((p) => `project:${p.id}` === scope) : null;
+  const scoped = useMemo(() => items.filter((t) => scopeMatches(t, scope)), [items, scope]);
   useCommand("new", () => setComposer({}));
   useCommand("find", () => document.getElementById("todo-search")?.focus());
   useEffect(() => {
@@ -51,16 +63,17 @@ export default function Todos({ arg, go }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const views = useMemo(() => viewsFor(items, { canOversee: cat.canOversee, canAssignCrew: cat.canAssignCrew }), [items, cat.canOversee, cat.canAssignCrew]);
+  const views = useMemo(() => viewsFor(scoped, { canOversee: cat.canOversee, canAssignCrew: cat.canAssignCrew }), [scoped, cat.canOversee, cat.canAssignCrew]);
   const view = views.find((v) => v.key === viewKey) || views.find((v) => v.key === "all");
   useEffect(() => { if (list.data && !views.some((v) => v.key === viewKey)) setViewKey("all"); }, [views, viewKey, list.data]);
-  const shown = useMemo(() => items.filter((t) => view.match(t) && matchesSearch(t, q) && (!kind || t.kind === kind)), [items, view, q, kind]);
+  const shown = useMemo(() => scoped.filter((t) => view.match(t) && matchesSearch(t, q) && (!kind || t.kind === kind)), [scoped, view, q, kind]);
   const allLabels = useMemo(() => { const m = new Map(); items.forEach((t) => (t.labels || []).forEach((l) => m.set(l.text, l))); return [...m.values()]; }, [items]);
   const selectedTask = items.find((t) => t.id === selected);
-  const viewCount = (v) => items.filter((t) => v.match(t) && t.status !== "done").length;
-  const todayCount = items.filter((t) => !isDelegated(t) && t.status !== "done" && ["overdue", "today"].includes(dateBucket(t))).length;
-  const lateCount = items.filter((t) => !isDelegated(t) && t.status !== "done" && dateBucket(t) === "overdue").length;
-  const openCount = items.filter((t) => !isDelegated(t) && t.status !== "done").length;
+  const viewCount = (v) => scoped.filter((t) => v.match(t) && t.status !== "done").length;
+  const scopeCount = (s) => items.filter((t) => scopeMatches(t, s) && !isDelegated(t) && t.status !== "done").length;
+  const todayCount = scoped.filter((t) => !isDelegated(t) && t.status !== "done" && ["overdue", "today"].includes(dateBucket(t))).length;
+  const lateCount = scoped.filter((t) => !isDelegated(t) && t.status !== "done" && dateBucket(t) === "overdue").length;
+  const openCount = scoped.filter((t) => !isDelegated(t) && t.status !== "done").length;
 
   const replace = useCallback((item) => {
     if (!item) { list.reload({ quiet: true }); return; }
@@ -100,7 +113,7 @@ export default function Todos({ arg, go }) {
     list.reload({ quiet: true });
     notifyChanged();
     const first = newItems?.[0];
-    if (first && !view.match(first)) toast("Kart eklendi; bu görünümde gösterilmiyor.", { tone: "info" });
+    if (first && (!view.match(first) || !scopeMatches(first, scope))) toast("Kart eklendi; bu görünümde gösterilmiyor.", { tone: "info" });
   };
 
   return (
@@ -110,6 +123,19 @@ export default function Todos({ arg, go }) {
           <span className="view-head__badge" style={{ width: 38, height: 38 }}><Icon name="checkSquare" size={18} strokeWidth={2} /></span>
           <div><h1>Yapılacaklar</h1><small className="muted">{new Date().toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long" })}</small></div>
         </div>
+        <section className="todo-scope" aria-label="Kapsam">
+          <h5>Kapsam</h5>
+          {[["all", "Tümü", "list"], ["personal", "Kişisel", "user"], ["project", "Projeler", "layers"]].map(([key, label, icon]) => (
+            <button key={key} type="button" className={`todo-nav__item ${scope === key || (key === "project" && scopeProject) ? "is-active" : ""}`} aria-pressed={scope === key} onClick={() => { setScopeRaw(key); setSelected(null); }}>
+              <Icon name={icon} size={15} /><span>{label}</span>{scopeCount(key) > 0 && <em>{scopeCount(key)}</em>}
+            </button>
+          ))}
+          {scopeChoices.map((p) => (
+            <button key={p.id} type="button" className={`todo-nav__item todo-nav__item--proj ${scope === `project:${p.id}` ? "is-active" : ""}`} aria-pressed={scope === `project:${p.id}`} onClick={() => { setScopeRaw(`project:${p.id}`); setSelected(null); }} title={p.name}>
+              <span className="todo-nav__dot todo-nav__dot--proj" style={{ background: p.color }} /><span>{p.name}</span>{p.open > 0 && <em>{p.open}</em>}
+            </button>
+          ))}
+        </section>
         {[...new Set(views.map((v) => v.group))].map((group) => (
           <section key={group}>
             <h5>{group}</h5>
@@ -127,7 +153,7 @@ export default function Todos({ arg, go }) {
       <div className="todo-main">
         <header className="todo-head">
           <div>
-            <h2>{view.label}</h2>
+            <h2>{view.label}{scope !== "all" && <span className="todo-scope-tag" style={scopeProject ? { "--c": scopeProject.color } : undefined}>{scopeProject ? scopeProject.name : scope === "personal" ? "Kişisel" : "Projeler"}</span>}</h2>
             <p className="muted">Bugün {todayCount} iş{lateCount ? <> · <strong className="text-red">{lateCount} geciken</strong></> : ""} · toplam {openCount} açık iş</p>
           </div>
           <div className="row-gap">
@@ -140,7 +166,7 @@ export default function Todos({ arg, go }) {
         {view.key === "team" ? <TeamOverview onOpen={setSelected} /> : (<>
           {!["assigned_to_me", "system", "done"].includes(view.key) && (view.key === "assigned_by_me"
             ? <button type="button" className="quickbar quickbar--cta" onClick={() => setComposer({ audience: "team" })}><Icon name="team" /> Ekibe yeni görev ver</button>
-            : <QuickAdd inputRef={quickRef} defaultWhen={view.key === "today" ? "today" : view.key === "upcoming" ? "tomorrow" : "none"} label={view.key.startsWith("label:") ? allLabels.find((l) => `label:${l.text}` === view.key) : null}
+            : <QuickAdd inputRef={quickRef} defaultWhen={view.key === "today" ? "today" : view.key === "upcoming" ? "tomorrow" : "none"} label={view.key.startsWith("label:") ? allLabels.find((l) => `label:${l.text}` === view.key) : null} project={scopeProject}
               onDetailed={(title) => setComposer({ title })}
               onAdd={async (body) => { const res = await post("/api/todos", body, { tempId: tempId() }); if (result(res, "Eklendi.")) created(res.data?.items); }} />)}
 
@@ -172,13 +198,13 @@ export default function Todos({ arg, go }) {
       </div>
 
       {selectedTask && <Drawer key={selectedTask.id} task={selectedTask} catalog={cat} allLabels={allLabels} go={go} onClose={() => setSelected(null)} onUpdate={update} onDelete={remove} onEdit={(t) => setComposer({ task: t })} onReplace={replace} />}
-      {composer && <Composer catalog={cat} task={composer.task} initial={composer} onClose={() => setComposer(null)} onSaved={(r) => (composer.task ? (setComposer(null), replace(r)) : created(r))} />}
+      {composer && <Composer catalog={cat} task={composer.task} initial={{ ...(scopeProject ? { project_id: scopeProject.id } : {}), ...composer }} projects={linkable.data?.items || []} onClose={() => setComposer(null)} onSaved={(r) => (composer.task ? (setComposer(null), replace(r)) : created(r))} />}
       {assignOpen && <MatchAssign onClose={() => setAssignOpen(false)} onSaved={() => list.reload({ quiet: true })} />}
     </div>
   );
 }
 
-function QuickAdd({ inputRef, defaultWhen, label, onAdd, onDetailed }) {
+function QuickAdd({ inputRef, defaultWhen, label, project, onAdd, onDetailed }) {
   const [title, setTitle] = useState("");
   const [when, setWhen] = useState(defaultWhen);
   const [date, setDate] = useState("");
@@ -188,14 +214,14 @@ function QuickAdd({ inputRef, defaultWhen, label, onAdd, onDetailed }) {
     e.preventDefault();
     if (!title.trim()) return;
     const due = when === "today" ? endOfDay(0) : when === "tomorrow" ? endOfDay(1) : when === "date" && date ? new Date(`${date}T23:59:00`).toISOString() : null;
-    await onAdd({ kind: "task", title: title.trim().slice(0, 200), due_at: due, priority: high ? "high" : "normal", ...(label ? { labels: [label] } : {}) });
+    await onAdd({ kind: "task", title: title.trim().slice(0, 200), due_at: due, priority: high ? "high" : "normal", ...(label ? { labels: [label] } : {}), ...(project ? { project_id: project.id } : {}) });
     setTitle("");
     setHigh(false);
   };
   return (
     <form className="quickbar" onSubmit={submit}>
       <Icon name="plus" size={18} />
-      <input ref={inputRef} value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") { setTitle(""); e.currentTarget.blur(); } }} placeholder={`Yeni iş ekle${label ? ` (#${label.text})` : ""}…  (N)`} />
+      <input ref={inputRef} value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") { setTitle(""); e.currentTarget.blur(); } }} placeholder={`Yeni iş ekle${label ? ` (#${label.text})` : ""}${project ? ` · ${project.name}` : ""}…  (N)`} />
       <div className="quickbar__opts">
         {[["none", "Tarihsiz"], ["today", "Bugün"], ["tomorrow", "Yarın"], ["date", "Tarih"]].map(([k, l]) => <button key={k} type="button" className={when === k ? "is-on" : ""} onClick={() => setWhen(k)}>{l}</button>)}
         {when === "date" && <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />}
@@ -225,6 +251,7 @@ function Row({ t, active, onSelect, onUpdate }) {
         <span className="trow__meta">
           {t.status === "in_progress" && <span className="pill pill--blue">Sürüyor</span>}
           {t.kind !== "task" && <span className="pill">{t.dutyLabel || t.kindLabel}</span>}
+          {t.project && <ProjectBadge project={t.project} />}
           {t.match && <span><Icon name="ball" size={11} /> {t.match.label}{t.match.field ? ` · ${t.match.field}` : ""}</span>}
           {t.sheet && <span><Icon name="grid" size={11} /> {t.sheet.title}</span>}
           {t.player && <span><Icon name="user" size={11} /> {t.player.name}</span>}
@@ -237,7 +264,7 @@ function Row({ t, active, onSelect, onUpdate }) {
         </span>
       </button>
       {can.canChangeStatus && t.status !== "done" && <button type="button" className="btn btn--xs btn--ghost trow__start" onClick={() => onUpdate(t, { status: t.status === "in_progress" ? "open" : "in_progress" })}>{t.status === "in_progress" ? "Duraklat" : "Başla"}</button>}
-      {due && <span className={`trow__due ${t.overdue ? "text-red" : ""}`}>{t.overdue ? (t.kind === "match_duty" ? "Maç saati geçti" : "Gecikti") : relativeDay(due)}<small>{formatTime(due)}</small></span>}
+      {due && <span className={`trow__due ${t.overdue ? "text-red" : ""}`}>{t.overdue ? (t.kind === "match_duty" ? "Maç saati geçti" : "Gecikti") : relativeDay(due)}<small>{isAllDayDue(t) ? "gün içinde" : formatTime(due)}</small></span>}
     </li>
   );
 }
@@ -296,6 +323,7 @@ function Board({ items, selected, onSelect, onMove, onAdd, onArchive }) {
                   onDrop={(e) => { e.preventDefault(); e.stopPropagation(); drop(s.key, t.id); }} onClick={() => onSelect(t.id)}>
                   {t.labels?.length > 0 && <div className="board-card__labels">{t.labels.map((l) => <span key={l.text} style={{ background: LABEL_COLORS[l.color] }} title={l.text} />)}</div>}
                   <strong>{t.pinned && <Icon name="pin" size={11} />} {t.title}</strong>
+                  {t.project && <ProjectBadge project={t.project} />}
                   <div className="board-card__meta">
                     {t.kind !== "task" && <span className="pill pill--xs"><Icon name={KIND_ICON[t.kind]} size={10} /> {t.dutyLabel || t.kindLabel}</span>}
                     {due && <span className={t.overdue ? "text-red" : ""}><Icon name="clock" size={11} /> {relativeDay(due)}</span>}
@@ -317,5 +345,14 @@ function Board({ items, selected, onSelect, onMove, onAdd, onArchive }) {
         </section>
       ))}
     </div>
+  );
+}
+
+/** Proje rozeti: renkli nokta + proje adı (+ aşama). */
+export function ProjectBadge({ project }) {
+  return (
+    <span className="proj-badge" style={{ "--c": project.color || "#6d28d9" }} title={`Proje: ${project.name}${project.phaseName ? ` · ${project.phaseName}` : ""}`}>
+      <span className="proj-badge__dot" />{project.name}{project.phaseName && <small>· {project.phaseName}</small>}
+    </span>
   );
 }

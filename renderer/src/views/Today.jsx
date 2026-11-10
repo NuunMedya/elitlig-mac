@@ -7,6 +7,8 @@ import { formatMoney, formatTime, greeting, groupTodos, parseQuickTask, relative
 import { colorOf } from "../lib/agendaUtils";
 import { dayKey, dueLabel, formatWhen, groupFollowups } from "../lib/projectUtils";
 import { topCategories } from "../lib/requestUtils";
+import { isAllDayDue, isProjectItem, mergeUpcoming, projectKindOf, projectRoute } from "../lib/projectAgenda";
+import "./todos/todoProjects.css";
 
 const useClock = () => {
   const [now, setNow] = useState(() => new Date());
@@ -33,6 +35,8 @@ export default function Today({ go, auth }) {
   const groups = useMemo(() => groupTodos(todos.data?.items || [], now), [todos.data, now]);
   const focusList = [...groups.overdue, ...groups.today];
   const o = overview.data;
+  // Önümüzdeki 7 gün: etkinlikler + projelerdeki tarihler (adım, son tarih, görüşme).
+  const upcoming = useMemo(() => mergeUpcoming(o), [o]);
   const name = (auth.user?.fullName || auth.user?.username || "").split(" ")[0];
 
   const toggleDone = async (task) => {
@@ -55,10 +59,10 @@ export default function Today({ go, auth }) {
         <div style={{ position: "relative", zIndex: 1 }}>
           <span className="eyebrow">{now.toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span>
           <h1>{greeting(now.getHours())}{name ? `, ${name}` : ""} 👋</h1>
-          <p>{groups.overdue.length ? `${groups.overdue.length} gecikmiş işin var. ` : "Gecikmiş işin yok. "}Bugün {groups.today.length} iş ve 7 gün içinde {o?.upcoming?.length ?? 0} etkinlik seni bekliyor.</p>
+          <p>{groups.overdue.length ? `${groups.overdue.length} gecikmiş işin var. ` : "Gecikmiş işin yok. "}Bugün {groups.today.length} iş ve 7 gün içinde {upcoming.length} plan seni bekliyor.</p>
           <div className="hero__stats">
             <button type="button" className="hero__stat" onClick={() => go("todos")}><strong>{groups.overdue.length + groups.today.length}</strong><span>bugünün işi</span></button>
-            <button type="button" className="hero__stat" onClick={() => go("agenda")}><strong>{o?.upcoming?.length ?? "–"}</strong><span>yaklaşan etkinlik</span></button>
+            <button type="button" className="hero__stat" onClick={() => go("agenda")}><strong>{o ? upcoming.length : "–"}</strong><span>yaklaşan plan</span></button>
             <button type="button" className="hero__stat" onClick={() => go("ledger")}><strong>{o?.ledger ? formatMoney(o.ledger.net, 0) : "–"}</strong><span>bu ay net</span></button>
             <button type="button" className="hero__stat" onClick={() => go("focus")}><strong>{focus?.stats?.minutes || 0} dk</strong><span>bugün odak</span></button>
           </div>
@@ -96,8 +100,9 @@ export default function Today({ go, auth }) {
                   <button type="button" className="task-mini__title" onClick={() => go(`todos:${t.id}`)}>
                     {t.priority === "high" && <Icon name="flag" size={13} className="text-red" />}
                     {t.title}
+                    {t.project && <span className="proj-badge" style={{ "--c": t.project.color || "#6d28d9" }} title={`Proje: ${t.project.name}`}><span className="proj-badge__dot" />{t.project.name}</span>}
                   </button>
-                  <span className={`task-mini__due ${t.overdue ? "text-red" : ""}`}>{t.dueAt ? `${relativeDay(t.dueAt)} ${formatTime(t.dueAt)}` : ""}</span>
+                  <span className={`task-mini__due ${t.overdue ? "text-red" : ""}`}>{t.dueAt ? `${relativeDay(t.dueAt)}${isAllDayDue(t) ? "" : ` ${formatTime(t.dueAt)}`}` : ""}</span>
                 </li>
               ))}
             </ul>
@@ -114,13 +119,20 @@ export default function Today({ go, auth }) {
             <h2 className="card__title"><Icon name="calendar" /> Önümüzdeki 7 gün</h2>
             <button type="button" className="link-btn" onClick={() => go("agenda")}>Ajanda →</button>
           </header>
-          {o?.upcoming?.length ? (
+          {upcoming.length ? (
             <ul className="upcoming">
-              {o.upcoming.map((item) => (
-                <li key={item.occurrence_key}>
+              {upcoming.map((item) => (
+                <li key={item.occurrence_key} className={isProjectItem(item) ? "upcoming--project" : undefined}>
                   <span className="upcoming__bar" style={{ background: colorOf(item) }} />
-                  <span className="upcoming__when">{relativeDay(item.occurrence_start)}<small>{item.all_day ? "Tüm gün" : formatTime(item.occurrence_start)}</small></span>
-                  <span className="upcoming__title">{item.title}{item.location && <small><Icon name="map" size={11} /> {item.location}</small>}</span>
+                  <span className="upcoming__when">{relativeDay(item.occurrence_start)}<small>{item.all_day ? (item.multi_day ? "Plan" : "Tüm gün") : formatTime(item.occurrence_start)}</small></span>
+                  {isProjectItem(item) ? (
+                    <button type="button" className="upcoming__title link-btn" onClick={() => go("projects", projectRoute(item.link))} title="Projede aç">
+                      {item.title}
+                      <small><Icon name={projectKindOf(item).icon} size={11} /> {item.project?.name}{item.phase_name ? ` · ${item.phase_name}` : ""}</small>
+                    </button>
+                  ) : (
+                    <span className="upcoming__title">{item.title}{item.location && <small><Icon name="map" size={11} /> {item.location}</small>}</span>
+                  )}
                 </li>
               ))}
             </ul>
