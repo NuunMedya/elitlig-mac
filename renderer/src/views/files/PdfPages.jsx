@@ -1,8 +1,9 @@
 // PDF sayfaları: sırala (sürükle ya da ← →), döndür, çoğalt, sil. Kaydedince
 // yeni bir PDF yazılır (pdf-lib, ana süreç); özgün dosya değişmez.
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Kbd, Spinner } from "../../components/ui";
 import { FIcon } from "./icons";
+import { useEditorClose } from "./editorGuard";
 
 export default function PdfPages({ file, onRun, onClose }) {
   const [pages, setPages] = useState(null); // [{ key, index, rotate, width, height }]
@@ -10,6 +11,7 @@ export default function PdfPages({ file, onRun, onClose }) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [dragKey, setDragKey] = useState(null);
+  const rootRef = useRef(null);
 
   useEffect(() => {
     window.elitlig.fileTools.pdfInfo(file.id).then((res) => {
@@ -58,17 +60,21 @@ export default function PdfPages({ file, onRun, onClose }) {
   };
 
   const changed = pages && (pages.length !== pages.filter((p, i) => p.index === i).length || pages.some((p) => p.rotate) || pages.length !== new Set(pages.map((p) => p.index)).size);
+  // Sıralama / döndürme yapıldıysa Vazgeç, ✕, Esc ve dışarı tıklama önce sorar.
+  const { requestClose, ask, askNode } = useEditorClose({ dirty: Boolean(changed) && !busy, onClose, rootRef, message: "Sayfa düzenlemeleri kaydedilmeden kapatılsın mı?" });
   const save = async () => {
     if (!pages?.length || busy) return;
     setBusy(true);
-    const res = await onRun({ op: "pdfOrganize", options: { pages: pages.map((p) => ({ index: p.index, rotate: p.rotate })) } });
+    let res;
+    try { res = await onRun({ op: "pdfOrganize", options: { pages: pages.map((p) => ({ index: p.index, rotate: p.rotate })) } }); } catch (e) { res = { ok: false, error: { message: e?.message } }; }
     setBusy(false);
     if (res?.ok) onClose(); else setError(res?.error?.message || "Kaydedilemedi.");
   };
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); return; }
+      if (ask) return;
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); requestClose(); return; }
       if (!pages) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") { e.preventDefault(); setSel(new Set(pages.map((p) => p.key))); return; }
       if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); remove(); return; }
@@ -82,12 +88,12 @@ export default function PdfPages({ file, onRun, onClose }) {
   });
 
   return (
-    <div className="ie" role="dialog" aria-modal="true" aria-label={`Sayfalar: ${file.name}`}>
+    <div className="ie" ref={rootRef} role="dialog" aria-modal="true" aria-label={`Sayfalar: ${file.name}`}>
       <header className="ie__head">
         <strong className="ie__title">{file.name}</strong>
         <span className="muted">{pages ? `${pages.length} sayfa${sel.size ? ` · ${sel.size} seçili` : ""}` : ""}</span>
         <span className="spacer" />
-        <button type="button" className="icon-btn" onClick={onClose} aria-label="Kapat"><FIcon name="x" /></button>
+        <button type="button" className="icon-btn" onClick={requestClose} aria-label="Kapat" title="Kapat (esc)"><FIcon name="x" /></button>
       </header>
       <div className="ie__bar" role="toolbar" aria-label="Sayfa işlemleri">
         <button type="button" className="btn btn--sm" onClick={() => rotate(-90)}><FIcon name="rotate" size={14} /> Sola döndür</button>
@@ -122,9 +128,10 @@ export default function PdfPages({ file, onRun, onClose }) {
       <footer className="ie__foot">
         <span className="muted"><Kbd>⌘A</Kbd> tümü · <Kbd>R</Kbd> döndür · <Kbd>⌥←</Kbd><Kbd>⌥→</Kbd> taşı · <Kbd>⌫</Kbd> sil</span>
         <span className="spacer" />
-        <button type="button" className="btn" onClick={onClose}>Vazgeç</button>
+        <button type="button" className="btn" onClick={requestClose}>Vazgeç</button>
         <button type="button" className="btn btn--primary" onClick={save} disabled={!changed || busy}>Yeni PDF olarak kaydet <Kbd>↩</Kbd></button>
       </footer>
+      {askNode}
     </div>
   );
 }

@@ -1937,3 +1937,5 @@ button.team-badge--lg:not(:disabled):hover { background: color-mix(in srgb, var(
 .bud-free { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
 .bud-free > span { display: flex; flex-direction: column; min-width: 0; }
 .bud-free small { font-size: 11px; }
+/* Onay pencereleri her zaman en üstte: düzenleyici / önizleme katmanlarının (z 70–80) arkasında kalmasın. */
+.modal-backdrop:has(> .modal--confirm) { z-index: 120 !important; }

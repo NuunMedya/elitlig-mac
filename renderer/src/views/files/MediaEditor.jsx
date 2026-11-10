@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Kbd, Segmented, isMac } from "../../components/ui";
 import { FIcon } from "./icons";
 import { formatTime, parseTime } from "../../lib/files/catalog";
+import { useEditorClose } from "./editorGuard";
 
 const TITLES = { trim: "Kırp", snapshot: "Kare yakala", gif: "GIF yap" };
 
@@ -28,6 +29,9 @@ export default function MediaEditor({ file, mode: initialMode = "trim", onRun, o
   const mediaRef = useRef(null);
   const trackRef = useRef(null);
   const dragRef = useRef(null);
+  const rootRef = useRef(null);
+  // Zaman aralığı / kare seçimi kolayca yeniden yapılır: onay sorulmaz; dışarı tıklama da kapatır.
+  const { requestClose } = useEditorClose({ dirty: false, onClose: () => { try { mediaRef.current?.pause(); } catch { /* yoksay */ } onClose(); }, rootRef });
   const stopAtRef = useRef(null);
 
   useEffect(() => {
@@ -85,7 +89,8 @@ export default function MediaEditor({ file, mode: initialMode = "trim", onRun, o
     if (mode === "snapshot") spec = { op: "snapshot", options: { timeMs: time, format: snapFmt } };
     else if (mode === "gif") spec = { op: "gif", options: { startMs: range.start, endMs: range.end, fps: gif.fps, width: gif.width } };
     else spec = { op: "trim", options: { startMs: range.start, endMs: range.end, copy, ...(format ? { format } : {}) } };
-    const res = await onRun(spec);
+    let res;
+    try { res = await onRun(spec); } catch (e) { res = { ok: false, error: { message: e?.message } }; }
     setBusy(false);
     if (res?.ok) onClose();
     else setError(res?.error?.message || "İşlem başlatılamadı.");
@@ -96,7 +101,7 @@ export default function MediaEditor({ file, mode: initialMode = "trim", onRun, o
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") { if (e.key === "Escape") { e.preventDefault(); document.activeElement.blur(); } return; }
       const mod = isMac() ? e.metaKey : e.ctrlKey;
-      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); return; }
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); requestClose(); return; }
       if (e.key === " ") { e.preventDefault(); toggle(e.shiftKey); return; }
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
@@ -122,12 +127,12 @@ export default function MediaEditor({ file, mode: initialMode = "trim", onRun, o
   );
 
   return (
-    <div className="ie me" role="dialog" aria-modal="true" aria-label={`${TITLES[mode]}: ${file.name}`}>
+    <div className="ie me" ref={rootRef} role="dialog" aria-modal="true" aria-label={`${TITLES[mode]}: ${file.name}`}>
       <header className="ie__head">
         <strong className="ie__title">{file.name}</strong>
         {isVideo && <Segmented value={mode} onChange={setMode} size="sm" ariaLabel="Kip" options={[{ value: "trim", label: "Kırp" }, { value: "snapshot", label: "Kare yakala" }, { value: "gif", label: "GIF yap" }]} />}
         <span className="spacer" />
-        <button type="button" className="icon-btn" onClick={onClose} aria-label="Kapat" title="Kapat (esc)"><FIcon name="x" /></button>
+        <button type="button" className="icon-btn" onClick={requestClose} aria-label="Kapat" title="Kapat (esc)"><FIcon name="x" /></button>
       </header>
       <div className="me__stage">
         {isVideo ? (
@@ -181,7 +186,7 @@ export default function MediaEditor({ file, mode: initialMode = "trim", onRun, o
       <footer className="ie__foot">
         <span className="muted"><Kbd>Boşluk</Kbd> oynat · <Kbd>⇧</Kbd><Kbd>Boşluk</Kbd> aralığı oynat · <Kbd>←</Kbd><Kbd>→</Kbd> 1 sn · <Kbd>I</Kbd>/<Kbd>O</Kbd> işaretle</span>
         <span className="spacer" />
-        <button type="button" className="btn" onClick={onClose}>Vazgeç</button>
+        <button type="button" className="btn" onClick={requestClose}>Vazgeç</button>
         <button type="button" className="btn btn--primary" onClick={run} disabled={busy || !duration}>{mode === "snapshot" ? "Kareyi kaydet" : mode === "gif" ? "GIF oluştur" : "Kırp ve kaydet"} <Kbd>↩</Kbd></button>
       </footer>
     </div>

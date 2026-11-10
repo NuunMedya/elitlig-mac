@@ -77,7 +77,9 @@ export default function ToolDialog({ tool, files, onClose, onStart }) {
       case "rename": spec = { op: "renameCopies", options: { template: opts.template, start: Number(opts.start) || 1, pad: Number(opts.pad) || 0 } }; break;
       default: spec = { op: tool.op, options: opts };
     }
-    const res = await onStart(spec);
+    // onStart hata fırlatırsa düğme "Başlatılıyor…"da kilitli kalmasın; pencere açık kalır.
+    let res;
+    try { res = await onStart(spec); } catch (e) { res = { ok: false, error: { message: e?.message } }; }
     setBusy(false);
     if (res?.ok !== false) onClose();
   };
