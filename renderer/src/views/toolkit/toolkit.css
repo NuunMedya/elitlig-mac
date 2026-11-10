@@ -293,3 +293,21 @@ input[type="checkbox"].switch:focus-visible { box-shadow: var(--focus-ring); out
 .wgg-row select { width: auto; }
 .wgg-row__op { display: inline-flex; align-items: center; gap: 6px; font: 600 12px var(--mono); color: var(--muted); }
 .wgg-row__op input { width: 90px; accent-color: var(--tool); }
+
+/* Panel: komut satırı, arama sonuçları, "Tümü" sekmesi (birleşik Araç Takımı ile ortak katalog). */
+.tk-cmd { display: flex; align-items: center; gap: 6px; margin: 0 12px 8px; padding: 0 6px 0 10px; border-radius: 11px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--muted); flex: none; }
+.tk-cmd:focus-within { border-color: color-mix(in srgb, var(--tool) 60%, transparent); box-shadow: 0 0 0 3px var(--tool-soft); }
+.tk-cmd input { flex: 1; min-width: 0; border: 0 !important; background: transparent !important; box-shadow: none !important; padding: 8px 0 !important; font-size: 13px; outline: none; }
+.tk-cmdres { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); }
+.tk-hit { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 9px; border-radius: 9px; border: 0; background: none; text-align: left; color: var(--text); }
+.tk-hit:hover, .tk-hit:focus-visible { background: var(--tool-soft); }
+.tk-hit > .ic:first-child { color: var(--tool); flex: none; }
+.tk-hit span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tk-hit small { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tk-all { display: flex; flex-direction: column; gap: 2px; }
+.tk-all .tk-sub { margin-top: 6px; }
+.tk-all__grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.tk-all__item { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px 7px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); font-size: 11px; font-weight: 600; min-width: 0; }
+.tk-all__item span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-all__item .ic { color: var(--tool); }
+.tk-all__item:hover { background: var(--tool-soft); border-color: color-mix(in srgb, var(--tool) 40%, transparent); }

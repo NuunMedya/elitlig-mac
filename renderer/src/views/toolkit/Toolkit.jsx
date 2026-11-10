@@ -2,14 +2,19 @@
 // çerçevesiz pencere; odak kaybedince gizlenir. Üstte hızlı işler (hızlı not / görev, pano, ekran
 // görüntüsü, widget'lar, ekranı uyanık tut, müzik), altta sekmeli araçlar. Ana süreç: app/toolkit.js.
 // Araçların tam sayfa hâli uygulama içinde "Araç Takımı" (ToolkitPage.jsx) — aynı bileşenler.
-import React, { Suspense, useEffect, useRef, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, isMac, useToast } from "../../components/ui";
 import { clock, isPlayingStatus } from "../../music/musicApp";
 import { acceleratorLabel } from "./shortcutUtils";
 import { deskkit, useStored } from "./toolkitUi";
 import LayoutTool from "./LayoutTool";
 import { TOOLS } from "./toolRegistry";
+import { ALL_TOOLS, CATEGORIES, SECTIONS, TOOL_BY_KEY, entryOf, routeOf, searchEntries } from "./hub/catalog";
+import { useHubLists } from "./hub/ToolkitHub";
+import CommandCard from "./hub/CommandCard";
+import { COMMAND_HINTS, runCommand } from "./lib/command";
 import "./toolkit.css";
+import "./tools/tools.css";
 
 export { TOOLS };
 const AWAKE_OPTIONS = [{ m: 0, label: "Süresiz" }, { m: 30, label: "30 dk" }, { m: 60, label: "1 saat" }, { m: 120, label: "2 saat" }];
@@ -22,18 +27,37 @@ export default function Toolkit() {
   const [music, setMusic] = useState(null);
   const [pinned, setPinned] = useState(false);
   const [awakeMenu, setAwakeMenu] = useState(false);
+  const [cmd, setCmd] = useState("");
+  const [rates, setRates] = useState(null);
+  const cmdRef = useRef(null);
+  const { pins, visit } = useHubLists();
   const dk = deskkit();
+  // Sekmeler: ilk dokuz araç sabit (⌘1…⌘9), sonra sabitlenen araçlar; seçili araç listede yoksa eklenir; en sonda "Tümü".
+  const tabs = useMemo(() => {
+    const keys = [...TOOLS.map((t) => t.key), ...pins.filter((id) => id.startsWith("tool:")).map((id) => id.slice(5))];
+    if (TOOL_BY_KEY.has(tab)) keys.push(tab);
+    return [...new Set(keys)].map((k) => TOOL_BY_KEY.get(k)).filter(Boolean);
+  }, [pins, tab]);
+  const cmdResult = useMemo(() => runCommand(cmd, { rates }), [cmd, rates]);
+  const cmdMatches = useMemo(() => (cmd.trim() ? searchEntries(cmd, { limit: 6 }) : []), [cmd]);
+  const openEntry = (e) => {
+    setCmd("");
+    if (e.kind === "tool") { setTab(e.key); visit(e.id); return; }
+    window.elitlig.app.showMain(routeOf(e));
+    dk?.hidePanel();
+  };
 
   useEffect(() => {
     document.documentElement.dataset.window = "toolkit";
     if (!dk) return undefined;
     dk.settings().then(setInfo).catch(() => {});
     dk.awake().then(setAwake).catch(() => {});
+    dk.rates?.(false).then((r) => setRates(r?.ok ? r.rates : null)).catch(() => {});
     window.elitlig.music?.state().then(setMusic).catch(() => {});
     const offs = [
       dk.onSettings(setInfo),
       dk.onAwake(setAwake),
-      dk.onPanelOpen((p) => { if (p?.tab && TOOLS.some((t) => t.key === p.tab)) setTab(p.tab); dk.settings().then(setInfo).catch(() => {}); }),
+      dk.onPanelOpen((p) => { if (p?.tab && TOOL_BY_KEY.has(p.tab)) setTab(p.tab); dk.settings().then(setInfo).catch(() => {}); setTimeout(() => cmdRef.current?.focus(), 60); }),
       window.elitlig.music?.onState(setMusic),
     ].filter(Boolean);
     return () => offs.forEach((off) => off());
@@ -46,12 +70,12 @@ export default function Toolkit() {
   // Kısa yollar: Esc gizle, ⌘1…9 sekme.
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === "Escape") { e.preventDefault(); dk?.hidePanel(); }
+      if (e.key === "Escape") { e.preventDefault(); if (cmd) setCmd(""); else dk?.hidePanel(); }
       if ((isMac() ? e.metaKey : e.ctrlKey) && /^[1-9]$/.test(e.key) && TOOLS[Number(e.key) - 1]) { e.preventDefault(); setTab(TOOLS[Number(e.key) - 1].key); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dk, setTab]);
+  }, [dk, setTab, cmd]);
 
   const pin = async () => { const v = await dk?.pinPanel(!pinned); setPinned(Boolean(v)); };
   const toggleAwake = async (minutes = 0) => { setAwakeMenu(false); setAwake(await dk.setAwake({ on: !awake.on || minutes > 0, minutes })); };
@@ -84,11 +108,29 @@ export default function Toolkit() {
         {info?.settings?.toolkit?.shortcut && <kbd className="tk-head__kbd">{acceleratorLabel(info.settings.toolkit.shortcut, mac)}</kbd>}
         <span className="tk-grow" />
         <button type="button" className={`tk-ib${pinned ? " is-on" : ""}`} onClick={pin} aria-pressed={pinned} aria-label="Açık tut" title={pinned ? "Odak gidince gizlensin" : "Açık tut (odak gidince gizlenmesin)"}><Icon name="pin" size={14} /></button>
-        <button type="button" className="tk-ib" onClick={() => { window.elitlig.app.showMain(`toolkit:${tab}`); dk?.hidePanel(); }} aria-label="Tam sayfa aç" title="Araç Takımı'nı uygulamada tam sayfa aç"><Icon name="external" size={14} /></button>
+        <button type="button" className="tk-ib" onClick={() => { window.elitlig.app.showMain(`toolkit:${tab}`); dk?.hidePanel(); }} aria-label="Araç Takımı'nda aç" title="Birleşik Araç Takımı'nda (uygulamada) aç"><Icon name="external" size={14} /></button>
         <button type="button" className="tk-ib" onClick={() => { window.elitlig.app.showMain("desk"); dk?.hidePanel(); }} aria-label="Ayarlar" title="Masaüstü araçları ayarları"><Icon name="sliders" size={14} /></button>
         <button type="button" className="tk-ib" onClick={() => dk?.hidePanel()} aria-label="Kapat" title="Kapat (Esc)"><Icon name="x" size={14} /></button>
       </header>
 
+      <form className="tk-cmd" onSubmit={async (e) => {
+        e.preventDefault();
+        if (cmdResult?.copy != null) { try { await navigator.clipboard.writeText(String(cmdResult.copy)); toast("Kopyalandı.", { tone: "success", timeout: 1400 }); } catch { /* yoksay */ } return; }
+        if (cmdMatches[0]) openEntry(cmdMatches[0]);
+      }}>
+        <Icon name="search" size={14} />
+        <input ref={cmdRef} value={cmd} onChange={(e) => setCmd(e.target.value)} placeholder={`Ara ya da komut: ${COMMAND_HINTS.slice(0, 3).join(" · ")}`} aria-label="Araç ara ya da komut" spellCheck={false} autoFocus />
+        {cmd && <button type="button" className="tk-ib" onClick={() => setCmd("")} aria-label="Temizle"><Icon name="x" size={12} /></button>}
+      </form>
+      {cmd.trim() ? (
+        <main className="tk-body tk-cmdres" aria-label="Sonuçlar">
+          {cmdResult && <CommandCard cmd={cmdResult} compact go={(r) => { const k = r.replace(/^toolkit:/, ""); if (TOOL_BY_KEY.has(k)) { setCmd(""); setTab(k); } }} />}
+          {cmdMatches.length > 0 && <div className="tk-sub"><h4>Araçlar</h4>{cmdMatches.map((e) => (
+            <button key={e.id} type="button" className="tk-hit" onClick={() => openEntry(e)}><Icon name={e.icon} size={15} /><span><strong>{e.title}</strong><small>{e.hint}</small></span>{e.kind === "section" && <Icon name="external" size={12} />}</button>
+          ))}</div>}
+          {!cmdResult && !cmdMatches.length && <p className="tk-note">Sonuç yok. Örnekler: {COMMAND_HINTS.join(" · ")}</p>}
+        </main>
+      ) : (<>
       <div className="tk-quick" role="group" aria-label="Hızlı işler">
         <button type="button" className="tk-qa" onClick={() => quick("note")} title="Hızlı not (⌃⌥N)"><Icon name="note" size={15} /><span>Not</span></button>
         <button type="button" className="tk-qa" onClick={() => quick("task")} title="Hızlı görev"><Icon name="checkSquare" size={15} /><span>Görev</span></button>
@@ -121,21 +163,43 @@ export default function Toolkit() {
       )}
 
       <nav className="tk-tabs" role="tablist" aria-label="Araçlar" ref={tabsRef}>
-        {TOOLS.map((t, i) => (
+        {tabs.map((t, i) => (
           <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={tab === t.key ? "is-active" : ""} onClick={() => setTab(t.key)} title={`${t.title}${i < 9 ? ` (${mac ? "⌘" : "Ctrl+"}${i + 1})` : ""}`}>
             <Icon name={t.icon} size={16} /><span>{t.label}</span>
           </button>
         ))}
+        <button type="button" role="tab" aria-selected={tab === "all"} className={tab === "all" ? "is-active" : ""} onClick={() => setTab("all")} title="Tüm araçlar ve Araç Takımı bölümleri">
+          <Icon name="grid" size={16} /><span>Tümü</span>
+        </button>
       </nav>
 
       <main className="tk-body" role="tabpanel">
         <Suspense fallback={<p className="muted tk-pad">Yükleniyor…</p>}>
-          {tab === "layout" ? <LayoutTool info={info} onPermission={(p) => p && setInfo((x) => (x ? { ...x, permission: p } : x))} /> : (() => {
-            const T = (TOOLS.find((t) => t.key === tab) || TOOLS[1]).component;
-            return T ? <T /> : null;
+          {tab === "all" ? <AllTools pins={pins} onOpen={openEntry} /> : tab === "layout" ? <LayoutTool info={info} onPermission={(p) => p && setInfo((x) => (x ? { ...x, permission: p } : x))} /> : (() => {
+            const T = (TOOL_BY_KEY.get(tab) || TOOLS[1]).component;
+            return T ? <T go={(r) => { window.elitlig.app.showMain(r); dk?.hidePanel(); }} /> : null;
           })()}
         </Suspense>
       </main>
+      </>)}
+    </div>
+  );
+}
+
+/** Panelin "Tümü" sekmesi: sabitlenenler, kategorilere göre bütün araçlar, Araç Takımı bölümleri. */
+function AllTools({ pins, onOpen }) {
+  const pinned = pins.map(entryOf).filter(Boolean);
+  return (
+    <div className="tk-all">
+      {pinned.length > 0 && <section className="tk-sub"><h4>Sabitlenenler</h4><div className="tk-all__grid">{pinned.map((e) => <button key={e.id} type="button" className="tk-all__item" onClick={() => onOpen(e)}><Icon name={e.icon} size={16} /><span>{e.kind === "tool" ? e.label : e.title}</span></button>)}</div></section>}
+      {CATEGORIES.map((c) => (
+        <section key={c.key} className="tk-sub"><h4>{c.title}</h4>
+          <div className="tk-all__grid">{ALL_TOOLS.filter((t) => t.cat === c.key).map((t) => <button key={t.key} type="button" className="tk-all__item" data-tool-key={t.key} onClick={() => onOpen(entryOf(`tool:${t.key}`))} title={t.title}><Icon name={t.icon} size={16} /><span>{t.label}</span></button>)}</div>
+        </section>
+      ))}
+      <section className="tk-sub"><h4>Uygulamada açılır</h4>
+        <div className="tk-all__grid">{SECTIONS.map((s) => <button key={s.key} type="button" className="tk-all__item" onClick={() => onOpen(entryOf(`section:${s.key}`))} title={s.hint}><Icon name={s.icon} size={16} /><span>{s.title}</span></button>)}</div>
+      </section>
     </div>
   );
 }

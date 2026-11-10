@@ -7,6 +7,8 @@ import { get, useDebounced } from "../api";
 import { includesTr, formatMoney, formatDate } from "../lib/helpers";
 // Yönetim: web yönetim panelinin sayfaları ve maç / oyuncu / takım araması (views/admin).
 import { useAdminPalette } from "../views/admin/adminPalette";
+// Birleşik Araç Takımı: her araç ve kategori bir komut (yalnız arama yapılınca listelenir).
+import { paletteEntries } from "../views/toolkit/hub/catalog";
 
 const ACTIONS = [
   { label: "Yeni sohbet", icon: "message", route: "messages:new", hint: "Mesajlar · ⌘N" },
@@ -30,13 +32,14 @@ const ACTIONS = [
   { label: "Odak turunu başlat", icon: "play", run: () => window.elitlig.focus.command("start"), hint: "Odak Sayacı" },
   { label: "Hızlı kayıt penceresi", icon: "zap", run: () => window.elitlig.quick.show(), hint: "⌃⌥N" },
   // Dosya Araçları ve raflar
-  { label: "Dosya dönüştür / düzenle", icon: "folder", route: "files", hint: "Dosya Araçları · ⇧⌘D" },
+  { label: "Dosya dönüştür / düzenle", icon: "folder", route: "files", hint: "Araç Takımı › Dosya Araçları · ⇧⌘D" },
+  { label: "Sosyal medya boyutuna getir (Instagram, hikâye, YouTube)", icon: "image", route: "toolkit:social", hint: "Araç Takımı" },
   { label: "Panodaki dosyayı Dosya Araçları'na yapıştır", icon: "copy", route: "files:paste", hint: "Dosya Araçları" },
   { label: "Float rafını aç", icon: "paperclip", run: () => window.elitlig.float.show(), hint: "Dosya Araçları" },
   { label: "Rafları aç (ekran görüntüleri, pano)", icon: "layers", run: () => window.elitlig.shelf.show(), hint: "⌃⌥T" },
   { label: "Raflarda ara", icon: "search", run: () => window.elitlig.shelf.show({ search: true }), hint: "⌃⌥S" },
   { label: "Ekranı yakala", icon: "camera", run: () => window.elitlig.shelf.capture(), hint: "⌃⌥A" },
-  { label: "Ekran görüntüleri kütüphanesi", icon: "image", route: "shelf", hint: "⇧⌘P" },
+  { label: "Ekran görüntüleri kütüphanesi", icon: "image", route: "shelf", hint: "Araç Takımı › Ekran Görüntüleri · ⇧⌘P" },
   { label: "Raf ayarları (kaynaklar, saklama, kısayollar)", icon: "sliders", route: "shelf:settings", hint: "Ekran Görüntüleri" },
 ];
 
@@ -118,8 +121,9 @@ export default function Palette({ onClose, go, routes }) {
     const match = (item) => !q.trim() || includesTr(`${item.label} ${item.hint}`, q);
     const nav = routes.map((r) => ({ label: r.label, icon: r.icon, route: r.key, hint: keyLabel(r.shortcut), group: "Araçlar" })).filter(match);
     const actions = ACTIONS.map((a) => ({ ...a, hint: keyLabel(a.hint), group: "Komutlar" })).filter(match);
+    const toolkit = q.trim() ? paletteEntries().filter((t) => includesTr(`${t.label} ${t.hint} ${t.keywords}`, q)).map((t) => ({ ...t, group: "Araç Takımı" })) : [];
     const toAdmin = (e) => ({ ...e, route: "admin", arg: { path: e.path } });
-    return [...nav, ...actions, ...admin.pages.map(toAdmin), ...content.map((c) => ({ ...c, group: "Sonuçlar" })), ...admin.content.map(toAdmin)];
+    return [...nav, ...actions, ...toolkit, ...admin.pages.map(toAdmin), ...content.map((c) => ({ ...c, group: "Sonuçlar" })), ...admin.content.map(toAdmin)];
   }, [q, content, routes, admin]);
 
   useEffect(() => setIndex(0), [q]);

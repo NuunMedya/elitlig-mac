@@ -373,6 +373,15 @@ contextBridge.exposeInMainWorld("elitlig", {
     onAwake: on("deskkit:awake"),
     onPanelOpen: on("deskkit:panel:open"),
   },
+  // Araç Takımı → Ağ ve Sistem (app/netTools.js): IP, gecikme, DNS, hız testi, sistem bilgisi.
+  netTools: {
+    info: () => ipcRenderer.invoke("nettools:info"),
+    ping: (host, opts) => ipcRenderer.invoke("nettools:ping", String(host || ""), { count: Number(opts?.count) || 5, port: Number(opts?.port) || 443 }),
+    dns: (host, type, opts) => ipcRenderer.invoke("nettools:dns", String(host || ""), String(type || "A"), { resolver: String(opts?.resolver || "system") }),
+    speed: () => ipcRenderer.invoke("nettools:speed"),
+    system: () => ipcRenderer.invoke("nettools:system"),
+    onSpeedProgress: on("nettools:speed:progress"),
+  },
   // Masaüstü widget'ları (app/widgets): galeri, ekle / kaldır / ayarla, veri kaynakları.
   widgets: {
     state: () => ipcRenderer.invoke("widgets:state"),

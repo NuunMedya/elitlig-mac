@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Icon, isMac } from "../../components/ui";
 import { acceleratorLabel } from "./shortcutUtils";
 import { deskkit } from "./toolkitUi";
+import "./toolkit.css";
 
 const KEY = "toolkit.introSeen.v1";
 export const introSeen = () => { try { return localStorage.getItem(KEY) === "1"; } catch { return true; } };
