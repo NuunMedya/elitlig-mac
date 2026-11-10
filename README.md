@@ -22,6 +22,8 @@ uygulamada görünür.
 | ⌘7 | **Rehber** | **Takımlar**: takım adı öne çıkan takım rehberi (il, lig, sezon, G-B-M, maç sayısı, başkanlar, hesaplı oyuncu / kadro, iletişimi olanlar; il, arama, sıralama), takım kartı (başkanlar, kadro, sezonlar, son ve gelecek maçlar; ara, WhatsApp, e-posta, Mesajlar'da yaz, rehberime ekle, takımla grup kur, takımı `.vcf` / CSV, telefonları kopyala). **Kişiler**: siteye kaydolan üyeler ve elle eklenen kişiler tek listede, takım rozeti ve takıma göre gruplama; Üye / Oyuncu / Takım başkanı / Yönetim / Manuel / Favoriler; üyeye kişisel not ve favori; arama, WhatsApp, e-posta, Mesaj gönder; `.vcf` ve CSV |
 | ⌘8 | **Hesap Araçları** | Hesap makinesi (geçmişiyle), KDV, yüzde, iskonto zinciri, masraf bölüştürme, taksit, tarih farkı |
 | ⌘9 | **Odak Sayacı** | Pomodoro, geri sayım, kronometre; maç süresi için hızlı geri sayım |
+| ⇧⌘D | **Dosya Araçları** | Sürükle-bırak / seç / yapıştır, çark ya da kutucuk menüsüyle **Dönüştür · Araçlar · Dosya işlemleri**: görsel (JPG/PNG/WEBP/HEIC/TIFF/BMP/GIF, boyut, döndür, kırp, sıkıştır, ayarlar, işaretle, sansür, çerçeve, kolaj, meta veri temizle, PDF), ses/video (dönüştür, kırp, sıkıştır, hız, sessiz, ses ayıkla, birleştir, böl, kare, normalize, çözünürlük, GIF), PDF (birleştir, böl, sayfa sırala/döndür/sil, sıkıştır), ZIP, SRT↔VTT, metin kodlaması, toplu yeniden adlandırma; iş kuyruğu, son 50 iş, **Float** rafı. Her şey bu bilgisayarda |
+| ⇧⌘P | **Ekran Görüntüleri ve Pano** | Ekran görüntüleri ve kopyalanan görsel / metin / bağlantılar için üç raf (⌃⌥T) ve kütüphane: ızgara/liste, sanal klasörler, etiketler, sabitleme, arama, saklama süresi, çöp kutusu, dışa aktarma, başka uygulamaya sürükleme, önizleme, işaretleme ve kırpma, ekran yakalama (⌃⌥A) |
 
 ## Web sitesinde olmayan masaüstü özellikleri
 
@@ -41,6 +43,8 @@ uygulamada görünür.
   sohbet açılır. Sessize alınan sohbetler bildirim göndermez. Menü çubuğu menüsünde okunmamış mesaj sayısı.
 - **Komut paleti: ⌘K.** Araçlara geçiş, hızlı eylemler (yeni sohbet, yeni grup…) ve sohbet, mesaj gönderilecek kişi, görev, not, kişi, proje, aranacak kişi, tablo ve muhasebe kayıtlarında arama.
 - **Dosyalar doğrudan Mac'e.** Excel, CSV, PDF, `.ics`, `.vcf` ve Markdown dışa aktarma; Excel ve CSV açma.
+- **Raflar: ⌃⌥T / ⌃⌥S / ⌃⌥A.** Her yerden ekran görüntüsü, pano ve bağlantı rafları; raflarda arama; işaretçinin altındaki ekranı yakalayıp kırpma (bkz. Ekran Görüntüleri ve Pano).
+- **Dosya Araçları ve Float.** Dosya dönüştürme / düzenleme uygulama içinde; Float rafındaki dosyalar başka uygulamalara sürüklenir.
 
 ## Kurulum
 
@@ -359,6 +363,60 @@ ortalaması ve bütçesi olmayan harcamalar (tek tıkla “Bütçe koy”) göst
 
 Sunucu tarafı `elitlig-server` 'da (`/api/tools/recurring`, `/api/tools/budgets`); web sitesinde de
 aynı bölümler vardır.
+
+## Dosya Araçları
+
+Görünüm → **Dosya Araçları** (⇧⌘D). Dosyaları pencereye sürükleyin, **Dosya seç** (⌘O) ya da panodan
+yapıştırın (⌘V: Finder / Gezgin'de kopyalanan dosyalar, görsel ya da metin; kopyalanan bağlantı
+"Bağlantıdan indir"i açar). Seçili dosyalar için **çark** (⌘↩ ya da Ctrl+Boşluk; ← → seç, ↩ çalıştır,
+⇥ ya da 1–3 grup) ya da kutucuk menüsü: **Dönüştür**, **Araçlar**, **Dosya işlemleri**. Bırakırken ⇧
+basılıysa Dönüştür, ⌘ (Windows: Ctrl) Araçlar, ⌃ (Windows: Alt) Dosya işlemleri çarkı doğrudan açılır.
+
+| Tür | İşlemler |
+| --- | --- |
+| Görsel | JPG / PNG / WEBP (canvas), HEIC / TIFF / BMP / GIF (Mac: `sips`; Windows: ffmpeg; HEIC'e kaydetme yalnız Mac), yeniden boyutlandır, döndür / çevir, **kırp** (oran ön ayarları, Shift kare, ↩ kaydet), sıkıştır (kalite, en uzun kenar), ayarlar (parlaklık, kontrast, doygunluk, gri ton, bulanıklık), **işaretle** (kalem, fosforlu, dikdörtgen, elips, ok, çizgi, metin; ⌘Z / ⇧⌘Z), sansür (bulanık, piksel, siyah kutu), çerçeve / arka plan, kolaj, meta veri temizleme, görsellerden PDF, QR okuma |
+| Ses / video | ffmpeg ile (uygulamayla gelir): MP4 / MOV / WEBM / MKV / GIF, MP3 / M4A / WAV / OGG / FLAC; **kırp** (In / Out tutamakları, Boşluk oynat, ⇧Boşluk aralığı oynat, ← → 1 sn, I / O), sıkıştır (kalite ya da hedef MB), hız, sesi kapat, sesi ayıkla, birleştir, böl, kare yakala, ses normalize, çözünürlük, oranla kırp, döndür, GIF |
+| PDF | Birleştir, böl (her sayfa / aralıklar), sayfaları düzenle (sırala, döndür, çoğalt, sil), döndür, sıkıştır (Ghostscript varsa görseller küçültülür) |
+| Diğer | ZIP oluştur / aç (Mac `ditto`, Windows PowerShell), altyazı SRT ↔ VTT, HTML / metin → PDF, metin kodlaması (UTF-8, UTF-16, Windows-1254, ISO-8859-9; satır sonu), toplu yeniden adlandırma (şablon: `{ad}`, `{n:3}`, `{tarih}`…; kopyalar yazılır) |
+| Web'den medya | Yalnız bilgisayarda **yt-dlp** yüklüyse (`brew install yt-dlp` / `winget install yt-dlp`) |
+
+- **Orijinaller asla değişmez.** Çıktılar ayarlardaki klasöre (varsayılan İndirilenler/Elitlig Dosyalar) ya da
+  kaynağın yanına yazılır; ad çakışırsa “foto (2).jpg”. İş, çıktı klasöründe gizli bir çalışma klasöründe
+  yürür; iptal ya da hatada yarım dosya kalmaz.
+- **İş kuyruğu.** Gerçek ilerleme (ffmpeg `-progress`), iptal, Klasörde göster, önizle, çıktıları yeniden kullan.
+  **Kütüphane** son 50 işi saklar (girdi / çıktı, durum, taşınmış dosya uyarısı, arama).
+- **Float rafı.** Küçük, her zaman üstte duran yığın (ekran kenarına yapışır). Üzerine gelince açılır;
+  dosyaları buradan başka uygulamalara sürükleyin. ⌘A tümü, ⌘C yolları kopyala, Boşluk önizle, ↩ aç,
+  ⌘R klasörde göster, ⌫ raftan kaldır (dosya silinmez).
+- **Güvenlik.** ffmpeg / sips / ditto / PowerShell çağrıları argüman dizisiyle yapılır (kabuk yok);
+  PowerShell'e yollar ortam değişkeninde JSON olarak verilir. Yerel dosyalar `elitlig-file://` ile yalnız
+  izin listesindeki (kullanıcının eklediği ya da uygulamanın ürettiği) yollardan sunulur.
+- PDF düzenleme `pdf-lib`, QR okuma (BarcodeDetector'ın olmadığı sistemlerde) `jsqr` kullanır; bunlar
+  yüklü değilse ilgili araç "güncelleme gerekiyor" der, uygulamanın geri kalanı etkilenmez.
+
+## Ekran Görüntüleri ve Pano
+
+Aldığınız ekran görüntüleri ve kopyaladıklarınız bir yerde: **raflar** (⌃⌥T göster/gizle, ⌃⌥S arama
+odaklı; her yerden) ve Görünüm → **Ekran Görüntüleri** kütüphanesi (⇧⌘P).
+
+- **Toplama.** Ekran görüntüsü klasörü izlenir (Mac: Ekran Görüntüsü uygulamasının kayıt yeri,
+  `defaults read com.apple.screencapture location`, yoksa Masaüstü; Windows: Resimler\Ekran Görüntüleri).
+  En çok 3 ek klasör. Pano: bağlantılar varsayılan açık; metin ve görsel toplama Ayarlar'dan ayrı ayrı açılır.
+  Parola yöneticilerinin gizli işaretlediği içerik (`org.nspasteboard.ConcealedType` vb.) hiç okunmaz.
+  **Ekranı yakala** (⌃⌥A): işaretçinin altındaki ekran alınır, kırpma düzenleyicisi açılır.
+- **Raflar.** Görseller, Metinler, Bağlantılar: ← → öğe, ↑ ↓ raflar arası, Tab raf, 1–9 numaralı kart,
+  Boşluk önizle, ↩ kopyala ve kapat (odak önceki uygulamaya döner), ⌘C kopyala, P sabitle, F yalnız
+  sabitlenenler, S raftan kaldır, ⌫ geri al, ⇧I / ⇧T / ⇧L raf gizle, ⇧S ara, L kütüphane.
+- **Kütüphane.** Izgara / liste, sanal klasörler (iç içe), etiketler, ad ve not, sabitleme (⇧P klasöre koy),
+  arama (metin, başlık, not, #etiket, bağlantı başlığı / alan adı), önizlemede yakınlaştırma (%400'e kadar),
+  işaretleme (M) ve kırpma (C) — özgün görsel korunur, "Özgün görsele dön" —, dışa aktarma (⇧⌘E),
+  başka uygulamaya sürükleme, çöp kutusu. Bağlantı kartları için başlık ve küçük resim isteğe bağlıdır.
+- **Saklama.** Görsel / metin / bağlantı için 1, 3, 7, 15 ya da 30 gün (varsayılan 30). Sabitlenen, klasöre
+  konan ya da etiketlenen öğe kalır; süresi dolan Çöp Kutusu'na, oradan 30 gün sonra silinir. Ekran
+  görüntüsünün özgün dosyası klasöründe kalır.
+- **Depolama.** Uygulamanın veri klasöründe (`shelf/`: JSON dizin, görsel kopyaları, küçük resimler).
+  Hiçbir şey sunucuya gönderilmez. Görseldeki metni tanıma (OCR) bu sürümde yok.
+- Başka modüller rafları `shelf:show` IPC kanalıyla açabilir (`window.elitlig.shelf.show({ search })`).
 
 ## Yayın Stüdyosu
 

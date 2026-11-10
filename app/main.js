@@ -33,7 +33,7 @@ const fs = require("node:fs");
 const {
   app, BrowserWindow, Menu, Tray, Notification, shell, ipcMain, dialog, nativeImage, net,
   globalShortcut, safeStorage, powerMonitor, nativeTheme, screen, protocol,
-  session: electronSession, systemPreferences, desktopCapturer, powerSaveBlocker,
+  session: electronSession, systemPreferences, desktopCapturer, powerSaveBlocker, clipboard,
 } = require("electron");
 const crypto = require("node:crypto");
 const { io: socketIo } = require("socket.io-client");
@@ -46,6 +46,10 @@ const { createChatLink, buildMultipart, mimeOf } = require("./chat");
 const { accessFromUser, probeAccess, sameAccess } = require("./access");
 const { registerStudio, applyStudioSwitches, STUDIO_SCHEME } = require("./studio");
 const { isAllowedExternal } = require("./links");
+// Dosya Araçları (Float rafı dahil) ve Ekran Görüntüleri / Pano rafı: app/fileTools, app/shelf.
+const { registerFileTools } = require("./fileTools");
+const { registerShelf } = require("./shelf");
+const { createFileProtocol, SCHEME_PRIVILEGES: FILE_SCHEME_PRIVILEGES } = require("./fileTools/protocol");
 
 // Sohbet medyası (fotoğraf, ses, belge) bu şemayla ana süreç üzerinden açılır:
 // diskte önbelleklenir, çevrimdışı da görünür; arayüzün güvenlik politikası
@@ -57,6 +61,7 @@ const MEDIA_SCHEME = "elitlig-media";
 protocol.registerSchemesAsPrivileged([
   { scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
   { scheme: STUDIO_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true } },
+  FILE_SCHEME_PRIVILEGES,
 ]);
 
 app.setName(config.APP_NAME);
@@ -91,6 +96,8 @@ let focus;
 let reminders;
 let chatLink;
 let studio;
+let fileTools;
+let shelf;
 let chatNotes = new Map();
 let probedAccess = null;
 let requestsInfo = { total: 0, categories: [] };
@@ -300,6 +307,14 @@ function refreshTray() {
     template.push({ label: "Yaklaşan", enabled: false }, ...(upcoming.length ? upcoming : [{ label: "Önümüzdeki 7 gün boş", enabled: false }]));
     template.push({ type: "separator" });
   }
+  // Dosya Araçları ve raflar (kısayollar her yerden çalışır: ⌃⌥T, ⌃⌥S, ⌃⌥A).
+  template.push(
+    { label: "Raflar (Ekran görüntüleri, pano)", accelerator: "Control+Alt+T", registerAccelerator: false, click: () => shelf?.showShelf() },
+    { label: "Ekranı yakala", accelerator: "Control+Alt+A", registerAccelerator: false, click: () => shelf?.captureScreen() },
+    { label: "Dosya Araçları", click: () => showMain("files") },
+    { label: "Float rafı", click: () => fileTools?.float.show() },
+    { type: "separator" },
+  );
   // LED çıkışı açıksa her zaman buradan kapatılabilir (LED ekranı stüdyoyu örtse bile).
   if (studio?.led?.status?.().open) template.push({ label: "LED çıkışını kapat", click: () => studio?.led?.close("MENU") }, { type: "separator" });
   template.push(
@@ -498,6 +513,8 @@ const ROUTES = [
   ["contacts", "Rehber", "CmdOrCtrl+7"],
   ["calc", "Hesap Araçları", "CmdOrCtrl+8"],
   ["focus", "Odak Sayacı", "CmdOrCtrl+9"],
+  ["files", "Dosya Araçları", "CmdOrCtrl+Shift+D"],
+  ["shelf", "Ekran Görüntüleri ve Pano", "CmdOrCtrl+Shift+P"],
 ];
 
 const sendCommand = (name) => {
@@ -856,6 +873,17 @@ if (!app.requestSingleInstanceLock()) {
       apiOrigin: config.API_ORIGIN,
       log: (...args) => { if (!app.isPackaged || process.env.ELITLIG_STUDIO_DEBUG) console.log(...args); },
     });
+    // Dosya Araçları + Ekran Görüntüleri rafı: ortak elitlig-file:// şeması.
+    const fileProtocol = createFileProtocol();
+    const localDeps = {
+      ipcMain, app, BrowserWindow, dialog, shell, clipboard, nativeImage, screen, electronSession, globalShortcut, desktopCapturer, systemPreferences, net,
+      fileProtocol, preloadPath: path.join(__dirname, "preload.js"), loadRenderer, broadcast, isOwnUrl, guardWindow: guardNavigation, showMain,
+      appRoot: path.join(__dirname, ".."), userAgent: userAgent(),
+      log: (...args) => { if (!app.isPackaged) console.log(...args); },
+    };
+    fileTools = registerFileTools(localDeps);
+    shelf = registerShelf(localDeps);
+    fileProtocol.register(protocol);
     // LED açılıp kapanınca menü çubuğu simgesindeki "LED çıkışını kapat" güncellenir.
     studio.led?.events.on("status", () => refreshTray());
     focus = createFocus({ dataDir: dataDir() });
@@ -923,7 +951,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on("before-quit", () => { quitting = true; });
-  app.on("will-quit", () => { globalShortcut.unregisterAll(); studio?.dispose(); });
+  app.on("will-quit", () => { globalShortcut.unregisterAll(); studio?.dispose(); fileTools?.dispose(); shelf?.dispose(); });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
   app.on("web-contents-created", (_e, contents) => contents.on("will-attach-webview", (event) => event.preventDefault()));
 }

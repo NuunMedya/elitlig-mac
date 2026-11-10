@@ -23,6 +23,9 @@ const Calculators = lazy(() => import("./views/Calculators"));
 const Focus = lazy(() => import("./views/Focus"));
 const Account = lazy(() => import("./views/Account"));
 const Studio = lazy(() => import("./views/studio/Studio"));
+// Dosya Araçları ve Ekran Görüntüleri / Pano rafı (yerel; sunucu gerekmez).
+const FileTools = lazy(() => import("./views/files/FileTools"));
+const Shelf = lazy(() => import("./views/shelf/Shelf"));
 
 export const ROUTES = [
   { key: "today", label: "Bugün", icon: "sun", view: Today, shortcut: "⌘1", group: "Günlük" },
@@ -39,6 +42,8 @@ export const ROUTES = [
   { key: "contacts", label: "Rehber", icon: "users", view: Contacts, shortcut: "⌘7", group: "Finans ve veri" },
   { key: "calc", label: "Hesap Araçları", icon: "calculator", view: Calculators, shortcut: "⌘8", group: "Yardımcılar" },
   { key: "focus", label: "Odak Sayacı", icon: "timer", view: Focus, shortcut: "⌘9", group: "Yardımcılar" },
+  { key: "files", label: "Dosya Araçları", icon: "folder", view: FileTools, shortcut: "⇧⌘D", group: "Yardımcılar" },
+  { key: "shelf", label: "Ekran Görüntüleri", icon: "image", view: Shelf, shortcut: "⇧⌘P", group: "Yardımcılar" },
 ];
 const ROUTE_KEYS = new Set([...ROUTES.map((r) => r.key), "account"]);
 
@@ -293,6 +298,13 @@ function ShortcutsHelp({ onClose }) {
     ["⌘⌥S", "Kenar çubuğunu gizle/göster"],
     ["Tablolar: ⌘B ⌘I ⌘U", "Kalın, italik, altı çizili"],
     ["Tablolar: ⌘Z / ⇧⌘Z", "Geri al / yinele"],
+    ["⇧⌘D", "Dosya Araçları (⌘V yapıştır, ⌘↩ çark, ⌘O dosya seç)"],
+    ["⇧⌘P", "Ekran Görüntüleri ve Pano kütüphanesi"],
+    ["⌃⌥T / ⌃⌥S", "Raflar: göster/gizle · arama odaklı (her yerden)"],
+    ["⌃⌥A", "Ekranı yakala (işaretçinin altındaki ekran)"],
+    ["Raflar: ↩ / Boşluk / P / S / ⌫", "Kopyala ve kapat · önizle · sabitle · raftan kaldır · geri al"],
+    ["Düzenleyici: B H R O A D T / C", "Kalem, fosforlu, dikdörtgen, elips, ok, çizgi, metin / kırp"],
+    ["Medya: Boşluk / ← → / I O", "Oynat · 1 sn · başlangıç/bitiş"],
   ], []);
   return (
     <Modal title="Klavye kısayolları" onClose={onClose} width={480}>

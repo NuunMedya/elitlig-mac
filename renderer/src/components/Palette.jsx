@@ -22,6 +22,15 @@ const ACTIONS = [
   { label: "Yeni kişi", icon: "plus", route: "contacts:new", hint: "Rehber" },
   { label: "Odak turunu başlat", icon: "play", run: () => window.elitlig.focus.command("start"), hint: "Odak Sayacı" },
   { label: "Hızlı kayıt penceresi", icon: "zap", run: () => window.elitlig.quick.show(), hint: "⌃⌥N" },
+  // Dosya Araçları ve raflar
+  { label: "Dosya dönüştür / düzenle", icon: "folder", route: "files", hint: "Dosya Araçları · ⇧⌘D" },
+  { label: "Panodaki dosyayı Dosya Araçları'na yapıştır", icon: "copy", route: "files:paste", hint: "Dosya Araçları" },
+  { label: "Float rafını aç", icon: "paperclip", run: () => window.elitlig.float.show(), hint: "Dosya Araçları" },
+  { label: "Rafları aç (ekran görüntüleri, pano)", icon: "layers", run: () => window.elitlig.shelf.show(), hint: "⌃⌥T" },
+  { label: "Raflarda ara", icon: "search", run: () => window.elitlig.shelf.show({ search: true }), hint: "⌃⌥S" },
+  { label: "Ekranı yakala", icon: "camera", run: () => window.elitlig.shelf.capture(), hint: "⌃⌥A" },
+  { label: "Ekran görüntüleri kütüphanesi", icon: "image", route: "shelf", hint: "⇧⌘P" },
+  { label: "Raf ayarları (kaynaklar, saklama, kısayollar)", icon: "sliders", route: "shelf:settings", hint: "Ekran Görüntüleri" },
 ];
 
 export default function Palette({ onClose, go, routes }) {
