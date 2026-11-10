@@ -22,6 +22,8 @@ uygulamada görünür.
 | ⌘7 | **Rehber** | **Takımlar**: takım adı öne çıkan takım rehberi (il, lig, sezon, G-B-M, maç sayısı, başkanlar, hesaplı oyuncu / kadro, iletişimi olanlar; il, arama, sıralama), takım kartı (başkanlar, kadro, sezonlar, son ve gelecek maçlar; ara, WhatsApp, e-posta, Mesajlar'da yaz, rehberime ekle, takımla grup kur, takımı `.vcf` / CSV, telefonları kopyala). **Kişiler**: siteye kaydolan üyeler ve elle eklenen kişiler tek listede, takım rozeti ve takıma göre gruplama; Üye / Oyuncu / Takım başkanı / Yönetim / Manuel / Favoriler; üyeye kişisel not ve favori; arama, WhatsApp, e-posta, Mesaj gönder; `.vcf` ve CSV |
 | ⌘8 | **Hesap Araçları** | Hesap makinesi (geçmişiyle), KDV, yüzde, iskonto zinciri, masraf bölüştürme, taksit, tarih farkı |
 | ⌘9 | **Odak Sayacı** | Pomodoro, geri sayım, kronometre; maç süresi için hızlı geri sayım |
+| ⇧⌘J | **Müzik** | Uygulama geneli müzik çalar: YouTube bağlantıları ve oynatma listeleri, yerel ses dosyaları (mp3 / m4a / wav, sürükle-bırak), karıştır / tekrarla, geçiş, uyku zamanlayıcısı, kuyruk, arama; kenar çubuğunda mini çalar, menü çubuğu, araç takımı ve medya tuşlarıyla denetim; görünüm değişince susmaz |
+| ⌘, | **Masaüstü araçları** | Araç takımı paneli (⌃⌥Boşluk), Magnet benzeri pencere yerleştirme kısayolları (kaydet / kapat / varsayılan), Erişilebilirlik izni, medya tuşları, stüdyo kuralı, ekranı uyanık tut |
 
 ## Web sitesinde olmayan masaüstü özellikleri
 
@@ -477,6 +479,88 @@ anında son ~10 saniye klip olarak kaydedilip oyuncunun profiline yüklenir. Yet
   ikiliye (`Contents/Resources/ffmpeg/ffmpeg`) çevirir. CI paketli ikiliyle 3 sn'lik sentetik
   kodlama ve uçtan uca klip testi yapar. Geliştirmede `ELITLIG_FFMPEG=/yol/ffmpeg` ya da Homebrew
   ffmpeg'i kullanılır. Lisans metni: `Contents/Resources/ffmpeg/LICENSE.txt`.
+
+## Masaüstü araç takımı, pencere yerleştirme ve müzik
+
+### Araç takımı paneli (⌃⌥Boşluk)
+
+Menü çubuğu simgesinden (Araç takımı…) ya da her yerden **⌃⌥Boşluk** (Windows: Ctrl+Alt+Space) ile
+açılan küçük, çerçevesiz panel; dışına tıklayınca gizlenir (iğne ile açık tutulur, Esc kapatır,
+⌘1…⌘8 sekme değiştirir). Üstte hızlı işler: **Not / Görev** (Hızlı kayıt penceresi), **Pano**
+(pano ve ekran görüntüsü kütüphanesi — `shelf:show` kanalıyla açılır; o araç yoksa bilgi verir),
+**Ekranı uyanık tut** (süresiz, 30 dk, 1 sa, 2 sa — `powerSaveBlocker`) ve çalan müziğin mini
+denetimi. Sekmeler:
+
+- **Düzen** — pencere düzeni ızgarası (aşağıda); panel açılmadan önce öndeki pencere taşınır.
+- **Renk** — ekrandan renk alma (EyeDropper; Mac'te başka uygulamalardan renk almak için Ekran Kaydı
+  izni gerekebilir), HEX / RGB / HSL / CSS kopyalama, tonlar, yazı karşıtlığı (WCAG), son renkler.
+- **Hesap** — tek satırda hesap ve çeviri: `12*(4+3)`, `200*18%`, `5 km mi`, `3 saat dk`,
+  `2 dönüm m2`, `72 f c`, `100 usd tl`; Enter sonucu kopyalar. Çevirici: para, uzunluk, ağırlık,
+  sıcaklık, alan, hacim, hız, süre, veri. Döviz kurları (ECB / frankfurter.app, yedek open.er-api.com)
+  6 saat önbelleklenir; bağlantı yokken son kayıtlı kur kullanılır.
+- **Metin** — BÜYÜK / küçük / Başlık / Cümle düzeni (Türkçe i–İ, ı–I kurallarıyla), **Türkçe karakter
+  düzelt** (UTF-8'in Latin-1 sanılmasıyla bozulan “Ã§ÄŸÅŸ” ve Windows-1254 karışması “Ýþð”),
+  Türkçe karakter sil, slug, satır sırala / tekilleştir / ters çevir, boşluk temizle, sayım.
+- **QR** — metin / bağlantı ya da Wi-Fi ağı; görseli kopyala, PNG / SVG kaydet (bağımlılıksız kodlayıcı:
+  `renderer/src/lib/studio/qr.js`).
+- **Saatler** — seçilen şehirlerin saati, tarihi, yerel saate farkı, gece / gündüz.
+- **Sayaç** — Odak Sayacı'nı yönetir: 1–60 dk zamanlayıcı, kronometre (tur), pomodoro; süre menü
+  çubuğunda görünür, bitince bildirim gelir.
+- **Parola** — 8–64 karakter, küme seçimi, karışan karakterleri (I l 1 O 0) çıkarma, güç ölçer;
+  parolalar yalnız bu bilgisayarda üretilir, saklanmaz.
+
+### Pencere yerleştirme (Magnet benzeri)
+
+Öndeki uygulamanın penceresi kısayolla, menü çubuğu menüsünden (Pencere düzeni), uygulama menüsünden
+(Araç Takımı › Pencere Düzeni) ya da paneldeki ızgaradan yerleştirilir. Ekranın **kullanılabilir
+çalışma alanı** kullanılır (menü çubuğu ve Dock / görev çubuğu hariç); pencere hangi ekrandaysa o
+ekrana göre hesaplanır, birden çok ekran ve negatif koordinatlı ekranlar desteklenir.
+
+| Mac | Windows | Düzen |
+| --- | --- | --- |
+| ⌃⌥← ⌃⌥→ ⌃⌥↑ ⌃⌥↓ | Ctrl+Alt+ok | Sol / sağ / üst / alt yarı |
+| ⌃⌥U ⌃⌥I ⌃⌥J ⌃⌥K | Ctrl+Alt+U I J K | Sol üst / sağ üst / sol alt / sağ alt çeyrek |
+| ⌃⌥D ⌃⌥F ⌃⌥G | Ctrl+Alt+D F G | Sol / orta / sağ üçte bir |
+| ⌃⌥E ⌃⌥R | Ctrl+Alt+E R | Sol / sağ üçte iki (⌃⌥T başka araca ayrıldığı için sağ üçte iki ⌃⌥R) |
+| ⌃⌥↩ | Ctrl+Alt+Enter | Tam ekran (büyüt; macOS tam ekran alanına geçmez) |
+| ⌃⌥C | Ctrl+Alt+C | Ortala (boyut korunur) |
+| ⌃⌥⌫ | Ctrl+Alt+Backspace | Önceki boyuta dön |
+| ⌃⌥⌘→ ⌃⌥⌘← | Ctrl+Alt+Shift+→ ← | Sonraki / önceki ekrana taşı (oran korunur) |
+
+Kısayollar **Masaüstü araçları (⌘,)**'ndan değiştirilir (tıkla, tuşlara bas; ⌫ kapatır), tek tek
+ya da hepsi varsayılana döner, tamamen kapatılabilir; başka uygulamanın tuttuğu kısayol “kullanımda”
+diye gösterilir. Kenarlarda ve pencereler arasında isteğe bağlı boşluk (0–24 px) bırakılabilir.
+
+- **macOS:** `osascript` ile System Events kullanılır; **Erişilebilirlik izni** gerekir (Sistem
+  Ayarları › Gizlilik ve Güvenlik › Erişilebilirlik › Elitlig Araçlar). İzin yoksa uygulama izni ister
+  ve Masaüstü araçları'nda Sistem Ayarları'nı açan düğmeyle uyarı gösterir; ilk kullanımda “System
+  Events'i denetleme” (Otomasyon) izni de sorulur (`NSAppleEventsUsageDescription`). Betiklere yalnız
+  doğrulanmış tam sayılar yazılır.
+- **Windows:** bir kez başlatılan uzun ömürlü PowerShell süreci (Add-Type ile user32 / dwmapi:
+  `GetForegroundWindow`, `GetWindowRect`, `SetWindowPos`, DPI farkındalığı, `DwmGetWindowAttribute`
+  ile görünmez kenar payı); büyütülmüş pencere önce geri yüklenir, farklı DPI'lı ekrana geçişte ikinci
+  turda düzeltilir. Not: bazı ekran kartı sürücüleri Ctrl+Alt+ok tuşlarını ekran döndürme için tutar;
+  o durumda kısayol “kullanımda” görünür, Ayarlar'dan değiştirilebilir.
+- Uygulamanın kendi pencereleri doğrudan (izinsiz) taşınır.
+- Pencereyi ekran kenarına **sürükleyince yapıştırma yoktur**: diğer uygulamaların sürüklenmesi
+  Electron'dan güvenilir izlenemiyor; kısayol, menü ve ızgara kullanılır.
+- Konum hesapları saf modülde (`app/windowLayouts.js`), betik üretimi `app/windowManager.js`'te;
+  testler `app/test/windowLayouts.test.js`, `app/test/windowManager.test.js`.
+
+### Uygulama geneli müzik çalar
+
+Yayın Stüdyosu'nun müzik motoru (`views/studio/music/useMusicPlayer`: YouTube IFrame oynatıcısı,
+oynatma listeleri, yerel dosyalar, geçiş) uygulamanın kökünde (`renderer/src/music/MusicProvider.jsx`)
+ikinci kez, **ayrı bir listeyle** (`app.music.v1`) çalışır: görünüm değişince çalmaya devam eder.
+Ses yalnız bu bilgisayardan çıkar, yayına gitmez. Müzik görünümünde (⇧⌘J) YouTube bağlantısı ya da
+oynatma listesi eklenir, ses dosyaları seçilir ya da sürüklenir; “Stüdyo listesinden aktar” stüdyonun
+listesini kopyalar. Denetim: kenar çubuğundaki mini çalar, menü çubuğu (Müzik), Araç Takımı menüsü,
+araç takımı paneli ve klavyedeki **medya tuşları** (⏯ ⏭ ⏮; yalnız müzik çalarken tutulur, durunca
+diğer uygulamalara bırakılır; Mac'te Erişilebilirlik izni gerekebilir).
+
+**Stüdyo kuralı:** stüdyonun kendi müzik çaları yayına giden sesi yönetir. Varsayılan olarak genel
+çalar Yayın Stüdyosu açılınca duraklar ve çıkınca (yalnız o duraklattıysa) sürer; Masaüstü araçları ›
+Müzik'ten “Çalmaya devam et” seçilebilir. Stüdyonun listesi ve davranışı değişmez.
 
 ## Oturum süresi
 

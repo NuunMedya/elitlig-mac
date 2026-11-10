@@ -7,6 +7,9 @@ import { refreshAll, useResource } from "./api";
 import { formatClock } from "./lib/helpers";
 import { canLeave } from "./lib/leaveGuard";
 import logo from "./assets/logo-white.png";
+// Uygulama geneli müzik çalar (kabuk kökünde yaşar) ve kenar çubuğundaki mini çalar.
+import MusicProvider from "./music/MusicProvider";
+import MiniPlayer from "./music/MiniPlayer";
 
 const Today = lazy(() => import("./views/Today"));
 const Messages = lazy(() => import("./views/messages/Messages"));
@@ -23,6 +26,8 @@ const Calculators = lazy(() => import("./views/Calculators"));
 const Focus = lazy(() => import("./views/Focus"));
 const Account = lazy(() => import("./views/Account"));
 const Studio = lazy(() => import("./views/studio/Studio"));
+const MusicView = lazy(() => import("./music/MusicView"));
+const DeskSettings = lazy(() => import("./views/toolkit/DeskSettings"));
 
 export const ROUTES = [
   { key: "today", label: "Bugün", icon: "sun", view: Today, shortcut: "⌘1", group: "Günlük" },
@@ -39,6 +44,8 @@ export const ROUTES = [
   { key: "contacts", label: "Rehber", icon: "users", view: Contacts, shortcut: "⌘7", group: "Finans ve veri" },
   { key: "calc", label: "Hesap Araçları", icon: "calculator", view: Calculators, shortcut: "⌘8", group: "Yardımcılar" },
   { key: "focus", label: "Odak Sayacı", icon: "timer", view: Focus, shortcut: "⌘9", group: "Yardımcılar" },
+  { key: "music", label: "Müzik", icon: "music", view: MusicView, shortcut: "⇧⌘J", group: "Yardımcılar" },
+  { key: "desk", label: "Masaüstü araçları", icon: "toolbox", view: DeskSettings, shortcut: "⌘,", group: "Yardımcılar" },
 ];
 const ROUTE_KEYS = new Set([...ROUTES.map((r) => r.key), "account"]);
 
@@ -172,6 +179,7 @@ function Shell({ auth }) {
   const syncLabel = !sync.online ? "Çevrimdışı" : sync.pending ? `${sync.pending} değişiklik bekliyor` : "Eşitlendi";
 
   return (
+    <MusicProvider route={route}>
     <div className={`shell ${bare ? "shell--bare" : collapsed ? "shell--collapsed" : ""}`} style={bare ? { gridTemplateColumns: "minmax(0, 1fr)" } : undefined}>
       {!bare && <aside className="sidebar" aria-label="Kenar çubuğu">
         <div className="sidebar__drag" />
@@ -209,6 +217,7 @@ function Shell({ auth }) {
           })}
         </nav>
         <div className="sidebar__foot">
+          <MiniPlayer go={go} collapsed={collapsed} route={route} />
           {(!sync.online || sync.pending > 0) && (
             <button type="button" className={`sync-pill ${!sync.online ? "is-offline" : "is-pending"}`} onClick={() => window.elitlig.sync.flush()} title="Şimdi eşitle">
               <Icon name={sync.online ? "cloud" : "cloudOff"} size={14} /> {syncLabel}
@@ -241,6 +250,7 @@ function Shell({ auth }) {
       {palette && <Palette onClose={() => setPalette(false)} go={go} routes={routes} />}
       {shortcuts && <ShortcutsHelp onClose={() => setShortcuts(false)} />}
     </div>
+    </MusicProvider>
   );
 }
 
@@ -276,6 +286,10 @@ function ShortcutsHelp({ onClose }) {
     ["Mesajlar: ⌥⌘↓ / ⌥⌘↑", "Sonraki / önceki sohbet"],
     ["Mesajlar: Enter / ⇧Enter", "Gönder / yeni satır; ↑ son mesajı düzenler"],
     ["⌃⌥N", "Her yerden hızlı kayıt (uygulama arka plandayken de)"],
+    ["⌃⌥Boşluk", "Araç takımı paneli: pencere düzeni, renk, hesap, metin, QR…"],
+    ["⌃⌥← → ↑ ↓", "Öndeki pencereyi yarıya yerleştir (⌃⌥U I J K çeyrek, ⌃⌥↩ tam, ⌃⌥⌫ geri al)"],
+    ["⇧⌘J", "Müzik (medya tuşları da çalışır)"],
+    ["⌘,", "Masaüstü araçları: kısayollar ve ayarlar"],
     ["⌘N", "Açık araçta yeni kayıt"],
     ["⌘1 … ⌘9", "Araçlar arasında geçiş"],
     ["⌘0", "Projeler (süreç, kişiler, portföy)"],
