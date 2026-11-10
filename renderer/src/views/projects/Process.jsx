@@ -24,7 +24,7 @@ export default function Process({ ctx, selectedId, focusPhase, initialFilter }) 
   const today = dayKey();
   const filtering = isFiltering(filter);
   const shownSteps = useMemo(() => filterSteps(steps, filter, { meId: me, today }), [steps, filter, me, today]);
-  const groups = useMemo(() => groupStepsByPhase(phases, shownSteps, { allSteps: steps, today, keepEmpty: !filtering }), [phases, shownSteps, steps, today, filtering]);
+  const groups = useMemo(() => groupStepsByPhase(phases, shownSteps, { allSteps: steps, today, keepEmpty: !filtering, alwaysLoose: canEdit && !filtering }), [phases, shownSteps, steps, today, filtering, canEdit]);
   const roles = useMemo(() => rolesOf(project.settings, steps), [project.settings, steps]);
   const assignees = useMemo(() => [...new Set(steps.map((s) => s.assignee_id).filter(Boolean))].map((id) => ({ id, name: people[id]?.name || `#${id}` })), [steps, people]);
 
@@ -132,7 +132,7 @@ export default function Process({ ctx, selectedId, focusPhase, initialFilter }) 
                 <button type="button" className="phase__toggle" onClick={() => toggle(g.key)} aria-expanded={!closed}>
                   <Icon name={closed ? "chevronRight" : "chevronDown"} size={14} />
                   <span className="phase__num">{g.phase ? gi + 1 : "–"}</span>
-                  <span className="phase__name">{g.phase?.name || "Aşamasız adımlar"}</span>
+                  <span className="phase__name">{g.phase?.name || "Askıda (etiketlenmemiş)"}</span>
                   <span className="phase__count">{g.stats.done}/{g.stats.total - g.stats.skipped}</span>
                 </button>
                 <span className="phase__progress"><Progress value={g.stats.progress} color={color} thin /><small>%{g.stats.progress}</small></span>
@@ -158,6 +158,7 @@ export default function Process({ ctx, selectedId, focusPhase, initialFilter }) 
                   {over?.phase === g.key && over.before == null && drag && <li className="slist__drop" />}
                   {canEdit && <li className="slist__add"><InlineAdd inputRef={(el) => { addRefs.current[g.key] = el; }} onAdd={(title) => actions.createStep({ title, phase_id: g.phase?.id ?? null })} /></li>}
                   {!g.steps.length && !canEdit && <li className="slist__empty muted small">Bu aşamada adım yok.</li>}
+                  {!g.phase && !g.steps.length && canEdit && <li className="slist__empty muted small">Askıda adım yok. Yapılacaklar'da etap etiketi seçilmeden projeye eklenen işler burada görünür.</li>}
                 </ul>
               )}
             </section>
@@ -249,7 +250,7 @@ function DeletePhase({ phase, phases, count, onClose, onConfirm }) {
         <p className="muted">Bu aşamada {count} adım var. Adımlar ne olsun?</p>
         <div className="radio-list">
           {others.length > 0 && <label><input type="radio" checked={mode === "move"} onChange={() => setMode("move")} /> Şu aşamaya taşı: <select className="select-sm" value={target} onChange={(e) => { setTarget(e.target.value); setMode("move"); }}>{others.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
-          <label><input type="radio" checked={mode === "none"} onChange={() => setMode("none")} /> Aşamasız bırak</label>
+          <label><input type="radio" checked={mode === "none"} onChange={() => setMode("none")} /> Askıda bırak (etiketlenmemiş)</label>
           <label className="text-red"><input type="radio" checked={mode === "delete"} onChange={() => setMode("delete")} /> Adımlarla birlikte sil</label>
         </div>
       </>) : <p className="muted">Aşamada adım yok; aşama silinecek.</p>}
@@ -306,7 +307,7 @@ function ImportSteps({ ctx, onClose }) {
           <strong>{file.name}</strong>
           {file.sheets.length > 1 && <select className="select-sm" value={sheet} onChange={(e) => setSheet(Number(e.target.value))}>{file.sheets.map((s, i) => <option key={s.name} value={i}>{s.name}</option>)}</select>}
           <span className="spacer" />
-          <label className="toggle">Aşaması olmayanlar: <select className="select-sm" value={phaseId} onChange={(e) => setPhaseId(e.target.value)}><option value="">Aşamasız</option>{phases.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+          <label className="toggle">Aşaması olmayanlar: <select className="select-sm" value={phaseId} onChange={(e) => setPhaseId(e.target.value)}><option value="">Askıda (etiketlenmemiş)</option>{phases.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
         </div>
         {parsed.error ? <div className="error-note">{parsed.error}</div> : (<>
           <div className="chips">{Object.entries(parsed.map).map(([k, c]) => <span key={k} className="chip chip--off">{COL_NAMES[k] || k} → {colLetter(c)} sütunu</span>)}</div>

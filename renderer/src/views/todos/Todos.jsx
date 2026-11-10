@@ -12,6 +12,8 @@ import { del, onSyncDone, patch, post, request, tempId, useCommand, useResource 
 import { formatTime, parseQuickTask, relativeDay } from "../../lib/helpers";
 import Composer from "./Composer";
 import Drawer from "./Drawer";
+import { PhaseChip } from "./PhaseLabel";
+import { mergeProjectItems } from "../../lib/projectPhases";
 import { MatchAssign, TeamOverview } from "./Team";
 import { isAllDayDue, projectOptions, scopeMatches, validScope } from "../../lib/projectAgenda";
 import "./todoProjects.css";
@@ -44,7 +46,10 @@ export default function Todos({ arg, argSeq, go }) {
   // önceden kart kuyruğa alınıyor ama listede görünmüyordu (kayboldu sanılıyordu).
   const [queued, setQueued] = useState([]);
   useEffect(() => onSyncDone(() => setQueued([])), []);
-  const items = useMemo(() => [...queued, ...(list.data?.items || [])], [list.data, queued]);
+  // Tek proje kapsamında projenin tüm adım kartları (başka üyelerde duranlar da) ayrıca istenir.
+  const scopeProjectId = String(scopeRaw).startsWith("project:") ? Number(String(scopeRaw).slice(8)) || null : null;
+  const shared = useResource("/api/todos", { view: "board", project_id: scopeProjectId }, { enabled: Boolean(scopeProjectId) });
+  const items = useMemo(() => [...queued, ...mergeProjectItems(list.data?.items || [], scopeProjectId ? shared.data?.items || [] : [])], [list.data, queued, shared.data, scopeProjectId]);
   const quickRef = useRef(null);
 
   useEffect(() => save("todo:layout", layout), [layout]);
@@ -87,16 +92,19 @@ export default function Todos({ arg, argSeq, go }) {
   const openCount = scoped.filter((t) => !isDelegated(t) && t.status !== "done").length;
 
   const replace = useCallback((item) => {
-    if (!item) { list.reload({ quiet: true }); return; }
+    if (!item) { list.reload({ quiet: true }); shared.reload({ quiet: true }); return; }
     list.setData((d) => (d ? { ...d, items: d.items.map((t) => (t.id === item.id ? item : t)) } : d));
-  }, [list]);
+    shared.setData((d) => (d ? { ...d, items: d.items.map((t) => (t.id === item.id ? item : t)) } : d));
+  }, [list, shared]);
   const notifyChanged = () => window.dispatchEvent(new Event("elitlig:todos-changed"));
 
   const update = useCallback(async (task, changes, { undo = true } = {}) => {
     const before = task;
-    list.setData((d) => ({ ...d, items: d.items.map((t) => (t.id === task.id ? { ...t, ...changes, ...(changes.due_at !== undefined ? { dueAt: changes.due_at } : {}) } : t)) }));
+    list.setData((d) => (d ? { ...d, items: d.items.map((t) => (t.id === task.id ? { ...t, ...changes, ...(changes.due_at !== undefined ? { dueAt: changes.due_at } : {}) } : t)) } : d));
     const res = await patch(`/api/todos/${task.id}`, changes);
-    if (!result(res)) { list.reload({ quiet: true }); return null; }
+    if (!result(res)) { list.reload({ quiet: true }); shared.reload({ quiet: true }); return null; }
+    // Etap değişti / yeni etap açıldı: etap listesi tazelenir.
+    if (changes.phase_name !== undefined || changes.phase_id !== undefined) linkable.reload({ quiet: true });
     if (res.data?.item) replace(res.data.item);
     notifyChanged();
     if (undo && changes.status === "done" && before.status !== "done") {
@@ -104,10 +112,11 @@ export default function Todos({ arg, argSeq, go }) {
     }
     if (changes.archived) list.setData((d) => ({ ...d, items: d.items.filter((t) => t.id !== task.id) }));
     return res.data?.item;
-  }, [list, replace, result, toast]);
+  }, [list, shared, linkable, replace, result, toast]);
 
   const remove = async (task) => {
-    list.setData((d) => ({ ...d, items: d.items.filter((t) => t.id !== task.id) }));
+    list.setData((d) => (d ? { ...d, items: d.items.filter((t) => t.id !== task.id) } : d));
+    shared.setData((d) => (d ? { ...d, items: d.items.filter((t) => t.id !== task.id) } : d));
     setSelected(null);
     if (!result(await del(`/api/todos/${task.id}`), "Kart silindi.")) list.reload({ quiet: true });
     notifyChanged();
@@ -126,6 +135,7 @@ export default function Todos({ arg, argSeq, go }) {
   const created = (newItems) => {
     setComposer(null);
     list.reload({ quiet: true });
+    if (scopeProjectId) shared.reload({ quiet: true });
     notifyChanged();
     const first = newItems?.[0];
     if (first && (!view.match(first) || !scopeMatches(first, scope))) toast("Kart eklendi; bu görünümde gösterilmiyor.", { tone: "info" });
@@ -194,7 +204,7 @@ export default function Todos({ arg, argSeq, go }) {
           <div className="filters">
             <div className="search-box"><Icon name="search" size={14} /><input id="todo-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Kartlarda ara" /></div>
             <select className="select-sm" value={kind} onChange={(e) => setKind(e.target.value)}>{KINDS.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}</select>
-            {layout === "list" && (["all", "assigned_to_me", "system"].includes(view.key) || view.key.startsWith("label:")) && <select className="select-sm" value={groupBy} onChange={(e) => setGroupBy(e.target.value)}><option value="date">Tarihe göre</option><option value="status">Duruma göre</option></select>}
+            {layout === "list" && (["all", "assigned_to_me", "system"].includes(view.key) || view.key.startsWith("label:")) && <select className="select-sm" value={groupBy} onChange={(e) => setGroupBy(e.target.value)}><option value="date">Tarihe göre</option><option value="status">Duruma göre</option><option value="phase">Etaba göre</option></select>}
             {(q || kind) && <button type="button" className="link-btn small" onClick={() => { setQ(""); setKind(""); }}>Süzgeçleri temizle · {shown.length} kart</button>}
             <span className="spacer" />
             {view.key !== "done" && <Segmented size="sm" value={layout} onChange={setLayout} options={[{ value: "list", label: "Liste", icon: "list" }, { value: "board", label: "Pano", icon: "board" }]} />}
@@ -218,7 +228,7 @@ export default function Todos({ arg, argSeq, go }) {
         </>)}
       </div>
 
-      {selectedTask && !selectedTask.queued && <Drawer key={selectedTask.id} task={selectedTask} catalog={cat} allLabels={allLabels} go={go} onClose={() => setSelected(null)} onUpdate={update} onDelete={remove} onEdit={(t) => setComposer({ task: t })} onReplace={replace} />}
+      {selectedTask && !selectedTask.queued && <Drawer key={selectedTask.id} task={selectedTask} catalog={cat} allLabels={allLabels} projects={linkable.data?.items || []} onPhasesChanged={() => linkable.reload({ quiet: true })} go={go} onClose={() => setSelected(null)} onUpdate={update} onDelete={remove} onEdit={(t) => setComposer({ task: t })} onReplace={replace} />}
       {composer && <Composer catalog={cat} task={composer.task} initial={{ ...(scopeProject ? { project_id: scopeProject.id } : {}), ...composer }} projects={linkable.data?.items || []} onClose={() => setComposer(null)} onSaved={(r) => (composer.task ? (setComposer(null), replace(r)) : created(r))} />}
       {assignOpen && <MatchAssign onClose={() => setAssignOpen(false)} onSaved={() => list.reload({ quiet: true })} />}
     </div>
@@ -286,6 +296,7 @@ function Row({ t, active, onSelect, onUpdate }) {
           {t.team && <span><Icon name="shirt" size={11} /> {t.team.name}</span>}
           {progress && <span><Icon name="checkSquare" size={11} /> {progress.done}/{progress.total}</span>}
           {t.body && <Icon name="note" size={11} />}
+          <PhaseChip task={t} compact />
           {(t.labels || []).map((l) => <span key={l.text} className="label-dot" style={{ background: LABEL_COLORS[l.color] }}>{l.text}</span>)}
           {t.source === "assigned_by_me" && <span>→ {t.owner?.name}</span>}
           {t.assignedBy && t.source === "assigned_to_me" && <span>{t.assignedBy.name} atadı</span>}
@@ -306,7 +317,7 @@ function List({ groups, collapsed, setCollapsed, selected, onSelect, onUpdate, o
         return (
           <section key={g.key} className="tgroup">
             <header className={`tgroup__head ${g.tone === "red" ? "text-red" : ""}`}>
-              <button type="button" onClick={() => setCollapsed({ ...collapsed, [g.key]: !isCollapsed })}><Icon name={isCollapsed ? "chevronRight" : "chevronDown"} size={14} /> {g.label} <span>{g.items.length}</span></button>
+              <button type="button" onClick={() => setCollapsed({ ...collapsed, [g.key]: !isCollapsed })}><Icon name={isCollapsed ? "chevronRight" : "chevronDown"} size={14} /> {g.color && <span className="group-phase-dot" style={{ "--c": g.color }} aria-hidden="true" />}{g.label} <span>{g.items.length}</span></button>
               {g.progress && <span className="tgroup__progress"><span className="progress"><span style={{ width: `${(g.progress.done / g.progress.total) * 100}%` }} /></span><small>{g.progress.done}/{g.progress.total} tamamlandı</small></span>}
               {g.key.startsWith("done") && <button type="button" className="link-btn small" onClick={onArchive}>Arşivle</button>}
             </header>
@@ -352,6 +363,7 @@ function Board({ items, selected, onSelect, onMove, onAdd, onArchive }) {
                   {t.labels?.length > 0 && <div className="board-card__labels">{t.labels.map((l) => <span key={l.text} style={{ background: LABEL_COLORS[l.color] }} title={l.text} />)}</div>}
                   <strong>{t.pinned && <Icon name="pin" size={11} />} {t.title}</strong>
                   {t.project && <ProjectBadge project={t.project} />}
+                  {(t.project?.phase || t.project?.unlabeled) && <div className="board-card__phase"><PhaseChip task={t} compact /></div>}
                   <div className="board-card__meta">
                     {t.kind !== "task" && <span className="pill pill--xs"><Icon name={KIND_ICON[t.kind]} size={10} /> {t.dutyLabel || t.kindLabel}</span>}
                     {due && <span className={t.overdue ? "text-red" : ""}><Icon name="clock" size={11} /> {relativeDay(due)}</span>}
@@ -380,7 +392,7 @@ function Board({ items, selected, onSelect, onMove, onAdd, onArchive }) {
 export function ProjectBadge({ project }) {
   return (
     <span className="proj-badge" style={{ "--c": project.color || "#6d28d9" }} title={`Proje: ${project.name}${project.phaseName ? ` · ${project.phaseName}` : ""}`}>
-      <span className="proj-badge__dot" />{project.name}{project.phaseName && <small>· {project.phaseName}</small>}
+      <span className="proj-badge__dot" />{project.name}{project.phaseName && !project.phase && <small>· {project.phaseName}</small>}
     </span>
   );
 }

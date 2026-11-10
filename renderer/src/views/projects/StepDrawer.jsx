@@ -2,7 +2,7 @@
 // açılır; adımın soruları ve geçmişi/notları burada.
 import React, { useEffect, useMemo, useState } from "react";
 import { Field, Icon, MenuButton, useConfirm, useToast } from "../../components/ui";
-import { post, tempId, useResource } from "../../api";
+import { get, useResource } from "../../api";
 import { filterLeads, isStepOverdue, isValidLink, leadDueState, leadsOfKind, linkLabel, rolePerson, rolesOf } from "../../lib/projectUtils";
 import { relativeTime } from "../../lib/helpers";
 import { ACTIVITY_ICONS, Avatar, BASE, StatusSelect, TOOL_ICONS, TOOL_ROUTES, label, openLink } from "./common";
@@ -50,19 +50,23 @@ export default function StepDrawer({ ctx, step, onClose }) {
   }, [team, step.assignee_id, people]);
 
   const addRole = (value) => { const v = value.trim(); if (!v || step.responsible.some((r) => r.toLocaleLowerCase("tr-TR") === v.toLocaleLowerCase("tr-TR"))) return; update({ responsible: [...step.responsible, v] }); setRole(""); };
-  const sendToTodos = async () => {
-    const res = await post("/api/todos", { kind: "task", title: step.title.slice(0, 200), body: `${project.name}${phase ? ` · ${phase.name}` : ""}${step.description ? `\n\n${step.description}` : ""}`, due_at: step.due_date ? new Date(`${step.due_date}T18:00:00`).toISOString() : null, priority: ["high", "urgent"].includes(step.priority) ? "high" : "normal" }, { tempId: tempId() });
-    if (res.ok) { toast(res.queued ? "Çevrimdışı: görev bağlantı gelince eklenecek." : "Yapılacaklara eklendi.", { tone: res.queued ? "warn" : "success", action: res.queued ? null : { label: "Aç", run: () => ctx.go("todos") } }); window.dispatchEvent(new Event("elitlig:todos-changed")); }
-    else toast(res.error?.message || "Eklenemedi.", { tone: "error" });
+  // Her adım Yapılacaklar'da zaten projenin kartıdır (sunucu eşitler): ayrı kopya
+  // kart açılmaz, adımın kartı proje kapsamında açılır.
+  const openInTodos = async () => {
+    const res = await get("/api/todos", { view: "board", project_id: project.id });
+    const card = res.ok ? (res.data?.items || []).find((t) => Number(t.project?.stepId) === Number(step.id)) : null;
+    try { localStorage.setItem("todo:scope", JSON.stringify(`project:${project.id}`)); } catch { /* yoksay */ }
+    if (card) ctx.go("todos", card.id);
+    else toast(res.ok ? "Adımın kartı henüz oluşmadı; birkaç saniye sonra yeniden deneyin." : res.error?.message || "Yapılacaklar açılamadı.", { tone: res.ok ? "info" : "error" });
   };
 
   return (
     <aside className="split__side drawer proj-drawer">
       <header className="drawer__head">
-        <span className="pill pill--tool" style={phase ? { background: `color-mix(in srgb, ${phase.color} 14%, transparent)`, color: phase.color } : undefined}><Icon name="list" size={11} /> {phase?.name || "Aşamasız"}</span>
+        <span className="pill pill--tool" style={phase ? { background: `color-mix(in srgb, ${phase.color} 14%, transparent)`, color: phase.color } : undefined}><Icon name="list" size={11} /> {phase?.name || "Askıda (etiketlenmemiş)"}</span>
         <div className="row-gap">
           <MenuButton items={[
-            { label: "Yapılacaklara gönder", icon: "checkSquare", onClick: sendToTodos },
+            { label: "Yapılacaklar'da aç", icon: "checkSquare", onClick: openInTodos },
             canEdit && { label: "Kopyasını oluştur", icon: "copy", onClick: () => actions.createStep({ title: `${step.title} (kopya)`.slice(0, 200), phase_id: step.phase_id, responsible: step.responsible, description: step.description, priority: step.priority, tool: step.tool, tool_ref: step.tool_ref, links: step.links, checklist: checklist.map((c) => ({ text: c.text })) }) },
             canEdit && "-",
             canEdit && { label: "Adımı sil", icon: "trash", danger: true, onClick: async () => { if (await confirm({ title: "Adımı sil", message: `“${step.title}” silinsin mi? Soruları ve notları projede kalır.`, confirmLabel: "Sil", danger: true })) { onClose(); actions.deleteStep(step); } } },
@@ -97,7 +101,7 @@ export default function StepDrawer({ ctx, step, onClose }) {
       </section>
 
       <div className="form-grid">
-        <Field label="Aşama"><select value={step.phase_id ?? ""} disabled={!canEdit} onChange={(e) => update({ phase_id: e.target.value ? Number(e.target.value) : null })}><option value="">Aşamasız</option>{phases.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
+        <Field label="Aşama"><select value={step.phase_id ?? ""} disabled={!canEdit} onChange={(e) => update({ phase_id: e.target.value ? Number(e.target.value) : null })}><option value="">Askıda (etiketlenmemiş)</option>{phases.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
         <Field label="Öncelik"><select value={step.priority} disabled={!canEdit} onChange={(e) => update({ priority: e.target.value })}>{meta.priorities.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}</select></Field>
         <Field label="Başlangıç"><input type="date" value={step.start_date || ""} disabled={!canEdit} onChange={(e) => update({ start_date: e.target.value || null })} /></Field>
         <Field label="Son tarih"><input type="date" value={step.due_date || ""} disabled={!canEdit} onChange={(e) => update({ due_date: e.target.value || null })} className={overdue ? "is-late" : ""} /></Field>

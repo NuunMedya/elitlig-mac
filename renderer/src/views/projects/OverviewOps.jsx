@@ -45,7 +45,7 @@ export default function OverviewOps({ ctx }) {
                 <li key={g.key}>
                   <button type="button" onClick={() => ctx.setTab("process", { phase: g.key })}>
                     <span className="phase-bars__num" style={{ background: g.phase?.color || "#94a3b8" }}>{g.phase ? i + 1 : "–"}</span>
-                    <span className="phase-bars__name">{g.phase?.name || "Aşamasız"}</span>
+                    <span className="phase-bars__name">{g.phase?.name || "Askıda (etiketlenmemiş)"}</span>
                     <span className="phase-bars__track"><Progress value={g.stats.progress} color={g.phase?.color} thin /></span>
                     <span className="phase-bars__val">{g.stats.done}/{g.stats.total - g.stats.skipped}{g.stats.overdue ? <b className="text-red"> · {g.stats.overdue}!</b> : null}</span>
                   </button>

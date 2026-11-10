@@ -8,8 +8,10 @@ import MatchDesk from "./MatchDesk";
 import { AwardBoard, AwardProposal } from "./Award";
 import { KIND_ICON, LABEL_COLORS, MOMENT_PERIOD, STATUSES } from "./todoUtils";
 import { isAllDayDue, taskProjectRoute } from "../../lib/projectAgenda";
+import { deleteQuestion } from "../../lib/projectPhases";
+import { PhaseSection } from "./PhaseLabel";
 
-export default function Drawer({ task, catalog, allLabels, onClose, onUpdate, onDelete, onEdit, onReplace, go }) {
+export default function Drawer({ task, catalog, allLabels, projects = [], onPhasesChanged, onClose, onUpdate, onDelete, onEdit, onReplace, go }) {
   const confirm = useConfirm();
   const [response, setResponse] = useState(task.response || "");
   const [step, setStep] = useState("");
@@ -38,7 +40,7 @@ export default function Drawer({ task, catalog, allLabels, onClose, onUpdate, on
             can.isOwner && task.status === "done" && { label: "Arşivle", icon: "archive", onClick: () => { onUpdate(task, { archived: true }); onClose(); } },
             task.match && { label: "Maçı web'de aç", icon: "external", onClick: () => window.elitlig.app.openWeb(`/editor/maclar/${task.match.id}/oncesi`) },
             can.canDelete && "-",
-            can.canDelete && { label: "Sil", icon: "trash", danger: true, onClick: async () => { if (await confirm({ title: "Kartı sil", message: `“${task.title}” silinsin mi?`, confirmLabel: "Sil", danger: true })) onDelete(task); } },
+            can.canDelete && { label: "Sil", icon: "trash", danger: true, onClick: async () => { if (await confirm({ title: task.isProjectStep ? "Kartı ve proje adımını sil" : "Kartı sil", message: deleteQuestion(task), confirmLabel: "Sil", danger: true })) onDelete(task); } },
           ]} />
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Kapat"><Icon name="x" /></button>
         </div>
@@ -75,9 +77,9 @@ export default function Drawer({ task, catalog, allLabels, onClose, onUpdate, on
         <button type="button" className="info-box info-box--btn proj-box" style={{ "--c": task.project.color || "#6d28d9" }} onClick={() => go("projects", taskProjectRoute(task.project))}>
           <Icon name={task.kind === "project_followup" ? "phone" : "layers"} />
           <div>
-            <strong>{task.project.name}{task.project.phaseName ? ` · ${task.project.phaseName}` : ""}</strong>
+            <strong>{task.project.name}{task.project.phaseName && !task.project.phase ? ` · ${task.project.phaseName}` : ""}</strong>
             <span className="muted small">
-              {task.kind === "project_step" ? "Projedeki adımdan gelir: burada tamamlarsanız adım da tamamlanır; başlık ve tarih projede değişir."
+              {task.kind === "project_step" ? "Bu kart projedeki adımın kendisidir: burada tamamlarsanız adım da tamamlanır; başlık, tarih ve etap değişikliği projeye yazılır."
                 : task.kind === "project_followup" ? "Görüşme takibi: tamamlayınca kişinin sonraki aksiyonu temizlenir; yeni tarih verilince kart yeniden açılır."
                   : "Bu iş projeye bağlı."}
             </span>
@@ -88,6 +90,8 @@ export default function Drawer({ task, catalog, allLabels, onClose, onUpdate, on
       {task.kind === "match_duty" && <MatchDesk task={task} onChanged={() => onReplace(null)} />}
       {task.kind === "award_nomination" && <AwardProposal key={task.id} task={task} onUpdated={(item) => item && onReplace(item)} />}
       {task.kind === "award_coordination" && <AwardBoard key={task.id} task={task} onUpdated={(item) => item && onReplace(item)} />}
+
+      <PhaseSection task={task} projects={projects} onUpdate={onUpdate} onPhasesChanged={onPhasesChanged} />
 
       <section className="drawer__section">
         <h4>Etiketler</h4>

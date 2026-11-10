@@ -27,3 +27,17 @@
 .upcoming--project .upcoming__title:hover { color: var(--tool-text); }
 .upcoming--project .upcoming__bar { background-image: repeating-linear-gradient(180deg, transparent 0 4px, rgba(255, 255, 255, 0.45) 4px 6px); }
 .task-mini__title .proj-badge { margin-left: 4px; flex: none; }
+
+/* Etap etiketi (proje adımının aşaması) — PhaseLabel.jsx */
+.phase-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-radius: 6px; line-height: 20px;
+  font-size: 11px; font-weight: 700; color: #fff; background: var(--c, #7c3aed); border: 1px solid transparent; white-space: nowrap;
+}
+.phase-chip--sm { line-height: 16px; font-size: 10.5px; padding: 0 6px; }
+.phase-chip.is-unlabeled { background: transparent; color: var(--muted, #64748b); border: 1px dashed currentColor; }
+.phase-chip--pick { cursor: pointer; font: inherit; font-size: 11.5px; font-weight: 650; background: transparent; color: var(--c, #7c3aed); border-color: var(--c, #7c3aed); }
+.phase-chip--pick.is-on { background: var(--c, #7c3aed); color: #fff; }
+.phase-chip--pick.is-unlabeled.is-on { background: color-mix(in srgb, #64748b 16%, transparent); color: var(--text); }
+.phase-chip--pick:disabled { cursor: default; opacity: 0.85; }
+.board-card__phase { margin: 2px 0; }
+.group-phase-dot { display: inline-block; width: 9px; height: 9px; border-radius: 3px; background: var(--c); margin-right: 6px; }

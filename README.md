@@ -106,7 +106,11 @@ ile aynıdır (`/api/tools/projects`).
   Takıldı, Tamamlandı, Gerek yok), sorumlu roller, atanan kişi, son tarih (geciken kırmızı), öncelik,
   kontrol listesi ve soru sayısı. Adım çekmecesinde her alan düzenlenir: **Sonuç / cevap**, açıklama,
   bağlantılar (site yolları — ör. `/editor/maclar` — tarayıcıda elitlig.com'da açılır), adımın soruları,
-  notları ve geçmişi. “Yapılacaklara gönder” adımı göreve çevirir.
+  notları ve geçmişi. Her adım Yapılacaklar'da projenin kartıdır (tek kayıt, iki yönlü): son tarih kartın
+  tarihi, aşama kartın **etap etiketi** (Planlama, Yürütme, Kapanış…; aşama rengiyle). Kartta etap
+  değişirse adım o aşamaya taşınır, yeni etap adı projede aşama açar; etiketsiz eklenen proje işleri
+  Süreç'te **Askıda (etiketlenmemiş)** grubunda durur. Kart tamamlanınca adım da tamamlanır; kart
+  silinirse adım da silinir. Adım çekmecesinde “Yapılacaklar'da aç” adımın kartını açar.
 - **Araçlar adımın içinde.** Adıma bir araç bağlanır. “Potansiyel müşterilerin aranması” gibi bir
   adımda **Aracı aç**, Kişiler (CRM) panelini o adımın üstünde, ilgili aşamaya süzülmüş olarak açar:
   adımdan çıkmadan kişi eklenir, aranır, sonucu kaydedilir. Soru-cevap, portföy ve iletişim geçmişi de
