@@ -153,7 +153,7 @@
 .dt-chips button { border: 1px solid var(--border); background: var(--surface); border-radius: 20px; padding: 2px 10px; font-size: 11.5px; font-weight: 600; color: var(--text-2); }
 .dt-chips button.is-on { background: var(--tool); color: #fff; border-color: transparent; }
 .dt-chips button small { opacity: 0.7; margin-left: 2px; }
-.dt-chips select { height: 24px; font-size: 11.5px; padding: 0 6px; }
+.dt-chips select { height: 24px; font-size: 11.5px; padding: 0 22px 0 8px; width: auto; }
 .dt-chips.is-sizes { margin-top: 6px; }
 .dt-ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .dt-av { display: inline-grid; place-items: center; border-radius: 50%; background: var(--av, var(--tool)); color: #fff; font-weight: 700; flex: none; }
@@ -187,8 +187,8 @@
 .dt-ledgerform select { min-width: 0; }
 .dt-ledgerform > .btn { justify-self: start; }
 .dt-ledgerform.is-bar { grid-template-columns: auto 90px 1fr auto; }
-.dt-tile.is-s .dt-ledgerform { grid-template-columns: auto 1fr; }
-.dt-tile.is-s .dt-ledgerform > input:not(.dt-amount) { grid-column: 1 / -1; }
+.dt-tile.is-s .dt-ledgerform { grid-template-columns: auto minmax(0, 1fr) auto; grid-auto-flow: dense; gap: 4px; }
+.dt-tile.is-s .dt-ledgerform > input:not(.dt-amount) { grid-column: 1 / -1; grid-row: 2; }
 .dt-amount { font-weight: 700; font-variant-numeric: tabular-nums; }
 .dt-seg { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--surface-3); }
 .dt-seg button { border: 0; background: transparent; padding: 3px 9px; border-radius: 7px; font-size: 11.5px; font-weight: 700; color: var(--muted); }
