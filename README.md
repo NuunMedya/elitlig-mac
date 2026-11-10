@@ -589,8 +589,6 @@ hatırlanır (`studio.mode`), iki görünümün üst çubuğundaki "Maç yayın�
   RTMP / RTMPS sunucu + anahtar; "Prova / yalnız kayıt"; "Bu bilgisayara da kaydet" (klasör seçilir).
   Bağlantı, yeniden bağlanma, tanılama günlüğü ve sağlık göstergesi Maç yayınıyla aynıdır.
 
-## Masaüstü araç takımı, pencere yerleştirme ve müzik
-
 ## Masaüstü araç takımı, widget'lar, pencere yerleştirme ve müzik
 
 Araç takımına üç yoldan ulaşılır:
