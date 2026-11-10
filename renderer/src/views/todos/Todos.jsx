@@ -17,7 +17,7 @@ import { isAllDayDue, projectOptions, scopeMatches, validScope } from "../../lib
 import "./todoProjects.css";
 import ExportButton from "../../components/ExportButton";
 import { todosReport } from "../../lib/export/reports";
-import { KINDS, KIND_ICON, LABEL_COLORS, STATUSES, dateBucket, dueOf, endOfDay, groupRows, isDelegated, matchesSearch, orderAfterDrop, sortColumn, viewsFor } from "./todoUtils";
+import { KINDS, KIND_ICON, LABEL_COLORS, STATUSES, boardAddBody, dateBucket, dueOf, endOfDay, groupRows, isDelegated, matchesSearch, orderAfterDrop, sortColumn, viewsFor } from "./todoUtils";
 
 const store = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
 const save = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* yoksay */ } };
@@ -204,7 +204,7 @@ export default function Todos({ arg, argSeq, go }) {
 
           {list.loading && !list.data ? <Spinner /> : layout === "board" && view.key !== "done" ? (
             <Board items={shown} selected={selected} onSelect={setSelected} onArchive={archiveDone}
-              onAdd={async (status, title) => { const tid = tempId(); const body = { kind: "task", title, status }; const res = await post("/api/todos", body, { tempId: tid }); if (result(res)) { if (res.queued) addQueued(tid, body); created(res.data?.items); } }}
+              onAdd={async (status, title) => { const tid = tempId(); const body = boardAddBody(status, title, { viewKey: view.key, project: scopeProject, label: view.key.startsWith("label:") ? allLabels.find((l) => `label:${l.text}` === view.key) : null }); const res = await post("/api/todos", body, { tempId: tid }); if (result(res)) { if (res.queued) addQueued(tid, body); created(res.data?.items); } }}
               onMove={async (task, status, ids) => {
                 list.setData((d) => ({ ...d, items: d.items.map((t) => (t.id === task.id ? { ...t, status } : t)).map((t) => (ids.includes(t.id) && t.permissions?.isOwner ? { ...t, position: ids.indexOf(t.id) } : t)) }));
                 const res = await request({ method: "POST", path: "/api/todos/reorder", body: { status, ids, moved_id: task.id }, queue: false });

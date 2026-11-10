@@ -244,3 +244,17 @@ export function autofill(draft, suggestions, { categories = [], squadSize = 7 } 
   }
   return next;
 }
+
+/**
+ * Pano sütunundaki "Kart ekle" gövdesi: seçili tek proje, etiket listesi ve
+ * Bugün/Yaklaşan görünümünün günü karta işlenir. Önceden yalnız başlık ve durum
+ * gidiyordu; proje kapsamında eklenen kart "bu görünümde gösterilmiyor" diyordu.
+ */
+export function boardAddBody(status, title, { viewKey, project, label } = {}, now = new Date()) {
+  const body = { kind: "task", title, status };
+  if (project) body.project_id = project.id;
+  if (label) body.labels = [label];
+  if (viewKey === "today") body.due_at = endOfDay(0, now);
+  else if (viewKey === "upcoming") body.due_at = endOfDay(1, now);
+  return body;
+}

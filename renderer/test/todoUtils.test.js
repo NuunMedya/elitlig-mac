@@ -1,4 +1,4 @@
-import { autofill, buildLineupMessage, dateBucket, groupRows, orderAfterDrop, slotsFor, sortColumn, toDraft, toPayload, viewsFor, whatsappNumber } from "../src/views/todos/todoUtils";
+import { autofill, boardAddBody, buildLineupMessage, dateBucket, endOfDay, groupRows, orderAfterDrop, slotsFor, sortColumn, toDraft, toPayload, viewsFor, whatsappNumber } from "../src/views/todos/todoUtils";
 
 const now = new Date(2026, 10, 4, 12, 0);
 const at = (d, h = 10) => new Date(2026, 10, d, h).toISOString();
@@ -52,4 +52,18 @@ test("haftanın enleri: yuvalar, taslak dönüşümü, en çok oyla doldurma", (
   expect(filled.individual.WEEKLY_GOALKEEPER.player.id).toBe(9);
   expect(filled.squad.formation).toBe("1-3-2-1");
   expect(Object.keys(filled.squad.slots)).toHaveLength(7);
+});
+
+describe("boardAddBody (pano 'Kart ekle')", () => {
+  const now = new Date(2026, 10, 10, 9, 0);
+  it("tek proje kapsamında kartı projeye bağlar", () => {
+    expect(boardAddBody("open", "DENEME", { viewKey: "all", project: { id: 5, name: "ELİTLİG TÜRKİYE" } }, now))
+      .toEqual({ kind: "task", title: "DENEME", status: "open", project_id: 5 });
+  });
+  it("etiket ve Bugün/Yaklaşan gününü işler", () => {
+    const label = { text: "acil", color: "red" };
+    expect(boardAddBody("doing", "x", { viewKey: "today", label }, now)).toMatchObject({ labels: [label], due_at: endOfDay(0, now) });
+    expect(boardAddBody("open", "x", { viewKey: "upcoming" }, now).due_at).toBe(endOfDay(1, now));
+    expect(boardAddBody("open", "x", {}, now)).toEqual({ kind: "task", title: "x", status: "open" });
+  });
 });
