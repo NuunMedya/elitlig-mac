@@ -383,11 +383,22 @@ aynı bölümler vardır.
 
 ## Birleşik Araç Takımı
 
-Kenar çubuğunda tek **Araç Takımı** girişi (⇧⌘A). Solda iç gezinme: **araç ara / komut** (`/` ile odaklanır),
-**Sabitlenenler** (kartlardaki ☆; panelde de sekme olur), **Bölümler** (Dosya Araçları ⇧⌘D, Ekran Görüntüleri ve
-Pano ⇧⌘P, Hesap Araçları ⌘8, Odak Sayacı ⌘9, Müzik ⇧⌘J), **Araçlar** (kategoriler) ve **Masaüstü** (Widget'lar,
-Ayarlar ⌘,). Eski kısayollar ve menü öğeleri ilgili bölümü açar; Görünüm menüsündeki bu bölümler uygulama
-menüsündeki **Araç Takımı** menüsüne taşındı (aynı kısayollarla). ⌘K'da her araç "Araç Takımı" grubunda aranır.
+Kenar çubuğunda tek **Araç Takımı** girişi (⇧⌘A). Sade düzen: solda **Ana sayfa** ve **7 kategori**; ana sayfada
+üstte **arama / komut** (yazmaya başlayınca süzer; ↑↓ seç, ↩ aç; `/` her yerden aramaya götürür; `kdv 1500`,
+`çevir 100 usd`, `kura ahmet, ali`), sonra **Sık kullanılanlar** (kartlardaki ☆; panelde de üstte), **Son
+kullanılanlar** ve **kategori kartları**. Kategori sayfası alt gruplar hâlinde tek tip kartlar gösterir; araç ve
+bölümlerde konum satırı `Araç Takımı › Kategori › Araç`. Her öğe tam olarak bir kategoridedir:
+
+- **Dosya ve Medya** — Dosya Araçları (⇧⌘D), Bağlantıdan indir, sosyal medya boyutları · Ekran Görüntüleri ve Pano (⇧⌘P), ekran görüntüsü al (⌃⌥A), ekran kaydı, pano rafı (⌃⌥T) · Müzik (⇧⌘J)
+- **Hesap ve Finans** — hızlı hesap ve döviz, yüzde / KDV, Hesap Araçları (⌘8) · maaş, fatura, kredi, ödeme bölüştürme
+- **Lig ve Organizasyon** — fikstür, ağaç, kura, takım, kadro · skorbord, puan durumu, oylama
+- **Metin ve Veri** — metin, karşılaştırma, Markdown, toplantı notu, karakterler, dolgu · CSV, JSON, Base64, regex, özet, UUID, parola · IBAN, T.C. kimlik, telefon
+- **Zaman ve Odak** — Odak Sayacı (⌘9), sayaç, kronometre, geri sayım · dünya saatleri, saat dilimi, tarih
+- **Renk, QR ve Tasarım** — renk, logodan palet, yazı tipi · QR, toplu QR, barkod
+- **Masaüstü ve Sistem** — Widget'lar, pencere düzeni, panel, hızlı not, uyanık tut, Masaüstü ayarları (⌘,) · ağ, sistem ve pil
+
+Eski kısayollar, `toolkit:<araç>` adresleri, panel (`#toolkit`) sekmeleri ve eski kategori adresleri (`kat-veri`, `kat-kimlik`, `kat-sistem`)
+çalışmaya devam eder. ⌘K'da her araç "Araç Takımı" grubunda aranır. Ayrıntılar:
 
 | Kategori | Araçlar |
 |---|---|
