@@ -42,6 +42,7 @@ const { createSessionStore, sessionStatus, sessionEndsAt } = require("./session"
 const { createApi } = require("./api");
 const { createFocus, trayTitle } = require("./focus");
 const { createReminders } = require("./reminders");
+const { createEquipmentFeed } = require("./equipmentFeed");
 const { createChatLink, buildMultipart, mimeOf } = require("./chat");
 const { accessFromUser, probeAccess, sameAccess } = require("./access");
 const { registerStudio, applyStudioSwitches, STUDIO_SCHEME } = require("./studio");
@@ -245,6 +246,9 @@ async function loadBills(now = Date.now(), { force = false } = {}) {
   }
   return billsCache.items;
 }
+
+// Ekipman: benim zimmetlerim ve bakımı gelenler (bildirim için, 20 dk önbellek).
+const equipmentFeed = createEquipmentFeed({ request: (opts) => api.request(opts) });
 
 /* ---------------------------- rozet ve tepsi ---------------------------- */
 
@@ -499,6 +503,7 @@ const ROUTES = [
   ["contacts", "Rehber", "CmdOrCtrl+7"],
   ["calc", "Hesap Araçları", "CmdOrCtrl+8"],
   ["focus", "Odak Sayacı", "CmdOrCtrl+9"],
+  ["equipment", "Ekipman", "CmdOrCtrl+Shift+E"],
 ];
 
 const sendCommand = (name) => {
@@ -614,6 +619,7 @@ function registerIpc() {
       else if (p.startsWith("/api/admin/chat/")) chatLink.refreshInboxSoon(600, false);
       else {
         if (/^\/api\/tools\/(recurring|ledger)/.test(p)) billsCache.at = 0;
+        if (p.startsWith("/api/tools/equipment/")) equipmentFeed.invalidate();
         setTimeout(refreshSummary, 500);
         // Onay / ret uçları talebi kendiliğinden kapatır; özet tazelenir.
         refreshRequestsSoon(700);
@@ -866,12 +872,13 @@ if (!app.requestSingleInstanceLock()) {
       load: async () => {
         if (!authState().signedIn) return { events: [], todos: [] };
         const now = Date.now();
-        const [events, todos, bills] = await Promise.all([
+        const [events, todos, bills, equipment] = await Promise.all([
           api.request({ path: "/api/tools/events", query: { from: new Date(now - 86400000).toISOString(), to: new Date(now + 2 * 86400000).toISOString(), todos: "0", projects: "0" } }),
           api.request({ path: "/api/todos", query: { view: "mine", status: "active" } }),
           loadBills(now),
+          equipmentFeed.load(now).catch(() => null),
         ]);
-        return { events: events.ok ? events.data?.items || [] : [], todos: todos.ok ? todos.data?.items || [] : [], bills };
+        return { events: events.ok ? events.data?.items || [] : [], todos: todos.ok ? todos.data?.items || [] : [], bills, equipment };
       },
     });
 

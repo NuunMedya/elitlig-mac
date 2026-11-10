@@ -9,6 +9,7 @@ import { dayKey, dueLabel, formatWhen, groupFollowups } from "../lib/projectUtil
 import { topCategories } from "../lib/requestUtils";
 import { isAllDayDue, isProjectItem, mergeUpcoming, projectKindOf, projectRoute } from "../lib/projectAgenda";
 import "./todos/todoProjects.css";
+import EquipmentToday from "./equipment/EquipmentToday";
 
 const useClock = () => {
   const [now, setNow] = useState(() => new Date());
@@ -113,6 +114,7 @@ export default function Today({ go, auth }) {
 
         {auth.access?.requests !== false && <RequestsToday go={go} />}
         <ProjectsToday go={go} />
+        <EquipmentToday go={go} />
 
         <section className="card">
           <header className="card__head">
