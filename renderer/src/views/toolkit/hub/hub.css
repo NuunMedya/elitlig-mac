@@ -56,7 +56,9 @@
 .hub-tool__body { padding: 16px; }
 .hub-hosted { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .hub-hosted__bar { position: absolute; top: calc(var(--top-gap) - 28px); left: 32px; right: 24px; z-index: 3; display: flex; align-items: center; gap: 8px; pointer-events: none; }
-.hub-hosted__bar > * { pointer-events: auto; }
+.hub-hosted__bar > * { pointer-events: auto; -webkit-app-region: no-drag; }
+.hub-nav__brand { -webkit-app-region: drag; }
+.hub-nav__brand > * { -webkit-app-region: no-drag; }
 :root.platform-win32 .hub-hosted__bar, :root.platform-linux .hub-hosted__bar { top: 2px; }
 .hub-hosted > .view { flex: 1; }
 .hub-cmd { border-radius: 14px; border: 1px solid color-mix(in srgb, var(--tool) 40%, transparent); background: linear-gradient(135deg, var(--tool-soft), var(--surface)); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
@@ -74,3 +76,6 @@
   .hub-nav__item { justify-content: center; padding: 8px 0; }
   .hub-nav__brand { justify-content: center; }
 }
+
+/* Windows / Linux: uzun kısayol etiketleri iç gezinmeyi daraltmasın (kart ve bölüm çubuğunda görünür). */
+:root.platform-win32 .hub-nav .hub-nav__kbd, :root.platform-linux .hub-nav .hub-nav__kbd { display: none; }

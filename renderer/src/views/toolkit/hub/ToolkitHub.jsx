@@ -3,7 +3,7 @@
 // Solda iç gezinme (arama, sabitlenenler, bölümler, kategoriler), sağda seçili bölüm / araç.
 // Eski kısayollar (⇧⌘D ⇧⌘P ⌘8 ⌘9 ⇧⌘J ⌘,) App.jsx'te aynı rotaları açar; rota burada bölüme çevrilir.
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Icon, Kbd, Spinner, isMac, useToast } from "../../../components/ui";
+import { Icon, Kbd, Spinner, isMac, keyLabel, useToast } from "../../../components/ui";
 import LayoutTool from "../LayoutTool";
 import ToolkitIntro from "../ToolkitIntro";
 import { acceleratorLabel } from "../shortcutUtils";
@@ -96,7 +96,7 @@ export default function ToolkitHub({ route = "toolkit", arg, argSeq, go, auth, s
 function HubNav({ loc, go, q, setQ, searchRef, pins, open }) {
   const is = (view, key) => loc.view === view && (key == null || loc.key === key);
   const item = (key, icon, label, onClick, active, extra) => (
-    <button key={key} type="button" className={`hub-nav__item${active ? " is-active" : ""}`} onClick={onClick} aria-current={active ? "page" : undefined} data-hub-nav={key}>
+    <button key={key} type="button" className={`hub-nav__item${active ? " is-active" : ""}`} onClick={onClick} aria-current={active ? "page" : undefined} data-hub-nav={key} title={label}>
       <Icon name={icon} size={15} /><span>{label}</span>{extra}
     </button>
   );
@@ -117,12 +117,12 @@ function HubNav({ loc, go, q, setQ, searchRef, pins, open }) {
       {pinned.length > 0 && <div className="hub-nav__group">Sabitlenenler</div>}
       {pinned.map((e) => item(`pin-${e.id}`, e.icon, e.kind === "section" ? e.title : e.label || e.title, () => open(e), currentIs(loc, e), <Icon name="star" size={11} className="hub-nav__star" />))}
       <div className="hub-nav__group">Bölümler</div>
-      {SECTIONS.filter((s) => !["widgets", "settings"].includes(s.key)).map((s) => item(`section-${s.key}`, s.icon, s.title, () => go(s.route), is("section", s.key), s.shortcut ? <kbd className="hub-nav__kbd">{s.shortcut}</kbd> : null))}
+      {SECTIONS.filter((s) => !["widgets", "settings"].includes(s.key)).map((s) => item(`section-${s.key}`, s.icon, s.title, () => go(s.route), is("section", s.key), s.shortcut ? <kbd className="hub-nav__kbd">{keyLabel(s.shortcut)}</kbd> : null))}
       <div className="hub-nav__group">Araçlar</div>
       {CATEGORIES.map((c) => item(`cat-${c.key}`, c.icon, c.title, () => go(`toolkit:kat-${c.key}`), is("category", c.key) || (loc.view === "tool" && TOOL_BY_KEY.get(loc.key)?.cat === c.key), <em className="hub-nav__count">{toolsIn(c.key).length}</em>))}
       <div className="hub-nav__group">Masaüstü</div>
       {item("section-widgets", "grid", "Widget'lar", () => go("toolkit:widgets"), is("section", "widgets"))}
-      {item("section-settings", "sliders", "Ayarlar", () => go("desk"), is("section", "settings"), <kbd className="hub-nav__kbd">⌘,</kbd>)}
+      {item("section-settings", "sliders", "Ayarlar", () => go("desk"), is("section", "settings"), <kbd className="hub-nav__kbd">{keyLabel("⌘,")}</kbd>)}
     </nav>
   );
 }
@@ -151,7 +151,7 @@ function EntryCard({ e, open, pinned, pin }) {
       <button type="button" className="hub-card__main" onClick={() => open(e)}>
         <span className="hub-card__icon"><Icon name={e.icon} size={18} /></span>
         <span className="hub-card__text"><strong>{e.title}</strong><small>{e.hint}</small></span>
-        {e.shortcut && <kbd className="hub-nav__kbd">{e.shortcut}</kbd>}
+        {e.shortcut && <kbd className="hub-nav__kbd">{keyLabel(e.shortcut)}</kbd>}
       </button>
       <button type="button" className={`hub-card__pin${pinned ? " is-on" : ""}`} onClick={() => pin(e.id)} aria-pressed={pinned} aria-label={pinned ? `${e.title} sabitlemesini kaldır` : `${e.title} sabitle`} title={pinned ? "Sabitlemeyi kaldır" : "Sabitle"}><Icon name="star" size={13} /></button>
     </div>
@@ -303,7 +303,7 @@ function SectionView({ sectionKey, arg, argSeq, go, auth, summary, pinned, onPin
       <div className="hub-hosted__bar">
         <Crumbs go={go} items={[[s.title]]} />
         <span className="spacer" />
-        {s.shortcut && <kbd className="hub-nav__kbd">{s.shortcut}</kbd>}
+        {s.shortcut && <kbd className="hub-nav__kbd">{keyLabel(s.shortcut)}</kbd>}
         <button type="button" className={`hub-card__pin${pinned ? " is-on" : ""}`} onClick={onPin} aria-pressed={pinned} aria-label={pinned ? "Sabitlemeyi kaldır" : "Sabitle"} title={pinned ? "Sabitlemeyi kaldır" : "Sabitle"}><Icon name="star" size={13} /></button>
       </div>
       <View go={go} arg={arg} argSeq={argSeq} auth={auth} summary={summary} />
