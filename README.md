@@ -584,10 +584,11 @@ hatırlanır (`studio.mode`), iki görünümün üst çubuğundaki "Maç yayın�
   süresine bölünür (en az 5 sn).
 - **Künye ve alt bant.** Logo, program başlığı, il · lig · sezon, İstanbul saati ve tarih; kayan alt bant
   (canlı skorlar, son sonuçlar, yaklaşan maçlar, haber başlıkları, serbest metin; etiket ve hız);
-  isteğe bağlı sponsor kutusu (sitenin sponsor kayıtlarından dönen logolar). Temalar Elitlig
-  renkleriyle: Menekşe, Gece & Altın, Lacivert, Kağıt. 1080p30 (varsayılan), 720p30, 1080p60.
-- **Şablonlar.** Hazır: Hafta değerlendirmesi, Canlı skor masası, Puan durumu özel, Haber bülteni
-  (açılar + kart sırası + alt bant + tema). O anki düzen ad verilerek kaydedilir, uygulanır, silinir.
+  isteğe bağlı sponsor kutusu (sitenin sponsor kayıtlarından dönen logolar). Tema ve stiller marka
+  profilinden (aşağıda). 1080p30 (varsayılan), 720p30, 1080p60.
+- **Şablonlar.** Hazır: Hafta değerlendirmesi, Canlı skor masası, Puan durumu özel, Haber bülteni, Haber
+  masası, Röportaj / konuk, Tartışma programı, Sponsor & etkileşim (açılar + kart sırası + alt bant +
+  tema). O anki düzen ad verilerek kaydedilir, uygulanır, silinir.
 - **Veri.** Şehir (il), lig, sezon ve grup / etap seçilir; 45 sn'de bir tazelenir, hata olursa son
   sağlam veri ekranda kalır. Birincil kaynak sunucunun toplu ucu
   `GET /api/broadcast/panorama?cityId=&leagueId=&seasonId=&groupId=` (elitlig-server
@@ -598,6 +599,54 @@ hatırlanır (`studio.mode`), iki görünümün üst çubuğundaki "Maç yayın�
 - **Yayın.** Hedef: YouTube yayın anahtarı (`rtmp://a.rtmp.youtube.com/live2/<anahtar>`) ya da özel
   RTMP / RTMPS sunucu + anahtar; "Prova / yalnız kayıt"; "Bu bilgisayara da kaydet" (klasör seçilir).
   Bağlantı, yeniden bağlanma, tanılama günlüğü ve sağlık göstergesi Maç yayınıyla aynıdır.
+- **Web Panorama sahneleri.** Web yönetimindeki Panorama rejisinin (Yönetim › Panorama) bütün sahneleri
+  (51: puan / form / iç saha / deplasman tablosu, fikstür, sonuçlar, hafta ve sezon özeti, en gollü
+  maçlar, maç özeti / detayı / gol akışı / istatistikleri / oyuncu puanları / enleri / kadroları /
+  önizleme, iki takımın geçmişi, oyuncu ve takım profili, son maçlar, kadro, gol dağılımı, fair play,
+  en golcü takımlar, en iyi savunmalar, gol yemeyenler, seriler, oyuncu / takım karşılaştırma, 11
+  krallık, piyasa değerleri, haftanın enleri, cezalılar, duyuru) "Web Panorama sahnesi" kartıdır;
+  içerik web kaplamasıyla AYNI sunucu çözücülerinden gelir (`GET /api/broadcast/panorama/scene`,
+  katalog `/catalog`, seçiciler `/lookup/:kind`, çoklu il `/cities`; elitlig-server
+  `services/broadcastPanoramaScenes.js`, herkese açık, kayıtlar istenen ile ait olmalı) ve 24 içerik türü
+  tuvalde çizilir (`lib/studio/panorama/drawWeb.js`). Oyuncu / takım / maç / ödül seti kart
+  ayarlarında aranarak seçilir. Eski sunucuda kart "sunucu desteklemiyor" yazar, yayın bozulmaz.
+- **Yeni kartlar.** Haftanın maçı tanıtımı (otomatik: en üst sıraların yaklaşan maçı), canlı skor bandı
+  (sürekli kayan, armalı), geri sayım, hava durumu (il / stadyum şehri; ana süreç Open-Meteo), seyirci
+  anketi (seçenekler + oy bağlantısının QR'ı), sponsor tanıtımı (logo + yerel görsel / video), görsel /
+  video slayt (yerel dosyalar; video program sahnesinde kart kutusunda katman olarak oynar), sosyal
+  medya gönderisi (bağlantıdan başlık / görsel / açıklama — ana süreç Open Graph okur), çoklu il
+  karşılaştırması, özel metin kartı. Kısayollar: sezon istatistikleri, haftanın özeti, takım formu,
+  kart / disiplin tablosu, fair play, cezalılar, en golcü takımlar, en iyi savunmalar. Her kartta
+  **kart stili** (vurgu, başlık, zemin, metin rengi, köşe, saydamlık, giriş animasyonu, başlığı gizle).
+- **Kamera açıları (40+).** Önceki 12'ye ek: resim içinde resim (kare / yuvarlak / çift köşe; köşe ayna
+  düğmeleriyle), içerik + köşe kamera (kare / yuvarlak), kamera + sol kart, kamera + skor bandı, yan yana
+  60/40 ve 70/30, dikey bölme (+ içerik), üç konuk, röportaj (karşılıklı eğik / alt kartlı), 3×3, 3×2,
+  1 + 5, 2 + 4, ekran duvarı 4×3 (+ içerik), çapraz bölme (+ içerik), yuvarlak ikili / üçlü, altıgen,
+  pah kırık 2×2, eğik üçlü, haber masası (iki sunucu + arka ekran; geniş ekran), spiker + arka ekran,
+  tartışma masası (4). Açı düzenleyicide: ayna / çevir, tüm kameralara boşluk, köşe, kenarlık (renk),
+  gölge, maske (daire, elips, pah, altıgen, çapraz, eğik); 16:9 sahnede her kaynağı **sürükle-bırak**
+  taşı / boyutlandır, X / Y / genişlik / yükseklik ve kırpma (sol / üst / sağ / alt) ince ayarı.
+  **Düzen editörü**: kendi düzenini kur (kamera yeri ekle / sil, maske, köşe, katman sırası, kart kutusu,
+  skor bandı); açının ince ayarından "Düzen olarak kaydet".
+- **Marka profilleri.** 16 hazır tema (Elitlig klasik, Gece & altın, Gündüz, Lacivert, Spor kanalı,
+  Minimal, Neon, Retro, Kurumsal, Şampiyonlar, Sahil, Kış, Orman, Vitrin, Kağıt, Gün batımı) ve kendi
+  profillerin: ad, program başlığı, logo ve ikinci / sponsor logosu (yerel dosya — `elitlig-studio://media`
+  izin modeli — ya da web adresi; küçültülüp profile gömülür), **logodan otomatik palet**, renk paleti
+  (ana, ikincil, vurgu, metin, arka plan, kart zemini), başlık / metin yazı tipi (bu bilgisayardaki
+  sistem yazı tipleri), kart stili (köşe, saydamlık, gölge, kenarlık, cam efekti), künye stili (hap,
+  şerit, cam kutu, yalın, kapalı) + alt yazı, kamera isim bandı stili, alt bant stili, saat stili,
+  kart giriş / çıkış animasyonu ve süresi, filigran / köşe logosu (konum, boy, saydamlık). Kopyala /
+  yeniden adlandır / sil; **dışa / içe aktar** (JSON, logolar base64 gömülü, hazır ayarlarla birlikte)
+  — başka bilgisayara taşınır. Kayıt: `studio.panorama.brands.v1`.
+- **Yayın hazır ayarları.** Marka + açılar (ince ayarlar) + kendi düzenlerin + kart listesi + alt bant +
+  kaynak ayarları + kapsam. Kaydet / üzerine kaydet / yeniden adlandır / sil / dışa aktar; üst çubukta
+  marka seçici ve hazır ayar çipleri (tek tıkla geçiş, yayın sırasında da; kaydedilmemiş değişiklik `•`),
+  **⌥1–9** ile geçiş. Açılışta son kullanılan otomatik yüklenir (kayıtlı durum yoksa — ör. içe
+  aktarılan başka bilgisayarda — son hazır ayardan kurulur). Kayıt: `studio.panorama.presets.v1`.
+- **Web Panorama'dan içe aktarma.** Web yönetimindeki kayıtlı Panorama yayınları (yetkiyle liste
+  `GET /api/admin/panorama`; yetki yoksa yayın numarasıyla herkese açık `/overlay/panorama/:id`) tek
+  tıkla marka profili (logo, renkler, yazı tipi, köşe, alt yazı) + hazır ayar (konuk sayısına göre
+  açılar, konuk adları kameralara, yayındaki sahne ilk karta, alt bant metni, il / lig / sezon) olur.
 
 ## Masaüstü araç takımı, widget'lar, pencere yerleştirme ve müzik
 

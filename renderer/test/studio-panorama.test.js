@@ -176,8 +176,8 @@ describe("panorama · model", () => {
     const d = { live: [{ homeName: "A", awayName: "B", homeScore: 1, awayScore: 0 }], results: [{ homeName: "C", awayName: "D", homeScore: null, awayScore: null }], news: [{ title: "?? KRAL KUPASI" }] };
     expect(tickerItems(d, { sources: ["live", "results", "news", "custom"], text: "satır 1\n\nsatır 2" })).toEqual(["CANLI · A 1-0 B", "C – D", "KRAL KUPASI", "satır 1", "satır 2"]);
   });
-  it("şablonlar: dört hazır şablon; uygula / kaydet / geri yükle", () => {
-    expect(BUILTIN_TEMPLATES.map((t) => t.name)).toEqual(["Hafta değerlendirmesi", "Canlı skor masası", "Puan durumu özel", "Haber bülteni"]);
+  it("şablonlar: sekiz hazır şablon; uygula / kaydet / geri yükle", () => {
+    expect(BUILTIN_TEMPLATES.map((t) => t.name)).toEqual(["Hafta değerlendirmesi", "Canlı skor masası", "Puan durumu özel", "Haber bülteni", "Haber masası", "Röportaj / konuk", "Tartışma programı", "Sponsor & etkileşim"]);
     const r = applyTemplate(BUILTIN_TEMPLATES[1], sources);
     expect(r.theme).toBe("gece");
     expect(r.angles[0].layout).toBe("grid4Card");

@@ -92,6 +92,12 @@ contextBridge.exposeInMainWorld("elitlig", {
       playlist: (listId) => ipcRenderer.invoke("studio:music:playlist", String(listId || "")),
       onHostEvent: on("studio:music:hostEvent"),
     },
+    // Panorama kartları (app/studio/panoramaNet.js): hava durumu, bağlantı önizlemesi, sistem yazı tipleri.
+    panorama: {
+      weather: (q) => ipcRenderer.invoke("studio:panorama:weather", q && typeof q === "object" ? q : {}),
+      linkMeta: (url) => ipcRenderer.invoke("studio:panorama:linkMeta", String(url || "")),
+      fonts: () => ipcRenderer.invoke("studio:panorama:fonts"),
+    },
     // Dışarı giden tüm sesleri kapat (app/studio/outmute.js): bütün pencerelerin hoparlör çıkışı.
     outMute: {
       set: (on) => ipcRenderer.invoke("studio:outMute:set", Boolean(on)),

@@ -217,6 +217,23 @@ function drawTicker(ctx, w, h, s, H) {
   ctx.restore();
 }
 
+/** Şekilli maske yolu (0,0)-(w,h) kutusunda (katman maskesi; lib/studio/scenes.js LAYER_MASKS). */
+export function maskPath(ctx, mask, w, h) {
+  const m = Math.min(w, h);
+  const poly = (pts) => { pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); };
+  switch (mask) {
+    case "circle": ctx.arc(w / 2, h / 2, m / 2, 0, Math.PI * 2); break;
+    case "ellipse": ctx.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); break;
+    case "diagL": poly([[0, 0], [w, 0], [w * 0.78, h], [0, h]]); break; // sağ kenarı çapraz (çapraz bölmenin sol yarısı)
+    case "diagR": poly([[w * 0.22, 0], [w, 0], [w, h], [0, h]]); break; // sol kenarı çapraz (sağ yarı)
+    case "cut": { const c = m * 0.14; poly([[c, 0], [w - c, 0], [w, c], [w, h - c], [w - c, h], [c, h], [0, h - c], [0, c]]); break; }
+    case "hex": { const c = Math.min(w * 0.25, h * 0.5); poly([[c, 0], [w - c, 0], [w, h / 2], [w - c, h], [c, h], [0, h / 2]]); break; }
+    case "slantL": { const c = w * 0.1; poly([[c, 0], [w, 0], [w - c, h], [0, h]]); break; }
+    case "slantR": { const c = w * 0.1; poly([[0, 0], [w - c, 0], [w, h], [c, h]]); break; }
+    default: ctx.rect(0, 0, w, h);
+  }
+}
+
 /**
  * Bir katmanı çizer. opts: { placeholders, now, matchClockMs, override }
  * override: sürükleme sırasında yapılandırmaya yazılmamış kutu ({ x, y, w, h, crop, rot }).
@@ -245,7 +262,8 @@ export function drawLayer(ctx, layer, source, rt, W, H, opts = {}) {
   const k = W / 1920;
   if (L.opacity != null && L.opacity < 1) ctx.globalAlpha *= Math.max(0, L.opacity);
   const rad = L.radius > 0 ? Math.min(bw, bh) * Math.min(0.5, L.radius) : 0;
-  const shape = () => { ctx.beginPath(); if (rad && ctx.roundRect) ctx.roundRect(0, 0, bw, bh, rad); else ctx.rect(0, 0, bw, bh); };
+  const masked = Boolean(L.mask && L.mask !== "rect");
+  const shape = () => { ctx.beginPath(); if (masked) maskPath(ctx, L.mask, bw, bh); else if (rad && ctx.roundRect) ctx.roundRect(0, 0, bw, bh, rad); else ctx.rect(0, 0, bw, bh); };
   if (L.shadow?.blur > 0) {
     ctx.save();
     ctx.shadowColor = L.shadow.color || "#000";
@@ -256,7 +274,7 @@ export function drawLayer(ctx, layer, source, rt, W, H, opts = {}) {
     ctx.fill();
     ctx.restore();
   }
-  if (rad) { shape(); ctx.clip(); }
+  if (rad || masked) { shape(); ctx.clip(); }
   try {
     const kind = source.kind;
     if (kind === "color") drawColor(ctx, bw, bh, source, H);
@@ -298,9 +316,9 @@ export function drawLayer(ctx, layer, source, rt, W, H, opts = {}) {
   } catch { /* kare hazır değil */ }
   if (L.border?.width > 0) {
     const lw = Math.max(1, L.border.width * k);
-    ctx.lineWidth = rad ? lw * 2 : lw; // kırpılmış şekilde çizginin yarısı dışarıda kalır
+    ctx.lineWidth = rad || masked ? lw * 2 : lw; // kırpılmış şekilde çizginin yarısı dışarıda kalır
     ctx.strokeStyle = L.border.color || "#fff";
-    if (rad) { shape(); ctx.stroke(); } else ctx.strokeRect(lw / 2, lw / 2, bw - lw, bh - lw);
+    if (rad || masked) { shape(); ctx.stroke(); } else ctx.strokeRect(lw / 2, lw / 2, bw - lw, bh - lw);
   }
   ctx.restore();
 }
