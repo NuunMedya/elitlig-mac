@@ -7,6 +7,8 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
+// Yol beklentileri işletim sisteminin ayırıcısıyla (Windows CI'da "\\").
+const N = (p) => path.normalize(p);
 
 const paths = require("../fileTools/paths");
 const ffargs = require("../fileTools/ffargs");
@@ -31,20 +33,20 @@ test("sanitizeName: geçersiz karakterler, ayrılmış Windows adları, boş ad"
 });
 
 test("uniquePath: çakışmada (2), (3)…; aynı iş içindeki ayrılmış adlar da sayılır", () => {
-  const existing = new Set(["/o/foto.jpg", "/o/foto (2).jpg"]);
+  const existing = new Set([N("/o/foto.jpg"), N("/o/foto (2).jpg")]);
   const exists = (p) => existing.has(p);
-  assert.equal(paths.uniquePath("/o", "foto", "jpg", { exists }), "/o/foto (3).jpg");
+  assert.equal(paths.uniquePath("/o", "foto", "jpg", { exists }), N("/o/foto (3).jpg"));
   const taken = new Set();
-  assert.equal(paths.uniquePath("/o", "yeni", "png", { exists, taken }), "/o/yeni.png");
-  assert.equal(paths.uniquePath("/o", "yeni", "png", { exists, taken }), "/o/yeni (2).png");
-  assert.equal(paths.uniquePath("/o", "klasor", "", { exists }), "/o/klasor");
+  assert.equal(paths.uniquePath("/o", "yeni", "png", { exists, taken }), N("/o/yeni.png"));
+  assert.equal(paths.uniquePath("/o", "yeni", "png", { exists, taken }), N("/o/yeni (2).png"));
+  assert.equal(paths.uniquePath("/o", "klasor", "", { exists }), N("/o/klasor"));
 });
 
 test("outputPathFor: ek ve uzantı; orijinalin üstüne yazılmaz", () => {
-  const exists = (p) => p === "/d/video.mp4";
-  assert.equal(paths.outputPathFor({ input: "/d/video.mp4", suffix: "kirpildi", exists }), "/d/video-kirpildi.mp4");
-  assert.equal(paths.outputPathFor({ input: "/d/video.mp4", exists }), "/d/video (2).mp4");
-  assert.equal(paths.outputPathFor({ input: "/d/foto.heic", dir: "/out", ext: "jpg", exists }), "/out/foto.jpg");
+  const exists = (p) => p === N("/d/video.mp4");
+  assert.equal(paths.outputPathFor({ input: "/d/video.mp4", suffix: "kirpildi", exists }), N("/d/video-kirpildi.mp4"));
+  assert.equal(paths.outputPathFor({ input: "/d/video.mp4", exists }), N("/d/video (2).mp4"));
+  assert.equal(paths.outputPathFor({ input: "/d/foto.heic", dir: "/out", ext: "jpg", exists }), N("/out/foto.jpg"));
 });
 
 test("validateOutput: göreli yol, girdiyle aynı yol (büyük/küçük harf), var olan dosya", () => {
@@ -211,7 +213,7 @@ test("sips / ZIP / Ghostscript argümanları (kabuksuz; PowerShell yolları orta
   assert.deepEqual(native.sipsArgs("/a.heic", "/b.jpg", "jpg", { quality: 85 }), ["-s", "format", "jpeg", "-s", "formatOptions", "85", "/a.heic", "--out", "/b.jpg"]);
   assert.throws(() => native.sipsArgs("/a", "/b", "webp"), /yazamaz/);
   const mac = native.zipCommand({ inputs: ["/x"], output: "/o.zip", workDir: "/w", platform: "darwin" });
-  assert.deepEqual(mac.args, ["-c", "-k", "--sequesterRsrc", "/w/zip-staging", "/o.zip"]);
+  assert.deepEqual(mac.args, ["-c", "-k", "--sequesterRsrc", N("/w/zip-staging"), "/o.zip"]);
   const win = native.zipCommand({ inputs: ["C:\\a b\\c'd.txt"], output: "C:\\o.zip", workDir: "C:\\w", platform: "win32", env: { SystemRoot: "C:\\Windows" } });
   assert.ok(!win.args.join(" ").includes("c'd.txt"), "yol komut metnine girmez");
   assert.deepEqual(JSON.parse(win.env.ELITLIG_ARGS), { src: ["C:\\a b\\c'd.txt"], dest: "C:\\o.zip" });

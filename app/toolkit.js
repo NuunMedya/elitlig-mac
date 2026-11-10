@@ -333,7 +333,7 @@ function registerDeskkit(deps) {
 
   applyShortcuts();
   // Windows: PowerShell yardımcısı açılışta ısıtılır (ilk kısayolda Add-Type beklenmesin).
-  if (platform === "win32" && settings.layouts.enabled) setTimeout(() => wm.warm().catch(() => {}), 8000);
+  if (platform === "win32" && settings.layouts.enabled) setTimeout(() => wm.warm().catch(() => {}), 8000).unref?.();
   app.on("will-quit", () => { unregisterOurs(); wm.dispose(); if (awake.id != null) { try { powerSaveBlocker.stop(awake.id); } catch { /* yoksay */ } } });
 
   /* ------------------------------ menüler ------------------------------ */

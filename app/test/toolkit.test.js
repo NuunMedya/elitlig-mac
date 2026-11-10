@@ -137,6 +137,8 @@ test("döviz: ağ yoksa ve önbellek boşsa açıklayıcı hata; önbellek varsa
     BrowserWindow: { getFocusedWindow: () => null }, screen: { getAllDisplays: () => [] }, systemPreferences: {}, shell: {},
     net: { fetch: async () => { throw new Error("çevrimdışı"); } },
     loadRenderer: () => {}, webPreferences: () => ({}), guardNavigation: () => {}, showMain: () => {}, showQuick: () => {}, getMainWindow: () => null, broadcast: () => {},
+    // Platform sabitlenir: Windows CI'da gerçek PowerShell yardımcısı açılıp testi asılı bırakmasın.
+    isMac: true, platform: "darwin",
   });
   const cached = await handlers.get("deskkit:rates")({}, false);
   assert.equal(cached.ok, true);
