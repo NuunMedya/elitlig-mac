@@ -63,7 +63,7 @@ export function drawTicker(ctx, E, snap) {
   const w = W - TICKER_BAR.side * 2;
   const h = TICKER_BAR.h;
   const y = E.H - TICKER_BAR.bottom - h;
-  const phase = rotationPhase({ mode: st.mode, rotate: st.rotate, hasSponsor: Boolean(st.sponsor), everyMin: st.everyMin, seconds: st.seconds, now: E.now, epoch: st.epoch });
+  const phase = rotationPhase({ mode: st.mode, rotate: st.rotate, hasSponsor: Boolean(st.sponsor), everyMin: st.everyMin, seconds: st.seconds, now: E.now, epoch: st.rotateEpoch || st.epoch });
   const sponsor = phase.onSponsor ? st.sponsor : null;
 
   // Yüklenmiş alt bant görseli: şeridin tamamının yerine.

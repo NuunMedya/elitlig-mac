@@ -104,7 +104,7 @@ describe("grafik paketleri · uygula", () => {
     expect(packageServerBranding(builtinPackage("minimal-beyaz"), cur).extras.textColor).toBe("#ffffff");
   });
   it("anlık görüntü: gömülü yazı tipi, köşe, stinger renkleri, öğe başına marka, sponsor rengi", () => {
-    const sponsorSnap = baseSnap({ sponsors: [{ id: 3, name: "S", brandColor: "#00ff00", images: {} }], subtitle: { onAir: true, settings: { sponsorId: 3 }, epoch: now } });
+    const sponsorSnap = baseSnap({ sponsors: [{ id: 3, name: "S", brandColor: "#00ff00", images: {}, placements: ["subtitle"] }], subtitle: { onAir: true, settings: { sponsorId: 3 }, epoch: now } });
     const s = applyPackageToSnapshot(sponsorSnap, builtinPackage("minimal-beyaz"));
     expect(s.package).toEqual({ id: "minimal-beyaz", name: "Minimal Beyaz" });
     expect(s.branding.fontFamily).toMatch(/^"Inter"/);

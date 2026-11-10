@@ -288,13 +288,32 @@ describe("yayın grafikleri · drawGraphics", () => {
         const snap = buildGraphicsSnapshot(live, {
           branding: SAMPLE_CCL_CUP, variant: v.key, variantSince: now - 2000, now,
           subtitle: { onAir: true, settings: { message: "Merhaba", customHeadlines: [{ tag: "T", text: "Satır" }], sponsorId: 1, rotateSponsor: true }, epoch: now - 1000 },
-          sponsors: [{ id: 1, name: "Sponsor", images: {} }],
+          sponsors: [{ id: 1, name: "Sponsor", images: {}, placements: ["subtitle", "interview"] }],
           interview: { onAir: true, style, people: [{ name: "Ali", side: "home" }], sponsorId: 1 },
         });
         expect(() => drawGraphics(ctx, { width: 1920, height: 1080, now }, snap)).not.toThrow();
       }
     }
     expect(ctx.calls.fillText).toBeGreaterThan(100);
+  });
+  it("sponsor yalnızca seçili görünüm yerinde çizilir; dönüşüm sunucu başlangıcından sayılır", () => {
+    const sponsors = [{ id: 1, name: "Sponsor", images: {}, placements: ["lower_third"] }];
+    const snap = buildGraphicsSnapshot(liveFixture(), {
+      now,
+      sponsors,
+      subtitle: { onAir: true, settings: { sponsorId: 1, rotateSponsor: true, rotateSince: new Date(now - 5000).toISOString() }, epoch: now },
+      interview: { onAir: true, sponsorId: 1, people: [] },
+    });
+    expect(snap.subtitle.sponsor).toBeNull();
+    expect(snap.interview.sponsor).toBeNull();
+    expect(snap.subtitle.rotateEpoch).toBe(now - 5000);
+    const ok = buildGraphicsSnapshot(liveFixture(), {
+      now,
+      sponsors: [{ ...sponsors[0], placements: ["subtitle"] }],
+      subtitle: { onAir: true, settings: { sponsorId: 1 }, epoch: now },
+    });
+    expect(ok.subtitle.sponsor).not.toBeNull();
+    expect(ok.subtitle.rotateEpoch).toBe(0);
   });
   it("Gizli çeşit ve kapalı katmanlar hiçbir şey çizmez; snapshot yoksa sessiz", () => {
     const ctx = fakeCtx();

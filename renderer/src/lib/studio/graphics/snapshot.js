@@ -122,7 +122,11 @@ export function buildGraphicsSnapshot(live, opts = {}) {
   const score = live?.score || { home: Number(m.first_team_score) || 0, away: Number(m.second_team_score) || 0 };
   const scorers = scorerLines(live?.events || [], ctx);
   const sponsors = opts.sponsors || [];
-  const sponsorById = (id) => drawSponsor(sponsors.find((s) => Number(s.id) === Number(id)));
+  // Sunucu (getPublicState) sponsoru yalnızca o görünüm yeri seçiliyse çizer;
+  // program çıkışı da aynı kuralı izlesin (yeri kaldırılan sponsor bant olmasın).
+  const sponsorById = (id, placement) => drawSponsor(sponsors.find((s) =>
+    Number(s.id) === Number(id) && (!placement || (Array.isArray(s.placements) && s.placements.includes(placement)))
+  ));
 
   const sub = opts.subtitle || {};
   const settings = sub.settings || {};
@@ -172,8 +176,10 @@ export function buildGraphicsSnapshot(live, opts = {}) {
       rotate: Boolean(settings.rotateSponsor),
       everyMin: settings.rotateEveryMin || 15,
       seconds: settings.sponsorSeconds || 15,
-      sponsor: settings.sponsorId ? sponsorById(settings.sponsorId) : null,
+      sponsor: settings.sponsorId ? sponsorById(settings.sponsorId, "subtitle") : null,
       epoch: sub.epoch || 0,
+      // Sponsor dönüşümünün sunucudaki başlangıcı: OBS kaplaması ile aynı anda döner.
+      rotateEpoch: settings.rotateSince ? new Date(settings.rotateSince).getTime() || 0 : 0,
     },
     interview: {
       onAir: Boolean(iv.onAir),
@@ -186,7 +192,7 @@ export function buildGraphicsSnapshot(live, opts = {}) {
         team: p.teamName || p.team || (p.side === "home" ? homeName : p.side === "away" ? awayName : ""),
         image: p.image || "",
       })),
-      sponsor: iv.sponsorId ? sponsorById(iv.sponsorId) : null,
+      sponsor: iv.sponsorId ? sponsorById(iv.sponsorId, "interview") : null,
       since: iv.since || 0,
     },
   };

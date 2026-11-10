@@ -215,6 +215,8 @@ function SponsorTile({ ctx, w, h }) {
   const off = () => desk.save({ onAir: null }, "Sponsor yayından kaldırıldı.");
   const next = () => { if (!list.length) return; const s = list[spMem.i % list.length]; spMem.i += 1; show(s); };
   const rot = Boolean(g.subtitle?.settings?.rotateSponsor);
+  // Dönüşüm altyazı sponsoru olmadan çalışmaz (sunucu da reddeder).
+  const canRotate = rot || Boolean(g.subtitle?.settings?.sponsorId);
   if (w === 1 && h === 1) {
     return (
       <Shell as="button" tone="amber" w={w} h={h} state={cur ? "air" : null} className="wx-tile" disabled={!list.length || desk.saving} onClick={() => (cur ? off() : next())}>
@@ -232,7 +234,7 @@ function SponsorTile({ ctx, w, h }) {
       {h >= 2 && (
         <div className="wx-row is-dur">
           <select value={dur} onChange={(e) => setDur(e.target.value)} aria-label="Ekranda kalma süresi">{DURATION_CHOICES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select>
-          <button type="button" className={rot ? "is-on" : ""} onClick={() => g.setSubtitleSettings?.({ rotateSponsor: !rot }, rot ? "Sponsor dönüşümü kapandı." : "Altyazı sponsorla dönüşümlü.")} title="Altyazı şeridi sponsorla dönüşümlü">DÖNÜŞÜM</button>
+          <button type="button" className={rot ? "is-on" : ""} disabled={!canRotate} onClick={() => g.setSubtitleSettings?.({ rotateSponsor: !rot }, rot ? "Sponsor dönüşümü kapandı." : "Altyazı sponsorla dönüşümlü.")} title={canRotate ? "Altyazı şeridi sponsorla dönüşümlü" : "Önce Yönet → Altyazı'dan altyazı sponsoru seçin"}>DÖNÜŞÜM</button>
           {cur && <button type="button" className="is-off" onClick={off}>KALDIR</button>}
         </div>
       )}
