@@ -9,6 +9,7 @@ import { resolveBranding } from "./branding";
 import { buildTickerBlocks } from "./ticker";
 import { normalizeVariant } from "./variants";
 import { normalizeVisibility } from "./visibility";
+import { panoramaImageUrls } from "../panorama/model"; // [panorama]
 
 export const GOAL_DETAIL = {
   GOAL_RIGHT_FOOT: "SAĞ AYAK", GOAL_LEFT_FOOT: "SOL AYAK", GOAL_LONG_RIGHT: "UZAKTAN", GOAL_LONG_LEFT: "UZAKTAN",
@@ -201,6 +202,7 @@ export function buildGraphicsSnapshot(live, opts = {}) {
 /** Snapshot'taki tüm görsel adresleri (önceden yükleme için). */
 export function snapshotImageUrls(snap) {
   if (!snap) return [];
+  if (snap.panorama) return panoramaImageUrls(snap.panorama); // [panorama]
   const out = [snap.branding?.logoUrl, snap.logos?.home, snap.logos?.away, snap.subtitle?.sponsor?.logo, snap.subtitle?.sponsor?.lowerThird, snap.interview?.sponsor?.logo];
   (snap.interview?.people || []).forEach((p) => out.push(p.image));
   if (String(snap.variant || "").startsWith("lineups")) [...(snap.lineups?.home || []), ...(snap.lineups?.away || [])].forEach((r) => out.push(r.image));
