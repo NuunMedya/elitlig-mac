@@ -58,7 +58,7 @@ export default function Accounting({ arg }) {
       </nav>
       {current === "accounts" && <Accounts accountsRes={accountsRes} />}
       {current === "personal" && <Personal arg={ARG_SECTIONS[arg] ? undefined : arg} {...shared} />}
-      {current === "recurring" && <Recurring {...shared} startBalance={personalBalance} />}
+      {current === "recurring" && <Recurring {...shared} startBalance={personalBalance} onBalanceChange={() => accountsRes.reload({ quiet: true })} />}
       {current === "budget" && <Budget />}
       {current === "match" && <MatchBook {...shared} cities={d?.cities || []} nationwide={Boolean(d?.access?.city?.nationwide)} />}
       {current === "national" && <National {...shared} />}

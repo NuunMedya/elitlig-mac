@@ -29,13 +29,14 @@ const blankItem = (kind = "bill") => ({
   method: "bank", account_id: "", frequency: "monthly", start_date: isoDay(), end_date: "", total_count: "", reminder_days: 3, subscriber_no: "", note: "", active: true,
 });
 
-export default function Recurring({ accounts = [], startBalance = null, onTransfer, onManageAccounts }) {
+export default function Recurring({ accounts = [], startBalance = null, onTransfer, onManageAccounts, onBalanceChange }) {
   const [month, setMonth] = useState(currentMonth());
   const [tab, setTab] = useState(() => localStorage.getItem("recurring:tab") || "calendar");
   const [editing, setEditing] = useState(null);
   const [paying, setPaying] = useState(null);
   const [filter, setFilter] = useState({ kind: "", status: "active", query: "" });
-  const [opening, setOpening] = useState(null);
+  // Başlangıç bakiyesi yazılırken metin olarak tutulur ("12," ya da "-" ara değerleri silinmesin).
+  const [openingText, setOpeningText] = useState(null);
   const result = useResult();
   const confirm = useConfirm();
   const data = useResource("/api/tools/recurring", { month });
@@ -51,6 +52,7 @@ export default function Recurring({ accounts = [], startBalance = null, onTransf
       && (filter.status === "all" || (filter.status === "active" ? i.active : !i.active))
       && (!q || [i.name, i.party, i.subscriber_no, i.note].filter(Boolean).join(" ").toLocaleLowerCase("tr-TR").includes(q)));
   }, [items, filter]);
+  const opening = openingText == null ? null : parseAmount(openingText);
   const flow = useMemo(() => withBalance(d?.forecast || [], opening ?? startBalance ?? 0), [d, opening, startBalance]);
 
   const chooseTab = (v) => { setTab(v); try { localStorage.setItem("recurring:tab", v); } catch { /* yoksay */ } };
@@ -58,12 +60,14 @@ export default function Recurring({ accounts = [], startBalance = null, onTransf
   useCommand("new", () => setEditing(blankItem("bill")));
   useCommand("export", () => exportCsv());
 
-  const run = async (promise, message) => { if (result(await promise, message)) reload(); };
+  // Ödeme / tahsilat / geri alma hesap bakiyesini değiştirir: hesaplar da tazelenir
+  // (nakit akışının başlangıç bakiyesi ve üstteki hesap şeridi onlardan gelir).
+  const run = async (promise, message, { balance = false } = {}) => { if (result(await promise, message)) { reload(); if (balance) onBalanceChange?.(); } };
   const onSkip = (o, undo = false) => run(post(`/api/tools/recurring/${o.recurring_id}/skip`, { period: o.period, undo }, { queue: false }), undo ? "Atlama geri alındı." : `${o.period_label} atlandı.`);
-  const onSettle = (o) => run(patch(`/api/tools/ledger/${o.entry_id}`, { status: "paid", entry_date: isoDay() }), o.type === "income" ? "Tahsil edildi." : "Ödendi.");
+  const onSettle = (o) => run(patch(`/api/tools/ledger/${o.entry_id}`, { status: "paid", entry_date: isoDay() }), o.type === "income" ? "Tahsil edildi." : "Ödendi.", { balance: true });
   const onUndo = async (o) => {
     if (!(await confirm({ title: "İşlemi geri al", message: `${o.name} · ${o.period_label}: Ön Muhasebe'deki kayıt silinir.`, confirmLabel: "Geri al", danger: true }))) return;
-    run(del(`/api/tools/ledger/${o.entry_id}`), "İşlem geri alındı.");
+    run(del(`/api/tools/ledger/${o.entry_id}`), "İşlem geri alındı.", { balance: true });
   };
   const toggle = (i) => run(patch(`/api/tools/recurring/${i.id}`, { active: !i.active }), i.active ? "Durduruldu; yeni dönem açılmaz." : "Yeniden etkinleştirildi.");
   const remove = async (i) => {
@@ -193,9 +197,9 @@ export default function Recurring({ accounts = [], startBalance = null, onTransf
             <p className="muted small rec-flow__note">Önümüzdeki 6 ay: işlenmemiş düzenli ödemeler + Ön Muhasebe'deki vadeli alacak ve borçlar. Geciken tutarlar bu aya yazılır.</p>
             <span className="spacer" />
             <label className="rec-flow__start">Başlangıç bakiyesi
-              <input inputMode="decimal" className="select-sm" value={moneyInput(opening ?? startBalance ?? 0)} onChange={(e) => setOpening(parseAmount(e.target.value))} aria-label="Başlangıç bakiyesi" />
+              <input inputMode="decimal" className="select-sm" value={openingText ?? moneyInput(startBalance ?? 0)} onChange={(e) => setOpeningText(e.target.value)} aria-label="Başlangıç bakiyesi" />
             </label>
-            {opening != null && startBalance != null && <button type="button" className="btn btn--xs btn--soft" onClick={() => setOpening(null)}>Kişisel hesaplar</button>}
+            {openingText != null && startBalance != null && <button type="button" className="btn btn--xs btn--soft" onClick={() => setOpeningText(null)}>Kişisel hesaplar</button>}
           </div>
           <div className="rec-flow">
             {flow.map((m) => {
@@ -231,7 +235,7 @@ export default function Recurring({ accounts = [], startBalance = null, onTransf
       )}
 
       {editing && <RecurringEditor item={editing} accounts={postable} onClose={() => setEditing(null)} onDelete={remove} onSaved={() => { setEditing(null); reload(); }} />}
-      {paying && <PayDialog occurrence={paying.o} item={items.find((i) => i.id === paying.o.recurring_id)} mode={paying.mode} accounts={postable} onClose={() => setPaying(null)} onSaved={() => { setPaying(null); reload(); }} />}
+      {paying && <PayDialog occurrence={paying.o} item={items.find((i) => i.id === paying.o.recurring_id)} mode={paying.mode} accounts={postable} onClose={() => setPaying(null)} onSaved={(status) => { setPaying(null); reload(); if (status === "paid") onBalanceChange?.(); }} />}
     </div>
   );
 }
@@ -362,7 +366,7 @@ function PayDialog({ occurrence: o, item, mode, accounts, onClose, onSaved }) {
       document_no: form.document_no, note: form.note, method: form.method, account_id: form.account_id ? Number(form.account_id) : null,
     }, { queue: false });
     setBusy(false);
-    if (result(res, form.status === "paid" ? "İşlendi; Ön Muhasebe'ye kaydedildi." : "Ödenecek olarak Ön Muhasebe'ye kaydedildi.")) onSaved();
+    if (result(res, form.status === "paid" ? "İşlendi; Ön Muhasebe'ye kaydedildi." : "Ödenecek olarak Ön Muhasebe'ye kaydedildi.")) onSaved(form.status);
   };
 
   return (
