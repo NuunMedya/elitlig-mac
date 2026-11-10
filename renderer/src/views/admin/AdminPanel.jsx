@@ -9,6 +9,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Empty, Icon, Spinner, keyLabel, useToast } from "../../components/ui";
 import "./admin.css";
+import { markPrintHandled } from "../../lib/export/exportRegistry";
 
 const COVER_SELECTOR = ".modal-backdrop, .palette-backdrop, .menu__list, .ft-wheel-backdrop, [data-admin-cover]";
 
@@ -104,7 +105,7 @@ export default function AdminPanel({ arg }) {
   // Menü komutları: ⌘R yenile, ⌘P yazdır, ⌘F bul.
   useEffect(() => window.elitlig.onCommand((cmd) => {
     if (cmd === "refresh") admin.command("reload");
-    if (cmd === "print") admin.command("print");
+    if (cmd === "print") { markPrintHandled(); admin.command("print"); }
     if (cmd === "find") { setFind((f) => f || { text: "" }); setTimeout(() => findRef.current?.focus(), 30); }
   }), [admin]);
 

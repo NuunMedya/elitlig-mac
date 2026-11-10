@@ -24,7 +24,7 @@ export async function deliverExport(out) {
   const bridge = window.elitlig;
   if (!bridge) return { ok: false, error: { message: "Masaüstü köprüsü yok." } };
   if (out.format === "pdf") {
-    const res = await bridge.pdf(out.html, out.fileName.replace(/\.pdf$/i, ""), { landscape: out.prepared?.orientation === "landscape", preferCSSPageSize: true });
+    const res = await bridge.pdf(out.html, out.fileName.replace(/\.pdf$/i, ""), { landscape: out.prepared?.orientation === "landscape", preferCSSPageSize: true, pageSize: out.design?.pageSize || "A4" });
     return res || { ok: false };
   }
   const res = await bridge.files.save(out.fileName, out.data, [{ name: FILTER_NAMES[out.format] || out.ext.toUpperCase(), extensions: [out.ext] }]);

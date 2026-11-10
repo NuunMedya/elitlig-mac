@@ -44,7 +44,7 @@ export default function Personal({ arg, argSeq, accounts = [], onTransfer, onMan
   useCommand("new", () => setEditing({ draft: { type: "expense" } }));
   useCommand("find", () => searchRef.current?.focus());
   useCommand("export", () => exportXlsx());
-  useCommand("print", () => printReport(false));
+  // ⌘P: yazdırma stüdyosu (ExportButton "ledger", lib/export/exportRegistry) açılır.
 
   const setPeriodSaved = (v) => { setPeriod(v); try { localStorage.setItem("ledger:period", v); } catch { /* yoksay */ } };
   const periodLabel = PERIODS.find((p) => p.key === period)?.label || "";
