@@ -9,7 +9,7 @@ uygulamada görünür.
 
 | Kısayol | Araç | Uygulamada |
 | --- | --- | --- |
-| ⇧⌘A | **Araç Takımı** | Kenar çubuğunda en üstte: pencere düzeni, dünya saatleri, sayaç, hızlı hesap ve döviz, **yüzde / KDV**, **tarih farkı / iş günü / geri sayım**, metin dönüştürücü, **emoji ve özel karakter** (ğ ş İ ₺ © ⚽), **dolgu metni**, renk, QR, parola, **JSON biçimlendirici**, **Base64 / URL / HTML**, **UUID**; hızlı not / görev, ekran görüntüsü, pano rafı, ekranı uyanık tut, müzik; **masaüstü widget galerisi**. Aynı araçlar her yerden açılan küçük panelde (Mac ⌃⌥B, Windows Ctrl+Alt+Boşluk) ve menü çubuğu simgesinde |
+| ⇧⌘A | **Araç Takımı** (birleşik) | Kenar çubuğunda **tek giriş**: Dosya Araçları, Ekran Görüntüleri ve Pano, Hesap Araçları, Odak Sayacı, Müzik, Widget'lar ve Masaüstü ayarları birleşik menünün bölümleri; araç ara / komut satırı (`kdv 1500`, `çevir 100 usd`, `kura ahmet, ali`), sabitlenenler, son kullanılanlar; **yeni araçlar**: fikstür, turnuva ağacı, puan durumu, skorbord / maç sayacı, kura, dengeli takım, ödeme bölüştürme, kadro listesi, oylama, brüt ↔ net maaş (2026), fatura / stopaj / tevkifat, kredi, metin karşılaştırma, Markdown, toplantı notu, CSV ↔ JSON, regex, MD5 / SHA, IBAN, T.C. kimlik, telefon, saat dilimi, kronometre, çoklu geri sayım, logodan palet, toplu QR, barkod, yazı tipi, sosyal medya boyutları, ağ (IP, ping, DNS, hız testi), sistem ve pil (bkz. *Birleşik Araç Takımı*). Ayrıca: pencere düzeni, dünya saatleri, sayaç, hızlı hesap ve döviz, **yüzde / KDV**, **tarih farkı / iş günü / geri sayım**, metin dönüştürücü, **emoji ve özel karakter** (ğ ş İ ₺ © ⚽), **dolgu metni**, renk, QR, parola, **JSON biçimlendirici**, **Base64 / URL / HTML**, **UUID**; hızlı not / görev, ekran görüntüsü, pano rafı, ekranı uyanık tut, müzik; **masaüstü widget galerisi**. Aynı araçlar her yerden açılan küçük panelde (Mac ⌃⌥B, Windows Ctrl+Alt+Boşluk) ve menü çubuğu simgesinde |
 | ⇧⌘M | **Mesajlar** | WhatsApp düzeninde ekip mesajlaşması: takım başkanları, oyuncular, üyeler ve yönetimdeki arkadaşlarla birebir sohbet ya da karışık gruplar; okundu tikleri, yanıtla, tepki, ilet, yıldızla, sabitle, düzenle, sil; fotoğraf (albüm ve görüntüleyici), belge, sesli mesaj, anket, konum; yönetim için **hazır içerikler**: günün maçları kartı, “Ben talibim” spiker / reji görev anketi (talip ol, görevlendir), Haftanın Enleri aday anketi; @bahsetme, taslaklar, sohbette ve tüm sohbetlerde arama; grup ve kişi bilgisi, medya-belgeler-bağlantılar; canlı bağlantı, yazıyor…, çevrimiçi / son görülme; yeni mesajda Mac bildirimi; çevrimdışı yazılan metin bağlantı gelince gider. **Üye mesajları** (messages.view): takım, oyuncu ve üyelerin “ElitLig Yönetimi” sohbetleri ortak gelen kutusu olarak aynı ekranda (Takımlar / Oyuncular / Üyeler), yanıt ElitLig Yönetimi adına; **Kayıtlar** (arama kayıtları, messages.calls_view) |
 | ⇧⌘T | **Talepler** | Onay merkezi: profil değişikliği, sahiplenme, yeni üye, transfer, kadro onayı, maç talebi, savunma… kategori sekmeleri (açık talep sayılarıyla), Bekleyen / Bilgilendirme / Sonuçlanan, arama; kartta kim (takım kartı / üye kartı), il, zaman; **Onayla / Reddet** (onay penceresiyle, talep kendiliğinden kapanır), site sayfası düğmeleri, İlgili sayfa, Kapat; yeni talep anında listeye düşer, pencere arka plandaysa Mac bildirimi |
 | ⌘1 | **Bugün** | Bekleyen talepler kartı (kategori kısa yolları), gecikmiş ve bugünkü işler, önümüzdeki 7 gün, bu ayın gelir-gideri, son notlar, odak istatistiği; tek satırda görev ekleme |
@@ -21,12 +21,12 @@ uygulamada görünür.
 | ⌘5 | **Muhasebe** | Altı bölüm: **Hesaplar ve Virman** (kasa/banka/kart ve ortak/proje hesapları, hesaba doğrudan gelir/gider — tahmin, bekliyor, ödendi —, defterlere bağlı canlı bakiye, **hesap bazlı yetki** (kullanıcı, rol ya da proje ekibi: görüntüler / kayıt girer / yönetir), hesaplar ve defterler arası virman, ekstre); **Ön Muhasebe** (kişisel gelir-gider, kayıt girerken hesap seçimi, KDV, cari, vade takibi, Excel/CSV/PDF); **Düzenli Ödemeler** (fatura, maaş, kira, abonelik, kredi taksiti, vergi/SGK, sigorta ve düzenli gelirler: ödeme takvimi, öde / fatura geldi / atla, gecikenler, 6 aylık nakit akışı, vade bildirimleri); **Bütçe** (kategori başına aylık limit, gerçekleşen ve bekleyen, 3 ay ortalaması, bütçesiz harcamalar); **Maç Muhasebesi** (il defteri: maç maç gelir/gider kutucukları, genel kayıtlar, raporlar, personel ödemeleri, takım tahsilatları, eksikler, ayarlar); **Türkiye Geneli** (illerden tahakkuk, tahsilat, ek kalem, tutar düzeltme, maç başı ücret tarifeleri) |
 | ⌘6 | **Tablolar** | Formüllü hesap tablosu (TOPLA, EĞER, DÜŞEYARA, ETOPLA…), çoklu sayfa, biçimlendirme, sıralama, doldurma, satır/sütun işlemleri; Excel/CSV içe ve dışa aktarma; paylaşım ve eşzamanlı düzenlemede otomatik birleştirme |
 | ⌘7 | **Rehber** | **Takımlar**: takım adı öne çıkan takım rehberi (il, lig, sezon, G-B-M, maç sayısı, başkanlar, hesaplı oyuncu / kadro, iletişimi olanlar; il, arama, sıralama), takım kartı (başkanlar, kadro, sezonlar, son ve gelecek maçlar; ara, WhatsApp, e-posta, Mesajlar'da yaz, rehberime ekle, takımla grup kur, takımı `.vcf` / CSV, telefonları kopyala). **Kişiler**: siteye kaydolan üyeler ve elle eklenen kişiler tek listede, takım rozeti ve takıma göre gruplama; Üye / Oyuncu / Takım başkanı / Yönetim / Manuel / Favoriler; üyeye kişisel not ve favori; arama, WhatsApp, e-posta, Mesaj gönder; `.vcf` ve CSV |
-| ⌘8 | **Hesap Araçları** | Hesap makinesi (geçmişiyle), KDV, yüzde, iskonto zinciri, masraf bölüştürme, taksit, tarih farkı |
-| ⌘9 | **Odak Sayacı** | Pomodoro, geri sayım, kronometre; maç süresi için hızlı geri sayım |
-| ⇧⌘J | **Müzik** | Uygulama geneli müzik çalar: YouTube bağlantıları ve oynatma listeleri, yerel ses dosyaları (mp3 / m4a / wav, sürükle-bırak), karıştır / tekrarla, geçiş, uyku zamanlayıcısı, kuyruk, arama; kenar çubuğunda mini çalar, menü çubuğu, araç takımı ve medya tuşlarıyla denetim; görünüm değişince susmaz |
-| ⌘, | **Masaüstü araçları** | Araç takımı paneli (Mac ⌃⌥B, Windows Ctrl+Alt+Boşluk), widget'ları göster / gizle (⌃⌥W), Magnet benzeri pencere yerleştirme kısayolları (kaydet / kapat / varsayılan), Erişilebilirlik izni, medya tuşları, stüdyo kuralı, ekranı uyanık tut |
-| ⇧⌘D | **Dosya Araçları** | Sürükle-bırak / seç / yapıştır, çark ya da kutucuk menüsüyle **Dönüştür · Araçlar · Dosya işlemleri**: görsel (JPG/PNG/WEBP/HEIC/TIFF/BMP/GIF, boyut, döndür, kırp, sıkıştır, ayarlar, işaretle, sansür, çerçeve, kolaj, meta veri temizle, PDF), ses/video (dönüştür, kırp, sıkıştır, hız, sessiz, ses ayıkla, birleştir, böl, kare, normalize, çözünürlük, GIF), PDF (birleştir, böl, sayfa sırala/döndür/sil, sıkıştır), ZIP, SRT↔VTT, metin kodlaması, toplu yeniden adlandırma; iş kuyruğu, son 50 iş, **Float** rafı. Her şey bu bilgisayarda |
-| ⇧⌘P | **Ekran Görüntüleri ve Pano** | Ekran görüntüleri ve kopyalanan görsel / metin / bağlantılar için üç raf (⌃⌥T) ve kütüphane: ızgara/liste, sanal klasörler, etiketler, sabitleme, arama, saklama süresi, çöp kutusu, dışa aktarma, başka uygulamaya sürükleme, önizleme, işaretleme ve kırpma, ekran yakalama (⌃⌥A) |
+| ⌘8 | Araç Takımı › **Hesap Araçları** | Hesap makinesi (geçmişiyle), KDV, yüzde, iskonto zinciri, masraf bölüştürme, taksit, tarih farkı |
+| ⌘9 | Araç Takımı › **Odak Sayacı** | Pomodoro, geri sayım, kronometre; maç süresi için hızlı geri sayım |
+| ⇧⌘J | Araç Takımı › **Müzik** | Uygulama geneli müzik çalar: YouTube bağlantıları ve oynatma listeleri, yerel ses dosyaları (mp3 / m4a / wav, sürükle-bırak), karıştır / tekrarla, geçiş, uyku zamanlayıcısı, kuyruk, arama; kenar çubuğunda mini çalar, menü çubuğu, araç takımı ve medya tuşlarıyla denetim; görünüm değişince susmaz |
+| ⌘, | Araç Takımı › **Masaüstü araçları** | Araç takımı paneli (Mac ⌃⌥B, Windows Ctrl+Alt+Boşluk), widget'ları göster / gizle (⌃⌥W), Magnet benzeri pencere yerleştirme kısayolları (kaydet / kapat / varsayılan), Erişilebilirlik izni, medya tuşları, stüdyo kuralı, ekranı uyanık tut |
+| ⇧⌘D | Araç Takımı › **Dosya Araçları** | Sürükle-bırak / seç / yapıştır, çark ya da kutucuk menüsüyle **Dönüştür · Araçlar · Dosya işlemleri**: görsel (JPG/PNG/WEBP/HEIC/TIFF/BMP/GIF, boyut, döndür, kırp, sıkıştır, ayarlar, işaretle, sansür, çerçeve, kolaj, meta veri temizle, PDF), ses/video (dönüştür, kırp, sıkıştır, hız, sessiz, ses ayıkla, birleştir, böl, kare, normalize, çözünürlük, GIF), PDF (birleştir, böl, sayfa sırala/döndür/sil, sıkıştır), ZIP, SRT↔VTT, metin kodlaması, toplu yeniden adlandırma; iş kuyruğu, son 50 iş, **Float** rafı. Her şey bu bilgisayarda |
+| ⇧⌘P | Araç Takımı › **Ekran Görüntüleri ve Pano** | Ekran görüntüleri ve kopyalanan görsel / metin / bağlantılar için üç raf (⌃⌥T) ve kütüphane: ızgara/liste, sanal klasörler, etiketler, sabitleme, arama, saklama süresi, çöp kutusu, dışa aktarma, başka uygulamaya sürükleme, önizleme, işaretleme ve kırpma, ekran yakalama (⌃⌥A) |
 | ⇧⌘L | **Yönetim paneli** | elitlig.com yönetim panelinin **tamamı** uygulama içinde, ayrı giriş istemeden: maçlar, toplu düzenleme, saha planlama, personel, ligler, sezonlar, puan durumu, kura, kurallar, takımlar, kadrolar, oyuncular, transferler, piyasa değeri, disiplin, haberler, içerik havuzu, panorama, sponsorlar, üyeler, yönetim kullanıcıları, yetkiler, şehirler, analizler, işlem kayıtları… Kenar çubuğunda Yönetim bölümleri, ⌘K'da tüm yönetim sayfaları ve maç / oyuncu / takım araması, menü çubuğunda **Yönetim** menüsü |
 
 ## Web sitesinde olmayan masaüstü özellikleri
@@ -379,9 +379,32 @@ ortalaması ve bütçesi olmayan harcamalar (tek tıkla “Bütçe koy”) göst
 Sunucu tarafı `elitlig-server` 'da (`/api/tools/recurring`, `/api/tools/budgets`); web sitesinde de
 aynı bölümler vardır.
 
+## Birleşik Araç Takımı
+
+Kenar çubuğunda tek **Araç Takımı** girişi (⇧⌘A). Solda iç gezinme: **araç ara / komut** (`/` ile odaklanır),
+**Sabitlenenler** (kartlardaki ☆; panelde de sekme olur), **Bölümler** (Dosya Araçları ⇧⌘D, Ekran Görüntüleri ve
+Pano ⇧⌘P, Hesap Araçları ⌘8, Odak Sayacı ⌘9, Müzik ⇧⌘J), **Araçlar** (kategoriler) ve **Masaüstü** (Widget'lar,
+Ayarlar ⌘,). Eski kısayollar ve menü öğeleri ilgili bölümü açar; Görünüm menüsündeki bu bölümler uygulama
+menüsündeki **Araç Takımı** menüsüne taşındı (aynı kısayollarla). ⌘K'da her araç "Araç Takımı" grubunda aranır.
+
+| Kategori | Araçlar |
+|---|---|
+| Lig ve organizasyon | Fikstür (round-robin, BAY, rövanş, tarihler), turnuva ağacı (seribaşı, BAY, tıkla-ilerlet), puan durumu (sonuç yapıştır → tablo, averaj, ikili averaj, form), skorbord / maç sayacı (devre, uzatma, tam ekran), kura (kişi seç, sırala, gruplara böl), dengeli takım bölücü, ödeme / maliyet bölüştürme (hakem payları, kişi başı saha ücreti), kadro listesi biçimlendirici (numara çakışması), oylama sayacı |
+| Hesap ve finans | Hızlı hesap ve döviz, yüzde / KDV, **brüt ↔ net maaş 2026** (kümülatif dilim, SGK tavanı, asgari ücret istisnası; parametre tablosu kaynaklı ve düzenlenebilir, işveren payı "tahmini"), fatura / serbest meslek (KDV, stopaj, tevkifat), kredi / taksit (BSMV, KKDF, ödeme planı) |
+| Metin ve belge | Metin dönüştürücü, karşılaştırma (satır / sözcük), Markdown önizleme (HTML / PDF), toplantı notu şablonu (Not Defteri'ne kaydet), karakterler, dolgu metni |
+| Veri ve geliştirici | CSV ↔ JSON ↔ tablo, regex testi, MD5 / SHA özeti (metin ya da dosya), JSON, Base64 / URL, UUID, parola |
+| Kimlik ve iletişim | IBAN doğrula / biçimle (banka adı, toplu), T.C. kimlik no (algoritma), telefon biçimleyici (WhatsApp bağlantısı) |
+| Zaman ve tarih | Dünya saatleri, saat dilimi dönüştürücü, kronometre ve tur, çoklu geri sayım, tarih / iş günü, sayaç |
+| Renk ve tasarım | Renk seçici, logodan renk paleti, QR, toplu QR (CSV → ZIP / PDF), barkod (Code 128, EAN-13), yazı tipi önizleyici, sosyal medya boyutları (Dosya Araçları → Yeniden boyutlandır → **Sosyal medya** ile toplu) |
+| Ağ ve sistem | IP (yerel / genel), ping (TCP), DNS sorgusu, bağlantı hızı testi, sistem bilgisi ve pil, pencere düzeni |
+
+Tablo üreten araçlarda **Dışa aktar: CSV / Excel / PDF**. **Panel** (Mac ⌃⌥B): üstte komut satırı (`hesap: 120*3`,
+`kdv 1500`, `çevir 100 usd`, `kura ahmet, mehmet, ali`, `maaş 50000`, `iban …`, `tc …`), sabitlenen araçlar sekme
+olarak, **Tümü** sekmesinde bütün araçlar; ↗ birleşik menüde açar.
+
 ## Dosya Araçları
 
-Görünüm → **Dosya Araçları** (⇧⌘D). Dosyaları pencereye sürükleyin, **Dosya seç** (⌘O) ya da panodan
+Araç Takımı → **Dosya Araçları** (⇧⌘D). Dosyaları pencereye sürükleyin, **Dosya seç** (⌘O) ya da panodan
 yapıştırın (⌘V: Finder / Gezgin'de kopyalanan dosyalar, görsel ya da metin; kopyalanan bağlantı
 "Bağlantıdan indir"i açar). Seçili dosyalar için **çark** (⌘↩ ya da Ctrl+Boşluk; ← → seç, ↩ çalıştır,
 ⇥ ya da 1–3 grup) ya da kutucuk menüsü: **Dönüştür**, **Araçlar**, **Dosya işlemleri**. Bırakırken ⇧
@@ -420,7 +443,7 @@ basılıysa Dönüştür, ⌘ (Windows: Ctrl) Araçlar, ⌃ (Windows: Alt) Dosya
 ## Ekran Görüntüleri ve Pano
 
 Aldığınız ekran görüntüleri ve kopyaladıklarınız bir yerde: **raflar** (⌃⌥T göster/gizle, ⌃⌥S arama
-odaklı; her yerden) ve Görünüm → **Ekran Görüntüleri** kütüphanesi (⇧⌘P).
+odaklı; her yerden) ve Araç Takımı → **Ekran Görüntüleri ve Pano** kütüphanesi (⇧⌘P).
 
 - **Toplama.** Ekran görüntüsü klasörü izlenir (Mac: Ekran Görüntüsü uygulamasının kayıt yeri,
   `defaults read com.apple.screencapture location`, yoksa Masaüstü; Windows: Resimler\Ekran Görüntüleri).
@@ -615,7 +638,7 @@ hatırlanır (`studio.mode`), iki görünümün üst çubuğundaki "Maç yayın�
 Araç takımına üç yoldan ulaşılır:
 
 1. **Uygulamada — Araç Takımı (⇧⌘A)**: kenar çubuğunda Bugün'ün hemen altında. Bütün araçlar tam
-   sayfa, gruplar hâlinde (Masaüstü · Hesap · Metin · Tasarım ve geliştirici) ve **Widget'lar** galerisi.
+   sayfa, kategoriler hâlinde (bkz. *Birleşik Araç Takımı*) ve **Widget'lar** galerisi.
    Bugün ekranında Araç Takımı kısayol şeridi; ilk açılışta kısayolları öğreten bir bilgi kartı çıkar.
 2. **Her yerden — Araç takımı paneli**: Mac'te **⌃⌥B**, Windows'ta **Ctrl+Alt+Boşluk** (Masaüstü
    araçları'nda değiştirilir) ya da menü çubuğu / görev çubuğu simgesi › **Araç Takımı paneli**.

@@ -3,6 +3,7 @@
 // sürece yazılır (çakışmasız ad, orijinale dokunulmaz) ve kütüphaneye işlenir.
 import { blankEdit, collageLayout, encodeCanvas, fitSize, loadBitmap, outputFormat, renderCollage, renderEdit, scaleCanvas } from "./imageOps";
 import { extOf } from "./catalog";
+import { SOCIAL_SIZES, coverRect } from "./socialSizes";
 
 /** "Otomatik" sıkıştırmada hedef: PNG / GIF / BMP → WEBP (kayıplı, saydamlık korunur). */
 export const compressFormat = (ext) => (["png", "gif", "bmp"].includes(String(ext || "").toLowerCase()) ? "webp" : outputFormat(ext));
@@ -24,6 +25,20 @@ async function processOne(op, file, o) {
         return { canvas, fmt: o.format, name: stem(file.name), quality: o.quality ?? 0.92 };
       }
       case "imgResize": {
+        // Sosyal medya ön ayarı: hedef boyuta kırparak doldur (cover) ya da kenar boşluklu sığdır.
+        if (o.mode === "social") {
+          const preset = SOCIAL_SIZES.find((x) => x.key === o.preset) || SOCIAL_SIZES[0];
+          const base = renderEdit(bitmap, blankEdit());
+          const canvas = document.createElement("canvas");
+          canvas.width = preset.w;
+          canvas.height = preset.h;
+          const g = canvas.getContext("2d");
+          if (o.fit === "contain") { g.fillStyle = o.background || "#000000"; g.fillRect(0, 0, preset.w, preset.h); }
+          g.imageSmoothingQuality = "high";
+          const r = coverRect(base.width, base.height, preset.w, preset.h, o.fit === "contain" ? "contain" : "cover");
+          g.drawImage(base, r.sx, r.sy, r.sw, r.sh, r.dx, r.dy, r.dw, r.dh);
+          return { canvas, fmt: outputFormat(ext, o.format), name: `${stem(file.name)}-${preset.key}-${preset.w}x${preset.h}`, quality: o.quality ?? 0.92 };
+        }
         const size = fitSize(bitmap.width, bitmap.height, o);
         const base = renderEdit(bitmap, blankEdit());
         const canvas = size.width === base.width && size.height === base.height ? base : scaleCanvas(base, size.width, size.height);

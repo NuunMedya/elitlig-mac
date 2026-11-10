@@ -4,9 +4,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Field, Modal, Segmented } from "../../components/ui";
 import { formatBytes } from "../../lib/files/catalog";
 import { RENAME_TOKENS, applyRenameTemplate, cleanFileName } from "../../lib/files/renameUtils";
+import { SOCIAL_SIZES } from "../../lib/files/socialSizes";
 
 const DEFAULTS = {
-  imgResize: { mode: "max", percent: 50, maxW: 1920, maxH: 1920, width: "", height: "", keep: true, format: "", quality: 92 },
+  imgResize: { mode: "max", percent: 50, maxW: 1920, maxH: 1920, width: "", height: "", keep: true, format: "", quality: 92, preset: "ig-square", fit: "cover", background: "#000000" },
   imgRotate: { angle: 90, flipH: false, flipV: false },
   imgCompress: { quality: 75, maxSide: "", format: "same" },
   imgCollage: { cols: "", cell: 600, gap: 12, background: "#ffffff", radius: 0, format: "jpg" },
@@ -77,7 +78,9 @@ export default function ToolDialog({ tool, files, onClose, onStart }) {
       case "rename": spec = { op: "renameCopies", options: { template: opts.template, start: Number(opts.start) || 1, pad: Number(opts.pad) || 0 } }; break;
       default: spec = { op: tool.op, options: opts };
     }
-    const res = await onStart(spec);
+    // onStart hata fırlatırsa düğme "Başlatılıyor…"da kilitli kalmasın; pencere açık kalır.
+    let res;
+    try { res = await onStart(spec); } catch (e) { res = { ok: false, error: { message: e?.message } }; }
     setBusy(false);
     if (res?.ok !== false) onClose();
   };
@@ -96,7 +99,12 @@ export default function ToolDialog({ tool, files, onClose, onStart }) {
       </>}>
       <div className="ft-form">
         {key === "imgResize" && (<>
-          <Segmented value={o.mode} onChange={(mode) => set({ mode })} size="sm" ariaLabel="Boyut kipi" options={[{ value: "max", label: "En fazla" }, { value: "percent", label: "Yüzde" }, { value: "exact", label: "Tam boyut" }]} />
+          <Segmented value={o.mode} onChange={(mode) => set({ mode })} size="sm" ariaLabel="Boyut kipi" options={[{ value: "max", label: "En fazla" }, { value: "percent", label: "Yüzde" }, { value: "exact", label: "Tam boyut" }, { value: "social", label: "Sosyal medya" }]} />
+          {o.mode === "social" && (<>
+            <Field label="Ön ayar"><select value={o.preset} onChange={(e) => set({ preset: e.target.value })} aria-label="Sosyal medya boyutu">{SOCIAL_SIZES.map((x) => <option key={x.key} value={x.key}>{x.label} — {x.w}×{x.h}</option>)}</select></Field>
+            <Segmented value={o.fit} onChange={(fit) => set({ fit })} size="sm" ariaLabel="Yerleşim" options={[{ value: "cover", label: "Kırparak doldur" }, { value: "contain", label: "Sığdır (kenar boşluklu)" }]} />
+            {o.fit === "contain" && <label className="ft-check">Kenar rengi <input type="color" value={o.background} onChange={(e) => set({ background: e.target.value })} aria-label="Kenar rengi" /></label>}
+          </>)}
           {o.mode === "percent" && <Field label="Ölçek (%)"><input type="number" min="1" max="1000" value={o.percent} onChange={(e) => set({ percent: e.target.value })} /></Field>}
           {o.mode === "max" && <div className="ft-row"><Field label="En fazla genişlik"><input type="number" min="1" value={o.maxW} onChange={(e) => set({ maxW: e.target.value })} /></Field><Field label="En fazla yükseklik"><input type="number" min="1" value={o.maxH} onChange={(e) => set({ maxH: e.target.value })} /></Field></div>}
           {o.mode === "exact" && (<>

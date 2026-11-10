@@ -49,6 +49,7 @@ const { registerStudio, applyStudioSwitches, STUDIO_SCHEME } = require("./studio
 const { isAllowedExternal } = require("./links");
 // Masaüstü araç takımı: pencere yerleştirme, araç takımı paneli, uyanık tut, müzik denetimi.
 const { registerDeskkit } = require("./toolkit");
+const netTools = require("./netTools"); // Araç Takımı → Ağ ve Sistem
 // Masaüstü widget'ları (saat, ajanda, yapılacaklar, sistem, hava, maçlar…): app/widgets.
 const { registerWidgets } = require("./widgets");
 // Dosya Araçları (Float rafı dahil) ve Ekran Görüntüleri / Pano rafı: app/fileTools, app/shelf.
@@ -329,7 +330,7 @@ function refreshTray() {
   template.push(
     { label: "Raflar (Ekran görüntüleri, pano)", accelerator: "Control+Alt+T", registerAccelerator: false, click: () => shelf?.showShelf() },
     { label: "Ekranı yakala", accelerator: "Control+Alt+A", registerAccelerator: false, click: () => shelf?.captureScreen() },
-    { label: "Dosya Araçları", click: () => showMain("files") },
+    { label: "Araç Takımı › Dosya Araçları", click: () => showMain("files") },
     { label: "Float rafı", click: () => fileTools?.float.show() },
     { type: "separator" },
   );
@@ -532,11 +533,11 @@ const ROUTES = [
   ["ledger", "Ön Muhasebe", "CmdOrCtrl+5"],
   ["sheets", "Tablolar", "CmdOrCtrl+6"],
   ["contacts", "Rehber", "CmdOrCtrl+7"],
-  ["calc", "Hesap Araçları", "CmdOrCtrl+8"],
-  ["focus", "Odak Sayacı", "CmdOrCtrl+9"],
+  ["calc", "Hesap Araçları", "CmdOrCtrl+8", "hub"],
+  ["focus", "Odak Sayacı", "CmdOrCtrl+9", "hub"],
   ["equipment", "Ekipman", "CmdOrCtrl+Shift+E"],
-  ["files", "Dosya Araçları", "CmdOrCtrl+Shift+D"],
-  ["shelf", "Ekran Görüntüleri ve Pano", "CmdOrCtrl+Shift+P"],
+  ["files", "Dosya Araçları", "CmdOrCtrl+Shift+D", "hub"],
+  ["shelf", "Ekran Görüntüleri ve Pano", "CmdOrCtrl+Shift+P", "hub"],
 ];
 
 const sendCommand = (name) => {
@@ -603,7 +604,9 @@ function buildMenu() {
     {
       label: "Görünüm",
       submenu: [
-        ...ROUTES.map(([route, label, accelerator]) => ({ label, accelerator, click: () => showMain(route) })),
+        // Birleşik Araç Takımı'nın bölümleri (hub) "Araç Takımı" menüsünde, aynı kısayollarla (app/toolkit.js);
+        // o menü yoksa burada kalır.
+        ...ROUTES.filter((r) => !(deskkit && r[3] === "hub")).map(([route, label, accelerator]) => ({ label, accelerator, click: () => showMain(route) })),
         { type: "separator" },
         { label: "Yenile", accelerator: "CmdOrCtrl+R", click: () => sendCommand("refresh") },
         { label: "Kenar Çubuğunu Gizle/Göster", accelerator: "CmdOrCtrl+Alt+S", click: () => sendCommand("sidebar") },
@@ -633,7 +636,7 @@ function buildMenu() {
   app.dock?.setMenu(Menu.buildFromTemplate([
     { label: "Hızlı Kayıt…", click: () => showQuick() },
     { type: "separator" },
-    ...ROUTES.map(([route, label]) => ({ label, click: () => showMain(route) })),
+    ...ROUTES.map(([route, label, , hub]) => ({ label: hub ? `Araç Takımı › ${label}` : label, click: () => showMain(route) })),
   ]));
 }
 
@@ -969,6 +972,7 @@ if (!app.requestSingleInstanceLock()) {
       log: (...args) => { if (!app.isPackaged) console.log(...args); },
     });
     deskkit.attachWidgets(widgets);
+    netTools.register({ ipcMain, app, screen });
     registerIpc();
     buildMenu();
     createTray();

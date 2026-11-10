@@ -4,7 +4,6 @@ import React, { useEffect, useState } from "react";
 import { Icon, isMac } from "../../components/ui";
 import { acceleratorLabel } from "./shortcutUtils";
 import { deskkit } from "./toolkitUi";
-// Bugün ekranında Araç Takımı sayfası açılmadan da gösterilir: stiller bileşenle birlikte yüklenmeli.
 import "./toolkit.css";
 
 const KEY = "toolkit.introSeen.v1";
@@ -28,7 +27,7 @@ export default function ToolkitIntro({ go, compact = false, onDone }) {
       <div className="tk-intro__body">
         <strong>Araç Takımı ve masaüstü widget'ları burada</strong>
         <ol className="tk-intro__steps">
-          <li><Icon name="toolbox" size={13} /> <span><b>Araç Takımı</b> kenar çubuğunda en üstte ({k(null, mac ? "⇧⌘A" : "Ctrl+Shift+A")}): hesap, yüzde/KDV, tarih, renk, QR, JSON, karakterler…</span></li>
+          <li><Icon name="toolbox" size={13} /> <span><b>Araç Takımı</b> kenar çubuğunda en üstte ({k(null, mac ? "⇧⌘A" : "Ctrl+Shift+A")}): Dosya Araçları, Ekran Görüntüleri, Hesap, Odak, Müzik ve fikstür, puan durumu, kura, maaş, IBAN… tek yerde.</span></li>
           <li><Icon name="zap" size={13} /> <span>Her yerden küçük panel: {k(keys?.panel, mac ? "⌃⌥B" : "Ctrl+Alt+Boşluk")} ya da {mac ? "menü çubuğundaki" : "görev çubuğundaki"} Elitlig simgesi › <b>Araç Takımı paneli</b>.</span></li>
           <li><Icon name="grid" size={13} /> <span><b>Widget'lar</b>: saat, ajanda, yapılacaklar, hava, maçlar, sistem… masaüstüne yerleştirin; {k(keys?.widgets, mac ? "⌃⌥W" : "Ctrl+Alt+W")} göster/gizle.</span></li>
         </ol>

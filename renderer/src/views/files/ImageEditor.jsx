@@ -10,8 +10,9 @@
 //   Çerçeve   kenar boşluğu, arka plan rengi, köşe yuvarlama, gölge.
 // ⌘Z / ⇧⌘Z geri al / yinele. Esc kapatır (değişiklik varsa sorar).
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Kbd, Segmented, Spinner, isMac, useConfirm } from "../../components/ui";
+import { Kbd, Segmented, Spinner, isMac } from "../../components/ui";
 import { FIcon } from "./icons";
+import { askInside, useEditorClose } from "./editorGuard";
 import {
   ASPECTS, blankEdit, centeredAspect, clamp, drawShape, encodeCanvas, hitShape, loadBitmap, moveRect, rectFromDrag, renderBase, renderEdit,
   resizeFromHandle, rotatedSize, shapeBounds, snapAngle, translateShape,
@@ -40,7 +41,6 @@ const COLORS = ["#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#0a84ff", "#af52de"
 const HANDLES = ["nw", "ne", "sw", "se"];
 
 export default function ImageEditor({ source, initialMode = "crop", title = "Düzenle", onSave, onClose, saveLabel = "Kaydet", formatChoice = true, defaultFormat = null }) {
-  const confirm = useConfirm();
   const [bitmap, setBitmap] = useState(null);
   const [error, setError] = useState(null);
   const [edit, setEdit] = useState(blankEdit);
@@ -59,6 +59,7 @@ export default function ImageEditor({ source, initialMode = "crop", title = "Dü
   const [quality, setQuality] = useState(92);
   const [saving, setSaving] = useState(false);
   const wrapRef = useRef(null);
+  const rootRef = useRef(null);
   const canvasRef = useRef(null);
   const dragRef = useRef(null);
   const [box, setBox] = useState({ width: 800, height: 520 });
@@ -79,7 +80,8 @@ export default function ImageEditor({ source, initialMode = "crop", title = "Dü
     return () => ro.disconnect();
   }, [bitmap]);
 
-  const dirty = past.length > 0;
+  // Geçmiş boşken de (ör. kaydırıcı klavyeyle değişti) görsel özgününden farklıysa kirli sayılır.
+  const dirty = past.length > 0 || JSON.stringify(edit) !== JSON.stringify(blankEdit());
   const record = useCallback((next) => {
     setPast((p) => [...p.slice(-60), edit]);
     setFuture([]);
@@ -316,7 +318,7 @@ export default function ImageEditor({ source, initialMode = "crop", title = "Dü
     const next = { ...edit, rotate: (edit.rotate + deg + 360) % 360, crop: null, shapes: [], redactions: [] };
     if ((edit.shapes.length || edit.redactions.length) && deg) {
       // Şekiller döndürülmüş koordinatta tutulur; döndürme onları sıfırlar.
-      confirm({ title: "Döndür", message: "Döndürünce işaretler ve sansür alanları kaldırılır. Devam edilsin mi?", confirmLabel: "Döndür" }).then((ok) => ok && record(next));
+      askInside(setAsk, { title: "Döndür", message: "Döndürünce işaretler ve sansür alanları kaldırılır. Devam edilsin mi?", confirmLabel: "Döndür" }).then((ok) => ok && record(next));
       return;
     }
     record(next);
@@ -352,16 +354,15 @@ export default function ImageEditor({ source, initialMode = "crop", title = "Dü
       setSaving(false);
     }
   };
-  const close = async () => {
-    if (dirty && !(await confirm({ title: "Değişiklikler kaydedilmedi", message: "Düzenlemeleri kaydetmeden kapatılsın mı?", confirmLabel: "Kapat", danger: true }))) return;
-    onClose();
-  };
+  // Vazgeç / ✕ / Esc / dışarı tıklama: değişiklik varsa onay düzenleyicinin İÇİNDE sorulur
+  // (bkz. editorGuard.jsx — eskiden onay düzenleyicinin arkasında kalıyordu).
+  const { requestClose: close, ask, askNode, setAsk } = useEditorClose({ dirty, onClose, rootRef });
 
   /* ------------------------------- klavye ------------------------------- */
 
   useEffect(() => {
     const onKey = (e) => {
-      if (textBox) return; // metin kutusu kendi tuşlarını işler
+      if (textBox || ask) return; // metin kutusu / onay kendi tuşlarını işler
       const tag = document.activeElement?.tagName;
       const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
       const mod = isMac() ? e.metaKey : e.ctrlKey;
@@ -395,7 +396,7 @@ export default function ImageEditor({ source, initialMode = "crop", title = "Dü
   const adj = edit.adjust;
 
   return (
-    <div className="ie" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="ie" ref={rootRef} role="dialog" aria-modal="true" aria-label={title}>
       <header className="ie__head">
         <strong className="ie__title">{title}</strong>
         <Segmented value={mode} onChange={(v) => { setMode(v); setSelected(-1); }} size="sm" ariaLabel="Düzenleme kipi" options={MODES.map((m) => ({ ...m, icon: undefined }))} />
@@ -491,6 +492,7 @@ export default function ImageEditor({ source, initialMode = "crop", title = "Dü
         <button type="button" className="btn" onClick={close}>Vazgeç</button>
         <button type="button" className="btn btn--primary" onClick={save} disabled={!bitmap || saving}>{saving ? "Kaydediliyor…" : saveLabel} <Kbd>↩</Kbd></button>
       </footer>
+      {askNode}
     </div>
   );
 }

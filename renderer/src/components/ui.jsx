@@ -299,7 +299,7 @@ export function ConfirmProvider({ children }) {
     <ConfirmContext.Provider value={confirm}>
       {children}
       {ask && (
-        <Modal title={ask.title || "Emin misiniz?"} onClose={() => close(false)} width={420}
+        <Modal title={ask.title || "Emin misiniz?"} onClose={() => close(false)} width={420} className="modal--confirm"
           footer={<>
             <button type="button" className="btn" onClick={() => close(false)}>Vazgeç</button>
             <button type="button" className={`btn btn--primary ${ask.danger ? "btn--danger" : ""}`} onClick={() => close(true)}>{ask.confirmLabel || "Tamam"}</button>
