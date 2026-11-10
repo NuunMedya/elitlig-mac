@@ -10,6 +10,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
+const { equipmentNotifications } = require("./equipmentFeed");
+
 const MIN = 60000;
 const GRACE_MS = 10 * MIN; // uyku/kapalılık sonrası en çok 10 dk geç kalmış bildirim gösterilir
 
@@ -103,7 +105,9 @@ function createReminders({ dataDir, load, notify, now = () => Date.now() }) {
     let data;
     try { data = await load(); } catch { return []; }
     const known = new Set(sent.keys());
-    const due = [...dueNotifications({ ...data, now: now(), sent: known }), ...billNotifications({ bills: data?.bills, now: now(), sent: known })];
+    const due = [...dueNotifications({ ...data, now: now(), sent: known }), ...billNotifications({ bills: data?.bills, now: now(), sent: known }),
+      // Ekipman: zimmet iade tarihi ve bakım zamanı (app/equipmentFeed.js).
+      ...equipmentNotifications({ ...(data?.equipment || {}), now: now(), sent: known })];
     for (const item of due) {
       for (const key of [].concat(item.key)) sent.set(key, now());
       notify({ ...item, key: [].concat(item.key)[0] });

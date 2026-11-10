@@ -43,10 +43,16 @@ const FINANCE_QUEUEABLE = /^\/api\/(finance\/entries|tools\/projects\/\d+\/finan
 // gönderim güvenlidir. Diğer sohbet yazmaları (tepki, düzenleme, dosya, grup
 // işlemleri) bağlantı ister.
 const CHAT_QUEUEABLE = /^\/api\/chat\/conversations\/\d+\/messages$/;
+// Ekipman: kart ekleme ve alan güncellemesi (konum, not, kondisyon…), bakım
+// kaydı ve arıza bildirimi kuyruğa alınır (depoda bağlantı zayıf olabilir).
+// Zimmet / iade, rezervasyon, toplu işlem, içe aktarma ve silme bağlantı ister:
+// stok ve çakışma denetimi sunucuda o anki duruma göre yapılmalıdır.
+const EQUIPMENT_QUEUEABLE = /^\/api\/tools\/equipment\/items(\/(\d+|tmp_[\w-]+)(\/(maintenance|fault))?)?$/;
 const isChatQueueable = (method, pathname, body) => method === "POST" && CHAT_QUEUEABLE.test(pathname)
   && (!body?.kind || body.kind === "text") && Boolean(body?.client_id) && Boolean(String(body?.body || "").trim());
 const isQueueable = (method, pathname, body) => QUEUEABLE.test(pathname)
   || ((method === "POST" || method === "PATCH") && (PROJECT_QUEUEABLE.test(pathname) || FINANCE_QUEUEABLE.test(pathname)))
+  || ((method === "POST" || method === "PATCH") && EQUIPMENT_QUEUEABLE.test(pathname))
   || isChatQueueable(method, pathname, body);
 const TEMP_ID = /^tmp_[\w-]+$/;
 
@@ -258,4 +264,4 @@ function createApi({ origin, dataDir, fetchImpl, sessionStore, userAgent, timeou
   };
 }
 
-module.exports = { createApi, ApiError, buildUrl, QUEUEABLE, PROJECT_QUEUEABLE, FINANCE_QUEUEABLE, CHAT_QUEUEABLE, isQueueable, isChatQueueable };
+module.exports = { createApi, ApiError, buildUrl, QUEUEABLE, PROJECT_QUEUEABLE, FINANCE_QUEUEABLE, CHAT_QUEUEABLE, EQUIPMENT_QUEUEABLE, isQueueable, isChatQueueable };

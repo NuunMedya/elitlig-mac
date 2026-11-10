@@ -20,6 +20,10 @@ const ACTIONS = [
   { label: "Bütçe", icon: "target", route: "ledger:butce", hint: "Muhasebe" },
   { label: "Yeni tablo", icon: "plus", route: "sheets:new", hint: "Tablolar" },
   { label: "Yeni kişi", icon: "plus", route: "contacts:new", hint: "Rehber" },
+  { label: "Yeni ekipman", icon: "box", route: "equipment:new", hint: "Ekipman" },
+  { label: "Kimde ne var (zimmetler)", icon: "user", route: "equipment:zimmet", hint: "Ekipman" },
+  { label: "Ekipman rezervasyonları", icon: "calendar", route: "equipment:rezervasyon", hint: "Ekipman" },
+  { label: "Bakım takvimi ve arızalar", icon: "wrench", route: "equipment:bakim", hint: "Ekipman" },
   { label: "Odak turunu başlat", icon: "play", run: () => window.elitlig.focus.command("start"), hint: "Odak Sayacı" },
   { label: "Hızlı kayıt penceresi", icon: "zap", run: () => window.elitlig.quick.show(), hint: "⌃⌥N" },
 ];
@@ -50,7 +54,8 @@ export default function Palette({ onClose, go, routes }) {
       get("/api/tools/projects/followups", { days: 30 }),
       get("/api/chat/conversations"),
       get("/api/chat/directory"),
-    ]).then(([todos, notes, contacts, sheets, ledger, projects, follow, chats, people]) => {
+      get("/api/tools/equipment/items", { page_size: 500, include_retired: "1" }),
+    ]).then(([todos, notes, contacts, sheets, ledger, projects, follow, chats, people, equipment]) => {
       sources.current = {
         todos: todos.ok ? todos.data?.items || [] : [],
         notes: notes.ok ? notes.data?.items || [] : [],
@@ -61,6 +66,7 @@ export default function Palette({ onClose, go, routes }) {
         leads: follow.ok ? follow.data?.leads || [] : [],
         chats: chats.ok ? chats.data?.conversations || [] : [],
         people: people.ok ? [...(people.data?.staff || []), ...(people.data?.managers || []), ...(people.data?.players || [])] : [],
+        equipment: equipment.ok ? equipment.data?.items || [] : [],
       };
       setContent((c) => [...c]);
     });
@@ -88,6 +94,7 @@ export default function Palette({ onClose, go, routes }) {
     s.projects.filter((p) => includesTr(`${p.name} ${p.description}`, query)).slice(0, 5).forEach((p) => out.push({ label: p.name, icon: "layers", hint: `Proje · %${p.stats?.steps?.progress ?? 0}`, route: "projects", arg: { id: p.id } }));
     s.leads.filter((l) => includesTr(`${l.name} ${l.company} ${l.phone}`, query)).slice(0, 5).forEach((l) => out.push({ label: l.name, icon: "phone", hint: `${l.project_name} · ${l.stage_label}`, route: "projects", arg: { id: l.project_id, tab: "leads", lead: l.id } }));
     s.ledger.filter((e) => includesTr(`${e.description} ${e.party} ${e.category} ${e.document_no}`, query)).slice(0, 5).forEach((e) => out.push({ label: e.description || e.party || e.category || "Kayıt", icon: "receipt", hint: `${formatDate(e.entry_date)} · ${formatMoney(e.amount)}`, route: `ledger:${e.id}` }));
+    (s.equipment || []).filter((e) => includesTr(`${e.asset_tag} ${e.name} ${e.brand} ${e.model} ${e.serial_no} ${e.barcode} ${e.holder?.name || ""}`, query)).slice(0, 6).forEach((e) => out.push({ label: e.name, icon: "box", hint: `Ekipman · ${e.asset_tag}${e.holder?.name ? ` · ${e.holder.name}` : e.location_path ? ` · ${e.location_path}` : ""}`, route: "equipment", arg: { id: e.id } }));
     setContent(out);
   }, [query]);
 

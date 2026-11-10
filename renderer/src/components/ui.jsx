@@ -143,6 +143,10 @@ const PATHS = {
   volume: "M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14",
   volumeX: "M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6M17 9l6 6",
   repeat: "M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3",
+  // Ekipman
+  box: "M21 8 12 3 3 8v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8",
+  wrench: "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z",
+  barcode: "M3 5v14M7 5v14M10 5v14M14 5v14M17 5v14M21 5v14",
 };
 
 // Sunucudaki şablonların (web) simge adları.

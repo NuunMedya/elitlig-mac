@@ -23,6 +23,7 @@ const Calculators = lazy(() => import("./views/Calculators"));
 const Focus = lazy(() => import("./views/Focus"));
 const Account = lazy(() => import("./views/Account"));
 const Studio = lazy(() => import("./views/studio/Studio"));
+const Equipment = lazy(() => import("./views/equipment/Equipment"));
 
 export const ROUTES = [
   { key: "today", label: "Bugün", icon: "sun", view: Today, shortcut: "⌘1", group: "Günlük" },
@@ -37,6 +38,7 @@ export const ROUTES = [
   { key: "ledger", label: "Muhasebe", icon: "wallet", view: Ledger, shortcut: "⌘5", group: "Finans ve veri" },
   { key: "sheets", label: "Tablolar", icon: "grid", view: Sheets, shortcut: "⌘6", group: "Finans ve veri" },
   { key: "contacts", label: "Rehber", icon: "users", view: Contacts, shortcut: "⌘7", group: "Finans ve veri" },
+  { key: "equipment", label: "Ekipman", icon: "box", view: Equipment, shortcut: "⇧⌘E", group: "Finans ve veri" },
   { key: "calc", label: "Hesap Araçları", icon: "calculator", view: Calculators, shortcut: "⌘8", group: "Yardımcılar" },
   { key: "focus", label: "Odak Sayacı", icon: "timer", view: Focus, shortcut: "⌘9", group: "Yardımcılar" },
 ];
@@ -279,6 +281,7 @@ function ShortcutsHelp({ onClose }) {
     ["⌘N", "Açık araçta yeni kayıt"],
     ["⌘1 … ⌘9", "Araçlar arasında geçiş"],
     ["⌘0", "Projeler (süreç, kişiler, portföy)"],
+    ["⇧⌘E", "Ekipman (envanter, zimmet, rezervasyon, bakım)"],
     ["⇧⌘0", "Saha ve maç planlama (sahalar, program, talepler, takımlar)"],
     ["⇧⌘Y", "Yayın Stüdyosu (canlı yayın, reji, gol klipleri)"],
     ["Stüdyo: M / R", "Mikrofonu aç-kapat / son golün tekrarı"],
