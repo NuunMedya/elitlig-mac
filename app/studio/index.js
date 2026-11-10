@@ -31,6 +31,7 @@
 //           studio:media:allow (preload: webUtils yolu), studio:media:pick (dosya penceresi),
 //           studio:media:check, studio:media:forget  (media.js — kalıcı yerel dosya kaynakları),
 //           studio:live:* (live/index.js — telefon kamerası, RTMP / SRT girişi, ağ akışı, web sayfası)
+//           studio:panorama:weather, studio:panorama:linkMeta, studio:panorama:fonts (panoramaNet.js)
 //   send:   studio:chunk (program parçası), studio:reportStats (arayüz kodlama sayaçları), studio:angleChunk { id, data },
 //           studio:renderChunk { id, data }, studio:led:sendState (yanıt yok)
 //   olay:   studio:status, studio:restartRecorder, studio:angles:status,
@@ -67,6 +68,7 @@ const ff = require("./ffmpeg");
 const { registerLive } = require("./live");
 const { createOutMute } = require("./outmute");
 const { createMusicHost } = require("./musichost");
+const { createPanoramaNet } = require("./panoramaNet");
 
 const DAY_MS = 24 * 3600 * 1000;
 const LIVE_UPLOAD_BYTES_PER_SEC = 250 * 1024; // ≈ 2 Mbit/sn: yayın sürerken gol klibi yüklemesi
@@ -272,6 +274,8 @@ function registerStudio({
   // yakalama, Windows + macOS) ya da yalnız Windows'ta bütün sistem sesi (loopback).
   const musicHost = createMusicHost({ BrowserWindow, ipcMain, log: (...a) => log(...a) });
   musicHost.register();
+  // Panorama kartları: hava durumu, bağlantı önizlemesi, sistem yazı tipleri (panoramaNet.js).
+  createPanoramaNet().register(ipcMain);
   // Dışarı giden tüm sesleri kapat (yerel hoparlör / kulaklık; yayın karışımı etkilenmez): outmute.js
   const outMute = createOutMute({ BrowserWindow, ipcMain, app, log: (...x) => log(...x) });
   outMute.register();

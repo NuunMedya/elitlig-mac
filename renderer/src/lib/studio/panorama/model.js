@@ -8,6 +8,10 @@
 //                       çizim: lib/studio/panorama/draw.js (program tuvalinde; işçide de)
 // Sahne kimliği = açı kimliği; snapshot.panorama.boxes[sahne] kartın / bandın yerini söyler.
 import { makeLayer, normalizeLayer } from "../scenes";
+import { BUILTIN_BRANDS, THEMES, brandTokens, findBrand, logoSrc, normalizeBrand } from "./brands";
+import { BUILTIN_LAYOUTS, LAYOUT_GROUPS, MASKS, allLayouts, angleGeometry, customLayouts, layoutOf, normalizeAngleStyle, normalizeCustomLayout, normalizeSlotBoxes, setCustomLayouts } from "./layouts";
+import { pickMatchOfWeek, sceneKeyOf, webSceneOf } from "./webScenes";
+import { webPayloadImages } from "./drawWeb";
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
@@ -17,63 +21,89 @@ export const pid = (p = "pn") => `${p}_${Date.now().toString(36)}${(seq++).toStr
 
 /* ─────────────────────────────── temalar ─────────────────────────────── */
 
-// Elitlig marka renkleri (mor #54009c / magenta #c026d3) ve web Panorama kaplamasının temaları.
-export const PANORAMA_THEMES = Object.freeze([
-  { key: "mor", label: "Menekşe", bg: ["#12002b", "#54009c"], panel: "#ffffff", text: "#1b0b33", muted: "#6b5b86", head: "#54009c", headText: "#ffffff", accent: "#c026d3", accentText: "#ffffff", rowAlt: "#f4effb", line: "#e6dcf3", ticker: "#12002b", tickerText: "#ffffff", glass: "rgba(18,0,43,0.72)", onBg: "#ffffff" },
-  { key: "gece", label: "Gece & Altın", bg: ["#050b1f", "#14275a"], panel: "#0c1530", text: "#f3f5ff", muted: "#9aa6c8", head: "#08102a", headText: "#f5c542", accent: "#f5c542", accentText: "#0b1020", rowAlt: "#111d3d", line: "#1f2d55", ticker: "#050b1f", tickerText: "#f3f5ff", glass: "rgba(5,11,31,0.78)", onBg: "#f3f5ff" },
-  { key: "lacivert", label: "Lacivert", bg: ["#0a1a3f", "#164a9a"], panel: "#ffffff", text: "#0a1a3f", muted: "#5a6b8f", head: "#0a1a3f", headText: "#ffffff", accent: "#38bdf8", accentText: "#0a1a3f", rowAlt: "#eef4fb", line: "#dbe5f3", ticker: "#0a1a3f", tickerText: "#ffffff", glass: "rgba(10,26,63,0.78)", onBg: "#ffffff" },
-  { key: "kagit", label: "Kağıt", bg: ["#ece5d6", "#d9cfb9"], panel: "#fbf8f1", text: "#141210", muted: "#6b6457", head: "#141210", headText: "#fbf8f1", accent: "#e4572e", accentText: "#ffffff", rowAlt: "#f2ede1", line: "#e3dccb", ticker: "#141210", tickerText: "#fbf8f1", glass: "rgba(20,18,16,0.8)", onBg: "#141210" },
-]);
-export const themeOf = (key) => PANORAMA_THEMES.find((t) => t.key === key) || PANORAMA_THEMES[0];
+// Temalar ve marka profilleri: brands.js (16 hazır tema; profil = tema + logo + renk + yazı tipi +
+// kart / künye / bant stili). themeOf(anahtar | belirteç) → çizim belirteçleri (T).
+export const PANORAMA_THEMES = Object.freeze(THEMES.map((t) => ({ ...brandTokens(BUILTIN_BRANDS.find((b) => b.theme === t.key)), key: t.key, label: t.label, hint: t.hint })));
+export const themeOf = (key) => (key && typeof key === "object" && key.bg ? key : PANORAMA_THEMES.find((t) => t.key === key) || PANORAMA_THEMES[0]);
 
 /* ─────────────────────────── kamera düzenleri ─────────────────────────── */
 
-const B = (x, y, w, h) => ({ x, y, w, h });
-// Kutular çıkışa göre 0…1 (16:9). Üst bant (logo / başlık / saat) ~%9, alt bant ~%8 boş kalır.
-// slots: kamera / kaynak yerleri; card: içerik kartının kutusu (yoksa kart çizilmez).
-export const PANORAMA_LAYOUTS = Object.freeze([
-  { key: "content", label: "İçerik tam ekran", hint: "Kamera yok; kart ekranın ortasında büyük", slots: [], card: B(0.06, 0.115, 0.88, 0.775) },
-  { key: "solo", label: "Tek kamera", hint: "Bir kamera tam ekran (kart yok, alt bant ve künye üstte)", slots: [B(0, 0, 1, 1)], card: null, full: true },
-  { key: "host", label: "Sunucu + içerik", hint: "Solda sunucu, sağda büyük kart", slots: [B(0.03, 0.135, 0.36, 0.72)], card: B(0.415, 0.115, 0.555, 0.775) },
-  { key: "camCard", label: "Kamera + kart kutusu", hint: "Kamera tam ekran, sağda kart kutusu", slots: [B(0, 0, 1, 1)], card: B(0.53, 0.13, 0.44, 0.7), full: true },
-  { key: "duo", label: "Sunucu + konuk", hint: "İki kamera yan yana, isim bantlı", slots: [B(0.02, 0.17, 0.475, 0.62), B(0.505, 0.17, 0.475, 0.62)], card: null },
-  { key: "duoCard", label: "İki kamera + içerik", hint: "Solda alt alta iki kamera, sağda kart", slots: [B(0.03, 0.12, 0.3, 0.37), B(0.03, 0.51, 0.3, 0.37)], card: B(0.355, 0.115, 0.615, 0.775) },
-  { key: "grid4", label: "Izgara 2×2", hint: "Dört kamera eşit boyda", slots: [B(0.03, 0.11, 0.465, 0.385), B(0.505, 0.11, 0.465, 0.385), B(0.03, 0.505, 0.465, 0.385), B(0.505, 0.505, 0.465, 0.385)], card: null },
-  { key: "grid4Card", label: "2×2 + içerik", hint: "Solda dört kamera, sağda kart", slots: [B(0.025, 0.14, 0.235, 0.35), B(0.27, 0.14, 0.235, 0.35), B(0.025, 0.51, 0.235, 0.35), B(0.27, 0.51, 0.235, 0.35)], card: B(0.525, 0.115, 0.45, 0.775) },
-  { key: "twoThree", label: "2 + 3", hint: "Üstte iki büyük, altta üç küçük kamera", slots: [B(0.03, 0.105, 0.465, 0.43), B(0.505, 0.105, 0.465, 0.43), B(0.03, 0.56, 0.307, 0.33), B(0.3465, 0.56, 0.307, 0.33), B(0.663, 0.56, 0.307, 0.33)], card: null },
-  { key: "bigSmall", label: "Büyük + küçükler", hint: "Bir büyük kamera, sağda dört küçük", slots: [B(0.02, 0.11, 0.715, 0.78), B(0.75, 0.11, 0.23, 0.18), B(0.75, 0.31, 0.23, 0.18), B(0.75, 0.51, 0.23, 0.18), B(0.75, 0.71, 0.23, 0.18)], card: null },
-  { key: "strip5", label: "Şerit (5) + içerik", hint: "Üstte kart, altta yan yana beş kamera", slots: [0, 1, 2, 3, 4].map((i) => B(0.02 + i * 0.193, 0.665, 0.185, 0.225)), card: B(0.06, 0.105, 0.88, 0.535) },
-  { key: "row3Card", label: "Üç kamera + içerik", hint: "Solda kart, sağda alt alta üç kamera", slots: [B(0.715, 0.11, 0.265, 0.25), B(0.715, 0.375, 0.265, 0.25), B(0.715, 0.64, 0.265, 0.25)], card: B(0.03, 0.115, 0.665, 0.775) },
-]);
-export const layoutOf = (key) => PANORAMA_LAYOUTS.find((l) => l.key === key) || PANORAMA_LAYOUTS[0];
+// Düzenler ve açı geometrisi: layouts.js (40+ hazır düzen + kullanıcı düzenleri).
+export const PANORAMA_LAYOUTS = BUILTIN_LAYOUTS;
+export { layoutOf, allLayouts, angleGeometry, setCustomLayouts, customLayouts, MASKS, LAYOUT_GROUPS };
 
 /* ───────────────────────────── içerik kartları ───────────────────────────── */
 
+// group: "Kart ekle" menüsündeki başlık. web: web Panorama sahnesi (webScenes.js; içerik sunucunun
+// web kaplamasıyla aynı çözücüsünden). Diğerleri masaüstünde hesaplanır / çizilir.
 export const CARD_KINDS = Object.freeze([
-  { key: "standings", label: "Puan durumu", icon: "trophy", sec: 20 },
-  { key: "fixtures", label: "Fikstür (yaklaşan maçlar)", icon: "calendar", sec: 15 },
-  { key: "results", label: "Son sonuçlar", icon: "list", sec: 15 },
-  { key: "live", label: "Canlı maçlar ve skorlar", icon: "broadcast", sec: 15 },
-  { key: "scorers", label: "Gol krallığı", icon: "ball", sec: 15 },
-  { key: "assists", label: "Asist krallığı", icon: "zap", sec: 12 },
-  { key: "mvp", label: "En değerliler (puan)", icon: "star", sec: 12 },
-  { key: "weekly", label: "Haftanın enleri", icon: "sparkles", sec: 15 },
-  { key: "news", label: "Haberler / duyurular", icon: "file", sec: 18 },
-  { key: "team", label: "Takım kartı", icon: "users", sec: 15, opts: { teamId: null } },
-  { key: "compare", label: "Takım karşılaştırma", icon: "grid", sec: 15, opts: { teamA: null, teamB: null } },
-  { key: "city", label: "İl / sezon özeti", icon: "overview", sec: 12 },
-  { key: "sponsors", label: "Sponsorlar", icon: "handshake", sec: 10 },
-  { key: "qr", label: "Siteye bağlantı (QR)", icon: "share", sec: 12, opts: { url: "", label: "" } },
-  { key: "clock", label: "Saat / tarih", icon: "clock", sec: 8 },
-  { key: "notice", label: "Duyuru (serbest metin)", icon: "bell", sec: 12, opts: { title: "DUYURU", text: "" } },
+  { key: "standings", label: "Puan durumu", icon: "trophy", sec: 20, group: "Lig" },
+  { key: "fixtures", label: "Fikstür (yaklaşan maçlar)", icon: "calendar", sec: 15, group: "Lig" },
+  { key: "results", label: "Son sonuçlar", icon: "list", sec: 15, group: "Lig" },
+  { key: "live", label: "Canlı maçlar ve skorlar", icon: "broadcast", sec: 15, group: "Canlı" },
+  { key: "scoreboard", label: "Canlı skor bandı (sürekli kayan)", icon: "broadcast", sec: 20, group: "Canlı", opts: { speed: 90, sources: "live,results,fixtures" } },
+  { key: "scorers", label: "Gol krallığı", icon: "ball", sec: 15, group: "Sıralama" },
+  { key: "assists", label: "Asist krallığı", icon: "zap", sec: 12, group: "Sıralama" },
+  { key: "mvp", label: "En değerliler (puan)", icon: "star", sec: 12, group: "Sıralama" },
+  { key: "weekly", label: "Haftanın enleri", icon: "sparkles", sec: 15, group: "Sıralama" },
+  { key: "motw", label: "Haftanın maçı tanıtımı", icon: "star", sec: 15, group: "Maç", opts: { matchId: null, matchLabel: "" } },
+  { key: "news", label: "Haberler / duyurular", icon: "file", sec: 18, group: "Yayın" },
+  { key: "team", label: "Takım kartı", icon: "users", sec: 15, group: "Takım", opts: { teamId: null } },
+  { key: "compare", label: "Takım karşılaştırma", icon: "grid", sec: 15, group: "Takım", opts: { teamA: null, teamB: null } },
+  { key: "city", label: "İl / sezon özeti", icon: "overview", sec: 12, group: "Lig" },
+  { key: "cities", label: "Çoklu il karşılaştırma", icon: "overview", sec: 15, group: "Lig", opts: { cityIds: [] } },
+  { key: "web", label: "Web Panorama sahnesi", icon: "overview", sec: 18, group: "Web Panorama", opts: { scene: "puan_tablosu" } },
+  { key: "sponsors", label: "Sponsorlar", icon: "handshake", sec: 10, group: "Sponsor" },
+  { key: "promo", label: "Sponsor tanıtımı (görsel / video)", icon: "handshake", sec: 15, group: "Sponsor", opts: { name: "", text: "", url: "", logo: "", items: [], perSec: 8, fit: "contain" } },
+  { key: "slides", label: "Görsel / video slayt", icon: "image", sec: 24, group: "Medya", opts: { items: [], perSec: 6, fit: "contain" } },
+  { key: "social", label: "Sosyal medya gönderisi", icon: "share", sec: 14, group: "Medya", opts: { url: "", title: "", text: "", image: "", site: "", author: "" } },
+  { key: "poll", label: "Seyirci anketi (QR)", icon: "share", sec: 20, group: "Etkileşim", opts: { question: "", options: [{ label: "", votes: 0 }, { label: "", votes: 0 }], url: "" } },
+  { key: "qr", label: "Siteye bağlantı (QR)", icon: "share", sec: 12, group: "Etkileşim", opts: { url: "", label: "" } },
+  { key: "countdown", label: "Geri sayım", icon: "clock", sec: 12, group: "Yayın", opts: { target: "", title: "", doneText: "" } },
+  { key: "weather", label: "Hava durumu", icon: "sun", sec: 10, group: "Yayın", opts: { city: "", lat: "", lon: "" } },
+  { key: "clock", label: "Saat / tarih", icon: "clock", sec: 8, group: "Yayın" },
+  { key: "notice", label: "Duyuru (serbest metin)", icon: "bell", sec: 12, group: "Yayın", opts: { title: "DUYURU", text: "" } },
+  { key: "text", label: "Özel metin kartı", icon: "pencil", sec: 12, group: "Yayın", opts: { title: "", text: "", size: 60, align: "center", color: "", upper: false, font: "sans" } },
 ]);
 export const cardKindOf = (key) => CARD_KINDS.find((k) => k.key === key) || null;
 export const MIN_SEC = 4;
 export const MAX_SEC = 600;
 
+/** "Kart ekle" menüsündeki kısayollar: web Panorama sahnesinin hazır seçimi. */
+export const CARD_PRESETS = Object.freeze([
+  { label: "Sezon istatistikleri", kind: "web", opts: { scene: "sezon_ozeti" }, group: "Lig" },
+  { label: "Haftanın özeti", kind: "web", opts: { scene: "hafta_ozeti" }, group: "Lig" },
+  { label: "Takım formu (son 5 maç)", kind: "web", opts: { scene: "form_tablosu" }, group: "Takım" },
+  { label: "Kart / disiplin tablosu", kind: "web", opts: { scene: "kart_kralligi" }, group: "Disiplin" },
+  { label: "Fair play tablosu", kind: "web", opts: { scene: "fair_play" }, group: "Disiplin" },
+  { label: "Cezalı oyuncular", kind: "web", opts: { scene: "cezalilar" }, group: "Disiplin" },
+  { label: "En golcü takımlar", kind: "web", opts: { scene: "en_golcu_takimlar" }, group: "Takım" },
+  { label: "En iyi savunmalar", kind: "web", opts: { scene: "en_iyi_savunmalar" }, group: "Takım" },
+]);
+
 export function makeCard(kind, patch = {}) {
   const k = cardKindOf(kind) || CARD_KINDS[0];
   return { id: pid("pc"), kind: k.key, sec: k.sec, opts: { ...(k.opts || {}) }, ...patch, ...(patch.opts ? { opts: { ...(k.opts || {}), ...patch.opts } } : {}) };
+}
+
+const HEX = /^#[0-9a-f]{6}$/i;
+const okUrl = (v) => typeof v === "string" && /^(https?:|data:image\/|elitlig-studio:|elitlig-media:)/i.test(v);
+/** Kart seçeneklerindeki diziler (yalnız bilinen alanlar; içerik süzülür). */
+const ARRAY_OPTS = {
+  options: (a) => a.slice(0, 6).map((o) => ({ label: str(o?.label, "", 80), votes: Math.max(0, Math.round(num(o?.votes, 0))) })),
+  items: (a) => a.slice(0, 30).map((o) => (o && okUrl(o.src) ? { src: o.src.slice(0, 3_000_000), kind: o.kind === "video" ? "video" : "image", name: str(o.name, "", 120), ...(o.caption ? { caption: str(o.caption, "", 120) } : {}), ...(o.mediaId ? { mediaId: str(o.mediaId, "", 80) } : {}) } : null)).filter(Boolean),
+  cityIds: (a) => [...new Set(a.map((x) => Number.parseInt(x, 10)).filter((n) => n > 0))].slice(0, 6),
+};
+/** Kart başına stil geçersiz kılma (marka profilinin üstüne). */
+export function normalizeCardStyle(s) {
+  if (!s || typeof s !== "object") return null;
+  const o = {};
+  for (const k of ["primary", "accent", "text", "panel", "background"]) if (HEX.test(String(s[k] || ""))) o[k] = String(s[k]).toLowerCase();
+  if (s.radius != null && s.radius !== "" && Number.isFinite(Number(s.radius))) o.radius = clamp(Number(s.radius), 0, 60);
+  if (s.opacity != null && s.opacity !== "" && Number.isFinite(Number(s.opacity))) o.opacity = clamp(Number(s.opacity), 0.3, 1);
+  if (s.hideTitle) o.hideTitle = true;
+  if (typeof s.anim === "string" && /^(slide|fade|zoom|rise|wipe|flip|none)$/.test(s.anim)) o.anim = s.anim;
+  return Object.keys(o).length ? o : null;
 }
 
 export function normalizeCard(c) {
@@ -82,10 +112,30 @@ export function normalizeCard(c) {
   const opts = { ...(k.opts || {}), ...(c.opts && typeof c.opts === "object" ? c.opts : {}) };
   for (const key of Object.keys(opts)) {
     const v = opts[key];
-    if (v != null && typeof v === "object") delete opts[key];
-    else if (typeof v === "string") opts[key] = v.slice(0, 300);
+    if (Array.isArray(v) && ARRAY_OPTS[key]) opts[key] = ARRAY_OPTS[key](v);
+    else if (v != null && typeof v === "object") delete opts[key];
+    else if (typeof v === "string") opts[key] = key === "logo" || key === "image" ? (okUrl(v) ? v.slice(0, 3_000_000) : "") : v.slice(0, key === "text" ? 1200 : 300);
   }
-  return { id: typeof c.id === "string" && c.id ? c.id.slice(0, 40) : pid("pc"), kind: k.key, sec: Math.round(clamp(num(c.sec, k.sec), MIN_SEC, MAX_SEC)), opts, ...(c.off ? { off: true } : {}) };
+  const style = normalizeCardStyle(c.style);
+  return { id: typeof c.id === "string" && c.id ? c.id.slice(0, 40) : pid("pc"), kind: k.key, sec: Math.round(clamp(num(c.sec, k.sec), MIN_SEC, MAX_SEC)), opts, ...(c.off ? { off: true } : {}), ...(style ? { style } : {}) };
+}
+
+/** Kartın listede görünen adı. */
+export function cardLabel(card, catalog) {
+  if (!card) return "";
+  if (card.kind === "web") return webSceneOf(card.opts?.scene, catalog)?.label || "Web Panorama sahnesi";
+  if (card.kind === "notice" || card.kind === "text") return String(card.opts?.title || cardKindOf(card.kind)?.label || "");
+  return cardKindOf(card.kind)?.label || "";
+}
+
+/** Slayt / tanıtım kartının şu anki medyası (video ise program sahnesinde katman olarak oynar). */
+export function currentMedia(card, now, since) {
+  if (!card || !["slides", "promo"].includes(card.kind)) return null;
+  const items = card.opts?.items || [];
+  if (!items.length) return null;
+  const per = Math.max(2, num(card.opts?.perSec, 6)) * 1000;
+  const i = Math.floor(Math.max(0, now - (since || 0)) / per) % items.length;
+  return { ...items[i], index: i };
 }
 
 /* ─────────────────────────── oynatma listesi ─────────────────────────── */
@@ -146,10 +196,17 @@ export function remainingSec(pl, now) {
 
 /* ─────────────────────────────── açılar ─────────────────────────────── */
 
-/** Açı: { id, name, layout, slots: [kaynak kimliği | null], card, ticker, header, names, hotkey? }. */
-export function normalizeAngle(a, i = 0) {
+/**
+ * Açı: { id, name, layout, slots: [kaynak kimliği | null], card, ticker, header, names, hotkey?,
+ *        mirror?, flip?, style?, boxes?, cardBox? } — ayna / boşluk / kenarlık / gölge / maske ve
+ * yuva başına ince ayar (x, y, w, h, kırpma) için layouts.js angleGeometry.
+ */
+export function normalizeAngle(a) {
   const L = layoutOf(a?.layout);
   const slots = Array.from({ length: L.slots.length }, (_, k) => (typeof a?.slots?.[k] === "string" ? a.slots[k] : null));
+  const style = normalizeAngleStyle(a?.style);
+  const boxes = normalizeSlotBoxes(a?.boxes, L.slots.length);
+  const cb = a?.cardBox && typeof a.cardBox === "object" ? Object.fromEntries(["x", "y", "w", "h"].filter((k) => Number.isFinite(Number(a.cardBox[k]))).map((k) => [k, clamp(Number(a.cardBox[k]), k === "w" || k === "h" ? 0.05 : -0.2, k === "w" || k === "h" ? 1.2 : 1)])) : null;
   return {
     id: typeof a?.id === "string" && a.id ? a.id.slice(0, 40) : pid("pa"),
     name: str(a?.name, L.label, 40).trim() || L.label,
@@ -159,7 +216,11 @@ export function normalizeAngle(a, i = 0) {
     ticker: a?.ticker !== false,
     header: a?.header !== false,
     names: a?.names !== false && L.slots.length > 1,
-    ...(i < 0 ? {} : {}),
+    ...(a?.mirror ? { mirror: true } : {}),
+    ...(a?.flip ? { flip: true } : {}),
+    ...(Object.keys(style).length ? { style } : {}),
+    ...(Object.keys(boxes).length ? { boxes } : {}),
+    ...(cb && Object.keys(cb).length ? { cardBox: cb } : {}),
   };
 }
 
@@ -173,34 +234,63 @@ export function fillSlots(layoutKey, sources, offset = 0) {
 }
 
 export const BG_SOURCE_ID = "pano_bg";
+export const CARD_MEDIA_ID = "pano_cardmedia";
 
-/** Zemin renk kaynağı (temanın gradyanı). */
+/** Zemin renk kaynağı (temanın / markanın gradyanı). theme: anahtar ya da belirteç. */
 export function bgSource(theme) {
   const t = themeOf(theme);
   return { id: BG_SOURCE_ID, kind: "color", name: "Panorama zemini", color: t.bg[0], color2: t.bg[1], gradient: true, gradientAngle: 135, text: "", textColor: "#ffffff", panorama: true };
 }
 
+const HEAD_PX = 76;
+/** Kart kutusunun gövdesi (video katmanı buraya oturur; draw.js mediaFrame ile aynı ölçü). */
+export function cardBodyBox(c, H = 1080) {
+  if (!c) return null;
+  return { x: c.x + 14 / 1920, y: c.y + (HEAD_PX + 14) / H, w: Math.max(0.02, c.w - 28 / 1920), h: Math.max(0.02, c.h - (HEAD_PX + 52) / H) };
+}
+
 /**
  * Açılardan stüdyo sahne yapılandırması (scenes.js biçimi; Maç yayınının çizim / geçiş /
  * işçi altyapısı aynen kullanır). sources: kullanıcının kaynakları (kamera, ekran, medya…).
+ * cardMedia: { kind: "video", src } — slayt / sponsor kartının videosu kart kutusunda katman olarak.
  */
-export function buildPanoramaScenes({ sources = [], angles = [], theme = "mor", programId = null, previewId = null }) {
+export function buildPanoramaScenes({ sources = [], angles = [], theme = "mor", programId = null, previewId = null, cardMedia = null }) {
   const t = themeOf(theme);
   const kinds = new Map(sources.map((s) => [s.id, s.kind]));
-  const bg = bgSource(theme);
+  const bg = bgSource(t);
+  const media = cardMedia?.kind === "video" && cardMedia.src ? { id: CARD_MEDIA_ID, kind: "video", name: "Kart videosu", url: cardMedia.src, ...(cardMedia.mediaId ? { mediaId: cardMedia.mediaId } : {}), loop: true, restartOnShow: true, panorama: true } : null;
+  // Videonun arkası: siyah zemin (sığdırılan videonun kenarlarında sahne görünmesin).
+  const mediaBg = media ? { id: `${CARD_MEDIA_ID}_bg`, kind: "color", name: "Kart videosu zemini", color: "#000000", text: "", panorama: true } : null;
   const scenes = angles.map((a) => {
     const L = layoutOf(a.layout);
+    const g = angleGeometry(a);
+    const st = a.style || {};
     const layers = [];
     if (!L.full) layers.push(normalizeLayer(makeLayer(BG_SOURCE_ID, { id: `${a.id}_bg`, fit: "stretch" }), "color"));
-    L.slots.forEach((box, k) => {
+    const order = g.slots.map((b, k) => ({ b, k })).sort((x, y) => (x.b.z || 0) - (y.b.z || 0));
+    for (const { b, k } of order) {
       const sid = a.slots[k];
-      if (!sid || !kinds.has(sid)) return;
-      const framed = !L.full;
+      if (!sid || !kinds.has(sid)) continue;
+      const fullBox = b.w >= 0.999 && b.h >= 0.999 && b.x <= 0.001 && b.y <= 0.001;
+      const framed = !fullBox;
+      const mask = b.mask && b.mask !== "rect" ? b.mask : null;
+      const radius = mask ? 0 : b.radius != null ? b.radius : framed ? 0.035 : 0;
+      const border = st.border != null ? st.border : framed ? 3 : 0;
+      const shadow = st.shadow != null ? st.shadow : framed ? 24 : 0;
       layers.push(normalizeLayer(makeLayer(sid, {
-        id: `${a.id}_s${k}`, ...box, fit: kinds.get(sid) === "image" ? "contain" : "cover",
-        ...(framed ? { radius: 0.035, border: { width: 3, color: t.accent }, shadow: { blur: 24, color: "#000000" } } : {}),
+        id: `${a.id}_s${k}`, x: b.x, y: b.y, w: b.w, h: b.h, fit: kinds.get(sid) === "image" ? "contain" : "cover",
+        ...(b.crop ? { crop: b.crop } : {}),
+        ...(radius ? { radius } : {}),
+        ...(mask ? { mask } : {}),
+        ...(border > 0 ? { border: { width: border, color: st.borderColor || t.accent } } : {}),
+        ...(shadow > 0 ? { shadow: { blur: shadow, color: "#000000" } } : {}),
       }), kinds.get(sid)));
-    });
+    }
+    if (media && a.card && g.card) {
+      const cb = cardBodyBox(g.card);
+      layers.push(normalizeLayer(makeLayer(mediaBg.id, { id: `${a.id}_mediabg`, ...cb, fit: "stretch", radius: 0.03 }), "color"));
+      layers.push(normalizeLayer(makeLayer(CARD_MEDIA_ID, { id: `${a.id}_media`, ...cb, fit: cardMedia.fit === "cover" ? "cover" : "contain", radius: 0.03 }), "video"));
+    }
     return { id: a.id, name: a.name, layers, panorama: true };
   });
   const ids = scenes.map((s) => s.id);
@@ -208,7 +298,7 @@ export function buildPanoramaScenes({ sources = [], angles = [], theme = "mor", 
   const pvw = ids.includes(previewId) ? previewId : ids[1] || prog;
   return {
     version: 3,
-    sources: [bg, ...sources.filter((s) => s.id !== BG_SOURCE_ID)],
+    sources: [bg, ...(media ? [media, mediaBg] : []), ...sources.filter((s) => s.id !== BG_SOURCE_ID && !String(s.id).startsWith(CARD_MEDIA_ID))],
     scenes,
     overlay: { variant: "off" },
     programSceneId: prog,
@@ -222,13 +312,14 @@ export function sceneBoxes(angles, sources = []) {
   const names = new Map(sources.map((s) => [s.id, s.name]));
   const out = {};
   for (const a of angles) {
-    const L = layoutOf(a.layout);
+    const g = angleGeometry(a);
     out[a.id] = {
-      card: a.card && L.card ? L.card : null,
+      card: a.card && g.card ? g.card : null,
       ticker: a.ticker,
       header: a.header,
-      full: Boolean(L.full),
-      names: a.names ? L.slots.map((box, k) => (a.slots[k] && names.get(a.slots[k]) ? { ...box, text: String(names.get(a.slots[k])).slice(0, 40) } : null)).filter(Boolean) : [],
+      full: g.full,
+      band: g.band,
+      names: a.names ? g.slots.map((box, k) => (a.slots[k] && names.get(a.slots[k]) ? { x: box.x, y: box.y, w: box.w, h: box.h, mask: box.mask, text: String(names.get(a.slots[k])).slice(0, 40) } : null)).filter(Boolean) : [],
     };
   }
   return out;
@@ -257,25 +348,51 @@ export function tickerItems(data, cfg = {}) {
 
 const pickTeam = (rows, id) => (rows || []).find((r) => Number(r.teamId) === Number(id)) || null;
 
-/** Kartın çizim verisi (yalnız gereken dilim: işçiye giden anlık görüntü küçük kalır). */
+/** Kayan skor bandının maçları: canlı, son, yaklaşan (kaynak sırası seçilebilir). */
+export function scoreboardMatches(data, sources = "live,results,fixtures") {
+  const out = [];
+  for (const k of String(sources || "").split(",").map((x) => x.trim())) {
+    if (k === "live") for (const m of data?.live || []) out.push({ ...m, live: true });
+    if (k === "results") for (const m of (data?.results || []).slice(0, 10)) out.push(m);
+    if (k === "fixtures") for (const m of (data?.fixtures || []).slice(0, 8)) out.push(m);
+  }
+  return out.slice(0, 24);
+}
+
+/** Web sahnesi kartının önbellek anahtarı (yayın kapsamıyla). */
+export const webCardKey = (card, scope) => sceneKeyOf(card?.opts?.scene, card?.opts || {}, scope || {});
+/** Haftanın maçı: seçilen maç ya da otomatik (yaklaşanlardan en üst sıraların maçı). */
+export function motwMatch(card, data) {
+  const id = Number(card?.opts?.matchId) || null;
+  const all = [...(data?.fixtures || []), ...(data?.live || []), ...(data?.results || [])];
+  return (id && all.find((m) => Number(m.id) === id)) || (id ? { id } : pickMatchOfWeek(data?.fixtures, data?.standings?.rows));
+}
+
+/**
+ * Kartın çizim verisi (yalnız gereken dilim: işçiye giden anlık görüntü küçük kalır).
+ * ctx: { siteUrl, scope, web: Map(anahtar → { payload, missing, error, loading }), weather: Map(şehir → hava),
+ *        cities: Map(anahtar → { cities, error }), now }
+ */
 export function cardPayload(card, data, ctx = {}) {
   if (!card || !data) return null;
   const sc = data.scope || {};
   const scopeLine = [sc.league?.label, sc.season?.label].filter(Boolean).join(" · ");
   const base = { scope: scopeLine, city: sc.city?.label || "" };
   const rows = data.standings?.rows || [];
+  const o = card.opts || {};
   switch (card.kind) {
     case "standings": return { ...base, type: data.standings?.type, rows: rows.slice(0, 30) };
     case "fixtures": return { ...base, matches: (data.fixtures || []).slice(0, 12) };
     case "results": return { ...base, matches: (data.results || []).slice(0, 12) };
     case "live": return { ...base, matches: (data.live || []).slice(0, 8), next: (data.fixtures || []).slice(0, 4) };
+    case "scoreboard": return { ...base, matches: scoreboardMatches(data, o.sources), speed: num(o.speed, 90) };
     case "scorers": return { ...base, players: (data.scorers || []).slice(0, 10), metric: "goals" };
     case "assists": return { ...base, players: (data.assists || []).slice(0, 10), metric: "assists" };
     case "mvp": return { ...base, players: (data.mvp || []).slice(0, 10), metric: "points" };
     case "weekly": return { ...base, weekly: data.weekly };
     case "news": return { ...base, items: (data.news || []).slice(0, 6) };
     case "team": {
-      const id = card.opts?.teamId || rows[0]?.teamId;
+      const id = o.teamId || rows[0]?.teamId;
       const row = pickTeam(rows, id);
       if (!row) return { ...base, team: null };
       const mine = (m) => Number(m.homeId) === Number(row.teamId) || Number(m.awayId) === Number(row.teamId);
@@ -287,8 +404,8 @@ export function cardPayload(card, data, ctx = {}) {
       };
     }
     case "compare": {
-      const a = pickTeam(rows, card.opts?.teamA) || rows[0] || null;
-      const b = pickTeam(rows, card.opts?.teamB) || rows.find((r) => r !== a) || null;
+      const a = pickTeam(rows, o.teamA) || rows[0] || null;
+      const b = pickTeam(rows, o.teamB) || rows.find((r) => r !== a) || null;
       return { ...base, a, b };
     }
     case "city": {
@@ -296,55 +413,114 @@ export function cardPayload(card, data, ctx = {}) {
       const goals = rows.reduce((s, r) => s + r.goalsFor, 0);
       return { ...base, teams: rows.length, played: Math.round(played), goals, leader: rows[0] || null, topScorer: (data.scorers || [])[0] || null, live: (data.live || []).length, next: (data.fixtures || [])[0] || null };
     }
+    case "cities": {
+      const key = (o.cityIds || []).join(",");
+      const r = ctx.cities?.get?.(key) || null;
+      return { ...base, cities: r?.cities || [], error: r?.error || (key ? null : "İl seç.") };
+    }
+    case "web": {
+      const r = ctx.web?.get?.(webCardKey(card, ctx.scope)) || null;
+      return { ...base, scene: o.scene, payload: r?.payload || null, missing: r?.missing || [], error: r?.error || null, loading: !r };
+    }
+    case "motw": {
+      const m = motwMatch(card, data);
+      const pv = m?.id ? ctx.web?.get?.(sceneKeyOf("mac_onizleme", { matchId: m.id }, ctx.scope || {})) : null;
+      return { ...base, match: m && m.homeName ? m : pv?.payload?.match || null, preview: pv?.payload || null };
+    }
     case "sponsors": return { ...base, sponsors: (data.sponsors || []).slice(0, 12) };
-    case "qr": return { ...base, url: card.opts?.url || ctx.siteUrl || "https://elitlig.com", label: card.opts?.label || "elitlig.com" };
+    case "promo": return { ...base, name: o.name, text: o.text, url: o.url, logo: o.logo || null, items: o.items || [], perSec: o.perSec, fit: o.fit };
+    case "slides": return { ...base, items: o.items || [], perSec: o.perSec, fit: o.fit };
+    case "social": return { ...base, url: o.url, title: o.title, text: o.text, image: o.image || null, site: o.site, author: o.author };
+    case "poll": return { ...base, question: o.question, options: (o.options || []).filter((x) => x.label), url: o.url };
+    case "qr": return { ...base, url: o.url || ctx.siteUrl || "https://elitlig.com", label: o.label || "elitlig.com" };
+    case "countdown": return { ...base, target: o.target, title: o.title, doneText: o.doneText };
+    case "weather": {
+      const city = String(o.city || base.city || "").trim();
+      const w = ctx.weather?.get?.(city.toLocaleLowerCase("tr-TR")) || null;
+      return { ...base, city, weather: w?.weather || null, error: w?.error || null };
+    }
     case "clock": return { ...base };
-    case "notice": return { ...base, title: card.opts?.title || "DUYURU", text: card.opts?.text || "" };
+    case "notice": return { ...base, title: o.title || "DUYURU", text: o.text || "" };
+    case "text": return { ...base, text: o.text || "", size: o.size, align: o.align, color: o.color, upper: Boolean(o.upper), font: o.font };
     default: return base;
   }
 }
 
-/** Kart başlığı (ekranda). */
-export function cardTitle(card) {
+/** Kart başlığı (ekranda). Web sahnesinde sunucunun başlığı (ör. "Gol Krallığı"). */
+export function cardTitle(card, payload = null) {
   if (!card) return "";
   if (card.kind === "notice") return String(card.opts?.title || "DUYURU");
+  if (card.kind === "text") return String(card.opts?.title || "");
+  if (card.kind === "web") return String(payload?.payload?.title || webSceneOf(card.opts?.scene)?.label || "");
+  if (card.kind === "motw") return "Haftanın maçı";
+  if (card.kind === "poll") return "Seyirci anketi";
+  if (card.kind === "countdown") return String(card.opts?.title ? "Geri sayım" : "Geri sayım");
+  if (card.kind === "social") return String(card.opts?.site || "Sosyal medya");
+  if (card.kind === "promo") return String(card.opts?.name || "Sponsor");
+  if (card.kind === "cities") return "İller karşılaştırması";
   return (cardKindOf(card.kind)?.label || "").replace(/\s*\(.*\)$/, "");
 }
 
 /** Anlık görüntüdeki görsel adresleri (işçiye aktarma / önceden yükleme). */
 export function panoramaImageUrls(p) {
   if (!p) return [];
-  const out = [p.logoUrl];
-  const d = p.card?.data || {};
-  for (const r of d.rows || []) out.push(r.teamLogo);
-  for (const m of [...(d.matches || []), ...(d.next || []), ...(d.results || []), ...(d.fixtures || [])]) out.push(m.homeLogo, m.awayLogo);
-  for (const pl of d.players || []) out.push(pl.image, pl.teamLogo);
-  for (const it of d.weekly?.items || []) out.push(it.image, it.teamLogo);
-  for (const n of d.items || []) out.push(n.image);
-  for (const s of d.sponsors || []) out.push(s.logo);
-  for (const t of [d.team, d.a, d.b, d.leader, d.topScorer]) if (t) out.push(t.teamLogo, t.image);
+  const out = [p.logoUrl, p.tokens?.logo, p.tokens?.logo2];
+  for (const cd of [p.card, p.prev?.card]) {
+    const d = cd?.data || {};
+    for (const r of d.rows || []) out.push(r.teamLogo);
+    for (const m of [...(d.matches || []), ...(d.next || []), ...(d.results || []), ...(d.fixtures || [])]) out.push(m.homeLogo, m.awayLogo);
+    for (const pl of d.players || []) out.push(pl.image, pl.teamLogo);
+    for (const it of d.weekly?.items || []) out.push(it.image, it.teamLogo);
+    for (const n of d.items || []) out.push(n.image, n.kind === "image" ? n.src : null);
+    for (const s of d.sponsors || []) out.push(s.logo);
+    for (const t of [d.team, d.a, d.b, d.leader, d.topScorer, d.match]) if (t) out.push(t.teamLogo, t.image, t.homeLogo, t.awayLogo);
+    for (const c of d.cities || []) out.push(c.leader?.teamLogo);
+    out.push(d.logo, d.image);
+    if (d.payload) out.push(...webPayloadImages(d.payload));
+    if (d.preview) out.push(...webPayloadImages(d.preview));
+  }
   for (const s of p.band?.sponsors || []) out.push(s.logo);
-  return [...new Set(out.filter((u) => typeof u === "string" && u))].slice(0, 120);
+  return [...new Set(out.filter((u) => typeof u === "string" && u))].slice(0, 160);
+}
+
+/** Kartın anlık görüntüsü (çizim verisi + kart başına belirteçler). */
+function cardSnap(card, since, data, ctx, brand) {
+  if (!card) return null;
+  const d = cardPayload(card, data, ctx);
+  return {
+    id: card.id, kind: card.kind, title: cardTitle(card, d), sec: card.sec, since: since || 0, data: d,
+    ...(card.style ? { style: card.style, tokens: brandTokens(brand, card.style) } : {}),
+    ...(card.kind === "web" && d?.payload?.subtitle ? { subtitle: String(d.payload.subtitle).slice(0, 120) } : {}),
+  };
 }
 
 /**
  * Grafik anlık görüntüsü (çizim işçisine giden düz veri). Kimliği yalnız içerik değişince değişir
  * (çağıran önbellekler): saat / kayma çizimde `now`dan hesaplanır.
+ * brand: marka profili (brands.js; yoksa theme anahtarının hazır profili). prev: { card, since, at }
+ * — çıkış animasyonu için bir önceki kart.
  */
-export function buildPanoramaSnapshot({ branding, theme, angles, sources, card, cardSince, data, ticker, title, logoUrl, siteUrl, band }) {
-  const t = themeOf(theme);
+export function buildPanoramaSnapshot({ branding, theme, brand, angles, sources, card, cardSince, prev = null, data, ticker, title, logoUrl, siteUrl, band, scope, web, weather, cities }) {
+  const B = brand ? normalizeBrand(brand) : findBrand([], `th_${theme || "mor"}`);
+  const T = brandTokens(B);
   const sc = data?.scope || {};
   const items = ticker?.on === false ? [] : tickerItems(data, ticker || {});
+  const ctx = { siteUrl, scope, web, weather, cities };
+  const boxes = sceneBoxes(angles || [], sources || []);
+  const needScores = Object.values(boxes).some((b) => b.band === "scores");
   return {
     branding,
     panorama: {
-      theme: t.key,
-      title: str(title || "ELİTLİG PANORAMA", "", 60),
+      theme: T.key,
+      tokens: T,
+      title: str(B.title || title || "ELİTLİG PANORAMA", "", 60),
       subtitle: [sc.city?.label, sc.league?.label, sc.season?.label].filter(Boolean).join(" · "),
-      logoUrl: logoUrl || null,
-      boxes: sceneBoxes(angles || [], sources || []),
-      card: card ? { id: card.id, kind: card.kind, title: cardTitle(card), sec: card.sec, since: cardSince || 0, data: cardPayload(card, data, { siteUrl }) } : null,
-      ticker: { items, label: str(ticker?.label || "ELİTLİG", "", 24), speed: clamp(num(ticker?.speed, 120), 40, 400) },
+      logoUrl: T.logo || logoUrl || null,
+      boxes,
+      card: cardSnap(card, cardSince, data, ctx, B),
+      prev: prev?.card && prev.card.id !== card?.id ? { card: cardSnap(prev.card, prev.since, data, ctx, B), at: prev.at || 0 } : null,
+      ticker: { items, label: str(ticker?.label || T.tickerLabel || "ELİTLİG", "", 24), speed: clamp(num(ticker?.speed, 120), 40, 400) },
+      scores: needScores ? scoreboardMatches(data, "live,results,fixtures").slice(0, 16) : null,
       band: band?.on && band.sponsors?.length ? { sponsors: band.sponsors.slice(0, 10), since: band.since || 0 } : null,
       clock: true,
     },
@@ -382,6 +558,30 @@ export const BUILTIN_TEMPLATES = Object.freeze([
     cards: [C("news", 24), C("notice", 12, { title: "DUYURU", text: "Elitlig Kral Kupası kayıtları elitlig.com'da." }), C("sponsors", 10), C("qr", 12), C("clock", 8)],
     ticker: { on: true, sources: ["news", "custom"], text: "Haberlerin tamamı elitlig.com'da" },
   },
+  {
+    key: "masa", name: "Haber masası", builtin: true, theme: "kurumsal", hint: "İki sunucu ve arka ekran; haftanın maçı, sezon istatistikleri, geri sayım",
+    angles: [A("Haber masası", "newsDesk"), A("Geniş ekran", "newsDeskWide"), A("Spiker + ekran", "anchor"), A("Resim içinde resim", "pip"), A("İçerik + köşe kamera", "contentCam")],
+    cards: [C("motw", 16), C("web", 18, { scene: "sezon_ozeti" }), C("standings", 20), C("scoreboard", 20), C("countdown", 10, { title: "SIRADAKİ MAÇA" })],
+    ticker: { on: true, sources: ["live", "results", "news"], text: "" },
+  },
+  {
+    key: "roportaj", name: "Röportaj / konuk", builtin: true, theme: "spor", hint: "Karşılıklı iki kamera, oyuncu profili ve karşılaştırmalar (web sahneleri)",
+    angles: [A("Röportaj", "interview"), A("Röportaj + kart", "interviewCard"), A("Yan yana 60/40", "side6040"), A("Çapraz bölme", "diagonal"), A("Konuk", "solo")],
+    cards: [C("web", 18, { scene: "gol_kralligi" }), C("web", 16, { scene: "form_tablosu" }), C("compare", 15), C("poll", 20, { question: "Maçın adamı kim?", options: [{ label: "Ev sahibi", votes: 0 }, { label: "Deplasman", votes: 0 }], url: "https://elitlig.com" })],
+    ticker: { on: true, sources: ["results", "custom"], text: "" },
+  },
+  {
+    key: "tartisma", name: "Tartışma programı", builtin: true, theme: "sampiyon", hint: "Dört konuk, ekran duvarı; disiplin, fair play, en golcü takımlar",
+    angles: [A("Tartışma masası", "panel4"), A("1 + 5", "onePlus5"), A("Ekran duvarı + içerik", "wallCard"), A("Yuvarlak konuklar", "circles3"), A("İçerik tam ekran", "content")],
+    cards: [C("web", 18, { scene: "kart_kralligi" }), C("web", 16, { scene: "fair_play" }), C("web", 16, { scene: "en_golcu_takimlar" }), C("web", 16, { scene: "cezalilar" }), C("cities", 15)],
+    ticker: { on: true, sources: ["results", "fixtures", "news"], text: "" },
+  },
+  {
+    key: "sponsor", name: "Sponsor & etkileşim", builtin: true, theme: "neon", hint: "Sponsor tanıtımı, slayt, sosyal medya, anket ve hava durumu",
+    angles: [A("Kamera + kart", "camCard"), A("Yuvarlak kamera + içerik", "contentCircle"), A("Kamera + skor bandı", "camTicker"), A("İçerik tam ekran", "content")],
+    cards: [C("promo", 15), C("slides", 24), C("social", 14), C("poll", 20), C("weather", 10), C("sponsors", 10)],
+    ticker: { on: true, sources: ["live", "news", "custom"], text: "" },
+  },
 ]);
 
 /** Şablonu uygula: açılar (yuvalar kaynaklarla dolar, açı başına kaydırmalı) + kartlar + bant + tema. */
@@ -400,7 +600,7 @@ export function applyTemplate(tpl, sources) {
 export function templateFromState(name, state) {
   return {
     key: pid("pt"), name: str(name, "Şablon", 60).trim() || "Şablon", builtin: false, theme: state.theme,
-    angles: (state.angles || []).map((a) => ({ name: a.name, layout: a.layout, slots: a.slots, card: a.card, ticker: a.ticker, header: a.header, names: a.names })),
+    angles: (state.angles || []).map((a) => { const { id, ...rest } = a; void id; return rest; }),
     cards: (state.playlist?.items || []).map((c) => ({ kind: c.kind, sec: c.sec, opts: c.opts })),
     ticker: state.ticker,
     savedAt: Date.now(),
@@ -414,6 +614,7 @@ export const TEMPLATES_KEY = "studio.panorama.templates.v1";
 
 /** Kalıcı panorama durumu: kaynaklar, açılar, liste, bant, tema, kapsam, başlık. */
 export function normalizePanoramaState(s) {
+  if (Array.isArray(s?.customLayouts)) setCustomLayouts(s.customLayouts);
   const sources = (Array.isArray(s?.sources) ? s.sources : []).filter((x) => x && typeof x.id === "string" && typeof x.kind === "string" && x.id !== BG_SOURCE_ID).slice(0, 40);
   const angles = (Array.isArray(s?.angles) ? s.angles : []).map(normalizeAngle).slice(0, 24);
   return {
@@ -428,6 +629,10 @@ export function normalizePanoramaState(s) {
     programId: typeof s?.programId === "string" ? s.programId : null,
     previewId: typeof s?.previewId === "string" ? s.previewId : null,
     templateKey: typeof s?.templateKey === "string" ? s.templateKey : null,
+    // Marka profili (brands.js; hazır temalar "th_<tema>"), kullanıcı düzenleri, etkin hazır ayar.
+    brandId: typeof s?.brandId === "string" && s.brandId ? s.brandId.slice(0, 40) : `th_${themeOf(s?.theme).key}`,
+    customLayouts: (Array.isArray(s?.customLayouts) ? s.customLayouts : []).map(normalizeCustomLayout).filter(Boolean).slice(0, 40),
+    presetId: typeof s?.presetId === "string" ? s.presetId.slice(0, 40) : null,
   };
 }
 

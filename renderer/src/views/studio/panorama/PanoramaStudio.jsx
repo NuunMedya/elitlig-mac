@@ -15,7 +15,13 @@
 //               kayda ve LED'e giden görüntüde görünür.
 //   YAYIN       aynı motor (useEngine → ana süreç ffmpeg → RTMP / RTMPS, YouTube yayın anahtarı,
 //               prova / yalnız kayıt, yerel tam kayıt). Müzik çalar ve LED çıkışı aynı modüller.
-//   ŞABLONLAR   açılar + kart sırası + alt bant + tema; hazır dört şablon, kaydedilebilir.
+//   ŞABLONLAR   açılar + kart sırası + alt bant + tema; hazır sekiz şablon, kaydedilebilir.
+//   MARKALAR    marka profilleri (BrandPanel.jsx; lib/studio/panorama/brands.js): logo, renk, yazı tipi,
+//               kart / künye / bant / saat stili, animasyon, filigran; 16 hazır tema; dışa / içe aktarma.
+//   HAZIR AYAR  marka + açılar + kartlar + kaynaklar + kapsam (PresetsPanel.jsx; presets.js); son
+//               kullanılan açılışta yüklenir, üst çubuktan ve ⌥1–9 ile tek tıkla geçiş. Web Panorama
+//               yönetimindeki kayıtlı yayınlar içe aktarılır.
+//   WEB SAHNELERİ web Panorama rejisinin 51 sahnesi kart olarak (webScenes.js, drawWeb.js).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, Kbd, Modal, useConfirm, useToast } from "../../../components/ui";
 import { setLeaveGuard } from "../../../lib/leaveGuard";
@@ -25,10 +31,18 @@ import { DEFAULT_BRANDING } from "../../../lib/studio/stinger";
 import { drawGraphics } from "../../../lib/studio/graphics";
 import { uid } from "../../../lib/studio/scenes";
 import {
-  BUILTIN_TEMPLATES, CARD_KINDS, PANORAMA_LAYOUTS, PANORAMA_THEMES, applyTemplate, buildPanoramaScenes, buildPanoramaSnapshot, cardKindOf,
-  currentCard, fillSlots, gotoCard, layoutOf, loadPanoramaState, loadTemplates, makeCard, normalizeAngle, normalizeCard, normalizePanoramaState,
-  pinCard, remainingSec, savePanoramaState, saveTemplates, stepCard, templateFromState, tickPlaylist,
+  PANORAMA_KEY, applyTemplate, buildPanoramaScenes, buildPanoramaSnapshot, cardLabel, currentCard, currentMedia, defaultPanoramaState, fillSlots, gotoCard, layoutOf,
+  loadPanoramaState, loadTemplates, normalizeAngle, normalizeCard, normalizePanoramaState, pinCard, remainingSec, savePanoramaState, saveTemplates,
+  setCustomLayouts, stepCard, templateFromState, tickPlaylist, webCardKey,
 } from "../../../lib/studio/panorama/model";
+import { BUILTIN_BRANDS, findBrand, loadBrands, saveBrands } from "../../../lib/studio/panorama/brands";
+import { applyPreset, bootState, loadPresets, presetDirty, presetFromState, savePresets } from "../../../lib/studio/panorama/presets";
+import { AngleEditor, LayoutEditor, LayoutPic } from "./AngleEditor";
+import { AddCardSelect, CardOptions } from "./CardEditor";
+import BrandPanel from "./BrandPanel";
+import PresetsPanel from "./PresetsPanel";
+import { usePanoramaExtras } from "./usePanoramaExtras";
+import { brandTokens as brandTokensOf } from "../../../lib/studio/panorama/brands";
 import { useStudioSources } from "../useStudioSources";
 import { useAudioMixer } from "../useAudioMixer";
 import { useCanvasImage, useCompositor } from "../useCompositor";
@@ -91,17 +105,6 @@ function StatusPill({ state, since }) {
   return <span className={`st-pill is-${pill.tone}`}><i />{pill.label}</span>;
 }
 
-/** Düzen simgesi: yuvalar ve kart kutusu (küçük çizim). */
-function LayoutPic({ layout, active = false }) {
-  const L = layoutOf(layout);
-  return (
-    <span className={`pn-lpic ${active ? "is-on" : ""}`} aria-hidden="true">
-      {L.card && <i className="is-card" style={{ left: `${L.card.x * 100}%`, top: `${L.card.y * 100}%`, width: `${L.card.w * 100}%`, height: `${L.card.h * 100}%` }} />}
-      {L.slots.map((b, i) => <i key={i} style={{ left: `${b.x * 100}%`, top: `${b.y * 100}%`, width: `${b.w * 100}%`, height: `${b.h * 100}%` }}><b>{i + 1}</b></i>)}
-    </span>
-  );
-}
-
 /** Açı küçük resimleri: sahne + panorama katmanı (kart, künye, bant) — program ile aynı çizim. */
 function useAngleTiles(configRef, runtimeRef, snapRef) {
   const canvases = useRef(new Map());
@@ -122,88 +125,9 @@ function useAngleTiles(configRef, runtimeRef, snapRef) {
   }, []);
 }
 
-/* ─────────────────────────────── açı düzenleyici ─────────────────────────────── */
-
-function AngleEditor({ angle, sources, onSave, onDelete, onClose }) {
-  const [a, setA] = useState(() => normalizeAngle(angle));
-  const L = layoutOf(a.layout);
-  const visual = sources.filter((s) => s.kind !== "audio");
-  const setLayout = (key) => setA((x) => normalizeAngle({ ...x, layout: key, name: x.name === layoutOf(x.layout).label ? layoutOf(key).label : x.name, slots: fillSlots(key, sources).map((id, i) => x.slots[i] || id) }));
-  return (
-    <Modal title="Açıyı düzenle" onClose={onClose} width={760} className="st-modal pn-modal">
-      <div className="pn-form">
-        <label className="field"><span>Ad</span><input className="input" value={a.name} maxLength={40} onChange={(e) => setA({ ...a, name: e.target.value })} /></label>
-        <div className="pn-field"><span>Düzen</span>
-          <div className="pn-layouts">
-            {PANORAMA_LAYOUTS.map((l) => (
-              <button key={l.key} type="button" className={`pn-layoutbtn ${a.layout === l.key ? "is-on" : ""}`} onClick={() => setLayout(l.key)} title={l.hint}>
-                <LayoutPic layout={l.key} active={a.layout === l.key} /><small>{l.label}</small>
-              </button>
-            ))}
-          </div>
-        </div>
-        {L.slots.length > 0 && (
-          <div className="pn-field"><span>Kameralar / kaynaklar</span>
-            <div className="pn-slots">
-              {L.slots.map((_, i) => (
-                <label key={i} className="field"><span>{i + 1}. yer</span>
-                  <select className="input" value={a.slots[i] || ""} onChange={(e) => setA({ ...a, slots: a.slots.map((s, k) => (k === i ? e.target.value || null : s)) })}>
-                    <option value="">— boş —</option>
-                    {visual.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
-        <div className="pn-checks">
-          {L.card && <label><input type="checkbox" checked={a.card} onChange={(e) => setA({ ...a, card: e.target.checked })} /> İçerik kartı</label>}
-          <label><input type="checkbox" checked={a.ticker} onChange={(e) => setA({ ...a, ticker: e.target.checked })} /> Alt bant (kayan yazı)</label>
-          <label><input type="checkbox" checked={a.header} onChange={(e) => setA({ ...a, header: e.target.checked })} /> Künye (logo, başlık, saat)</label>
-          {L.slots.length > 1 && <label><input type="checkbox" checked={a.names} onChange={(e) => setA({ ...a, names: e.target.checked })} /> İsim bantları</label>}
-        </div>
-      </div>
-      <footer className="pn-modal__foot">
-        {onDelete && <button type="button" className="btn btn--danger" onClick={onDelete}><Icon name="trash" size={13} /> Açıyı sil</button>}
-        <span className="st-top__spacer" />
-        <button type="button" className="btn" onClick={onClose}>Vazgeç</button>
-        <button type="button" className="btn btn--primary" onClick={() => onSave(normalizeAngle(a))}><Icon name="check" size={13} /> Kaydet</button>
-      </footer>
-    </Modal>
-  );
-}
-
 /* ─────────────────────────────── yan paneller ─────────────────────────────── */
 
-function CardOptions({ card, data, onChange }) {
-  const teams = data.standings?.rows || [];
-  const set = (k, v) => onChange({ ...card, opts: { ...card.opts, [k]: v } });
-  const teamSel = (k, label) => (
-    <label className="field pn-mini"><span>{label}</span>
-      <select className="input" value={card.opts?.[k] || ""} onChange={(e) => set(k, Number(e.target.value) || null)}>
-        <option value="">Otomatik</option>
-        {teams.map((t) => <option key={t.teamId} value={t.teamId}>{t.rank}. {t.teamName}</option>)}
-      </select>
-    </label>
-  );
-  if (card.kind === "team") return teamSel("teamId", "Takım");
-  if (card.kind === "compare") return <>{teamSel("teamA", "1. takım")}{teamSel("teamB", "2. takım")}</>;
-  if (card.kind === "notice") return (
-    <>
-      <label className="field pn-mini"><span>Başlık</span><input className="input" value={card.opts?.title || ""} maxLength={60} onChange={(e) => set("title", e.target.value)} /></label>
-      <label className="field pn-mini"><span>Metin</span><textarea className="input" rows={2} value={card.opts?.text || ""} maxLength={300} onChange={(e) => set("text", e.target.value)} /></label>
-    </>
-  );
-  if (card.kind === "qr") return (
-    <>
-      <label className="field pn-mini"><span>Adres</span><input className="input" placeholder="https://elitlig.com" value={card.opts?.url || ""} onChange={(e) => set("url", e.target.value)} /></label>
-      <label className="field pn-mini"><span>Etiket</span><input className="input" placeholder="elitlig.com" value={card.opts?.label || ""} onChange={(e) => set("label", e.target.value)} /></label>
-    </>
-  );
-  return null;
-}
-
-function CardsPanel({ pano, setPlaylist, data, now }) {
+function CardsPanel({ pano, setPlaylist, data, now, ex }) {
   const pl = pano.playlist;
   const cur = currentCard(pl);
   const rem = remainingSec(pl, now);
@@ -211,7 +135,15 @@ function CardsPanel({ pano, setPlaylist, data, now }) {
   const update = (c) => setPlaylist((p) => ({ ...p, items: p.items.map((x) => (x.id === c.id ? normalizeCard(c) : x)) }));
   const move = (i, d) => setPlaylist((p) => { const items = [...p.items]; const j = i + d; if (j < 0 || j >= items.length) return p; [items[i], items[j]] = [items[j], items[i]]; return { ...p, items, index: items.indexOf(currentCard(p)) }; });
   const remove = (id) => setPlaylist((p) => { const items = p.items.filter((x) => x.id !== id); return { ...p, items, pinnedId: p.pinnedId === id ? null : p.pinnedId, index: Math.min(p.index, Math.max(0, items.length - 1)) }; });
-  const add = (kind) => { if (kind) setPlaylist((p) => ({ ...p, items: [...p.items, makeCard(kind)] })); };
+  const add = (card) => { const c = normalizeCard(card); if (c) { setPlaylist((p) => ({ ...p, items: [...p.items, c] })); setOpenId(c.id); } };
+  const status = (c) => {
+    if (c.kind !== "web") return null;
+    const r = ex.web.get(webCardKey(c, pano.scope));
+    if (!r) return <em className="pn-cst">yükleniyor</em>;
+    if (r.missing?.length) return <em className="pn-cst is-warn">seçim eksik</em>;
+    if (r.error && !r.payload) return <em className="pn-cst is-err" title={r.error}>alınamadı</em>;
+    return r.payload ? <em className="pn-cst is-ok">hazır</em> : <em className="pn-cst">boş</em>;
+  };
   return (
     <div className="pn-cards">
       <div className="pn-cards__bar">
@@ -220,37 +152,32 @@ function CardsPanel({ pano, setPlaylist, data, now }) {
           <Icon name={pl.auto ? "play" : "stop"} size={12} /> {pl.auto ? "Döngü açık" : "Döngü kapalı"}
         </button>
         <button type="button" className="btn btn--sm" onClick={() => setPlaylist((p) => stepCard(p, 1, Date.now()))} title="Sonraki kart (→)"><Icon name="chevronRight" size={13} /></button>
-        <span className="pn-cards__now">{cur ? <>{pl.pinnedId ? "Sabit: " : "Yayında: "}<b>{cardKindOf(cur.kind)?.label}</b>{rem != null && <em> · {rem} sn</em>}</> : "Kart yok"}</span>
+        <span className="pn-cards__now">{cur ? <>{pl.pinnedId ? "Sabit: " : "Yayında: "}<b>{cardLabel(cur, ex.catalog.scenes)}</b>{rem != null && <em> · {rem} sn</em>}</> : "Kart yok"}</span>
       </div>
       <ol className="pn-cardlist">
         {pl.items.map((c, i) => {
-          const k = cardKindOf(c.kind);
           const on = cur?.id === c.id;
           return (
-            <li key={c.id} className={`${on ? "is-on" : ""} ${c.off ? "is-off" : ""}`} data-card={c.kind}>
+            <li key={c.id} className={`${on ? "is-on" : ""} ${c.off ? "is-off" : ""}`} data-card={c.kind} data-scene={c.opts?.scene || undefined}>
               <div className="pn-cardrow">
                 <button type="button" className="pn-cardrow__go" onClick={() => setPlaylist((p) => gotoCard(p, i, Date.now()))} title="Bu kartı şimdi göster">
-                  <Icon name={k?.icon || "file"} size={14} /><span>{k?.label}</span>
+                  <Icon name={c.kind === "web" ? "globe" : "layers"} size={14} /><span>{cardLabel(c, ex.catalog.scenes)}</span>{status(c)}
                 </button>
                 <input className="input pn-sec" type="number" min={4} max={600} value={c.sec} onChange={(e) => update({ ...c, sec: Number(e.target.value) || c.sec })} title="Süre (sn)" />
                 <button type="button" className={`icon-btn ${pl.pinnedId === c.id ? "is-on" : ""}`} onClick={() => setPlaylist((p) => pinCard(p, c.id, Date.now()))} title="Sabitle (P): döngü bu kartta durur"><Icon name="pin" size={13} /></button>
                 <button type="button" className="icon-btn" onClick={() => update({ ...c, off: !c.off })} title={c.off ? "Döngüye al" : "Döngüden çıkar"}><Icon name={c.off ? "eye" : "check"} size={13} /></button>
-                <button type="button" className="icon-btn" onClick={() => setOpenId(openId === c.id ? null : c.id)} title="Ayarlar"><Icon name="sliders" size={13} /></button>
-                <button type="button" className="icon-btn" disabled={i === 0} onClick={() => move(i, -1)} title="Yukarı"><Icon name="chevronLeft" size={13} className="pn-rot90" /></button>
+                <button type="button" className={`icon-btn ${openId === c.id ? "is-on" : ""}`} onClick={() => setOpenId(openId === c.id ? null : c.id)} title="Ayarlar"><Icon name="sliders" size={13} /></button>
+                <button type="button" className="icon-btn" disabled={i === 0} onClick={() => move(i, -1)} title="Yukarı"><Icon name="chevronUp" size={13} /></button>
                 <button type="button" className="icon-btn" disabled={i === pl.items.length - 1} onClick={() => move(i, 1)} title="Aşağı"><Icon name="arrowDown" size={13} /></button>
                 <button type="button" className="icon-btn" onClick={() => remove(c.id)} title="Kaldır"><Icon name="trash" size={13} /></button>
               </div>
-              {openId === c.id && <div className="pn-cardopts"><CardOptions card={c} data={data} onChange={update} /></div>}
+              {openId === c.id && <div className="pn-cardopts"><CardOptions card={c} data={data} onChange={update} catalog={ex.catalog} scope={pano.scope} onRefresh={ex.refresh} /></div>}
             </li>
           );
         })}
       </ol>
-      <label className="field pn-mini"><span>Kart ekle</span>
-        <select className="input" value="" onChange={(e) => add(e.target.value)}>
-          <option value="">Kart türü seç…</option>
-          {CARD_KINDS.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
-        </select>
-      </label>
+      <AddCardSelect onAdd={add} catalog={ex.catalog} />
+      <p className="st-hint">Web Panorama: web yönetimindeki Panorama rejisinin {ex.catalog.scenes.length} sahnesi ({ex.catalog.source === "server" ? "sunucu kataloğu" : "gömülü katalog"}).</p>
     </div>
   );
 }
@@ -292,11 +219,7 @@ function LookPanel({ pano, setPano }) {
   return (
     <div className="pn-look">
       <label className="field pn-mini"><span>Program başlığı</span><input className="input" value={pano.title} maxLength={60} onChange={(e) => setPano((p) => ({ ...p, title: e.target.value }))} /></label>
-      <div className="pn-field"><span>Tema (Elitlig renkleri)</span>
-        <div className="pn-themes">{PANORAMA_THEMES.map((t) => (
-          <button key={t.key} type="button" className={`pn-theme ${pano.theme === t.key ? "is-on" : ""}`} onClick={() => setPano((p) => ({ ...p, theme: t.key }))} style={{ "--a": t.bg[1], "--b": t.accent }}><i /><span>{t.label}</span></button>
-        ))}</div>
-      </div>
+      <p className="st-hint">Tema, logo ve renkler: <b>Marka</b> sekmesi. Marka profilinde program başlığı yazılıysa o kullanılır.</p>
       <label className="pn-check"><input type="checkbox" checked={tk.on} onChange={(e) => setTk({ on: e.target.checked })} /> Alt bant (kayan haber şeridi)</label>
       <div className="pn-checks pn-checks--col">{srcs.map(([k, l]) => (
         <label key={k}><input type="checkbox" checked={tk.sources.includes(k)} onChange={(e) => setTk({ sources: e.target.checked ? [...tk.sources, k] : tk.sources.filter((x) => x !== k) })} /> {l}</label>
@@ -307,37 +230,6 @@ function LookPanel({ pano, setPano }) {
         <label className="field pn-mini"><span>Hız (px/sn)</span><input className="input" type="number" min={40} max={400} value={tk.speed} onChange={(e) => setTk({ speed: Number(e.target.value) || 120 })} /></label>
       </div>
       <label className="pn-check"><input type="checkbox" checked={pano.band.on} onChange={(e) => setPano((p) => ({ ...p, band: { on: e.target.checked } }))} /> Sponsor kutusu (sağ altta dönen logolar)</label>
-    </div>
-  );
-}
-
-function TemplatesPanel({ pano, onApply, templates, setTemplates, ask }) {
-  const [name, setName] = useState("");
-  const save = () => {
-    const t = templateFromState(name || `Şablon ${templates.length + 1}`, pano);
-    const next = [...templates, t];
-    setTemplates(next);
-    setName("");
-  };
-  const del = async (t) => { if (await ask({ title: "Şablonu sil", message: `“${t.name}” silinsin mi?`, confirmLabel: "Sil", danger: true })) setTemplates(templates.filter((x) => x.key !== t.key)); };
-  const row = (t) => (
-    <li key={t.key} className={pano.templateKey === t.key ? "is-on" : ""}>
-      <div><b>{t.name}</b><small>{t.hint || `${t.angles.length} açı · ${t.cards.length} kart${t.savedAt ? ` · ${new Date(t.savedAt).toLocaleDateString("tr-TR")}` : ""}`}</small></div>
-      <button type="button" className="btn btn--sm" onClick={() => onApply(t)}>Uygula</button>
-      {!t.builtin && <button type="button" className="icon-btn" onClick={() => del(t)} title="Sil"><Icon name="trash" size={13} /></button>}
-    </li>
-  );
-  return (
-    <div className="pn-tpls">
-      <p className="st-hint">Şablon: kamera açıları (düzenler) + kart sırası + alt bant + tema.</p>
-      <h4>Hazır şablonlar</h4>
-      <ul>{BUILTIN_TEMPLATES.map(row)}</ul>
-      <h4>Kayıtlı şablonlar</h4>
-      {templates.length ? <ul>{templates.map(row)}</ul> : <p className="st-hint">Henüz kayıtlı şablon yok.</p>}
-      <div className="pn-row2">
-        <input className="input" placeholder="Şablon adı" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
-        <button type="button" className="btn btn--sm btn--primary" onClick={save}><Icon name="plus" size={12} /> Şimdiki düzeni kaydet</button>
-      </div>
     </div>
   );
 }
@@ -400,7 +292,18 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
   const confirm = useConfirm();
   const ask = useCallback((opts) => (confirm ? confirm(opts) : Promise.resolve(window.confirm(opts.message))), [confirm]);
 
-  const [pano, setPanoState] = useState(() => loadPanoramaState(store));
+  // Hazır ayarlar ve marka profilleri. Kayıtlı durum yoksa (ör. başka bilgisayara taşınan ayarlar)
+  // son kullanılan hazır ayardan kurulur.
+  const [presetData, setPresetDataState] = useState(() => loadPresets(store));
+  const setPresetData = useCallback((fn) => setPresetDataState((d) => { const n = typeof fn === "function" ? fn(d) : fn; savePresets(store, n); return n; }), []);
+  const [brands, setBrandsState] = useState(() => loadBrands(store));
+  const setBrands = useCallback((list) => { setBrandsState(list); if (!saveBrands(store, list)) toast("Marka profilleri kaydedilemedi (depolama dolu olabilir: büyük logoları küçült).", { tone: "error", timeout: 6000 }); }, [toast]);
+  const [pano, setPanoState] = useState(() => {
+    let stored = null;
+    try { stored = store?.getItem(PANORAMA_KEY) ? loadPanoramaState(store) : null; } catch { stored = null; }
+    return bootState(stored, loadPresets(store), stored || defaultPanoramaState());
+  });
+  setCustomLayouts(pano.customLayouts);
   const panoRef = useRef(pano);
   panoRef.current = pano;
   const setPano = useCallback((fn) => setPanoState((p) => { const n = typeof fn === "function" ? fn(p) : fn; panoRef.current = n; return n; }), []);
@@ -422,16 +325,9 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
     setPano((p) => (p.scope.leagueId && p.scope.seasonId ? p : { ...p, scope: { ...p.scope, cityId: s.city.id, leagueId: p.scope.leagueId || s.league?.id || null, seasonId: p.scope.seasonId || s.season?.id || null } }));
   }, [pd.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── sahneler (açılardan) ── */
-  const config = useMemo(() => buildPanoramaScenes({ sources: pano.sources, angles: pano.angles, theme: pano.theme, programId: pano.programId, previewId: pano.previewId }), [pano.sources, pano.angles, pano.theme, pano.programId, pano.previewId]);
-  const configRef = useRef(config);
-  configRef.current = config;
-  const onResolve = useCallback((id, patch) => setPano((p) => ({ ...p, sources: p.sources.map((s) => (s.id === id ? { ...s, ...patch } : s)) })), [setPano]);
-  const src = useStudioSources(config.sources, { onResolve, replayUrlOf: () => null });
-
-  /* ── ses: mikrofon + müzik (aynı karıştırıcı) ── */
-  const mixer = useAudioMixer({ mic: prefs.mic, inputs: [], replayEls: [], replayAudio: false });
-  const music = useMusicPlayer({ mixer: mixer?.attachStream ? mixer : null, toast });
+  /* ── marka, ek veri (web sahneleri, hava, iller) ── */
+  const brand = useMemo(() => findBrand(brands, pano.brandId), [brands, pano.brandId]);
+  const ex = usePanoramaExtras(pano, pd.data);
 
   /* ── kart döngüsü ── */
   const [now, setNow] = useState(Date.now());
@@ -445,14 +341,36 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
   }, [setPano]);
   const setPlaylist = useCallback((fn) => setPano((p) => ({ ...p, playlist: fn(p.playlist) })), [setPano]);
   const card = currentCard(pano.playlist);
+  // Çıkış animasyonu için bir önceki kart.
+  const prevRef = useRef({ card: null, since: 0, at: 0, last: null, lastSince: 0 });
+  if (prevRef.current.last?.id !== card?.id) prevRef.current = { card: prevRef.current.last, since: prevRef.current.lastSince, at: prevRef.current.last ? Date.now() : 0, last: card, lastSince: pano.playlist.startedAt };
+  else prevRef.current.lastSince = pano.playlist.startedAt;
+  const prev = prevRef.current.card ? { card: prevRef.current.card, since: prevRef.current.since, at: prevRef.current.at } : null;
+  // Slayt / sponsor kartının videosu: program sahnesinde kart kutusunda katman.
+  const media = currentMedia(card, now, pano.playlist.startedAt);
+  const mediaKey = media?.kind === "video" ? media.src : "";
+  const cardMedia = useMemo(() => (mediaKey ? { kind: "video", src: mediaKey, fit: card?.opts?.fit } : null), [mediaKey, card?.opts?.fit]);
+
+  /* ── sahneler (açılardan) ── */
+  const tokensKey = `${brand.id}|${brand.colors.background}|${brand.colors.primary}|${brand.colors.secondary}|${brand.colors.accent}`;
+  const config = useMemo(() => buildPanoramaScenes({ sources: pano.sources, angles: pano.angles, theme: findBrand(brands, pano.brandId) ? brandTokensOf(findBrand(brands, pano.brandId)) : pano.theme, programId: pano.programId, previewId: pano.previewId, cardMedia }), [pano.sources, pano.angles, tokensKey, pano.programId, pano.previewId, cardMedia, pano.customLayouts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const configRef = useRef(config);
+  configRef.current = config;
+  const onResolve = useCallback((id, patch) => setPano((p) => ({ ...p, sources: p.sources.map((s) => (s.id === id ? { ...s, ...patch } : s)) })), [setPano]);
+  const src = useStudioSources(config.sources, { onResolve, replayUrlOf: () => null });
+
+  /* ── ses: mikrofon + müzik (aynı karıştırıcı) ── */
+  const mixer = useAudioMixer({ mic: prefs.mic, inputs: [], replayEls: [], replayAudio: false });
+  const music = useMusicPlayer({ mixer: mixer?.attachStream ? mixer : null, toast });
 
   /* ── grafik anlık görüntüsü (program + önizleme + işçi + LED) ── */
   const defaultLogo = useCanvasImage(logoInline, { inline: true });
   const branding = DEFAULT_BRANDING;
   const snapshot = useMemo(() => buildPanoramaSnapshot({
-    branding, theme: pano.theme, angles: pano.angles, sources: pano.sources, card, cardSince: pano.playlist.startedAt,
+    branding, theme: pano.theme, brand, angles: pano.angles, sources: pano.sources, card, cardSince: pano.playlist.startedAt, prev,
     data: pd.data, ticker: pano.ticker, title: pano.title, logoUrl: logoInline, siteUrl: "https://elitlig.com", band: { ...pano.band, sponsors: pd.data.sponsors, since: pano.playlist.startedAt },
-  }), [branding, pano.theme, pano.angles, pano.sources, card, pano.playlist.startedAt, pd.data, pano.ticker, pano.title, pano.band]);
+    scope: pano.scope, web: ex.web, weather: ex.weather, cities: ex.cities,
+  }), [branding, pano.theme, brand, pano.angles, pano.sources, card, pano.playlist.startedAt, prev?.card?.id, prev?.at, pd.data, pano.ticker, pano.title, pano.band, pano.scope, ex.version]); // eslint-disable-line react-hooks/exhaustive-deps
   const snapRef = useRef(snapshot);
   snapRef.current = snapshot;
   const overlayRef = useRef(null);
@@ -469,7 +387,7 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
   const timerRef = useRef(null);
   const comp = useCompositor({ width: preset.width, height: preset.height, fps: preset.fps, configRef, runtimeRef: src.runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef, modesRef, pgmFxRef, engine: settings.stream.compositor, snapshotRef: snapRef, timerRef, workerGraphics: true });
   const registerTile = useAngleTiles(configRef, src.runtimeRef, snapRef);
-  try { globalThis.__elitligPanorama = { draw: comp.getStats, engine: comp.engine, snapshot: () => snapRef.current, config: () => configRef.current, program: () => comp.getCanvas(), overlay: (ctx, info) => overlayRef.current(ctx, info) }; } catch { /* yoksay */ }
+  try { globalThis.__elitligPanorama = { draw: comp.getStats, engine: comp.engine, snapshot: () => snapRef.current, config: () => configRef.current, program: () => comp.getCanvas(), overlay: (ctx, info) => overlayRef.current(ctx, info), state: () => panoRef.current, brands: () => brands, presets: () => presetData }; } catch { /* yoksay */ }
 
   /* ── yayın motoru ── */
   const onEngineError = useCallback((m) => toast(m, { tone: "error", timeout: 6000 }), [toast]);
@@ -560,18 +478,74 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
     setPano((p) => ({ ...p, sources: p.sources.filter((x) => x.id !== s.id), angles: p.angles.map((a) => ({ ...a, slots: a.slots.map((x) => (x === s.id ? null : x)) })) }));
   };
 
+  /* ── kullanıcı düzenleri ── */
+  const [editLayout, setEditLayout] = useState(null);
+  const saveLayout = (l) => {
+    setPano((p) => { const list = p.customLayouts.some((x) => x.key === l.key) ? p.customLayouts.map((x) => (x.key === l.key ? l : x)) : [...p.customLayouts, l]; setCustomLayouts(list); return normalizePanoramaState({ ...p, customLayouts: list }); });
+    setEditLayout(null);
+    toast(`“${l.label}” düzeni kaydedildi (Açı düzenleyici › Benim düzenlerim).`, { tone: "success", timeout: 3000 });
+  };
+  const deleteLayout = async (l) => {
+    const used = pano.angles.filter((a) => a.layout === l.key).map((a) => a.name);
+    if (used.length) { toast(`Bu düzen şu açılarda kullanılıyor: ${used.join(", ")}`, { tone: "warn", timeout: 5000 }); return; }
+    if (!(await ask({ title: "Düzeni sil", message: `“${l.label}” silinsin mi?`, confirmLabel: "Sil", danger: true }))) return;
+    setPano((p) => { const list = p.customLayouts.filter((x) => x.key !== l.key); setCustomLayouts(list); return { ...p, customLayouts: list }; });
+    setEditLayout(null);
+  };
+
   /* ── şablon ── */
   const applyTpl = async (t) => {
     if (engine.active && !(await ask({ title: "Şablonu uygula", message: "Yayın sürüyor. Açılar ve kartlar değişecek; program ilk açıya geçer. Devam edilsin mi?", confirmLabel: "Uygula" }))) return;
     const r = applyTemplate(t, pano.sources);
-    setPano((p) => normalizePanoramaState({ ...p, ...r, templateKey: t.key, programId: r.angles[0]?.id, previewId: r.angles[1]?.id || r.angles[0]?.id, playlist: { ...r.playlist, startedAt: Date.now() } }));
+    // Hazır tema kullanılıyorsa şablonun teması seçilir; kendi marka profili korunur.
+    setPano((p) => normalizePanoramaState({ ...p, ...r, templateKey: t.key, brandId: /^th_/.test(p.brandId) ? `th_${r.theme}` : p.brandId, programId: r.angles[0]?.id, previewId: r.angles[1]?.id || r.angles[0]?.id, playlist: { ...r.playlist, startedAt: Date.now() } }));
     toast(`“${t.name}” şablonu uygulandı.`, { tone: "success", timeout: 2500 });
+  };
+
+  /* ── marka ve hazır ayarlar ── */
+  const selectBrand = useCallback((id) => setPano((p) => ({ ...p, brandId: id, theme: BUILTIN_BRANDS.find((b) => b.id === id)?.theme || p.theme })), [setPano]);
+  const activePreset = presetData.list.find((p) => p.id === pano.presetId) || null;
+  const dirty = useMemo(() => (activePreset ? presetDirty(pano, activePreset) : false), [pano, activePreset]);
+  const loadPreset = async (pr) => {
+    if (!pr) return;
+    if (engine.active && !(await ask({ title: "Hazır ayarı yükle", message: `Yayın sürüyor. “${pr.name}” yüklenince marka, açılar ve kartlar değişir; program ilk açıya geçer. Devam edilsin mi?`, confirmLabel: "Yükle" }))) return;
+    const n = applyPreset(panoRef.current, pr, { now: Date.now() });
+    if (n.programId && engine.active) comp.startTransition(configRef.current.programSceneId, n.programId, "cut", 0);
+    setPano(n);
+    setPresetData((d) => ({ ...d, lastId: pr.id }));
+    toast(`“${pr.name}” yüklendi.`, { tone: "success", timeout: 2000 });
+  };
+  const savePresetAs = (name) => {
+    const pr = presetFromState(name, panoRef.current);
+    setPresetData((d) => ({ list: [...d.list, pr], lastId: pr.id }));
+    setPano((p) => ({ ...p, presetId: pr.id }));
+    toast(`“${pr.name}” hazır ayarı kaydedildi.`, { tone: "success", timeout: 2500 });
+  };
+  const savePresetOver = () => {
+    if (!activePreset) return;
+    const pr = presetFromState(activePreset.name, panoRef.current, activePreset.id);
+    setPresetData((d) => ({ list: d.list.map((x) => (x.id === pr.id ? pr : x)), lastId: pr.id }));
+    toast(`“${pr.name}” güncellendi.`, { tone: "success", timeout: 2000 });
+  };
+  const renamePreset = (pr, name) => { const n = String(name || "").trim().slice(0, 60); if (n) setPresetData((d) => ({ ...d, list: d.list.map((x) => (x.id === pr.id ? { ...x, name: n } : x)) })); };
+  const deletePreset = async (pr) => {
+    if (!(await ask({ title: "Hazır ayarı sil", message: `“${pr.name}” silinsin mi?`, confirmLabel: "Sil", danger: true }))) return;
+    setPresetData((d) => ({ list: d.list.filter((x) => x.id !== pr.id), lastId: d.lastId === pr.id ? null : d.lastId }));
+    if (pano.presetId === pr.id) setPano((p) => ({ ...p, presetId: null }));
+  };
+  const importPresets = (list) => setPresetData((d) => ({ ...d, list: [...d.list, ...list.map((p) => ({ ...p, id: d.list.some((x) => x.id === p.id) ? `${p.id}_i` : p.id }))].slice(0, 60) }));
+  const webImport = ({ brand: b, preset: pr, sources }) => {
+    setBrands([...brands, b]);
+    setPresetData((d) => ({ list: [...d.list, pr], lastId: pr.id }));
+    setPano((p) => applyPreset({ ...p, sources }, pr, { now: Date.now() }));
   };
 
   /* ── klavye ── */
   const keyRef = useRef(null);
   keyRef.current = (e) => {
-    if (isTyping(e) || e.metaKey || e.ctrlKey || e.altKey || editAngle || dialog) return;
+    if (isTyping(e) || e.metaKey || e.ctrlKey || editAngle || dialog || editLayout) return;
+    // ⌥1–9: hazır ayarlar arasında geçiş (yayın sırasında da).
+    if (e.altKey) { const m = /^Digit([1-9])$/.exec(e.code)?.[1]; const pr = m ? presetData.list[Number(m) - 1] : null; if (pr) { e.preventDefault(); loadPreset(pr); } return; }
     const n = /^Digit([1-9])$/.exec(e.code)?.[1];
     if (n) { const a = pano.angles[Number(n) - 1]; if (a) { e.preventDefault(); if (e.shiftKey) cutTo(a.id); else toPreview(a.id); } return; }
     if (e.key === " " || e.key === "Enter") { e.preventDefault(); take(); return; }
@@ -590,7 +564,7 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
   const previewName = pano.angles.find((a) => a.id === config.previewSceneId)?.name || "—";
   const toggleMic = () => setPrefs((p) => ({ mic: { ...p.mic, muted: !p.mic.muted } }));
 
-  const TABS = [["kartlar", "Kartlar", "layers"], ["veri", "Veri", "overview"], ["gorunum", "Görünüm & bant", "palette"], ["sablon", "Şablonlar", "grid"], ["yayin", "Yayın", "broadcast"], ["ses", "Ses & müzik", "music"], ["led", "LED", "overview"]];
+  const TABS = [["kartlar", "Kartlar", "layers"], ["marka", "Marka", "palette"], ["sablon", "Hazır ayar", "grid"], ["veri", "Veri", "overview"], ["gorunum", "Bant", "sliders"], ["yayin", "Yayın", "broadcast"], ["ses", "Ses", "music"], ["led", "LED", "overview"]];
 
   return (
     <div className="studio pn" onPointerDown={() => mixer.resume?.()} data-panorama="">
@@ -601,6 +575,18 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
           <button type="button" role="tab" aria-selected="true" className="is-on">Panorama</button>
         </div>
         <span className="pn-scope">{[pd.data.scope.city?.label, pd.data.scope.league?.label, pd.data.scope.season?.label].filter(Boolean).join(" · ") || "Kapsam seçilmedi"}</span>
+        <div className="pn-presetbar" aria-label="Hazır ayarlar">
+          <select className="input pn-brandsel" value={pano.brandId} onChange={(e) => selectBrand(e.target.value)} title="Marka / tema (yayında da anında)" data-field="brand-quick">
+            <optgroup label="Marka profillerim">{brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>
+            <optgroup label="Hazır temalar">{BUILTIN_BRANDS.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>
+          </select>
+          {presetData.list.slice(0, 6).map((pr, i) => (
+            <button key={pr.id} type="button" className={`pn-presetchip ${pr.id === pano.presetId ? "is-on" : ""}`} onClick={() => loadPreset(pr)} title={`${pr.name} (⌥${i + 1})`} data-preset-chip={pr.id}>
+              {pr.name}{pr.id === pano.presetId && dirty ? " •" : ""}
+            </button>
+          ))}
+          {activePreset && dirty && <button type="button" className="btn btn--sm" onClick={savePresetOver} title="Hazır ayarı güncelle" data-act="preset-quick-save"><Icon name="check" size={12} /> Kaydet</button>}
+        </div>
         <StatusPill state={st.state} since={engine.since} />
         <HealthChip status={st} getStats={comp.getStats} getEncodeStats={engine.getEncodeStats} targetFps={preset.fps} encoding={onAir} />
         <span className="st-top__spacer" />
@@ -629,7 +615,7 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
               <button type="button" className={`btn btn--sm ${comp.programFx().ftb ? "btn--red" : ""}`} onClick={() => { comp.setFtb(); setNow(Date.now()); }} title="Siyaha geç / geri aç">FTB</button>
             </div>
             <figure className={`st-monitor is-program pn-mon ${st.state === "live" ? "is-live" : ""}`}>
-              <figcaption><span className={`st-tag ${onAir ? "is-live" : "is-pgm"}`}>{onAir ? "● YAYINDA" : "PROGRAM"}</span><span className="st-monitor__name">{programName}</span>{card && <span className="pn-oncard">Kart: {cardKindOf(card.kind)?.label}</span>}</figcaption>
+              <figcaption><span className={`st-tag ${onAir ? "is-live" : "is-pgm"}`}>{onAir ? "● YAYINDA" : "PROGRAM"}</span><span className="st-monitor__name">{programName}</span>{card && <span className="pn-oncard">Kart: {cardLabel(card, ex.catalog.scenes)}</span>}</figcaption>
               <Monitor canvas={comp.program} className="st-monitor__screen" />
             </figure>
           </div>
@@ -638,10 +624,11 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
             <div className="pn-strip__head">
               <h3>Açılar</h3><small>tık: önizleme · çift tık / Shift+sayı: doğrudan yayın · 1–9</small>
               <span className="st-top__spacer" />
-              <div className="pn-quick">{["grid4", "twoThree", "bigSmall", "strip5", "host", "duo", "content"].map((k) => (
+              <div className="pn-quick">{["grid4", "twoThree", "bigSmall", "pip", "newsDesk", "interview", "side6040", "diagonal", "host", "content"].map((k) => (
                 <button key={k} type="button" className="pn-quickbtn" onClick={() => newAngle(k)} title={`Yeni açı: ${layoutOf(k).label}`}><LayoutPic layout={k} /></button>
               ))}</div>
               <button type="button" className="btn btn--sm" onClick={() => newAngle()}><Icon name="plus" size={12} /> Açı</button>
+              <button type="button" className="btn btn--sm" onClick={() => setEditLayout({})} title="Kendi kamera düzenini kur" data-act="new-layout"><Icon name="layout" size={12} /> Düzen editörü</button>
             </div>
             <ol className="pn-angles">
               {pano.angles.map((a, i) => {
@@ -685,10 +672,17 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
         <aside className="pn-side">
           <nav className="pn-tabs">{TABS.map(([k, l, ic]) => <button key={k} type="button" className={tab === k ? "is-on" : ""} onClick={() => setTab(k)} data-tab={k}><Icon name={ic} size={13} /> {l}</button>)}</nav>
           <div className="pn-pane">
-            {tab === "kartlar" && <CardsPanel pano={pano} setPlaylist={setPlaylist} data={pd.data} now={now} />}
+            {tab === "kartlar" && <CardsPanel pano={pano} setPlaylist={setPlaylist} data={pd.data} now={now} ex={ex} />}
             {tab === "veri" && <DataPanel pano={pano} setScope={(scope) => setPano((p) => ({ ...p, scope }))} pd={pd} />}
             {tab === "gorunum" && <LookPanel pano={pano} setPano={setPano} />}
-            {tab === "sablon" && <TemplatesPanel pano={pano} onApply={applyTpl} templates={templates} setTemplates={setTemplates} ask={ask} />}
+            {tab === "marka" && <BrandPanel brands={brands} setBrands={setBrands} activeId={pano.brandId} onSelect={selectBrand} ask={ask} presets={presetData.list} onImportPresets={importPresets} />}
+            {tab === "sablon" && (
+              <PresetsPanel presets={presetData.list} activeId={pano.presetId} dirty={dirty} onApply={loadPreset} onSave={savePresetOver} onSaveAs={savePresetAs} onRename={renamePreset} onDelete={deletePreset}
+                brands={brands} templates={templates} templateKey={pano.templateKey} onApplyTemplate={applyTpl}
+                onSaveTemplate={(name) => setTemplates([...templates, templateFromState(name || `Şablon ${templates.length + 1}`, pano)])}
+                onDeleteTemplate={async (t) => { if (await ask({ title: "Şablonu sil", message: `“${t.name}” silinsin mi?`, confirmLabel: "Sil", danger: true })) setTemplates(templates.filter((x) => x.key !== t.key)); }}
+                sources={pano.sources} onWebImport={webImport} />
+            )}
             {tab === "yayin" && <BroadcastBox prefs={prefs} setPrefs={setPrefs} engine={engine} busy={busy} onStart={() => startWith(ingestOf(prefs))} onRehearsal={() => startWith(null)} onStop={stop} chooseDir={chooseDir} />}
             {tab === "ses" && (
               <div className="pn-audio">
@@ -705,11 +699,12 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
             )}
             {tab === "led" && <LedPanel led={led} scenes={config.scenes} matchId={null} ledMode={null} g={null} live={null} />}
           </div>
-          <p className="pn-keys"><Kbd>1–9</Kbd> önizleme · <Kbd>⇧</Kbd>+sayı yayına · <Kbd>Boşluk</Kbd> geçiş · <Kbd>C</Kbd> kes · <Kbd>←</Kbd><Kbd>→</Kbd> kart · <Kbd>P</Kbd> sabitle</p>
+          <p className="pn-keys"><Kbd>1–9</Kbd> önizleme · <Kbd>⇧</Kbd>+sayı yayına · <Kbd>Boşluk</Kbd> geçiş · <Kbd>C</Kbd> kes · <Kbd>←</Kbd><Kbd>→</Kbd> kart · <Kbd>P</Kbd> sabitle · <Kbd>⌥</Kbd>+sayı hazır ayar</p>
         </aside>
       </div>
 
-      {editAngle && <AngleEditor angle={editAngle} sources={pano.sources} onSave={saveAngle} onDelete={pano.angles.some((a) => a.id === editAngle.id) ? () => deleteAngle(editAngle) : null} onClose={() => setEditAngle(null)} />}
+      {editAngle && <AngleEditor angle={editAngle} sources={pano.sources} onSave={saveAngle} onDelete={pano.angles.some((a) => a.id === editAngle.id) ? () => deleteAngle(editAngle) : null} onClose={() => setEditAngle(null)} onSaveLayout={saveLayout} onEditLayout={(l) => setEditLayout(l)} />}
+      {editLayout && <LayoutEditor layout={editLayout.key ? editLayout : null} onSave={saveLayout} onDelete={pano.customLayouts.some((x) => x.key === editLayout.key) ? deleteLayout : null} onClose={() => setEditLayout(null)} />}
       {dialog && (
         <SourceDialog initial={dialog.initial} cameraCount={pano.sources.filter((s) => s.kind === "camera").length} devices={src.devices} access={src.access}
           onRequestAccess={src.requestAccess} onRefreshDevices={src.refreshDevices} onSave={saveSource} onClose={() => setDialog(null)} runtimeRef={src.runtimeRef}

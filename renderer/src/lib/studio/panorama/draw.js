@@ -13,78 +13,16 @@
 import { createLayerCache, createMeasure, drawAvatar, drawContain, drawCover, drawText, enter, fillRound, fitText, initialsOf, roundRect, upper, wrapLines } from "../graphics/canvas";
 import { getImage } from "../graphics/images";
 import { qrFor, shortUrl } from "../graphics/drawQr";
-import { COND, SANS } from "../fonts";
 import { panoramaImageUrls, themeOf } from "./model";
+import { DAYS, F, FC, FS, MONTHS, STAGE_W, crest, dateText, dayLabel, dots, emptyMsg, img, istanbulParts, matchRows, pad2, pageDots, pageOf, scorePill, setDrawFonts, statTile, text, weekDay, clockText } from "./drawKit";
+export { pageOf, clockText, dateText, istanbulParts } from "./drawKit";
+import { drawWebBody } from "./drawWeb";
+import { DYNAMIC_KINDS, LOCAL_CARD_BODIES } from "./drawCards";
 
-const STAGE_W = 1920;
 const per = new WeakMap();
 const stateOf = (ctx) => { let m = per.get(ctx); if (!m) { m = { M: createMeasure(ctx), layers: createLayerCache({ max: 6 }) }; per.set(ctx, m); } return m; };
-const F = (px, w = 700) => `${w} ${Math.max(1, px).toFixed(1)}px ${SANS}`;
-const FC = (px, w = 800) => `${w} ${Math.max(1, px).toFixed(1)}px ${COND}`;
-const img = (u) => (u ? getImage(u) : null);
-const MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
-const DAYS = ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"];
-const pad2 = (n) => String(n).padStart(2, "0");
-
-/** İstanbul saati (yerel saat dilimi ne olursa olsun). */
-export function istanbulParts(ms) {
-  const d = new Date(ms + 3 * 3600_000); // Türkiye UTC+3 (yaz saati yok)
-  return { h: d.getUTCHours(), m: d.getUTCMinutes(), s: d.getUTCSeconds(), day: d.getUTCDate(), month: d.getUTCMonth(), year: d.getUTCFullYear(), wd: d.getUTCDay() };
-}
-export const clockText = (ms) => { const p = istanbulParts(ms); return `${pad2(p.h)}:${pad2(p.m)}`; };
-export const dateText = (ms) => { const p = istanbulParts(ms); return `${p.day} ${MONTHS[p.month]} ${p.year}, ${DAYS[p.wd]}`; };
-const dayLabel = (d) => { if (!d) return ""; const [y, m, dd] = d.split("-").map(Number); return `${dd} ${MONTHS[(m || 1) - 1].slice(0, 3)}`; };
-const weekDay = (d) => { if (!d) return ""; const t = new Date(`${d}T12:00:00Z`); return Number.isNaN(t.getTime()) ? "" : DAYS[t.getUTCDay()].slice(0, 3); };
-
-/** Sayfalama: { page, pages, perPage } — kart süresi sayfalara bölünür (en az 5 sn sayfa). */
-export function pageOf(count, perPage, now, since, sec) {
-  const pp = Math.max(1, perPage);
-  const pages = Math.max(1, Math.ceil(count / pp));
-  if (pages === 1) return { page: 0, pages, perPage: pp };
-  const ms = Math.max(5000, ((Number(sec) || 15) * 1000) / pages);
-  return { page: Math.floor(Math.max(0, now - (since || 0)) / ms) % pages, pages, perPage: pp, pageMs: ms };
-}
 
 /* ─────────────────────────────── yardımcılar ─────────────────────────────── */
-
-function crest(ctx, url, x, y, s, T, name) {
-  const im = img(url);
-  if (!drawContain(ctx, im, x, y, s, s)) {
-    fillRound(ctx, x, y, s, s, s * 0.22, T.rowAlt);
-    drawText(ctx, initialsOf(name || "?"), x + s / 2, y + s / 2 + 1, { font: F(s * 0.38, 800), color: T.muted, align: "center" });
-  }
-}
-
-function text(ctx, M, t, x, y, maxW, font, color, align = "left") {
-  drawText(ctx, fitText(t, Math.max(10, maxW), font, M), x, y, { font, color, align });
-}
-
-function dots(ctx, last5, x, y, d, T) {
-  const colors = { W: "#16a34a", D: "#9ca3af", L: "#dc2626" };
-  const list = String(last5 || "").split("");
-  list.forEach((c, i) => {
-    ctx.beginPath();
-    ctx.arc(x + i * (d + 5) + d / 2, y, d / 2, 0, Math.PI * 2);
-    ctx.fillStyle = colors[c] || T.line;
-    ctx.fill();
-    drawText(ctx, c === "W" ? "G" : c === "D" ? "B" : "M", x + i * (d + 5) + d / 2, y + 1, { font: F(d * 0.52, 800), color: "#fff", align: "center" });
-  });
-}
-
-function emptyMsg(ctx, b, T, msg, sub) {
-  drawText(ctx, msg, b.x + b.w / 2, b.y + b.h / 2 - (sub ? 18 : 0), { font: F(30, 700), color: T.muted, align: "center" });
-  if (sub) drawText(ctx, sub, b.x + b.w / 2, b.y + b.h / 2 + 26, { font: F(20, 600), color: T.muted, align: "center" });
-}
-
-function pageDots(ctx, pg, x, y, T) {
-  if (!pg || pg.pages <= 1) return;
-  for (let i = 0; i < pg.pages; i += 1) {
-    ctx.beginPath();
-    ctx.arc(x - (pg.pages - 1 - i) * 18, y, 5, 0, Math.PI * 2);
-    ctx.fillStyle = i === pg.page ? T.accent : T.line;
-    ctx.fill();
-  }
-}
 
 /* ─────────────────────────────── kart gövdeleri ─────────────────────────────── */
 
@@ -124,40 +62,6 @@ function bodyStandings(ctx, b, d, E) {
     if (wide) dots(ctx, r.last5, right + 16, cy, 22, T);
   });
   pageDots(ctx, pg, b.x + b.w - 12, b.y + b.h + 20, T);
-}
-
-function scorePill(ctx, x, y, w, h, label, T, { live = false, vs = false } = {}) {
-  fillRound(ctx, x, y, w, h, h / 2, vs ? T.rowAlt : live ? "#dc2626" : T.head);
-  drawText(ctx, label, x + w / 2, y + h / 2 + 1, { font: FC(h * 0.62, 800), color: vs ? T.muted : "#ffffff", align: "center" });
-}
-
-function matchRows(ctx, b, list, E, { showScore, live = false, start = 0, rowH = null } = {}) {
-  const { T, M } = E;
-  const n = list.length;
-  const rh = rowH || Math.min(84, b.h / Math.max(1, n));
-  const wide = b.w >= 960;
-  list.forEach((m, i) => {
-    const y = b.y + start + i * rh;
-    if (i % 2 === 1) { ctx.fillStyle = T.rowAlt; ctx.fillRect(b.x, y, b.w, rh); }
-    const cy = y + rh / 2;
-    const dateW = wide ? 130 : 96;
-    drawText(ctx, live ? "CANLI" : dayLabel(m.date), b.x + 18, cy - (live ? 0 : 11), { font: F(live ? 17 : 18, 800), color: live ? "#dc2626" : T.text });
-    if (!live) drawText(ctx, `${weekDay(m.date)} ${m.time || ""}`.trim(), b.x + 18, cy + 13, { font: F(15, 600), color: T.muted });
-    const fieldW = wide && m.field ? 210 : 0;
-    const mid = b.x + dateW + (b.w - dateW - fieldW) / 2;
-    const pillW = 108;
-    const pillH = Math.min(42, rh * 0.6);
-    const s = Math.min(40, rh - 18);
-    const nameW = (b.w - dateW - fieldW) / 2 - pillW / 2 - s - 34;
-    const fs = Math.min(22, rh * 0.32);
-    crest(ctx, m.homeLogo, mid - pillW / 2 - 12 - s, cy - s / 2, s, T, m.homeName);
-    text(ctx, M, upper(m.homeName), mid - pillW / 2 - 24 - s, cy, nameW, F(fs, 700), T.text, "right");
-    const sc = showScore && m.homeScore != null && m.awayScore != null ? `${m.homeScore} - ${m.awayScore}` : m.time || "VS";
-    scorePill(ctx, mid - pillW / 2, cy - pillH / 2, pillW, pillH, sc, T, { live, vs: !(showScore || live) });
-    crest(ctx, m.awayLogo, mid + pillW / 2 + 12, cy - s / 2, s, T, m.awayName);
-    text(ctx, M, upper(m.awayName), mid + pillW / 2 + 24 + s, cy, nameW, F(fs, 700), T.text);
-    if (fieldW) text(ctx, M, m.field, b.x + b.w - 16, cy, fieldW - 10, F(15, 600), T.muted, "right");
-  });
 }
 
 function bodyMatches(ctx, b, d, E, { showScore, emptyText }) {
@@ -232,7 +136,7 @@ function bodyPlayers(ctx, b, d, E) {
     const cy = y + rh / 2;
     drawText(ctx, String(p.rank), lx + 34, cy, { font: FC(Math.min(28, rh * 0.5), 800), color: T.muted, align: "center" });
     const dA = Math.min(50, rh - 10);
-    drawAvatar(ctx, { x: lx + 62, y: cy - dA / 2, d: dA, photo: img(p.image), crest: img(p.teamLogo), initials: initialsOf(p.name), bg: T.rowAlt, ring: T.line, textColor: T.muted, family: SANS });
+    drawAvatar(ctx, { x: lx + 62, y: cy - dA / 2, d: dA, photo: img(p.image), crest: img(p.teamLogo), initials: initialsOf(p.name), bg: T.rowAlt, ring: T.line, textColor: T.muted, family: FS });
     const nx = lx + 62 + dA + 14;
     text(ctx, M, upper(p.name), nx, cy - 10, lw - (nx - lx) - 120, F(Math.min(21, rh * 0.32), 700), T.text);
     text(ctx, M, p.teamName || "", nx, cy + 14, lw - (nx - lx) - 120, F(Math.min(16, rh * 0.25), 600), T.muted);
@@ -269,7 +173,7 @@ function bodyWeekly(ctx, b, d, E) {
     const y = b.y + Math.floor(i / cols) * ch;
     fillRound(ctx, x + 6, y + 6, cw - 12, ch - 12, 14, T.rowAlt);
     const dA = Math.min(84, ch - 34);
-    drawAvatar(ctx, { x: x + 20, y: y + (ch - dA) / 2, d: dA, photo: img(it.image), crest: img(it.teamLogo), initials: initialsOf(it.name), bg: T.panel, ring: T.accent, ringW: 3, textColor: T.muted, family: SANS });
+    drawAvatar(ctx, { x: x + 20, y: y + (ch - dA) / 2, d: dA, photo: img(it.image), crest: img(it.teamLogo), initials: initialsOf(it.name), bg: T.panel, ring: T.accent, ringW: 3, textColor: T.muted, family: FS });
     const tx = x + 20 + dA + 14;
     const tw = cw - (tx - x) - 18;
     text(ctx, M, upper(it.awardLabel || ""), tx, y + ch / 2 - 22, tw, F(14, 800), T.accent);
@@ -328,12 +232,6 @@ function bodyNews(ctx, b, d, E) {
   pageDots(ctx, pg, b.x + b.w - 20, b.y + b.h - 22, T);
 }
 
-function statTile(ctx, x, y, w, h, label, value, T, accent = false) {
-  fillRound(ctx, x, y, w, h, 14, accent ? T.accent : T.rowAlt);
-  drawText(ctx, String(value), x + w / 2, y + h * 0.44, { font: FC(Math.min(54, h * 0.48), 800), color: accent ? T.accentText : T.text, align: "center" });
-  drawText(ctx, upper(label), x + w / 2, y + h * 0.8, { font: F(Math.min(15, h * 0.16), 800), color: accent ? T.accentText : T.muted, align: "center" });
-}
-
 function bodyTeam(ctx, b, d, E) {
   const { T, M } = E;
   const t = d.team;
@@ -369,7 +267,7 @@ function bodyTeam(ctx, b, d, E) {
   drawText(ctx, "GOLCÜLER", px, ly + 8, { font: F(15, 800), color: T.muted });
   (d.players || []).forEach((p, i) => {
     const y = ly + 26 + i * 50;
-    drawAvatar(ctx, { x: px, y: y + 2, d: 40, photo: img(p.image), initials: initialsOf(p.name), bg: T.rowAlt, textColor: T.muted, family: SANS });
+    drawAvatar(ctx, { x: px, y: y + 2, d: 40, photo: img(p.image), initials: initialsOf(p.name), bg: T.rowAlt, textColor: T.muted, family: FS });
     text(ctx, M, upper(p.name), px + 52, y + 22, half - 140, F(18, 700), T.text);
     drawText(ctx, `${p.goals} GOL`, b.x + b.w - 24, y + 22, { font: FC(24, 800), color: T.accent, align: "right" });
   });
@@ -432,7 +330,7 @@ function bodyCity(ctx, b, d, E) {
     const x = b.x + 42 + half;
     fillRound(ctx, x, y, half, 130, 16, T.rowAlt);
     drawText(ctx, "GOL KRALI", x + 20, y + 26, { font: F(15, 800), color: T.muted });
-    drawAvatar(ctx, { x: x + 20, y: y + 44, d: 70, photo: img(d.topScorer.image), crest: img(d.topScorer.teamLogo), initials: initialsOf(d.topScorer.name), bg: T.panel, ring: T.accent, ringW: 3, textColor: T.muted, family: SANS });
+    drawAvatar(ctx, { x: x + 20, y: y + 44, d: 70, photo: img(d.topScorer.image), crest: img(d.topScorer.teamLogo), initials: initialsOf(d.topScorer.name), bg: T.panel, ring: T.accent, ringW: 3, textColor: T.muted, family: FS });
     text(ctx, M, upper(d.topScorer.name), x + 104, y + 70, half - 200, F(24, 800), T.text);
     text(ctx, M, d.topScorer.teamName || "", x + 104, y + 100, half - 200, F(17, 600), T.muted);
     drawText(ctx, String(d.topScorer.goals), x + half - 24, y + 80, { font: FC(56, 800), color: T.accent, align: "right" });
@@ -499,6 +397,7 @@ function bodyNotice(ctx, b, d, E) {
   wrapLines(d.text || "", b.w - 80, sf, M, Math.max(1, Math.floor((b.y + b.h - sy) / 46))).forEach((l, i) => drawText(ctx, l, b.x + 40, sy + i * 46, { font: sf, color: T.text }));
 }
 
+const LOCAL = { standings: bodyStandings, weekly: bodyWeekly };
 const BODIES = {
   standings: bodyStandings,
   fixtures: (ctx, b, d, E) => bodyMatches(ctx, b, d, E, { showScore: false, emptyText: "Yaklaşan maç bulunamadı." }),
@@ -507,6 +406,8 @@ const BODIES = {
   scorers: bodyPlayers, assists: bodyPlayers, mvp: bodyPlayers,
   weekly: bodyWeekly, news: bodyNews, team: bodyTeam, compare: bodyCompare, city: bodyCity,
   sponsors: bodySponsors, qr: bodyQr, clock: bodyClock, notice: bodyNotice,
+  web: (ctx, b, d, E) => drawWebBody(ctx, b, d, E, LOCAL),
+  ...LOCAL_CARD_BODIES,
 };
 
 /* ─────────────────────────────── kart, künye, bant ─────────────────────────────── */
@@ -518,58 +419,94 @@ const CARD_PAD = 64; // gölge payı (katman önbelleğinde)
 /** Kartın durağan görünümü (zemin, gölge, başlık, gövde): yalnız saniyede bir / görsel yüklenince yeniden boyanır. */
 function paintCard(ctx, x, y, w, h, card, E) {
   const { T, M } = E;
+  const cs = T.card || { radius: 22, opacity: 1, shadow: 36, glass: false, border: 0 };
+  const R = cs.radius ?? 22;
+  const noHead = Boolean(card.style?.hideTitle);
+  const headH = noHead ? 0 : HEAD_H;
   ctx.save();
-  ctx.shadowColor = "rgba(0,0,0,0.42)"; ctx.shadowBlur = 36; ctx.shadowOffsetY = 12;
-  fillRound(ctx, x, y, w, h, 22, T.panel);
+  if (cs.shadow > 0) { ctx.shadowColor = "rgba(0,0,0,0.42)"; ctx.shadowBlur = cs.shadow; ctx.shadowOffsetY = cs.shadow / 3; }
+  ctx.globalAlpha *= cs.opacity ?? 1;
+  if (cs.glass) {
+    const g = ctx.createLinearGradient(x, y, x + w, y + h);
+    g.addColorStop(0, T.panel); g.addColorStop(1, T.rowAlt);
+    roundRect(ctx, x, y, w, h, R); ctx.fillStyle = g; ctx.fill();
+  } else fillRound(ctx, x, y, w, h, R, T.panel);
   ctx.restore();
   ctx.save();
-  roundRect(ctx, x, y, w, h, 22);
+  roundRect(ctx, x, y, w, h, R);
   ctx.clip();
-  // Başlık şeridi: tema rengi, aksan çizgisi, sağda kapsam.
-  ctx.fillStyle = T.head;
-  ctx.fillRect(x, y, w, HEAD_H);
-  ctx.fillStyle = T.accent;
-  ctx.fillRect(x, y + HEAD_H - 5, w, 5);
-  const tf = FC(40, 800);
-  const title = upper(card.title);
-  drawText(ctx, fitText(title, w * 0.6, tf, M), x + 28, y + HEAD_H / 2 - 2, { font: tf, color: T.headText });
-  const sub = card.data?.scope || "";
-  if (sub && card.kind !== "weekly") text(ctx, M, upper(sub), x + w - 26, y + HEAD_H / 2 - 2, w * 0.36, F(17, 700), T.headText === "#ffffff" ? "rgba(255,255,255,0.78)" : T.headText, "right");
-  const body = { x: x + 8, y: y + HEAD_H + 10, w: w - 16, h: h - HEAD_H - 44 };
+  if (cs.glass) { const sh = ctx.createLinearGradient(x, y, x, y + h * 0.4); sh.addColorStop(0, "rgba(255,255,255,0.10)"); sh.addColorStop(1, "rgba(255,255,255,0)"); ctx.fillStyle = sh; ctx.fillRect(x, y, w, h * 0.4); }
+  if (!noHead) {
+    // Başlık şeridi: ana renk, vurgu çizgisi, sağda kapsam / web alt başlığı.
+    const hg = ctx.createLinearGradient(x, y, x + w, y);
+    hg.addColorStop(0, T.head); hg.addColorStop(1, T.secondary && T.secondary !== T.panel ? mixHead(T) : T.head);
+    ctx.fillStyle = hg;
+    ctx.fillRect(x, y, w, HEAD_H);
+    ctx.fillStyle = T.accent;
+    ctx.fillRect(x, y + HEAD_H - 5, w, 5);
+    const tf = FC(40, 800);
+    const title = upper(card.title);
+    drawText(ctx, fitText(title, w * 0.6, tf, M), x + 28, y + HEAD_H / 2 - 2, { font: tf, color: T.headText });
+    const sub = card.subtitle || card.data?.scope || "";
+    if (sub && card.kind !== "weekly") text(ctx, M, upper(sub), x + w - 26, y + HEAD_H / 2 - 2, w * 0.36, F(17, 700), T.headText === "#ffffff" ? "rgba(255,255,255,0.78)" : T.headText, "right");
+  }
+  const body = { x: x + 8, y: y + headH + 10, w: w - 16, h: h - headH - 44 };
   const fn = BODIES[card.kind];
   if (fn && card.data) { try { fn(ctx, body, card.data, E); } catch { /* bir kartın hatası yayını durdurmasın */ } }
   ctx.restore();
+  if (cs.border > 0) { ctx.save(); roundRect(ctx, x + cs.border / 2, y + cs.border / 2, w - cs.border, h - cs.border, Math.max(0, R - cs.border / 2)); ctx.lineWidth = cs.border; ctx.strokeStyle = T.accent; ctx.stroke(); ctx.restore(); }
 }
+const mixHead = (T) => T.secondary;
 
 /** Katman anahtarı: kart, tema, boyut, yüklenen görsel sayısı ve saniye (sayfa / saat / canlı nokta). */
 export function cardLayerKey(card, theme, w, h, k, ready, now) {
   const sec = Math.floor(Math.max(0, now - (card.since || 0)) / 1000);
-  return `${card.id}|${card.since}|${theme}|${Math.round(w)}x${Math.round(h)}|${k}|${ready}|${card.kind === "clock" ? Math.floor(now / 1000) : sec}|${card.dataKey || ""}`;
+  return `${card.id}|${card.since}|${theme}|${Math.round(w)}x${Math.round(h)}|${k}|${ready}|${card.kind === "clock" || card.kind === "countdown" ? Math.floor(now / 1000) : sec}|${card.dataKey || ""}`;
 }
 
-function drawCard(ctx, box, card, E) {
-  const { T } = E;
+/** Giriş / çıkış hareketi: p 0 → 1 (görünürlük). Dönüş: { alpha, dx, dy, scale, clipW, skew }. */
+export function cardMotion(kind, p, w, h) {
+  const q = Math.max(0, Math.min(1, p));
+  switch (kind) {
+    case "none": return { alpha: 1, dx: 0, dy: 0, scale: 1, clip: 1 };
+    case "fade": return { alpha: q, dx: 0, dy: 0, scale: 1, clip: 1 };
+    case "zoom": return { alpha: q, dx: 0, dy: 0, scale: 0.86 + 0.14 * q, clip: 1 };
+    case "rise": return { alpha: q, dx: 0, dy: (1 - q) * Math.min(160, h * 0.25), scale: 1, clip: 1 };
+    case "wipe": return { alpha: 1, dx: 0, dy: 0, scale: 1, clip: q };
+    case "flip": return { alpha: q, dx: 0, dy: 0, scale: 1, clip: 1, sx: Math.max(0.02, q) };
+    default: return { alpha: q, dx: (1 - q) * Math.min(80, w * 0.08), dy: 0, scale: 1, clip: 1 };
+  }
+}
+
+function drawCardAt(ctx, box, card, E, motion) {
+  const T = card.tokens || E.T;
+  const EE = card.tokens ? { ...E, T } : E;
   const x = box.x * STAGE_W;
   const y = box.y * E.H;
   const w = box.w * STAGE_W;
   const h = box.h * E.H;
-  const e = enter(E.now, card.since, 520);
   ctx.save();
-  ctx.globalAlpha *= e;
-  ctx.translate((1 - e) * 40, 0);
-  const layer = E.layers ? E.layers.get(cardLayerKey(card, T.key, w, h, E.k, E.ready, E.now), (w + CARD_PAD * 2) * E.k, (h + CARD_PAD * 2) * E.k, (lc) => {
+  ctx.globalAlpha *= motion.alpha;
+  if (motion.clip < 1) { ctx.beginPath(); ctx.rect(x - CARD_PAD, y - CARD_PAD, (w + CARD_PAD * 2) * motion.clip, h + CARD_PAD * 2); ctx.clip(); }
+  ctx.translate(x + w / 2 + motion.dx, y + h / 2 + motion.dy);
+  if (motion.scale !== 1) ctx.scale(motion.scale, motion.scale);
+  if (motion.sx != null) ctx.scale(motion.sx, 1);
+  ctx.translate(-(x + w / 2), -(y + h / 2));
+  const dynamic = DYNAMIC_KINDS.has(card.kind);
+  const layer = E.layers && !dynamic ? E.layers.get(cardLayerKey(card, `${T.key}|${JSON.stringify(T.card || {})}`, w, h, E.k, E.ready, E.now), (w + CARD_PAD * 2) * E.k, (h + CARD_PAD * 2) * E.k, (lc) => {
     lc.scale(E.k, E.k);
     lc.translate(CARD_PAD - x, CARD_PAD - y);
     lc.textBaseline = "middle";
-    paintCard(lc, x, y, w, h, card, E);
+    paintCard(lc, x, y, w, h, card, EE);
   }) : null;
   if (layer) ctx.drawImage(layer, x - CARD_PAD, y - CARD_PAD, w + CARD_PAD * 2, h + CARD_PAD * 2);
-  else paintCard(ctx, x, y, w, h, card, E);
+  else paintCard(ctx, x, y, w, h, card, EE);
   // Süre çubuğu (kart ne zaman değişecek) — her karede.
   if (card.sec > 0 && card.since) {
     const p = Math.min(1, Math.max(0, (E.now - card.since) / (card.sec * 1000)));
+    const R = T.card?.radius ?? 22;
     ctx.save();
-    roundRect(ctx, x, y, w, h, 22);
+    roundRect(ctx, x, y, w, h, R);
     ctx.clip();
     ctx.fillStyle = T.line; ctx.fillRect(x, y + h - 6, w, 6);
     ctx.fillStyle = T.accent; ctx.fillRect(x, y + h - 6, w * p, 6);
@@ -578,39 +515,107 @@ function drawCard(ctx, box, card, E) {
   ctx.restore();
 }
 
-function drawHeader(ctx, P, E, overVideo) {
-  const { T, M } = E;
-  const logo = img(P.logoUrl);
-  let x = 46;
-  const y = 22;
-  const hh = 62;
-  if (overVideo) { fillRound(ctx, 30, 16, 1060, hh + 12, 16, T.glass); }
-  if (drawContain(ctx, logo, x, y, 120, hh)) x += 134;
-  const tf = FC(40, 800);
-  const tw = Math.min(520, M(upper(P.title), tf) + 36);
-  fillRound(ctx, x, y + 6, tw, 44, 10, T.accent);
-  drawText(ctx, upper(P.title), x + 18, y + 29, { font: tf, color: T.accentText });
-  if (P.subtitle) text(ctx, M, upper(P.subtitle), x + tw + 18, y + 29, 1060 - (x + tw + 18), F(18, 700), overVideo ? "#ffffff" : T.onBg || "#ffffff");
-  // Saat / tarih (sağ üst)
+function drawCard(ctx, box, card, E, prev) {
+  const an = E.T.anim || { in: "slide", out: "fade", ms: 520 };
+  const ms = an.ms || 520;
+  // Çıkış: önceki kart, değişimden sonra ms boyunca ters hareketle.
+  if (prev?.card && prev.at && E.now - prev.at < ms) {
+    const p = 1 - (E.now - prev.at) / ms;
+    drawCardAt(ctx, box, prev.card, E, cardMotion(prev.card.style?.anim || an.out, p, box.w * STAGE_W, box.h * E.H));
+    // Giriş, çıkış bitince başlar.
+    return;
+  }
+  const since = prev?.at ? Math.max(card.since || 0, prev.at + ms) : card.since;
+  const e = enter(E.now, since, ms);
+  drawCardAt(ctx, box, card, E, cardMotion(card.style?.anim || an.in, e, box.w * STAGE_W, box.h * E.H));
+}
+
+function clockBox(ctx, T, style, x0) {
   const now = Date.now();
-  const cw = 300;
+  if (style === "off") return;
+  if (style === "minimal") {
+    drawText(ctx, clockText(now), STAGE_W - 46, 52, { font: FC(54, 800), color: T.onBg || "#ffffff", align: "right" });
+    return;
+  }
+  if (style === "digital") {
+    const p = istanbulParts(now);
+    const cw = 250;
+    fillRound(ctx, STAGE_W - 30 - cw, 16, cw, 74, 12, "rgba(0,0,0,0.6)");
+    ctx.save(); ctx.shadowColor = T.accent; ctx.shadowBlur = 14;
+    drawText(ctx, `${pad2(p.h)}:${pad2(p.m)}:${pad2(p.s)}`, STAGE_W - 30 - cw / 2, 54, { font: FC(52, 800), color: T.accent, align: "center" });
+    ctx.restore();
+    return;
+  }
+  const cw = 300; const hh = 62;
   fillRound(ctx, STAGE_W - 30 - cw, 16, cw, hh + 12, 16, T.glass);
   drawText(ctx, clockText(now), STAGE_W - 30 - cw + 24, 16 + (hh + 12) / 2, { font: FC(50, 800), color: "#ffffff" });
   const dt = dateText(now).split(", ");
   drawText(ctx, dt[0], STAGE_W - 54, 16 + (hh + 12) / 2 - 12, { font: F(16, 700), color: "#ffffff", align: "right" });
   drawText(ctx, dt[1] || "", STAGE_W - 54, 16 + (hh + 12) / 2 + 12, { font: F(15, 600), color: "rgba(255,255,255,0.75)", align: "right" });
+  void x0;
+}
+
+function drawHeader(ctx, P, E, overVideo) {
+  const { T, M } = E;
+  const style = T.header?.style || "pill";
+  clockBox(ctx, T, T.clock?.style || "box");
+  if (style === "off") return;
+  const logo = img(P.logoUrl);
+  let x = 46;
+  const y = 22;
+  const hh = 62;
+  const title = upper(P.title);
+  const tagline = T.header?.tagline ? upper(T.header.tagline) : "";
+  if (style === "bar") {
+    ctx.save(); ctx.globalAlpha *= 0.94; ctx.fillStyle = T.head; ctx.fillRect(0, 10, 1180, hh + 22); ctx.restore();
+    ctx.fillStyle = T.accent; ctx.fillRect(0, 10 + hh + 18, 1180, 4);
+    if (drawContain(ctx, logo, x, y, 120, hh)) x += 134;
+    const tf = FC(44, 800);
+    drawText(ctx, title, x, y + 24, { font: tf, color: T.headText });
+    const sub = [tagline, P.subtitle ? upper(P.subtitle) : ""].filter(Boolean).join("  ·  ");
+    if (sub) text(ctx, M, sub, x, y + 56, 1160 - x, F(16, 700), T.headText === "#ffffff" ? "rgba(255,255,255,0.8)" : T.headText);
+    return;
+  }
+  if (style === "boxed" || overVideo) fillRound(ctx, 30, 16, 1060, hh + 12, 16, T.glass);
+  if (drawContain(ctx, logo, x, y, 120, hh)) x += 134;
+  if (style === "minimal") {
+    drawText(ctx, title, x, y + 22, { font: FC(40, 800), color: style === "boxed" || overVideo ? "#ffffff" : T.onBg });
+    const sub = [tagline, P.subtitle ? upper(P.subtitle) : ""].filter(Boolean).join("  ·  ");
+    if (sub) text(ctx, M, sub, x, y + 52, 1060 - x, F(16, 700), style === "boxed" || overVideo ? "rgba(255,255,255,0.85)" : T.onBg);
+    return;
+  }
+  const tf = FC(40, 800);
+  const tw = Math.min(520, M(title, tf) + 36);
+  fillRound(ctx, x, y + 6, tw, 44, 10, T.accent);
+  drawText(ctx, title, x + 18, y + 29, { font: tf, color: T.accentText });
+  const sub = [tagline, P.subtitle ? upper(P.subtitle) : ""].filter(Boolean).join("  ·  ");
+  if (sub) text(ctx, M, sub, x + tw + 18, y + 29, 1060 - (x + tw + 18), F(18, 700), style === "boxed" || overVideo ? "#ffffff" : T.onBg || "#ffffff");
 }
 
 function drawNames(ctx, names, E) {
   const { T, M } = E;
+  const style = T.names?.style || "glass";
+  if (style === "off") return;
   for (const n of names) {
-    const x = n.x * STAGE_W + 16;
-    const y = (n.y + n.h) * E.H - 56;
+    const circle = n.mask === "circle" || n.mask === "ellipse";
     const f = F(Math.min(22, n.h * E.H * 0.09), 800);
-    const w = Math.min(n.w * STAGE_W - 32, M(upper(n.text), f) + 36);
-    fillRound(ctx, x, y, w, 40, 8, T.glass);
-    ctx.fillStyle = T.accent; ctx.fillRect(x, y + 8, 5, 24);
-    text(ctx, M, upper(n.text), x + 18, y + 21, w - 26, f, "#ffffff");
+    const tw = M(upper(n.text), f) + 36;
+    const w = Math.min(Math.max(n.w * STAGE_W - 32, 160), tw);
+    const x = circle ? n.x * STAGE_W + (n.w * STAGE_W - w) / 2 : n.x * STAGE_W + 16;
+    // Ekranın altına dayanan kamerada bant, alt bandın (kayan yazı) üstünde kalır.
+    const y = Math.min((n.y + n.h) * E.H - (circle ? 20 : 56), E.H - TICKER_H - 18 - 52);
+    if (style === "minimal") {
+      ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.7)"; ctx.shadowBlur = 8;
+      text(ctx, M, upper(n.text), x + 4, y + 21, w, f, "#ffffff");
+      ctx.restore();
+      ctx.fillStyle = T.accent; ctx.fillRect(x + 4, y + 36, Math.min(w - 8, 60), 4);
+      continue;
+    }
+    const bg = style === "solid" ? T.head : style === "accent" ? T.accent : T.glass;
+    const fg = style === "solid" ? T.headText : style === "accent" ? T.accentText : "#ffffff";
+    fillRound(ctx, x, y, w, 40, style === "accent" ? 4 : 8, bg);
+    if (style !== "accent") { ctx.fillStyle = T.accent; ctx.fillRect(x, y + 8, 5, 24); }
+    text(ctx, M, upper(n.text), x + 18, y + 21, w - 26, f, fg);
   }
 }
 
@@ -622,25 +627,43 @@ export const tickerShift = (now, speed, loopW) => (loopW > 0 ? ((now / 1000) * s
 function drawTicker(ctx, tk, E) {
   const { T, M } = E;
   if (!tk?.items?.length) return;
+  const style = T.tickerStyle || "solid";
   const y = E.H - TICKER_H - 18;
   ctx.save();
-  ctx.fillStyle = T.ticker;
-  ctx.globalAlpha *= 0.94;
-  ctx.fillRect(0, y, STAGE_W, TICKER_H);
+  if (style === "glass") { fillRound(ctx, 20, y, STAGE_W - 40, TICKER_H, 14, T.glass); }
+  else if (style === "minimal") { ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.fillRect(0, y, STAGE_W, TICKER_H); ctx.fillStyle = T.accent; ctx.fillRect(0, y, STAGE_W, 3); }
+  else if (style === "split") { ctx.fillStyle = T.ticker; ctx.globalAlpha *= 0.96; ctx.fillRect(0, y, STAGE_W, TICKER_H); ctx.globalAlpha = 1; ctx.fillStyle = T.accent; ctx.fillRect(0, y + TICKER_H - 6, STAGE_W, 6); }
+  else { ctx.fillStyle = T.ticker; ctx.globalAlpha *= 0.94; ctx.fillRect(0, y, STAGE_W, TICKER_H); }
   ctx.restore();
   const lf = FC(32, 800);
   const lw = M(upper(tk.label), lf) + 52;
-  ctx.fillStyle = T.accent; ctx.fillRect(0, y, lw, TICKER_H);
-  drawText(ctx, upper(tk.label), 26, y + TICKER_H / 2, { font: lf, color: T.accentText });
+  const x0 = style === "glass" ? 20 : 0;
+  if (style === "split") {
+    ctx.fillStyle = T.accent; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(lw + 26, y); ctx.lineTo(lw, y + TICKER_H); ctx.lineTo(0, y + TICKER_H); ctx.closePath(); ctx.fill();
+  } else if (style === "glass") fillRound(ctx, x0, y, lw, TICKER_H, 14, T.accent);
+  else if (style !== "minimal") { ctx.fillStyle = T.accent; ctx.fillRect(0, y, lw, TICKER_H); }
+  drawText(ctx, upper(tk.label), x0 + 26, y + TICKER_H / 2, { font: lf, color: style === "minimal" ? T.accent : T.accentText });
   const sep = "   •   ";
   const line = tk.items.join(sep) + sep;
   const f = F(24, 700);
   const w = M(line, f);
   const off = tickerShift(E.now, tk.speed || 120, w);
+  const startX = x0 + lw + (style === "split" ? 30 : 0);
   ctx.save();
-  ctx.beginPath(); ctx.rect(lw, y, STAGE_W - lw, TICKER_H); ctx.clip();
-  ctx.font = f; ctx.fillStyle = T.tickerText; ctx.textBaseline = "middle"; ctx.textAlign = "left";
-  for (let x = lw + 20 - off; x < STAGE_W; x += w) ctx.fillText(line, x, y + TICKER_H / 2 + 1);
+  ctx.beginPath(); ctx.rect(startX, y, STAGE_W - startX - x0, TICKER_H); ctx.clip();
+  ctx.font = f; ctx.fillStyle = style === "glass" || style === "minimal" ? "#ffffff" : T.tickerText; ctx.textBaseline = "middle"; ctx.textAlign = "left";
+  for (let x = startX + 20 - off; x < STAGE_W; x += w) ctx.fillText(line, x, y + TICKER_H / 2 + 1);
+  ctx.restore();
+}
+
+/** Kamera + skor bandı düzeni: alt bandın üstünde armalı, sürekli kayan skorlar. */
+function drawScoreBand(ctx, list, E, tickerOn) {
+  if (!list?.length) return;
+  const h = 110;
+  const y = E.H - (tickerOn ? TICKER_H + 26 : 24) - h;
+  ctx.save(); ctx.globalAlpha *= 0.96; fillRound(ctx, 20, y, STAGE_W - 40, h, 16, E.T.panel); ctx.restore();
+  ctx.save(); roundRect(ctx, 20, y, STAGE_W - 40, h, 16); ctx.clip();
+  LOCAL_CARD_BODIES.scoreboard(ctx, { x: 20, y: y - 4, w: STAGE_W - 40, h: h + 8 }, { matches: list, speed: 70 }, E);
   ctx.restore();
 }
 
@@ -657,6 +680,19 @@ function drawBand(ctx, band, E, tickerOn) {
   if (!drawContain(ctx, img(s.logo), x + 16, y + 26, w - 32, h - 36)) drawText(ctx, upper(s.name), x + w / 2, y + h / 2 + 8, { font: FC(30, 800), color: s.brandColor || "#333", align: "center" });
 }
 
+/** Filigran / köşe logosu (marka profili: konum, boy, saydamlık; ana ya da ikinci logo). */
+function drawWatermark(ctx, T, E, tickerOn) {
+  const wm = T.watermark;
+  if (!wm || wm.pos === "off") return;
+  const im = img(wm.which === "logo2" ? T.logo2 || T.logo : T.logo || T.logo2);
+  if (!im) return;
+  const s = wm.size || 110;
+  const m = 34;
+  const x = wm.pos.endsWith("l") ? m : STAGE_W - m - s;
+  const y = wm.pos.startsWith("t") ? (wm.pos === "tr" ? 110 : 110) : E.H - (tickerOn ? TICKER_H + 40 : 30) - s;
+  ctx.save(); ctx.globalAlpha *= wm.opacity ?? 0.85; drawContain(ctx, im, x, y, s, s); ctx.restore();
+}
+
 /**
  * Panorama katmanını çizer. frame: { width, height, now, sceneId }. Sahne bilinmiyorsa (geçiş
  * ortası, düzenleyici) yalnız künye ve bant çizilir.
@@ -665,18 +701,26 @@ export function drawPanorama(ctx, frame, snap) {
   const P = snap?.panorama;
   if (!ctx || !P) return;
   const k = (Number(frame?.width) || STAGE_W) / STAGE_W;
-  const T = themeOf(P.theme);
+  const T = P.tokens || themeOf(P.theme);
+  setDrawFonts(T.fonts?.sans, T.fonts?.cond);
   const st = stateOf(ctx);
   const ready = P.card ? panoramaImageUrls({ card: P.card }).reduce((n, u) => n + (getImage(u) ? 1 : 0), 0) : 0;
   const E = { T, M: st.M, layers: st.layers, k, ready, now: frame?.now ?? Date.now(), H: (Number(frame?.height) || 1080) / k, card: P.card || { since: 0, sec: 0 } };
   const bx = (frame?.sceneId && P.boxes?.[frame.sceneId]) || { card: null, ticker: true, header: true, names: [], full: false };
+  const tickerOn = bx.ticker !== false && P.ticker?.items?.length;
   ctx.save();
   ctx.scale(k, k);
   ctx.textBaseline = "middle";
-  if (bx.names?.length) drawNames(ctx, bx.names, E);
-  if (bx.card && P.card) drawCard(ctx, bx.card, P.card, E);
-  if (bx.header !== false) drawHeader(ctx, P, E, bx.full);
-  if (P.band) drawBand(ctx, P.band, E, bx.ticker !== false && P.ticker?.items?.length);
-  if (bx.ticker !== false) drawTicker(ctx, P.ticker, E);
-  ctx.restore();
+  try {
+    if (bx.names?.length) drawNames(ctx, bx.names, E);
+    if (bx.card && P.card) drawCard(ctx, bx.card, P.card, E, P.prev);
+    if (bx.header !== false) drawHeader(ctx, P, E, bx.full);
+    if (bx.band === "scores" && P.scores?.length) drawScoreBand(ctx, P.scores, E, tickerOn);
+    else if (P.band) drawBand(ctx, P.band, E, tickerOn);
+    if (bx.ticker !== false) drawTicker(ctx, P.ticker, E);
+    if (bx.header !== false) drawWatermark(ctx, T, E, tickerOn);
+  } finally {
+    ctx.restore();
+    setDrawFonts(null, null);
+  }
 }
