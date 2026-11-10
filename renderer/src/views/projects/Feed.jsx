@@ -4,7 +4,7 @@
 // (bağlantı yoksa kısa aralıkla yenilenir). "Proje sohbet grubu" ile ekip
 // Mesajlar'da gruplanır.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Empty, ErrorNote, Icon, MenuButton, Segmented, Spinner, useConfirm, useToast } from "../../components/ui";
+import { Empty, ErrorNote, Icon, MenuButton, Segmented, Spinner, keyLabel, useConfirm, useToast } from "../../components/ui";
 import { del, get, patch, post, request } from "../../api";
 import { relativeTime } from "../../lib/helpers";
 import { POST_KIND_META, insertMention, mentionQuery, tokenize } from "../../lib/lifecycleUtils";
@@ -154,7 +154,7 @@ function Composer({ projectId, feed, onPosted }) {
   return (
     <section className="card lc-composer">
       <Segmented size="sm" value={kind} onChange={setKind} options={kinds.map((k) => ({ value: k.key, label: k.label, icon: KIND_ICONS[k.key] }))} ariaLabel="Gönderi türü" />
-      <MentionBox value={body} onChange={setBody} team={feed.team} onSubmit={submit} label="Gönderi metni" placeholder={kind === "announcement" ? "Ekibe duyuru… (@ ile kişi, @herkes ile tüm ekip)" : "Gelişmeyi paylaşın ya da not alın… (@ ile bahsedin, ⌘↩ gönderir)"} />
+      <MentionBox value={body} onChange={setBody} team={feed.team} onSubmit={submit} label="Gönderi metni" placeholder={kind === "announcement" ? "Ekibe duyuru… (@ ile kişi, @herkes ile tüm ekip)" : keyLabel("Gelişmeyi paylaşın ya da not alın… (@ ile bahsedin, ⌘↩ gönderir)")} />
       {(links.length > 0 || files.length > 0) && (
         <div className="row-gap">
           {files.map((f, i) => <span key={f.url} className="chip"><Icon name="file" size={11} /> {f.name}<button type="button" aria-label={`${f.name} kaldır`} onClick={() => setFiles((x) => x.filter((_, j) => j !== i))}>×</button></span>)}
@@ -235,7 +235,7 @@ function PostCard({ item, feed, names, projectId, isOwner, onChanged, onRemoved 
             </div>
           ))}
           <div className="lc-replybox">
-            <MentionBox value={reply} onChange={setReply} team={feed.team} rows={1} label="Yorum yaz" placeholder="Yanıt yazın… (⌘↩)" onSubmit={sendReply} />
+            <MentionBox value={reply} onChange={setReply} team={feed.team} rows={1} label="Yorum yaz" placeholder={keyLabel("Yanıt yazın… (⌘↩)")} onSubmit={sendReply} />
             <button type="button" className="btn btn--sm btn--primary" onClick={sendReply} disabled={!reply.trim()}>Gönder</button>
           </div>
         </div>

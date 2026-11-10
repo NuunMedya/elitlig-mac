@@ -1,7 +1,7 @@
 // Bugün: günün özeti. Gecikmiş ve bugünkü işler, önümüzdeki 7 gün, bu ayın
 // muhasebe özeti, son notlar ve odak istatistiği tek ekranda.
 import React, { useEffect, useMemo, useState } from "react";
-import { Icon, Empty, OfflineNote, ErrorNote, Spinner, useResult } from "../components/ui";
+import { Icon, Empty, OfflineNote, ErrorNote, Spinner, isMac, useResult } from "../components/ui";
 import { patch, post, tempId, useResource } from "../api";
 import { formatMoney, formatTime, greeting, groupTodos, parseQuickTask, relativeDay, formatDate } from "../lib/helpers";
 import { colorOf } from "../lib/agendaUtils";
@@ -202,7 +202,7 @@ export default function Today({ go, auth }) {
               <Icon name={focus?.running ? "pause" : "play"} size={14} /> {focus?.running ? "Duraklat" : "Başlat"}
             </button>
           </div>
-          <p className="muted small">Sayaç pencere kapalıyken de menü çubuğunda çalışır.</p>
+          <p className="muted small">Sayaç pencere kapalıyken de {isMac() ? "menü çubuğunda" : "bildirim alanında (sistem tepsisi)"} çalışır.</p>
         </section>
 
         <section className="card">

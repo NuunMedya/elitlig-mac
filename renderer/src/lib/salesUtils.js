@@ -140,3 +140,35 @@ export const recipientLabel = (lead) => [lead.name, lead.company].filter(Boolean
 
 /** Dosya adı için güvenli metin. */
 export const fileSafe = (s) => String(s || "Elitlig").replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ").trim().slice(0, 120);
+
+/**
+ * Hedef kitleden alıcı ekleme (Rehber → GET /api/tools/contacts/audiences/:id/recipients).
+ * Kitle kişisinin e-postası projede bir kişiye aitse o kişi (lead) alıcı olur —
+ * gönderim iletişim geçmişine işlenir; değilse serbest alıcı ({ email, name, company })
+ * eklenir (sunucu prepareMessages "recipients" alanı). Aynı adres iki kez eklenmez.
+ * Dönüş: { leadIds, extras, added, matched, duplicate, noEmail }.
+ */
+export function mergeAudienceRecipients({ items = [], leads = [], leadIds = [], extras = [] } = {}) {
+  const norm = (v) => String(v || "").trim().toLowerCase();
+  const leadByEmail = new Map();
+  leads.forEach((l) => { if ((l.kind || "customer") !== "supplier" && isValidEmail(l.email) && !leadByEmail.has(norm(l.email))) leadByEmail.set(norm(l.email), l); });
+  const nextLeads = [...leadIds];
+  const nextExtras = [...extras];
+  const taken = new Set([
+    ...leads.filter((l) => leadIds.map(Number).includes(Number(l.id))).map((l) => norm(l.email)).filter(Boolean),
+    ...extras.map((x) => norm(x.email)),
+  ]);
+  let added = 0; let matched = 0; let duplicate = 0; let noEmail = 0;
+  for (const r of items) {
+    const email = norm(r.email);
+    if (!isValidEmail(email)) { noEmail += 1; continue; }
+    if (taken.has(email)) { duplicate += 1; continue; }
+    taken.add(email);
+    const lead = leadByEmail.get(email);
+    if (lead) { nextLeads.push(Number(lead.id)); matched += 1; } else {
+      nextExtras.push({ email: String(r.email).trim(), name: r.name || "", company: r.company || "" });
+      added += 1;
+    }
+  }
+  return { leadIds: nextLeads, extras: nextExtras, added, matched, duplicate, noEmail };
+}

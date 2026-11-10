@@ -227,7 +227,7 @@ function AccountEditor({ account, meta, onClose, onSaved }) {
         )}
         <Field label="Açılış bakiyesi (₺)"><input inputMode="decimal" value={form.opening_balance} onChange={set("opening_balance")} /></Field>
         <Field label="Açılış tarihi" hint="Bu tarihten önceki kayıtlar sayılmaz."><input type="date" value={form.opening_date || ""} onChange={set("opening_date")} /></Field>
-        <Field label="Renk" className="span2"><div className="color-dots color-dots--lg">{ACCOUNT_COLORS.map((c) => <button key={c} type="button" className={form.color === c ? "is-on" : ""} style={{ background: c }} onClick={() => setForm({ ...form, color: c })} />)}</div></Field>
+        <Field label="Renk" className="span2"><div className="color-dots color-dots--lg">{ACCOUNT_COLORS.map((c) => <button key={c} type="button" className={form.color === c ? "is-on" : ""} style={{ background: c }} onClick={() => setForm({ ...form, color: c })} aria-label={`Renk ${c}`} aria-pressed={form.color === c} />)}</div></Field>
         <Field label="Not" className="span2"><input value={form.note} onChange={set("note")} placeholder="IBAN, şube, sorumlu…" /></Field>
         {!account && (
           <div className="span2 account-form__acl">

@@ -1,6 +1,6 @@
 // Tablolar: dosya listesi (kendi + benimle paylaşılan), şablonlar, Excel/CSV
 // içe aktarma. Bir dosya açılınca hesap tablosu düzenleyicisi gelir.
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Empty, ErrorNote, Icon, MenuButton, Modal, OfflineNote, Spinner, ViewHeader, useConfirm, useResult, useToast } from "../components/ui";
 import { del, patch, post, useCommand, useResource } from "../api";
 import { TEMPLATES } from "../lib/sheets/sheetOps";
@@ -10,7 +10,7 @@ import SheetEditor from "./SheetEditor";
 
 const TEMPLATE_ICONS = { blank: "grid", dues: "users", budget: "wallet", standings: "star", attendance: "checkSquare" };
 
-export default function Sheets({ arg, go }) {
+export default function Sheets({ arg, argSeq, go }) {
   const [openId, setOpenId] = useState(arg && arg !== "new" ? arg : null);
   const [picker, setPicker] = useState(arg === "new");
   const [query, setQuery] = useState("");
@@ -20,6 +20,11 @@ export default function Sheets({ arg, go }) {
   const confirm = useConfirm();
 
   useCommand("new", () => { if (!openId) setPicker(true); });
+  // Tablolar açıkken paletten başka tablo / "Yeni tablo" seçilince.
+  useEffect(() => {
+    // Kenar çubuğundan "Tablolar"a yeniden tıklamak açık tablodan listeye döner (kayıt kapanışta yapılır).
+    if (arg === "new") { setOpenId(null); setPicker(true); } else if (arg) setOpenId(arg); else if (argSeq) setOpenId(null);
+  }, [arg, argSeq]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const items = useMemo(() => (list.data?.items || []).filter((s) => includesTr(s.title, query)), [list.data, query]);
   const mine = items.filter((s) => s.access === "owner");
@@ -58,7 +63,7 @@ export default function Sheets({ arg, go }) {
     if (file) await importData(file.name, new Uint8Array(await file.arrayBuffer()));
   };
 
-  if (openId) return <SheetEditor id={openId} go={go} onClose={() => { setOpenId(null); list.reload({ quiet: true }); }} />;
+  if (openId) return <SheetEditor key={openId} id={openId} go={go} onClose={() => { setOpenId(null); list.reload({ quiet: true }); }} />;
 
   const row = (s) => (
     <li key={s.id} className="file-row">

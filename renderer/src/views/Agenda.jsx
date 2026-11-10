@@ -4,7 +4,7 @@
 // Projelerdeki tarihler (adımlar, son tarihler, proje başlangıç/bitiş, soru
 // son tarihleri, görüşme takipleri) proje rengiyle, şerit ve simgeyle görünür;
 // tıklayınca projeye gider. "Projeler" düğmesiyle açılıp kapanır.
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Empty, ErrorNote, Field, Icon, Modal, OfflineNote, Segmented, ViewHeader, useConfirm, useResult } from "../components/ui";
 import { del, patch, post, tempId, useCommand, useResource } from "../api";
 import {
@@ -21,7 +21,7 @@ const writeJson = (key, value) => { try { localStorage.setItem(key, JSON.stringi
 
 const HOUR_PX = 44;
 
-export default function Agenda({ arg, go }) {
+export default function Agenda({ arg, argSeq, go }) {
   const [view, setView] = useState(() => localStorage.getItem("agenda:view") || "month");
   const [cursor, setCursor] = useState(() => new Date());
   const [editing, setEditing] = useState(arg === "new" ? { draft: {} } : null);
@@ -31,6 +31,8 @@ export default function Agenda({ arg, go }) {
   const setShowProjects = (v) => { setShowProjectsState(v); writeJson("agenda:projects", v); };
   const toggleProject = (id) => setHiddenProjectsState((cur) => { const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]; writeJson("agenda:hiddenProjects", next); return next; });
   const result = useResult();
+  // Ajanda açıkken paletten "Yeni etkinlik" seçilince.
+  useEffect(() => { if (arg === "new") setEditing({ draft: {} }); }, [arg, argSeq]);
   const range = useMemo(() => rangeFor(view, cursor), [view, cursor]);
   const data = useResource("/api/tools/events", { from: range.from.toISOString(), to: range.to.toISOString(), todos: showTodos ? undefined : "0" });
 
@@ -342,11 +344,11 @@ function EventEditor({ item, draft, onClose, onSaved }) {
         </>)}
         <Field label="Tekrar"><select value={form.recurrence} onChange={set("recurrence")}>{RECURRENCES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></Field>
         {form.recurrence !== "none" ? <Field label="Tekrar bitişi"><input type="date" value={form.repeat_until} onChange={set("repeat_until")} /></Field> : <span />}
-        <Field label="Hatırlatma (Mac bildirimi)"><select value={form.remind_minutes} onChange={set("remind_minutes")}>{REMINDERS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></Field>
+        <Field label="Hatırlatma (masaüstü bildirimi)"><select value={form.remind_minutes} onChange={set("remind_minutes")}>{REMINDERS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></Field>
         <Field label="Renk">
           <div className="color-dots color-dots--lg">
-            <button type="button" className={!form.color ? "is-on" : ""} style={{ background: categoryOf(form.category).color }} onClick={() => setForm({ ...form, color: "" })} title="Türün rengi" />
-            {["#6366f1", "#7c3aed", "#0284c7", "#059669", "#dc2626", "#d97706", "#db2777", "#475569"].map((c) => <button key={c} type="button" className={form.color === c ? "is-on" : ""} style={{ background: c }} onClick={() => setForm({ ...form, color: c })} />)}
+            <button type="button" className={!form.color ? "is-on" : ""} style={{ background: categoryOf(form.category).color }} onClick={() => setForm({ ...form, color: "" })} title="Türün rengi" aria-label="Türün rengi" aria-pressed={!form.color} />
+            {["#6366f1", "#7c3aed", "#0284c7", "#059669", "#dc2626", "#d97706", "#db2777", "#475569"].map((c) => <button key={c} type="button" className={form.color === c ? "is-on" : ""} style={{ background: c }} onClick={() => setForm({ ...form, color: c })} aria-label={`Renk ${c}`} aria-pressed={form.color === c} />)}
           </div>
         </Field>
         <Field label="Açıklama" className="span2"><textarea rows={3} value={form.description} onChange={set("description")} /></Field>

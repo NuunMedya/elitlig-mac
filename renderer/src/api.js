@@ -14,6 +14,20 @@ export const patch = (path, body) => request({ method: "PATCH", path, body });
 export const put = (path, body) => request({ method: "PUT", path, body });
 export const del = (path) => request({ method: "DELETE", path });
 
+// Eşitleme bitti olayı: her useResource ayrı IPC dinleyicisi eklemesin (bir
+// görünümde 10'dan çok kaynak MaxListenersExceededWarning veriyordu); tek
+// dinleyici kurulur, kancalar buradan beslenir.
+const syncDoneListeners = new Set();
+let syncDoneBound = false;
+export function onSyncDone(fn) {
+  syncDoneListeners.add(fn);
+  if (!syncDoneBound) {
+    syncDoneBound = true;
+    bridge().sync.onDone((r) => { for (const cb of [...syncDoneListeners]) cb(r); });
+  }
+  return () => { syncDoneListeners.delete(fn); };
+}
+
 export const tempId = () => `tmp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
 /**
@@ -47,7 +61,7 @@ export function useResource(path, query, { enabled = true } = {}) {
   useEffect(() => {
     const quietReload = () => load({ quiet: true });
     window.addEventListener(REFRESH_EVENT, quietReload);
-    const off = bridge().sync.onDone(quietReload);
+    const off = onSyncDone(quietReload);
     return () => { window.removeEventListener(REFRESH_EVENT, quietReload); off(); };
   }, [load]);
 

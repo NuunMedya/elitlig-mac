@@ -213,6 +213,7 @@
 .sl-recips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px; min-height: 42px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); }
 .sl-recip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 4px 0 4px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: 0.8em; font-weight: 700; }
 .sl-recip.is-bad { color: #b45309; border-color: #fcd34d; background: #fffbeb; }
+.sl-recip--extra { border-style: dashed; }
 .sl-recip button { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 4px; }
 .sl-recips__add { border: 0; background: transparent; font: inherit; font-size: 0.8em; font-weight: 700; color: var(--tool); cursor: pointer; max-width: 200px; }
 .sl-tplacts { display: flex; align-items: flex-end; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }

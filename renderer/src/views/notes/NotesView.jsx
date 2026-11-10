@@ -5,7 +5,7 @@
 // ⌘N yeni not, ⌘F ara, ⌘. odak modu. Bağlantı yokken notlar önbellekten
 // açılır; yazılanlar kuyruğa alınır ve bağlantı gelince eşitlenir.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Empty, ErrorNote, Icon, MenuButton, OfflineNote, Segmented, Spinner, useConfirm, useResult, useToast } from "../../components/ui";
+import { Empty, ErrorNote, Icon, MenuButton, OfflineNote, Segmented, Spinner, keyLabel, useConfirm, useResult, useToast } from "../../components/ui";
 import { del, get, patch, post, tempId, useCommand, useResource } from "../../api";
 import { formatDate, relativeTime } from "../../lib/helpers";
 import {
@@ -24,7 +24,7 @@ const Highlighted = ({ text, query }) => highlight(text, query).map((p, i) => (p
 
 const PRINT_CSS = "body{font:12pt/1.6 -apple-system,'Segoe UI',sans-serif;color:#111;margin:18mm}h1{font-size:22pt;margin:0 0 4pt}.meta{color:#666;font-size:9pt;margin:0 0 14pt}blockquote{border-left:3px solid #999;margin:0 0 10pt;padding:2pt 10pt;color:#444}pre{background:#f4f4f4;padding:8pt;border-radius:6pt}table{border-collapse:collapse}td,th{border:1px solid #bbb;padding:4pt 8pt}.nt-md__list.is-tasks{list-style:none;padding-left:0}.nt-md__task{display:flex;gap:6pt}.nt-md__wiki{border:0;background:none;padding:0;font:inherit;text-decoration:underline}code{background:#f1f1f1;padding:0 3pt;border-radius:3pt}";
 
-export default function NotesView({ arg, go }) {
+export default function NotesView({ arg, argSeq, go }) {
   const result = useResult();
   const confirm = useConfirm();
   const toast = useToast();
@@ -91,12 +91,13 @@ export default function NotesView({ arg, go }) {
   useEffect(() => {
     if (arg && typeof arg === "object" && arg.notebook) setScope({ list: "all", notebookId: Number(arg.notebook), tag: "" });
     else if (arg && typeof arg !== "object" && !["new", "template"].includes(arg)) setSelected(Number(arg) || arg);
-  }, [arg]);
+  }, [arg, argSeq]);
+  // "Yeni not" / "Şablondan yeni not": Not Defteri zaten açıkken de çalışır (argSeq).
   useEffect(() => {
     if (arg === "new") create();
     if (arg === "template") setDialog({ kind: "templates" });
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, []);
+  }, [arg, argSeq]);
   useEffect(() => {
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "." && current) { e.preventDefault(); setFocus((v) => !v); }
@@ -234,7 +235,7 @@ export default function NotesView({ arg, go }) {
       <section className="nt-listpane" aria-label="Notlar">
         <div className="nt-listpane__head">
           <div className="nt-listpane__title"><h2>{scopeTitle}</h2><span className="muted small">{results.length} not</span>{scope.list === "trash" && trashCount > 0 && <button type="button" className="btn btn--sm" onClick={emptyTrash}>Boşalt</button>}</div>
-          <div className="search-box search-box--full"><Icon name="search" size={14} /><input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Notlarda ara (⌘F)" aria-label="Notlarda ara" onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); if (e.key === "Enter" && results[0]) setSelected(results[0].note.id); }} /></div>
+          <div className="search-box search-box--full"><Icon name="search" size={14} /><input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={keyLabel("Notlarda ara (⌘F)")} aria-label="Notlarda ara" onKeyDown={(e) => { if (e.key === "Escape") setQuery(""); if (e.key === "Enter" && results[0]) setSelected(results[0].note.id); }} /></div>
           <div className="row-gap">
             <select className="select-sm" value={sort} onChange={(e) => { setSort(e.target.value); writeLocal("notes:sort", e.target.value); }} aria-label="Sıralama" disabled={Boolean(query.trim())}>{SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select>
             <Segmented value={layout} onChange={(v) => { setLayout(v); writeLocal("notes:layout", v); }} size="sm" ariaLabel="Görünüm" options={[{ value: "list", icon: "list", label: "", title: "Liste" }, { value: "grid", icon: "grid", label: "", title: "Izgara" }]} />

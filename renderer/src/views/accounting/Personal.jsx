@@ -1,7 +1,7 @@
 // Ön Muhasebe: gelir-gider defteri, KDV, cari bakiyeler, vade takibi.
 // Dönem seçimi, süzgeçler, 12 aylık grafik, kategori dağılımı; CSV, Excel ve
 // PDF olarak dışa aktarma.
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Empty, ErrorNote, Field, Icon, MenuButton, Modal, OfflineNote, Segmented, Spinner, ViewHeader, useConfirm, useResult } from "../../components/ui";
 import { del, patch, post, tempId, useCommand, useResource } from "../../api";
 import { METHODS, PERIODS, PRESET_CATEGORIES, STATUS_LABELS_BY_TYPE, TYPE_LABELS, VAT_RATES, filterEntries, isOverdue, parseAmount, periodRange, splitVat, toCsv, totals } from "../../lib/ledgerUtils";
@@ -13,13 +13,17 @@ import { AccountSelectField } from "../../components/finance";
 
 const methodLabel = (key) => METHODS.find((m) => m.key === key)?.label || key;
 
-export default function Personal({ arg, accounts = [], onTransfer, onManageAccounts }) {
+export default function Personal({ arg, argSeq, accounts = [], onTransfer, onManageAccounts }) {
   const [period, setPeriod] = useState(() => localStorage.getItem("ledger:period") || "this_month");
   const [custom, setCustom] = useState({ from: "", to: "" });
   const [filters, setFilters] = useState({ type: "", status: "", category: "", query: "", account: "" });
   const [tab, setTab] = useState("entries");
   const [editing, setEditing] = useState(arg === "new" ? { draft: { type: "expense" } } : arg ? { id: arg } : null);
   const searchRef = useRef(null);
+  useEffect(() => {
+    if (arg === "new") setEditing({ draft: { type: "expense" } });
+    else if (arg) setEditing({ id: arg });
+  }, [arg, argSeq]);
   const result = useResult();
   const confirm = useConfirm();
 

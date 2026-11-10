@@ -6,7 +6,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Field, Icon, Modal, useConfirm, useToast } from "../../../components/ui";
 import { get, request } from "../../../api";
-import { VARIABLES, displayNumber, insertAt, isValidEmail, usedVariables } from "../../../lib/salesUtils";
+import { VARIABLES, displayNumber, insertAt, isValidEmail, mergeAudienceRecipients, usedVariables } from "../../../lib/salesUtils";
 import { Avatar } from "../common";
 import { SALES, copyText, refreshSales, salesPath, useCall, useSales } from "./salesCommon";
 
@@ -19,6 +19,11 @@ export default function MailComposer({ ctx, leadIds = [], proposalId = null, pre
   const call = useCall();
   const { data: sales } = useSales(pid);
   const [recipients, setRecipients] = useState(() => [...new Set(leadIds.map(Number))]);
+  // Projede kişi olmayan alıcılar (Rehber hedef kitlesinden): { email, name, company }.
+  const [extras, setExtras] = useState([]);
+  const [audiences, setAudiences] = useState(null);
+  const [audBusy, setAudBusy] = useState(false);
+  const total = recipients.length + extras.length;
   const [templates, setTemplates] = useState(null);
   const [templateId, setTemplateId] = useState("");
   const [subject, setSubject] = useState("");
@@ -51,6 +56,27 @@ export default function MailComposer({ ctx, leadIds = [], proposalId = null, pre
     return () => { alive = false; };
   }, [pid]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Rehber hedef kitleleri (Elitlig sistem kitlesi dahil; yetkisizse erişimsiz görünür).
+  useEffect(() => {
+    let alive = true;
+    get("/api/tools/contacts/audiences").then((r) => { if (alive) setAudiences(r.ok ? (r.data?.items || []).filter((a) => a.access !== false && Number(a.count) > 0) : []); });
+    return () => { alive = false; };
+  }, []);
+  const addAudience = async (id) => {
+    if (!id) return;
+    setAudBusy(true);
+    const r = await get(`/api/tools/contacts/audiences/${id}/recipients`, { channel: "email" });
+    setAudBusy(false);
+    if (!r.ok) { toast(r.offline ? "Hedef kitleyi okumak için bağlantı gerekir." : r.error?.message || "Hedef kitle okunamadı.", { tone: "error" }); return; }
+    const m = mergeAudienceRecipients({ items: r.data?.items || [], leads: ctx.leads, leadIds: recipients, extras });
+    setRecipients(m.leadIds);
+    setExtras(m.extras);
+    const name = r.data?.audience?.name || "Hedef kitle";
+    const parts = [m.matched && `${m.matched} proje kişisi`, m.added && `${m.added} rehber kişisi`].filter(Boolean);
+    const skippedNote = [m.duplicate && `${m.duplicate} zaten listede`, r.data?.totals?.hidden && `${r.data.totals.hidden} erişiminiz dışında`].filter(Boolean).join(", ");
+    toast(parts.length ? `${name}: ${parts.join(" ve ")} eklendi${skippedNote ? ` (${skippedNote})` : ""}.` : `${name}: eklenecek yeni e-posta adresi yok${skippedNote ? ` (${skippedNote})` : ""}.`, { tone: parts.length ? "success" : "warn" });
+  };
+
   const vars = useMemo(() => usedVariables(subject, body), [subject, body]);
   // Şablon bir bağlantı kullanıyorsa: projenin sunumu / kişinin teklifi kendiliğinden seçilir.
   useEffect(() => {
@@ -62,11 +88,12 @@ export default function MailComposer({ ctx, leadIds = [], proposalId = null, pre
   }, [vars, sales, recipients, presentation, proposal]);
   const payload = useMemo(() => ({
     subject, body, ...(templateId ? { template_id: templateId } : {}), lead_ids: recipients,
+    ...(extras.length ? { recipients: extras.map(({ email, name, company }) => ({ email, name, company })) } : {}),
     ...(proposal ? { proposal_id: Number(proposal) } : {}), ...(presentation ? { presentation_id: Number(presentation) } : {}),
-  }), [subject, body, templateId, recipients, proposal, presentation]);
+  }), [subject, body, templateId, recipients, extras, proposal, presentation]);
 
   useEffect(() => {
-    if (!subject.trim() || !body.trim() || !recipients.length) { setPreview(null); setPreviewError(""); return undefined; }
+    if (!subject.trim() || !body.trim() || !total) { setPreview(null); setPreviewError(""); return undefined; }
     if (vars.includes("teklif_linki") && !proposal) { setPreview(null); setPreviewError("Şablonda {{teklif_linki}} var: bir teklif seçin."); return undefined; }
     if (vars.includes("sunum_linki") && !presentation) { setPreview(null); setPreviewError("Şablonda {{sunum_linki}} var: bir sunum seçin."); return undefined; }
     const t = setTimeout(async () => {
@@ -74,7 +101,7 @@ export default function MailComposer({ ctx, leadIds = [], proposalId = null, pre
       if (r.ok) { setPreview(r.data); setPreviewError(""); } else { setPreview(null); setPreviewError(r.offline ? "Önizleme için internet bağlantısı gerekir." : r.error?.message || "Önizleme hazırlanamadı."); }
     }, 450);
     return () => clearTimeout(t);
-  }, [pid, payload, subject, body, recipients.length, vars, proposal, presentation]);
+  }, [pid, payload, subject, body, total, vars, proposal, presentation]);
 
   const remember = (name) => (e) => { last.current = { name, start: e.target.selectionStart, end: e.target.selectionEnd }; };
   const insertVar = (key) => {
@@ -169,7 +196,7 @@ export default function MailComposer({ ctx, leadIds = [], proposalId = null, pre
   }
 
   return (
-    <Modal title={recipients.length > 1 ? `Toplu e-posta · ${recipients.length} kişi` : "Şablonla e-posta"} onClose={onClose} width={1080} className="modal--tool sl-mail" footer={<>
+    <Modal title={total > 1 ? `Toplu e-posta · ${total} kişi` : "Şablonla e-posta"} onClose={onClose} width={1080} className="modal--tool sl-mail" footer={<>
       <span className={`sl-smtp spacer ${smtp ? "is-on" : ""}`}><Icon name={smtp ? "cloud" : "mail"} size={13} /> {smtp ? "Sunucudan gönderilir" : "Posta uygulamanızla gönderilir"}</span>
       <button type="button" className="btn" onClick={onClose}>Vazgeç</button>
       {smtp && <button type="button" className="btn" disabled={!ready.length || Boolean(busy)} onClick={prepareManual}>Posta uygulamasıyla</button>}
@@ -177,7 +204,7 @@ export default function MailComposer({ ctx, leadIds = [], proposalId = null, pre
     </>}>
       <div className="sl-mail__grid">
         <div className="sl-mail__form">
-          <Field label={`Alıcılar · ${recipients.length} kişi`}>
+          <Field label={`Alıcılar · ${total} kişi`}>
             <div className="sl-recips">
               {recipients.map((id) => {
                 const l = leadById.get(id);
@@ -185,6 +212,15 @@ export default function MailComposer({ ctx, leadIds = [], proposalId = null, pre
                 const ok = isValidEmail(l.email);
                 return <span key={id} className={`sl-recip ${ok ? "" : "is-bad"}`} title={ok ? l.email : "E-posta adresi yok ya da geçersiz"}><Avatar name={l.name} size={18} />{l.name}{!ok && <Icon name="alert" size={11} />}<button type="button" onClick={() => setRecipients((r) => r.filter((x) => x !== id))} aria-label={`${l.name} çıkar`}><Icon name="x" size={11} /></button></span>;
               })}
+              {extras.map((x) => (
+                <span key={x.email} className="sl-recip sl-recip--extra" title={`${x.email} · Rehber'den (projede kişi değil)`}><Avatar name={x.name || x.email} size={18} />{x.name || x.email}<button type="button" onClick={() => setExtras((l) => l.filter((y) => y.email !== x.email))} aria-label={`${x.name || x.email} çıkar`}><Icon name="x" size={11} /></button></span>
+              ))}
+              {audiences?.length > 0 && (
+                <select className="sl-recips__add" value="" disabled={audBusy} aria-label="Hedef kitleden alıcı ekle" onChange={(e) => addAudience(e.target.value)}>
+                  <option value="">{audBusy ? "Kitle okunuyor…" : "+ Hedef kitleden alıcı ekle"}</option>
+                  {audiences.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.with_email ?? a.count} e-posta</option>)}
+                </select>
+              )}
               {candidates.length > 0 && (
                 <select className="sl-recips__add" value="" aria-label="Alıcı ekle" onChange={(e) => { const v = Number(e.target.value); if (v) setRecipients((r) => [...r, v]); }}>
                   <option value="">+ Kişi ekle</option>
@@ -192,6 +228,7 @@ export default function MailComposer({ ctx, leadIds = [], proposalId = null, pre
                 </select>
               )}
             </div>
+            {sales?.limits?.bulk && total > sales.limits.bulk && <p className="sl-warn"><Icon name="alert" size={12} /> Tek seferde en fazla {sales.limits.bulk} kişiye gönderilebilir; listeyi küçültün.</p>}
           </Field>
           <div className="form-grid">
             <Field label="Şablon">
@@ -240,7 +277,7 @@ export default function MailComposer({ ctx, leadIds = [], proposalId = null, pre
             <strong><Icon name="eye" size={13} /> Önizleme</strong>
             {ready.length > 1 && <select className="select-sm" value={Math.min(idx, ready.length - 1)} onChange={(e) => setIdx(Number(e.target.value))} aria-label="Önizlenen alıcı">{ready.map((m, i) => <option key={m.to} value={i}>{m.name || m.to}</option>)}</select>}
           </header>
-          {previewError ? <div className="error-note"><span>{previewError}</span></div> : !recipients.length ? <p className="muted small">Alıcı seçin.</p> : !shown ? <p className="muted small">{preview ? "Geçerli e-posta adresi olan alıcı yok." : "Hazırlanıyor…"}</p> : (
+          {previewError ? <div className="error-note"><span>{previewError}</span></div> : !total ? <p className="muted small">Alıcı seçin.</p> : !shown ? <p className="muted small">{preview ? "Geçerli e-posta adresi olan alıcı yok." : "Hazırlanıyor…"}</p> : (
             <div className="sl-mailcard">
               <div className="sl-mailcard__row"><small>Kime</small><span>{shown.name ? `${shown.name} <${shown.to}>` : shown.to}</span></div>
               <div className="sl-mailcard__row"><small>Konu</small><b>{shown.subject}</b></div>

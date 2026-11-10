@@ -8,7 +8,7 @@
 //   Türkiye Geneli      — illerden alınacak maç başı ücretler ve tahsilatlar
 // Her bölüm ayrı düzenlenir; hesaplar arasında (bölümler arası da) virman yapılır.
 import React, { useEffect, useMemo, useState } from "react";
-import { Icon, ViewHeader } from "../../components/ui";
+import { Icon, OfflineNote, ViewHeader } from "../../components/ui";
 import { useResource } from "../../api";
 import Accounts from "./Accounts";
 import Personal from "./Personal";
@@ -22,9 +22,14 @@ import { TransferDialog, money } from "./common";
 // Dışarıdan (bildirim, tepsi menüsü, komut paleti) bölüm açmak için: ledger:duzenli, ledger:butce
 const ARG_SECTIONS = { duzenli: "recurring", butce: "budget" };
 
-export default function Accounting({ arg, go }) {
+export default function Accounting({ arg, argSeq, go }) {
   const [section, setSection] = useState(() => ARG_SECTIONS[arg] || localStorage.getItem("acc:section") || "accounts");
-  useEffect(() => { if (ARG_SECTIONS[arg]) setSection(ARG_SECTIONS[arg]); }, [arg]);
+  // Palet / bildirim: ledger:duzenli, ledger:butce bölüm açar; ledger:new ve
+  // ledger:<kayıt> Ön Muhasebe'de kaydı açar (son açık bölüm ne olursa olsun).
+  useEffect(() => {
+    if (ARG_SECTIONS[arg]) setSection(ARG_SECTIONS[arg]);
+    else if (arg && typeof arg !== "object") setSection("personal");
+  }, [arg, argSeq]);
   const [transfer, setTransfer] = useState(false);
   const accountsRes = useResource("/api/finance/accounts");
   const matchMeta = useResource("/api/admin/accounting/meta");
@@ -59,8 +64,10 @@ export default function Accounting({ arg, go }) {
           </button>
         ))}
       </nav>
+      {/* Ön Muhasebe, Düzenli Ödemeler ve Bütçe kendi çevrimdışı notunu gösterir. */}
+      {["accounts", "projects", "match", "national"].includes(current) && <OfflineNote offline={accountsRes.offline} savedAt={accountsRes.savedAt} />}
       {current === "accounts" && <Accounts accountsRes={accountsRes} />}
-      {current === "personal" && <Personal arg={ARG_SECTIONS[arg] ? undefined : arg} {...shared} />}
+      {current === "personal" && <Personal arg={ARG_SECTIONS[arg] ? undefined : arg} argSeq={argSeq} {...shared} />}
       {current === "recurring" && <Recurring {...shared} startBalance={personalBalance} onBalanceChange={() => accountsRes.reload({ quiet: true })} />}
       {current === "budget" && <Budget />}
       {current === "projects" && <ProjectCosts go={go} />}

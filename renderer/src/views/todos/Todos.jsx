@@ -8,8 +8,8 @@
 // bağlanabilir. Kartlarda proje rozeti görünür (lib/projectAgenda.js).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Empty, ErrorNote, Icon, OfflineNote, Segmented, Spinner, useConfirm, useResult, useToast } from "../../components/ui";
-import { del, patch, post, request, tempId, useCommand, useResource } from "../../api";
-import { formatTime, relativeDay } from "../../lib/helpers";
+import { del, onSyncDone, patch, post, request, tempId, useCommand, useResource } from "../../api";
+import { formatTime, parseQuickTask, relativeDay } from "../../lib/helpers";
 import Composer from "./Composer";
 import Drawer from "./Drawer";
 import { MatchAssign, TeamOverview } from "./Team";
@@ -20,7 +20,7 @@ import { KINDS, KIND_ICON, LABEL_COLORS, STATUSES, dateBucket, dueOf, endOfDay, 
 const store = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
 const save = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* yoksay */ } };
 
-export default function Todos({ arg, go }) {
+export default function Todos({ arg, argSeq, go }) {
   const result = useResult();
   const toast = useToast();
   const confirm = useConfirm();
@@ -38,7 +38,11 @@ export default function Todos({ arg, go }) {
   const catalog = useResource("/api/todos/catalog");
   const linkable = useResource("/api/todos/projects");
   const cat = catalog.data || {};
-  const items = useMemo(() => list.data?.items || [], [list.data]);
+  // Çevrimdışı eklenen (kuyruktaki) kartlar eşitlenene kadar listede "gönderilecek" olarak görünür;
+  // önceden kart kuyruğa alınıyor ama listede görünmüyordu (kayboldu sanılıyordu).
+  const [queued, setQueued] = useState([]);
+  useEffect(() => onSyncDone(() => setQueued([])), []);
+  const items = useMemo(() => [...queued, ...(list.data?.items || [])], [list.data, queued]);
   const quickRef = useRef(null);
 
   useEffect(() => save("todo:layout", layout), [layout]);
@@ -51,6 +55,11 @@ export default function Todos({ arg, go }) {
   const scopeProject = String(scope).startsWith("project:") ? scopeChoices.find((p) => `project:${p.id}` === scope) : null;
   const scoped = useMemo(() => items.filter((t) => scopeMatches(t, scope)), [items, scope]);
   useCommand("new", () => setComposer({}));
+  // Yapılacaklar açıkken paletten iş / "Yeni görev" seçilince.
+  useEffect(() => {
+    if (arg === "new") setComposer({});
+    else if (arg && Number(arg)) setSelected(Number(arg));
+  }, [arg, argSeq]); // eslint-disable-line react-hooks/exhaustive-deps
   useCommand("find", () => document.getElementById("todo-search")?.focus());
   useEffect(() => {
     const onKey = (e) => {
@@ -108,6 +117,10 @@ export default function Todos({ arg, go }) {
     if (result(res, res.data?.message)) list.setData((d) => ({ ...d, items: d.items.filter((t) => !(t.status === "done" && t.permissions?.isOwner)) }));
   };
 
+  const addQueued = (tid, body) => setQueued((l) => [{
+    id: tid, kind: body.kind || "task", kindLabel: "Görev", title: body.title, body: body.body || "", status: body.status || "open", priority: body.priority || "normal",
+    dueAt: body.due_at || null, labels: body.labels || [], project: null, queued: true, permissions: { isOwner: true, canChangeStatus: false, canEdit: false, canDelete: false },
+  }, ...l]);
   const created = (newItems) => {
     setComposer(null);
     list.reload({ quiet: true });
@@ -168,7 +181,7 @@ export default function Todos({ arg, go }) {
             ? <button type="button" className="quickbar quickbar--cta" onClick={() => setComposer({ audience: "team" })}><Icon name="team" /> Ekibe yeni görev ver</button>
             : <QuickAdd inputRef={quickRef} defaultWhen={view.key === "today" ? "today" : view.key === "upcoming" ? "tomorrow" : "none"} label={view.key.startsWith("label:") ? allLabels.find((l) => `label:${l.text}` === view.key) : null} project={scopeProject}
               onDetailed={(title) => setComposer({ title })}
-              onAdd={async (body) => { const res = await post("/api/todos", body, { tempId: tempId() }); if (result(res, "Eklendi.")) created(res.data?.items); }} />)}
+              onAdd={async (body) => { const tid = tempId(); const res = await post("/api/todos", body, { tempId: tid }); if (result(res, "Eklendi.")) { if (res.queued) addQueued(tid, body); created(res.data?.items); } }} />)}
 
           <div className="filters">
             <div className="search-box"><Icon name="search" size={14} /><input id="todo-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Kartlarda ara" /></div>
@@ -183,7 +196,7 @@ export default function Todos({ arg, go }) {
 
           {list.loading && !list.data ? <Spinner /> : layout === "board" && view.key !== "done" ? (
             <Board items={shown} selected={selected} onSelect={setSelected} onArchive={archiveDone}
-              onAdd={async (status, title) => { const res = await post("/api/todos", { kind: "task", title, status }, { tempId: tempId() }); if (result(res)) created(res.data?.items); }}
+              onAdd={async (status, title) => { const tid = tempId(); const body = { kind: "task", title, status }; const res = await post("/api/todos", body, { tempId: tid }); if (result(res)) { if (res.queued) addQueued(tid, body); created(res.data?.items); } }}
               onMove={async (task, status, ids) => {
                 list.setData((d) => ({ ...d, items: d.items.map((t) => (t.id === task.id ? { ...t, status } : t)).map((t) => (ids.includes(t.id) && t.permissions?.isOwner ? { ...t, position: ids.indexOf(t.id) } : t)) }));
                 const res = await request({ method: "POST", path: "/api/todos/reorder", body: { status, ids, moved_id: task.id }, queue: false });
@@ -197,7 +210,7 @@ export default function Todos({ arg, go }) {
         </>)}
       </div>
 
-      {selectedTask && <Drawer key={selectedTask.id} task={selectedTask} catalog={cat} allLabels={allLabels} go={go} onClose={() => setSelected(null)} onUpdate={update} onDelete={remove} onEdit={(t) => setComposer({ task: t })} onReplace={replace} />}
+      {selectedTask && !selectedTask.queued && <Drawer key={selectedTask.id} task={selectedTask} catalog={cat} allLabels={allLabels} go={go} onClose={() => setSelected(null)} onUpdate={update} onDelete={remove} onEdit={(t) => setComposer({ task: t })} onReplace={replace} />}
       {composer && <Composer catalog={cat} task={composer.task} initial={{ ...(scopeProject ? { project_id: scopeProject.id } : {}), ...composer }} projects={linkable.data?.items || []} onClose={() => setComposer(null)} onSaved={(r) => (composer.task ? (setComposer(null), replace(r)) : created(r))} />}
       {assignOpen && <MatchAssign onClose={() => setAssignOpen(false)} onSaved={() => list.reload({ quiet: true })} />}
     </div>
@@ -210,11 +223,16 @@ function QuickAdd({ inputRef, defaultWhen, label, project, onAdd, onDetailed }) 
   const [date, setDate] = useState("");
   const [high, setHigh] = useState(false);
   useEffect(() => setWhen(defaultWhen), [defaultWhen]);
+  const preview = useMemo(() => parseQuickTask(title), [title]);
   const submit = async (e) => {
     e.preventDefault();
     if (!title.trim()) return;
-    const due = when === "today" ? endOfDay(0) : when === "tomorrow" ? endOfDay(1) : when === "date" && date ? new Date(`${date}T23:59:00`).toISOString() : null;
-    await onAdd({ kind: "task", title: title.trim().slice(0, 200), due_at: due, priority: high ? "high" : "normal", ...(label ? { labels: [label] } : {}), ...(project ? { project_id: project.id } : {}) });
+    // Doğal dil (Bugün ekranı ve hızlı pencereyle aynı): "yarın 14:00 sahayı ara !" → tarih, saat, önem.
+    const parsed = parseQuickTask(title);
+    const chipDue = when === "today" ? endOfDay(0) : when === "tomorrow" ? endOfDay(1) : when === "date" && date ? new Date(`${date}T23:59:00`).toISOString() : null;
+    const due = parsed.dueAt || chipDue;
+    const cleanTitle = (parsed.title || title.trim()).slice(0, 200);
+    await onAdd({ kind: "task", title: cleanTitle, due_at: due, priority: high || parsed.priority === "high" ? "high" : "normal", ...(label ? { labels: [label] } : {}), ...(project ? { project_id: project.id } : {}) });
     setTitle("");
     setHigh(false);
   };
@@ -226,6 +244,7 @@ function QuickAdd({ inputRef, defaultWhen, label, project, onAdd, onDetailed }) 
         {[["none", "Tarihsiz"], ["today", "Bugün"], ["tomorrow", "Yarın"], ["date", "Tarih"]].map(([k, l]) => <button key={k} type="button" className={when === k ? "is-on" : ""} onClick={() => setWhen(k)}>{l}</button>)}
         {when === "date" && <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />}
         <button type="button" className={`quickbar__flag ${high ? "is-on" : ""}`} title="Önemli" onClick={() => setHigh((v) => !v)}><Icon name="flag" size={14} /></button>
+        {preview.dueAt && <span className="pill" title="Metinden anlaşılan tarih">{relativeDay(preview.dueAt)} {formatTime(preview.dueAt)}</span>}
         <button type="button" className="link-btn small" onClick={() => onDetailed(title)}>Ayrıntılı</button>
         <button type="submit" className="btn btn--primary btn--sm" disabled={!title.trim()}>Ekle</button>
       </div>
@@ -249,6 +268,7 @@ function Row({ t, active, onSelect, onUpdate }) {
           {t.title}
         </span>
         <span className="trow__meta">
+          {t.queued && <span className="pill" title="Bağlantı gelince gönderilecek"><Icon name="clock" size={11} /> Gönderilecek</span>}
           {t.status === "in_progress" && <span className="pill pill--blue">Sürüyor</span>}
           {t.kind !== "task" && <span className="pill">{t.dutyLabel || t.kindLabel}</span>}
           {t.project && <ProjectBadge project={t.project} />}

@@ -95,6 +95,8 @@ function Shell({ auth }) {
   const routeRef = useRef(route);
   routeRef.current = route;
   const [routeArg, setRouteArg] = useState(null);
+  // Aynı araç açıkken aynı hedef yeniden seçilince (palet) görünüm yine tepki versin.
+  const [argSeq, setArgSeq] = useState(0);
   const [palette, setPalette] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
   // Daraltılmış kenar çubuğu: yalnız simgeler (ipucu balonuyla). Tercih hatırlanır.
@@ -131,6 +133,7 @@ function Shell({ auth }) {
     if (base !== routeRef.current && !(await canLeave())) return;
     setRoute(base);
     setRouteArg(sub || arg || null);
+    setArgSeq((n) => n + 1);
     try { localStorage.setItem("route", base); } catch { /* yoksay */ }
   }, []);
 
@@ -259,7 +262,7 @@ function Shell({ auth }) {
       <main className="content" data-tool={route} style={bare ? { borderRadius: 0 } : undefined}>
         <div className="content__drag" />
         <Suspense fallback={<Spinner />}>
-          <View key={route} go={go} arg={routeArg} auth={auth} summary={s} />
+          <View key={route} go={go} arg={routeArg} argSeq={argSeq} auth={auth} summary={s} />
         </Suspense>
       </main>
       {palette && <Palette onClose={() => setPalette(false)} go={go} routes={routes} />}
