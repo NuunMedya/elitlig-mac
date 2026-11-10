@@ -53,6 +53,10 @@ const { registerDeskkit } = require("./toolkit");
 const { registerFileTools } = require("./fileTools");
 const { registerShelf } = require("./shelf");
 const { createFileProtocol, SCHEME_PRIVILEGES: FILE_SCHEME_PRIVILEGES } = require("./fileTools/protocol");
+// Yönetim: elitlig.com yönetim panelinin tamamı uygulama içinde, masaüstü oturumuyla (app/adminPanel).
+const { WebContentsView } = require("electron");
+const { registerAdminPanel } = require("./adminPanel");
+const { applyTestSession } = require("./testSession");
 
 // Sohbet medyası (fotoğraf, ses, belge) bu şemayla ana süreç üzerinden açılır:
 // diskte önbelleklenir, çevrimdışı da görünür; arayüzün güvenlik politikası
@@ -102,6 +106,7 @@ let studio;
 let deskkit = null;
 let fileTools;
 let shelf;
+let adminPanel = null;
 let chatNotes = new Map();
 let probedAccess = null;
 let requestsInfo = { total: 0, categories: [] };
@@ -605,6 +610,7 @@ function buildMenu() {
       ],
     },
     ...(deskkit ? [deskkit.menuTemplate()] : []),
+    ...(adminPanel ? [adminPanel.menuTemplate()] : []),
     { label: "Pencere", role: "window", submenu: [
       { role: "minimize", label: "Küçült" },
       ...(IS_MAC ? [{ role: "zoom", label: "Büyüt" }, { type: "separator" }, { role: "front", label: "Tümünü Öne Getir" }] : []),
@@ -849,6 +855,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     sessionStore = createSessionStore({ dir: dataDir(), safeStorage });
+    applyTestSession(sessionStore, app);
     api = createApi({
       origin: config.API_ORIGIN,
       dataDir: dataDir(),
@@ -941,6 +948,13 @@ if (!app.requestSingleInstanceLock()) {
       getMainWindow: () => mainWindow, refreshTray: () => refreshTray(), rebuildMenu: () => buildMenu(), isMac: IS_MAC,
       log: (...args) => { if (!app.isPackaged) console.log(...args); },
     });
+    adminPanel = registerAdminPanel({
+      app, ipcMain, BrowserWindow, WebContentsView, electronSession, shell, dialog, Menu, net, clipboard,
+      sessionStore, siteOrigin: config.SITE_ORIGIN, apiOrigin: config.API_ORIGIN,
+      getMainWindow: () => mainWindow, showMain, broadcast, logout, secureWebPreferences, rebuildMenu: () => buildMenu(),
+      verifySession: async () => (await api.request({ path: "/api/users/verify", cache: false, queue: false })).ok,
+      log: (...args) => { if (!app.isPackaged) console.log(...args); },
+    });
     registerIpc();
     buildMenu();
     createTray();
@@ -971,7 +985,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on("before-quit", () => { quitting = true; });
-  app.on("will-quit", () => { globalShortcut.unregisterAll(); studio?.dispose(); fileTools?.dispose(); shelf?.dispose(); });
+  app.on("will-quit", () => { globalShortcut.unregisterAll(); studio?.dispose(); fileTools?.dispose(); shelf?.dispose(); adminPanel?.dispose(); });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
   app.on("web-contents-created", (_e, contents) => contents.on("will-attach-webview", (event) => event.preventDefault()));
 }

@@ -1,0 +1,63 @@
+/* Yönetim — gömülü elitlig.com yönetim paneli (views/admin). */
+[data-tool="admin"] { --tool: #7c3aed; --tool-2: #2563eb; --tool-soft: color-mix(in srgb, #7c3aed 14%, transparent); }
+
+.admin-panel { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+.admin-bar {
+  position: relative; z-index: 2; display: flex; align-items: center; gap: 2px;
+  min-height: calc(var(--drag-h) + 8px); padding: calc(var(--drag-h) * 0.12 + 6px) 10px 6px 12px;
+  border-bottom: 1px solid var(--border); background: var(--bg);
+  -webkit-app-region: drag;
+}
+.admin-bar > *, .admin-bar button, .admin-bar input { -webkit-app-region: no-drag; }
+
+.admin-addr {
+  flex: 1; min-width: 160px; display: flex; align-items: center; gap: 6px; height: 30px; margin: 0 6px;
+  padding: 0 10px; border-radius: 9px; background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
+  position: relative; overflow: hidden;
+}
+.admin-addr:focus-within { border-color: var(--tool); box-shadow: 0 0 0 3px var(--tool-soft); background: var(--surface); }
+.admin-addr__host { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.admin-addr input { flex: 1; min-width: 60px; border: 0; background: none; outline: none; font: inherit; font-size: 12.5px; color: var(--text); padding: 0; }
+.admin-addr__title { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 38%; }
+.admin-addr.is-loading::after {
+  content: ""; position: absolute; left: 0; bottom: 0; height: 2px; width: 40%;
+  background: linear-gradient(90deg, transparent, var(--tool), var(--tool-2), transparent); animation: adminLoad 1.1s linear infinite;
+}
+@keyframes adminLoad { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+
+.admin-find { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 4px 0 9px; border-radius: 9px; background: var(--surface); border: 1px solid var(--tool); margin-right: 4px; color: var(--muted); }
+.admin-find input { width: 150px; border: 0; background: none; outline: none; font: inherit; font-size: 12.5px; color: var(--text); }
+.admin-find__count { font-size: 11px; font-variant-numeric: tabular-nums; min-width: 32px; text-align: right; }
+
+.admin-dl { position: relative; display: inline-flex; }
+.admin-dl .icon-btn { position: relative; }
+.admin-dl__dot { position: absolute; right: 5px; top: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--tool); }
+.admin-dl__ring { position: absolute; inset: 3px; border-radius: 50%; background: conic-gradient(var(--tool) var(--p), transparent 0); -webkit-mask: radial-gradient(circle, transparent 10px, #000 10.5px); mask: radial-gradient(circle, transparent 10px, #000 10.5px); }
+.admin-dl__pop {
+  position: absolute; z-index: 30; right: 52px; top: calc(var(--drag-h) * 0.12 + 44px); width: 360px; max-height: 420px; overflow: auto;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 10px;
+}
+.admin-dl__head { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px; }
+.admin-dl__empty { color: var(--muted); font-size: 12.5px; padding: 6px 4px 10px; }
+.admin-dl__pop ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.admin-dl__item { display: flex; align-items: center; gap: 8px; padding: 7px 6px; border-radius: 9px; color: var(--muted); }
+.admin-dl__item:hover { background: var(--surface-2); }
+.admin-dl__name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.admin-dl__name strong { color: var(--text); font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.admin-dl__name small { font-size: 11px; }
+.admin-dl__item.is-cancelled, .admin-dl__item.is-interrupted { opacity: 0.6; }
+
+/* Gömülü görünümün yeri: ana süreç tam bu kutunun üstüne yerleştirir. */
+.admin-host { position: relative; flex: 1; min-height: 0; background: var(--bg); overflow: hidden; display: grid; place-items: center; }
+.admin-host__snap { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+.admin-host__boot { position: absolute; inset: 0; display: grid; place-items: center; }
+.admin-host .empty { max-width: 520px; padding: 24px; }
+
+/* Kenar çubuğundaki Yönetim bölümleri. */
+.admin-tree { display: flex; flex-direction: column; flex: none; }
+.admin-tree__section .admin-tree__chev { margin-left: auto; opacity: 0.55; flex: none; }
+.nav-item.admin-tree__item { min-height: 28px; padding-left: 34px; font-size: 12.5px; color: var(--side-muted); }
+.admin-tree__item .nav-item__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shell--collapsed .admin-tree__item { display: none; }
+.shell--collapsed .admin-tree__chev { display: none; }

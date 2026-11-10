@@ -26,6 +26,7 @@ uygulamada görünür.
 | ⌘, | **Masaüstü araçları** | Araç takımı paneli (⌃⌥Boşluk), Magnet benzeri pencere yerleştirme kısayolları (kaydet / kapat / varsayılan), Erişilebilirlik izni, medya tuşları, stüdyo kuralı, ekranı uyanık tut |
 | ⇧⌘D | **Dosya Araçları** | Sürükle-bırak / seç / yapıştır, çark ya da kutucuk menüsüyle **Dönüştür · Araçlar · Dosya işlemleri**: görsel (JPG/PNG/WEBP/HEIC/TIFF/BMP/GIF, boyut, döndür, kırp, sıkıştır, ayarlar, işaretle, sansür, çerçeve, kolaj, meta veri temizle, PDF), ses/video (dönüştür, kırp, sıkıştır, hız, sessiz, ses ayıkla, birleştir, böl, kare, normalize, çözünürlük, GIF), PDF (birleştir, böl, sayfa sırala/döndür/sil, sıkıştır), ZIP, SRT↔VTT, metin kodlaması, toplu yeniden adlandırma; iş kuyruğu, son 50 iş, **Float** rafı. Her şey bu bilgisayarda |
 | ⇧⌘P | **Ekran Görüntüleri ve Pano** | Ekran görüntüleri ve kopyalanan görsel / metin / bağlantılar için üç raf (⌃⌥T) ve kütüphane: ızgara/liste, sanal klasörler, etiketler, sabitleme, arama, saklama süresi, çöp kutusu, dışa aktarma, başka uygulamaya sürükleme, önizleme, işaretleme ve kırpma, ekran yakalama (⌃⌥A) |
+| ⇧⌘A | **Yönetim paneli** | elitlig.com yönetim panelinin **tamamı** uygulama içinde, ayrı giriş istemeden: maçlar, toplu düzenleme, saha planlama, personel, ligler, sezonlar, puan durumu, kura, kurallar, takımlar, kadrolar, oyuncular, transferler, piyasa değeri, disiplin, haberler, içerik havuzu, panorama, sponsorlar, üyeler, yönetim kullanıcıları, yetkiler, şehirler, analizler, işlem kayıtları… Kenar çubuğunda Yönetim bölümleri, ⌘K'da tüm yönetim sayfaları ve maç / oyuncu / takım araması, menü çubuğunda **Yönetim** menüsü |
 
 ## Web sitesinde olmayan masaüstü özellikleri
 
@@ -619,6 +620,47 @@ diğer uygulamalara bırakılır; Mac'te Erişilebilirlik izni gerekebilir).
 **Stüdyo kuralı:** stüdyonun kendi müzik çaları yayına giden sesi yönetir. Varsayılan olarak genel
 çalar Yayın Stüdyosu açılınca duraklar ve çıkınca (yalnız o duraklattıysa) sürer; Masaüstü araçları ›
 Müzik'ten “Çalmaya devam et” seçilebilir. Stüdyonun listesi ve davranışı değişmez.
+
+## Yönetim paneli (elitlig.com yönetiminin tamamı)
+
+Kenar çubuğu → **Yönetim paneli** (⇧⌘A) web sitesindeki yönetim panelini uygulamanın içinde açar
+(ayrı tarayıcı penceresi değil). Web'de rolünüz ve yetkilerinizle ne görüyorsanız burada da hepsi
+var: maç, oyuncu, takım, lig, sezon, disiplin, içerik, sponsor, üye, yetki ve sistem ekranları.
+
+- **Tek oturum**: uygulamaya giriş yeterlidir. Masaüstü jetonu panelin kendi oturum bölmesine,
+  sayfa açılmadan önce aktarılır (adrese konmaz). Jeton yenilenince panel eşitlenir; uygulamada
+  ya da panelde **Çıkış yap** denince ikisi birlikte kapanır ve panelin bu bilgisayardaki verisi
+  silinir. Başka hesapla girişte panel temiz açılır.
+- **Kenar çubuğu**: Yönetim başlığı altında web menüsünün bölümleri (Maçlar, Ligler, Takımlar,
+  Oyuncular, Disiplin, İçerik, Üyeler, Yönetim ve ayarlar); bölüme tıklayınca sayfaları açılır.
+  Liste web'in kendi menüsünden gelir ve yetkiye göre süzülür; izniniz olmayan bölüm görünmez.
+  Web'e yeni bir yönetim sayfası eklendiğinde panel bir kez açılınca listeye kendiliğinden gelir.
+- **⌘K komut paleti**: tüm yönetim sayfaları ve işlemler (Yeni maç oluştur, Kura çek, Haber
+  yayınla…) adla, eski adla ya da eş anlamlıyla aranır; en az iki harfle **maç** (takım, lig,
+  saha), **oyuncu** ve **takım** araması — sonuç tek tıkla ilgili yönetim sayfasını açar;
+  "Maç listesinde ara" maç listesini o süzgeçle açar.
+- **Menü çubuğu → Yönetim**: bölümler ve sayfaları, geri (⌘[) / ileri (⌘]), yeniden yükle, yeni
+  pencerede aç, tarayıcıda aç, adresi kopyala.
+- **Araç çubuğu**: geri / ileri / yenile, panel ana sayfası, düzenlenebilir adres yolu
+  (`/editor/maclar` yazıp ↩), sayfada bul (⌘F), yazdır (⌘P), PDF olarak kaydet, indirilenler
+  (dışa aktarımlar kaydet diyaloğuyla; ilerleme, aç, klasörde göster), yeni pencerede aç,
+  tarayıcıda aç. ⌘R paneli yeniler.
+- Dosya yükleme (fotoğraf, logo, belge) panelde olduğu gibi çalışır; site içi açılır pencereler
+  uygulama içinde aynı oturumla açılır, site dışı bağlantılar sistem tarayıcısında açılır.
+  Bildirim izni yalnız elitlig.com'a verilir.
+- Web'in kişisel araç sayfaları (Araçlar merkezi, Ajanda, Not defteri, Muhasebe, Tablolar, Rehber,
+  Ekipman, Hesap araçları, Odak sayacı, Mesajlar, Yapılacaklar, Talepler) panelde seçilince
+  uygulamanın **yerel** aracında açılır (Yönetim → "Kişisel Araçları Yerel Uygulamada Aç" ile
+  kapatılabilir).
+- Panel internet ister: bağlantı yokken ya da site yanıt vermezken açıklayıcı boş durum ve
+  **Yeniden dene** görünür; yerel araçlar çevrimdışı çalışmaya devam eder.
+
+Web tarafı: gömülü panel `User-Agent`'ında `ElitligDesktopPanel/<sürüm>` imi ve
+`window.elitligDesktopPanel` köprüsü bulunur (`elitlig-client` → `src/utils/desktopApp.js`,
+`isDesktopPanel`). Bu modda menü kısılmaz (eski `ElitligDesktop/` "site penceresi" modu yalnız
+iş akışı ve Araçlarım'ı gösteriyordu). Masaüstündeki yedek menü kopyası
+`app/adminPanel/adminNav.snapshot.json` dosyasıdır; web menüsü değişince
+`node scripts/sync-admin-nav.mjs ../elitlig-client` ile yenilenir.
 
 ## Oturum süresi
 

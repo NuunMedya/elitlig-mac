@@ -5,6 +5,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Icon, Kbd, keyLabel } from "./ui";
 import { get, useDebounced } from "../api";
 import { includesTr, formatMoney, formatDate } from "../lib/helpers";
+// Yönetim: web yönetim panelinin sayfaları ve maç / oyuncu / takım araması (views/admin).
+import { useAdminPalette } from "../views/admin/adminPalette";
 
 const ACTIONS = [
   { label: "Yeni sohbet", icon: "message", route: "messages:new", hint: "Mesajlar · ⌘N" },
@@ -110,13 +112,15 @@ export default function Palette({ onClose, go, routes }) {
     setContent(out);
   }, [query]);
 
+  const admin = useAdminPalette(q);
   // Gruplar: Araçlar · Komutlar · Sonuçlar (arama yapılınca içerik eşleşmeleri).
   const items = useMemo(() => {
     const match = (item) => !q.trim() || includesTr(`${item.label} ${item.hint}`, q);
     const nav = routes.map((r) => ({ label: r.label, icon: r.icon, route: r.key, hint: keyLabel(r.shortcut), group: "Araçlar" })).filter(match);
     const actions = ACTIONS.map((a) => ({ ...a, hint: keyLabel(a.hint), group: "Komutlar" })).filter(match);
-    return [...nav, ...actions, ...content.map((c) => ({ ...c, group: "Sonuçlar" }))];
-  }, [q, content, routes]);
+    const toAdmin = (e) => ({ ...e, route: "admin", arg: { path: e.path } });
+    return [...nav, ...actions, ...admin.pages.map(toAdmin), ...content.map((c) => ({ ...c, group: "Sonuçlar" })), ...admin.content.map(toAdmin)];
+  }, [q, content, routes, admin]);
 
   useEffect(() => setIndex(0), [q]);
   // Klavyeyle seçilen satır görünür alanda kalır.

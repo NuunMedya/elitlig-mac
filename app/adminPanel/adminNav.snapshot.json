@@ -1,0 +1,747 @@
+{
+ "source": "elitlig-client src/editor_pages/adminNav.js",
+ "groups": [
+  {
+   "key": "genel",
+   "label": "Ana sayfa",
+   "icon": "home",
+   "top": true,
+   "items": [
+    {
+     "name": "Ana sayfa",
+     "path": "/editor",
+     "icon": "home",
+     "desc": "Bugünün maçları, talepler, görevler ve kısayollar.",
+     "keywords": "kontrol paneli genel bakış yönetim merkezi özet dashboard",
+     "formerly": "Kontrol Paneli Genel Bakış Yönetim Merkezi"
+    }
+   ]
+  },
+  {
+   "key": "is-akisi",
+   "label": "İş akışı",
+   "icon": "inbox",
+   "top": true,
+   "workflow": true,
+   "items": [
+    {
+     "name": "Talepler",
+     "path": "/yonetim/talepler",
+     "icon": "inbox",
+     "desc": "Onay bekleyen profil, transfer, kadro ve disiplin talepleri.",
+     "keywords": "onay bekleyen başvuru istek",
+     "badge": "requests"
+    },
+    {
+     "name": "Mesajlar",
+     "path": "/yonetim/araclar/mesajlar",
+     "icon": "message",
+     "desc": "Yönetim, takım ve üye yazışmaları.",
+     "keywords": "sohbet chat whatsapp yazışma",
+     "badge": "messages"
+    },
+    {
+     "name": "Yapılacaklar",
+     "path": "/yonetim/yapilacaklar",
+     "icon": "checklist",
+     "desc": "Görevlerin, hatırlatmaların ve maç görevlerin.",
+     "keywords": "görev todo hatırlatma iş listesi",
+     "badge": "todos"
+    }
+   ]
+  },
+  {
+   "key": "maclar",
+   "label": "Maçlar",
+   "icon": "ball",
+   "desc": "Maç listesi, saha planlama ve maç personeli.",
+   "items": [
+    {
+     "name": "Maç listesi",
+     "path": "/editor/maclar",
+     "icon": "ball",
+     "keywords": "maçlar fikstür maç programı skor sonuç kadro canlı reji",
+     "formerly": "Maçlar Lig Yönetimi Maç Merkezi",
+     "permissions": [
+      "matches.view",
+      "matches.create",
+      "matches.update"
+     ]
+    },
+    {
+     "name": "Toplu düzenleme",
+     "path": "/editor/maclar/toplu-duzenle",
+     "icon": "pen",
+     "keywords": "maçları toplu düzenle saat saha değiştir",
+     "formerly": "Maçları Toplu Düzenle Lig Yönetimi Maç Merkezi",
+     "permissions": [
+      "matches.bulk_edit"
+     ]
+    },
+    {
+     "name": "Saha ve maç planlama",
+     "path": "/editor/sahalar",
+     "icon": "pin",
+     "keywords": "saha saat havuz eşleştirme program",
+     "formerly": "Saha ve Planlama Maç Merkezi",
+     "permissions": [
+      "venues.view",
+      "venues.manage"
+     ]
+    },
+    {
+     "name": "Takım müsaitliği",
+     "path": "/editor/musaitlik",
+     "icon": "clock",
+     "keywords": "müsaitlik tablosu uygun gün saat",
+     "formerly": "Takım Müsaitlik Tablosu Saha ve Planlama Maç Merkezi",
+     "permissions": [
+      "venues.view"
+     ]
+    },
+    {
+     "name": "Personel",
+     "path": "/yonetim/admin/personel",
+     "icon": "badge",
+     "keywords": "hakem spiker reji fotoğrafçı sağlıkçı",
+     "formerly": "Saha ve Planlama Maç Merkezi",
+     "permissions": [
+      "staff.view"
+     ]
+    },
+    {
+     "name": "Toplu personel atama",
+     "path": "/yonetim/admin/personel/toplu-atama",
+     "icon": "users",
+     "keywords": "görevlendirme atama hakem ata",
+     "formerly": "Saha ve Planlama Maç Merkezi",
+     "permissions": [
+      "staff.assign"
+     ]
+    },
+    {
+     "name": "Maç değerlendirmeleri",
+     "path": "/yonetim/mac-degerlendirmeleri",
+     "icon": "clipboard",
+     "keywords": "performans form puan bonus kesinti",
+     "formerly": "Saha ve Planlama Maç Merkezi",
+     "permissions": [
+      "evaluations.view",
+      "evaluations.submit",
+      "evaluations.manage"
+     ]
+    }
+   ]
+  },
+  {
+   "key": "ligler",
+   "label": "Ligler",
+   "icon": "trophy",
+   "desc": "Lig yapısı, sezonlar, puan durumu ve kurallar.",
+   "items": [
+    {
+     "name": "Ligler",
+     "path": "/editor/ligler",
+     "icon": "trophy",
+     "keywords": "lig ekle arşiv",
+     "formerly": "Lig Yönetimi Lig ve Sezon",
+     "permissions": [
+      "leagues.create",
+      "leagues.update",
+      "leagues.delete",
+      "leagues.archive"
+     ]
+    },
+    {
+     "name": "Sezonlar",
+     "path": "/editor/sezonlar",
+     "icon": "calendar",
+     "keywords": "sezon takvim dönem",
+     "formerly": "Lig Yönetimi Lig ve Sezon",
+     "permissions": [
+      "seasons.create",
+      "seasons.update",
+      "seasons.delete",
+      "seasons.archive",
+      "seasons.rule_set"
+     ]
+    },
+    {
+     "name": "Lig statüsü ve gruplar",
+     "path": "/editor/lig-ayarlari?bolum=lig-statusu",
+     "icon": "layers",
+     "keywords": "grup eleme tur statü",
+     "formerly": "Lig Statüsü Lig Yönetimi Lig ve Sezon",
+     "permissions": [
+      "groups.view",
+      "groups.create",
+      "groups.update",
+      "groups.delete"
+     ]
+    },
+    {
+     "name": "Puan durumu",
+     "path": "/editor/puan-durumu",
+     "icon": "standings",
+     "keywords": "tablo sıralama puan",
+     "formerly": "Lig Yönetimi Lig ve Sezon",
+     "permissions": [
+      "standings.update"
+     ]
+    },
+    {
+     "name": "Kura çekimi",
+     "path": "/yonetim/kura",
+     "icon": "shuffle",
+     "keywords": "kura torba eşleşme",
+     "formerly": "Lig Yönetimi Lig ve Sezon",
+     "permissions": [
+      "draws.view",
+      "draws.run"
+     ]
+    },
+    {
+     "name": "Lig ayarları ve kurallar",
+     "path": "/editor/lig-ayarlari",
+     "icon": "book",
+     "keywords": "kural kitapçığı puanlama kadro kuralı ayar",
+     "formerly": "Lig Ayarlamaları Kurallar ve Disiplin Lig ve Sezon",
+     "permissions": [
+      "rule_books.create",
+      "rule_books.update",
+      "groups.view",
+      "groups.create",
+      "groups.update",
+      "groups.delete"
+     ]
+    },
+    {
+     "name": "Junior Cup",
+     "path": "/yonetim/junior-cup",
+     "icon": "star",
+     "keywords": "lig portalı turnuva portal",
+     "formerly": "İçerik ve Ödüller Lig ve Sezon",
+     "permissions": [
+      "league_portals.view",
+      "league_portals.manage"
+     ]
+    }
+   ]
+  },
+  {
+   "key": "takimlar",
+   "label": "Takımlar",
+   "icon": "shield",
+   "desc": "Takım kayıtları, kadrolar ve takım finansı.",
+   "items": [
+    {
+     "name": "Takımlar",
+     "path": "/editor/takimlar",
+     "icon": "shield",
+     "keywords": "takım kulüp ekle logo",
+     "formerly": "Lig Yönetimi Takımlar ve Oyuncular",
+     "permissions": [
+      "teams.create",
+      "teams.update",
+      "teams.delete"
+     ]
+    },
+    {
+     "name": "Takım rehberi",
+     "path": "/editor/takim-rehberi",
+     "icon": "book",
+     "keywords": "başkan iletişim telefon yetkili",
+     "formerly": "Saha ve Planlama Takımlar ve Oyuncular",
+     "permissions": [
+      "teams.directory"
+     ]
+    },
+    {
+     "name": "Kadrolar",
+     "path": "/editor/kadrolar",
+     "icon": "checklist",
+     "keywords": "kadro listeleri kadro onayları sezon kadrosu taslak onay tüm oyuncularım liste çıkarma transfer",
+     "formerly": "Kadro listeleri Kadro onayları Kurallar ve Disiplin Takımlar ve Oyuncular",
+     "permissions": [
+      "roster_rules.requests"
+     ]
+    },
+    {
+     "name": "Takım finansı ve FFP",
+     "path": "/yonetim/takim-finans",
+     "icon": "coins",
+     "keywords": "ffp bütçe finans takım",
+     "formerly": "Takım Finansı & FFP Finans Finans ve Piyasa Ticari ve Finans",
+     "permissions": [
+      "team_finance.view",
+      "team_finance.manage"
+     ]
+    },
+    {
+     "name": "Takım birleştirme",
+     "path": "/editor/takim-birlestirme",
+     "icon": "layers",
+     "keywords": "mükerrer kopya takım birleştir",
+     "formerly": "Lig Yönetimi Takımlar ve Oyuncular",
+     "permissions": [
+      "teams.merge"
+     ]
+    }
+   ]
+  },
+  {
+   "key": "oyuncular",
+   "label": "Oyuncular",
+   "icon": "users",
+   "desc": "Oyuncu kayıtları, transferler ve piyasa değeri.",
+   "items": [
+    {
+     "name": "Oyuncular",
+     "path": "/editor/oyuncular",
+     "icon": "users",
+     "keywords": "oyuncu futbolcu profil",
+     "formerly": "Lig Yönetimi Takımlar ve Oyuncular",
+     "permissions": [
+      "players.create",
+      "players.update",
+      "players.delete"
+     ]
+    },
+    {
+     "name": "Transfer onayları",
+     "path": "/yonetim/admin/transfer-onaylari",
+     "icon": "swap",
+     "keywords": "transfer teklif onay",
+     "formerly": "Kurallar ve Disiplin Takımlar ve Oyuncular",
+     "permissions": [
+      "transfers.view",
+      "transfers.review"
+     ]
+    },
+    {
+     "name": "Piyasa değeri yönetimi",
+     "path": "/yonetim/piyasa-degeri",
+     "icon": "chart",
+     "keywords": "etl değer formül hesapla",
+     "formerly": "Finans Finans ve Piyasa Ticari ve Finans",
+     "permissions": [
+      "market_value.view",
+      "market_value.recalculate",
+      "market_value.settings"
+     ]
+    },
+    {
+     "name": "Piyasa değeri sıralaması",
+     "path": "/piyasa-degeri",
+     "icon": "trending",
+     "keywords": "etl sıralama en değerli",
+     "formerly": "Finans Finans ve Piyasa Ticari ve Finans",
+     "permissions": [
+      "market_value.view"
+     ]
+    },
+    {
+     "name": "Oyuncu birleştirme",
+     "path": "/editor/oyuncu-birlestirme",
+     "icon": "layers",
+     "keywords": "mükerrer kopya oyuncu birleştir",
+     "formerly": "Lig Yönetimi Takımlar ve Oyuncular",
+     "permissions": [
+      "players.merge"
+     ]
+    }
+   ]
+  },
+  {
+   "key": "disiplin",
+   "label": "Disiplin",
+   "icon": "gavel",
+   "desc": "Cezalar, savunmalar ve itirazlar.",
+   "items": [
+    {
+     "name": "Cezalar",
+     "path": "/editor/cezalar",
+     "icon": "gavel",
+     "keywords": "disiplin ceza kart men sevk",
+     "formerly": "Cezalar (Disiplin) Kurallar ve Disiplin",
+     "permissions": [
+      "penalties.view",
+      "penalties.create"
+     ]
+    },
+    {
+     "name": "Savunma ve itirazlar",
+     "path": "/yonetim/admin/savunmalar",
+     "icon": "message",
+     "keywords": "savunma itiraz cas kurul",
+     "formerly": "Kurallar ve Disiplin",
+     "permissions": [
+      "penalties.review"
+     ]
+    }
+   ]
+  },
+  {
+   "key": "icerik",
+   "label": "İçerik",
+   "icon": "news",
+   "desc": "Haberler, görseller, ödüller, yayın ve sponsorlar.",
+   "items": [
+    {
+     "name": "Haberler",
+     "path": "/editor/haberler",
+     "icon": "news",
+     "keywords": "haber duyuru yayınla yazı ekle köşe makale",
+     "formerly": "İçerik ve Ödüller İçerik ve Medya",
+     "permissions": [
+      "news.create",
+      "news.update"
+     ]
+    },
+    {
+     "name": "İçerik havuzu",
+     "path": "/icerik-havuzu",
+     "icon": "image",
+     "keywords": "görsel şablon sosyal medya paylaşım",
+     "formerly": "İçerik ve Ödüller İçerik ve Medya",
+     "permissions": [
+      "content.pool"
+     ]
+    },
+    {
+     "name": "Haftanın enleri",
+     "path": "/yonetim/haftanin-enleri",
+     "icon": "star",
+     "keywords": "ödül haftanın oyuncusu golcü",
+     "formerly": "İçerik ve Ödüller İçerik ve Medya",
+     "permissions": [
+      "weekly_awards.view",
+      "weekly_awards.update"
+     ]
+    },
+    {
+     "name": "Elitlig Panorama",
+     "path": "/yonetim/panorama",
+     "icon": "tv",
+     "keywords": "yayın reji ekran panorama",
+     "formerly": "İçerik ve Ödüller İçerik ve Medya",
+     "permissions": [
+      "panorama.view",
+      "panorama.broadcast"
+     ]
+    },
+    {
+     "name": "Sponsorlar",
+     "path": "/yonetim/sponsorlar",
+     "icon": "handshake",
+     "keywords": "sponsor reklam led kaplama",
+     "formerly": "İçerik ve Ödüller Ticari ve Finans",
+     "permissions": [
+      "sponsors.view",
+      "sponsors.manage"
+     ]
+    }
+   ]
+  },
+  {
+   "key": "uyeler",
+   "label": "Üyeler",
+   "icon": "userCog",
+   "desc": "Site üyeleri, premium üyelik ve şifre talepleri.",
+   "items": [
+    {
+     "name": "Üye yönetimi",
+     "path": "/yonetim/admin/kullanicilar",
+     "icon": "users",
+     "keywords": "üye kullanıcı kayıt hesap oyuncu başkan",
+     "formerly": "Kullanıcılar ve Sistem Üyeler ve Yetkiler",
+     "permissions": [
+      "users.view"
+     ]
+    },
+    {
+     "name": "Premium onayları",
+     "path": "/editor/premium-onaylari",
+     "icon": "crown",
+     "keywords": "premium üyelik sipariş ödeme",
+     "formerly": "Kullanıcılar ve Sistem Ticari ve Finans",
+     "permissions": [
+      "users.membership"
+     ]
+    },
+    {
+     "name": "Şifre sıfırlama talepleri",
+     "path": "/yonetim/admin/sifre-talepleri",
+     "icon": "lock",
+     "keywords": "şifremi unuttum parola kod",
+     "formerly": "Kullanıcılar ve Sistem Üyeler ve Yetkiler",
+     "permissions": [
+      "users.password_reset"
+     ]
+    }
+   ]
+  },
+  {
+   "key": "yonetim",
+   "label": "Yönetim ve ayarlar",
+   "short": "Yönetim",
+   "icon": "key",
+   "desc": "Yönetim hesapları, yetkiler, şehirler ve sistem kayıtları.",
+   "items": [
+    {
+     "name": "Yönetim kullanıcıları",
+     "path": "/yonetim/admin/yonetim-kullanicilari",
+     "icon": "userPlus",
+     "keywords": "admin editör il yöneticisi hesap aç",
+     "formerly": "Kullanıcılar ve Sistem Üyeler ve Yetkiler",
+     "permissions": [
+      "management_users.view"
+     ]
+    },
+    {
+     "name": "Kullanıcı yetkilendirme",
+     "path": "/yonetim/admin/yetkilendirme",
+     "icon": "key",
+     "keywords": "yetki rol izin şablon",
+     "formerly": "Kullanıcılar ve Sistem Üyeler ve Yetkiler",
+     "permissions": [
+      "permissions.view",
+      "permissions.manage"
+     ]
+    },
+    {
+     "name": "Şehirler",
+     "path": "/yonetim/admin/sehirler",
+     "icon": "building",
+     "keywords": "il şehir ekle harita",
+     "formerly": "Kullanıcılar ve Sistem Site ve Sistem",
+     "permissions": [
+      "city_pages.manage"
+     ]
+    },
+    {
+     "name": "Şehir iletişim sayfaları",
+     "path": "/yonetim/admin/iletisim",
+     "icon": "phone",
+     "keywords": "iletişim sosyal medya whatsapp",
+     "formerly": "Kullanıcılar ve Sistem Site ve Sistem",
+     "permissions": [
+      "city_pages.contacts"
+     ]
+    },
+    {
+     "name": "Ziyaretçi analizi",
+     "path": "/yonetim/admin/ziyaretci-analizi",
+     "icon": "chart",
+     "keywords": "analitik trafik ziyaretçi istatistik",
+     "formerly": "Kullanıcılar ve Sistem Site ve Sistem",
+     "permissions": [
+      "analytics.view"
+     ]
+    },
+    {
+     "name": "Uygulama analizi",
+     "path": "/yonetim/admin/uygulama-analizi",
+     "icon": "apps",
+     "desc": "Mobil uygulamada geçen süre, ekranlar ve oyunlar.",
+     "keywords": "mobil uygulama kullanım süre oturum ekran oyun arena penaltı ios android analitik",
+     "permissions": [
+      "analytics.view"
+     ]
+    },
+    {
+     "name": "İşlem kayıtları",
+     "path": "/yonetim/admin/islem-kayitlari",
+     "icon": "clipboard",
+     "keywords": "log kayıt denetim geçmiş",
+     "formerly": "Kullanıcılar ve Sistem Site ve Sistem",
+     "permissions": [
+      "activity_logs.view"
+     ]
+    },
+    {
+     "name": "Çöp kutusu",
+     "path": "/yonetim/admin/cop-kutusu",
+     "icon": "trash",
+     "keywords": "silinen geri al",
+     "formerly": "Kullanıcılar ve Sistem Site ve Sistem",
+     "permissions": [
+      "trash.view"
+     ]
+    }
+   ]
+  },
+  {
+   "key": "araclar",
+   "label": "Araçlarım",
+   "icon": "toolbox",
+   "desc": "Kişisel çalışma araçların.",
+   "tools": true,
+   "items": [
+    {
+     "name": "Araçlar merkezi",
+     "path": "/yonetim/araclar",
+     "icon": "toolbox",
+     "desc": "Tüm araçlar ve bugünün özeti tek ekranda.",
+     "keywords": "araçlar özet",
+     "formerly": "Araçlar Araçlar Merkezi"
+    },
+    {
+     "name": "Projeler",
+     "path": "/yonetim/araclar/projeler",
+     "icon": "project",
+     "desc": "Süreç adımları ve sorumlular, soru-cevap, aranan kişiler, görüşme notları ve portföy tek yerde.",
+     "keywords": "süreç proje satış görüşme",
+     "formerly": "Araçlar Projeler"
+    },
+    {
+     "name": "Ajanda",
+     "path": "/yonetim/araclar/ajanda",
+     "icon": "calendar",
+     "desc": "Ay, hafta ve gün görünümü; tekrar eden etkinlikler ve hatırlatmalar.",
+     "keywords": "takvim etkinlik randevu",
+     "formerly": "Araçlar Ajanda ve Takvim"
+    },
+    {
+     "name": "Not defteri",
+     "path": "/yonetim/araclar/not-defteri",
+     "icon": "notebook",
+     "desc": "Renkli notlar, işaretlenebilir listeler, etiket ve arşiv.",
+     "keywords": "not liste",
+     "formerly": "Araçlar Not Defteri"
+    },
+    {
+     "name": "Muhasebe",
+     "path": "/yonetim/araclar/muhasebe",
+     "icon": "receipt",
+     "desc": "Hesaplar ve virman, ön muhasebe, düzenli ödemeler (fatura, maaş, kira), bütçe, maç muhasebesi ve Türkiye geneli tek yerde.",
+     "keywords": "gelir gider kasa virman ön muhasebe maç muhasebesi fatura maaş kira abonelik taksit sabit gider düzenli ödeme bütçe",
+     "formerly": "Araçlar Finans Finans ve Piyasa Ticari ve Finans"
+    },
+    {
+     "name": "Tablolar",
+     "path": "/yonetim/araclar/tablolar",
+     "icon": "sheet",
+     "desc": "Formüllü hesap tabloları: TOPLA, EĞER, DÜŞEYARA… çoklu sayfa ve şablonlar.",
+     "keywords": "excel hesap tablosu",
+     "formerly": "Araçlar Tablolar"
+    },
+    {
+     "name": "Rehber",
+     "path": "/yonetim/araclar/rehber",
+     "icon": "contact",
+     "desc": "Takımlar ve üyeler: takım adı öne çıkar; başkanlar, kadro, maçlar, tek dokunuşla ara, yaz, mesaj gönder.",
+     "keywords": "telefon kişi başkan iletişim",
+     "formerly": "Araçlar Rehber"
+    },
+    {
+     "name": "Ekipman",
+     "path": "/yonetim/araclar/ekipman",
+     "icon": "equipment",
+     "desc": "Demirbaş envanteri: kamera, bilgisayar, ses, LED ekran, top, forma, kupa… konum, değer, zimmet, rezervasyon ve bakım takibi.",
+     "keywords": "demirbaş envanter zimmet stok kamera tripod bilgisayar ses led ekran top forma kupa madalya çadır jeneratör bakım rezervasyon etiket barkod",
+     "formerly": "Araçlar Ekipman",
+     "permissions": [
+      "equipment.view"
+     ]
+    },
+    {
+     "name": "Hesap araçları",
+     "path": "/yonetim/araclar/hesap-araclari",
+     "icon": "calculator",
+     "desc": "KDV, yüzde, iskonto, aidat bölüştürme ve tarih hesapları.",
+     "keywords": "kdv yüzde iskonto aidat",
+     "formerly": "Araçlar Hesap Araçları"
+    },
+    {
+     "name": "Odak sayacı",
+     "path": "/yonetim/araclar/odak-sayaci",
+     "icon": "timer",
+     "desc": "Pomodoro, geri sayım ve kronometre; maç süresi için de uygun.",
+     "keywords": "pomodoro kronometre geri sayım",
+     "formerly": "Araçlar Odak Sayacı"
+    }
+   ]
+  }
+ ],
+ "actions": [
+  {
+   "key": "new-match",
+   "name": "Yeni maç oluştur",
+   "path": "/editor/mac-olustur",
+   "icon": "plus",
+   "keywords": "maç ekle fikstür",
+   "permissions": [
+    "matches.create"
+   ]
+  },
+  {
+   "key": "new-news",
+   "name": "Haber yayınla",
+   "path": "/editor/haberler",
+   "icon": "news",
+   "keywords": "yeni haber duyuru yazı ekle makale köşe",
+   "permissions": [
+    "news.create"
+   ]
+  },
+  {
+   "key": "new-penalty",
+   "name": "Yeni ceza gir",
+   "path": "/editor/cezalar/yeni",
+   "icon": "gavel",
+   "keywords": "disiplin ceza ekle",
+   "permissions": [
+    "penalties.create"
+   ]
+  },
+  {
+   "key": "bulk-staff",
+   "name": "Maçlara personel ata",
+   "path": "/yonetim/admin/personel/toplu-atama",
+   "icon": "users",
+   "keywords": "hakem spiker görevlendir",
+   "permissions": [
+    "staff.assign"
+   ]
+  },
+  {
+   "key": "run-draw",
+   "name": "Kura çek",
+   "path": "/yonetim/kura",
+   "icon": "shuffle",
+   "keywords": "kura torba",
+   "permissions": [
+    "draws.run"
+   ]
+  },
+  {
+   "key": "new-todo",
+   "name": "Yeni görev ekle",
+   "path": "/yonetim/yapilacaklar",
+   "icon": "checklist",
+   "keywords": "yapılacak hatırlatma todo"
+  },
+  {
+   "key": "open-requests",
+   "name": "Bekleyen talepleri aç",
+   "path": "/yonetim/talepler?durum=open",
+   "icon": "inbox",
+   "keywords": "onay talep"
+  },
+  {
+   "key": "account",
+   "name": "Hesabım",
+   "path": "/yonetim/hesabim",
+   "icon": "user",
+   "keywords": "profil şifre güvenlik"
+  },
+  {
+   "key": "site",
+   "name": "Siteyi görüntüle",
+   "path": "/",
+   "icon": "external",
+   "keywords": "site ana sayfa elitlig"
+  }
+ ]
+}
