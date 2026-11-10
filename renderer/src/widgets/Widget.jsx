@@ -1,53 +1,30 @@
 // Masaüstü widget'ı (#widget=<tür>&id=<kimlik>): çerçevesiz, şeffaf küçük pencere. Ana süreç
 // app/widgets/index.js. Üst şerit sürükleme alanıdır (kilitliyken değil); ⋯ ya da sağ tık: ayarlar.
+// Yeni widget gövdeleri ./bodies/*; ortak parçalar ./common.jsx; saf hesaplar ./widgetModel.js.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../components/ui";
 import { clock as fmtSec, isPlayingStatus } from "../music/musicApp";
-import { formatClock, groupTodos } from "../lib/helpers";
+import { formatClock } from "../lib/helpers";
 import { ZONES, diffLabel, normalizeZones, zoneLabel, zoneNow } from "../views/toolkit/worldClock";
 import { CURRENCIES } from "../views/toolkit/units";
+import { Err, NeedSession, W, dayStart, usePoll, useSignedIn } from "./common";
+import { MessagesWidget, RequestsWidget } from "./bodies/comm";
+import { ContactsWidget, EquipmentWidget, LedgerWidget, PinnedNotesWidget, ProjectsWidget, QuickAddWidget, TodayWidget, TodosWidget } from "./bodies/work";
+import { FocusWidget, MonthWidget, WeekWidget } from "./bodies/time";
+import { LiveMatchWidget, StandingsWidget } from "./bodies/sport";
+import { DockWidget, LauncherWidget, StudioWidget } from "./bodies/access";
 import "./widgets.css";
 
-const W = () => window.elitlig;
-const LABELS = { clock: "Saat", agenda: "Ajanda", todos: "Yapılacaklar", note: "Not", music: "Müzik", clipboard: "Pano", timer: "Sayaç", system: "Sistem", weather: "Hava durumu", matches: "Maçlar", rates: "Döviz" };
-const ICONS = { clock: "clock", agenda: "calendar", todos: "checkSquare", note: "note", music: "music", clipboard: "clipboard", timer: "timer", system: "activity", weather: "sun", matches: "ball", rates: "wallet" };
-
-/** Belirli aralıkla yenilenen eşzamansız veri. */
-function usePoll(fn, ms, deps = []) {
-  const [state, setState] = useState({ data: null, error: null, loading: true });
-  const ref = useRef(fn);
-  ref.current = fn;
-  const load = useCallback(async () => {
-    try {
-      const data = await ref.current();
-      setState({ data, error: null, loading: false });
-    } catch (e) { setState((s) => ({ data: s.data, error: e?.message || String(e), loading: false })); }
-  }, []);
-  useEffect(() => {
-    load();
-    const t = setInterval(load, ms);
-    return () => clearInterval(t);
-  }, [load, ms, ...deps]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { ...state, reload: load };
-}
-
-/** Oturum durumu (sunucu verisi gereken widget'lar için). */
-function useSignedIn() {
-  const [signed, setSigned] = useState(null);
-  useEffect(() => {
-    const load = () => W().auth.state().then((s) => setSigned(Boolean(s?.signedIn))).catch(() => setSigned(false));
-    load();
-    return W().auth.onChange(load);
-  }, []);
-  return signed;
-}
-
-const NeedSession = () => (
-  <div className="wg-empty"><Icon name="lock" size={16} /><span>Oturum açın</span>
-    <button type="button" className="wg-btn" onClick={() => W().widgets.open()}>Uygulamayı aç</button>
-  </div>
-);
-const Err = ({ text, onRetry }) => <div className="wg-empty is-err"><Icon name="alert" size={15} /><span>{text}</span>{onRetry && <button type="button" className="wg-btn" onClick={onRetry}>Yeniden dene</button>}</div>;
+export const LABELS = {
+  clock: "Saat", agenda: "Ajanda", todos: "Yapılacaklar", note: "Karalama", music: "Müzik", clipboard: "Pano", timer: "Sayaç", system: "Sistem", weather: "Hava durumu", matches: "Maçlar", rates: "Döviz",
+  messages: "Mesajlar", requests: "Talepler", projects: "Projeler", ledger: "Muhasebe", equipment: "Ekipman", today: "Bugün", contacts: "Rehber", notes: "Sabit notlar", quickadd: "Hızlı kayıt",
+  focus: "Odak", week: "Bu hafta", month: "Takvim", livematch: "Canlı maç", standings: "Puan durumu", studio: "Yayın Stüdyosu", launcher: "Başlatıcı", dock: "Araçlar",
+};
+export const ICONS = {
+  clock: "clock", agenda: "calendar", todos: "checkSquare", note: "note", music: "music", clipboard: "clipboard", timer: "timer", system: "activity", weather: "sun", matches: "ball", rates: "swap",
+  messages: "message", requests: "inbox", projects: "layers", ledger: "wallet", equipment: "box", today: "sun", contacts: "users", notes: "pin", quickadd: "zap",
+  focus: "target", week: "calendar", month: "calendar", livematch: "ball", standings: "trophy", studio: "broadcast", launcher: "grid", dock: "toolbox",
+};
 
 /* ------------------------------ saat ------------------------------ */
 
@@ -82,7 +59,6 @@ function ClockWidget({ item, size, settings, update }) {
 
 /* ------------------------------ ajanda ------------------------------ */
 
-const dayStart = (d, add = 0) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + add);
 function AgendaWidget({ size }) {
   const signed = useSignedIn();
   const q = usePoll(async () => {
@@ -117,55 +93,6 @@ function AgendaWidget({ size }) {
           {g.items.length > max && <p className="wg-muted">+{g.items.length - max} etkinlik daha</p>}
         </section>
       ))}
-    </div>
-  );
-}
-
-/* ------------------------------ yapılacaklar ------------------------------ */
-
-function TodosWidget({ size }) {
-  const signed = useSignedIn();
-  const [title, setTitle] = useState("");
-  const [done, setDone] = useState(() => new Set());
-  const q = usePoll(async () => {
-    if (!signed) return null;
-    const res = await W().request({ path: "/api/todos", query: { view: "mine", status: "active" } });
-    if (!res.ok) throw new Error(res.error?.message || "İşler alınamadı.");
-    return res.data;
-  }, 3 * 60000, [signed]);
-  useEffect(() => W().onDataChanged?.((p) => { if (String(p?.path || "").includes("/todos")) q.reload(); }), []); // eslint-disable-line react-hooks/exhaustive-deps
-  if (signed === false) return <NeedSession />;
-  if (q.error && !q.data) return <Err text={q.error} onRetry={q.reload} />;
-  const g = groupTodos(q.data?.items || [], new Date());
-  const list = [...g.overdue.map((t) => ({ ...t, late: true })), ...g.today];
-  const max = size === "medium" ? 8 : 4;
-  const check = async (t) => {
-    setDone((s) => new Set(s).add(t.id));
-    const res = await W().request({ method: "PATCH", path: `/api/todos/${t.id}`, body: { status: "done" } });
-    if (!res.ok) setDone((s) => { const n = new Set(s); n.delete(t.id); return n; });
-    setTimeout(() => q.reload(), 700);
-  };
-  const add = async (e) => {
-    e.preventDefault();
-    const v = title.trim();
-    if (!v) return;
-    const end = new Date();
-    end.setHours(23, 59, 0, 0);
-    setTitle("");
-    await W().request({ method: "POST", path: "/api/todos", body: { kind: "task", title: v, due_at: end.toISOString() } });
-    q.reload();
-  };
-  return (
-    <div className="wg-list">
-      {list.length ? list.slice(0, max).map((t) => (
-        <label key={t.id} className={`wg-todo${done.has(t.id) ? " is-done" : ""}${t.late ? " is-late" : ""}`}>
-          <input type="checkbox" checked={done.has(t.id)} onChange={() => check(t)} aria-label={`${t.title} tamamlandı`} />
-          <span className="wg-row__text">{t.title}</span>
-          {t.dueAt && <small>{t.late ? "gecikti" : new Date(t.dueAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}</small>}
-        </label>
-      )) : <p className="wg-muted">{q.loading ? "Yükleniyor…" : "Bugün için iş yok 🎉"}</p>}
-      {list.length > max && <button type="button" className="wg-link" onClick={() => W().widgets.open("todos")}>+{list.length - max} iş daha</button>}
-      <form className="wg-add" onSubmit={add}><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Bugüne iş ekle…" aria-label="Yeni iş" /></form>
     </div>
   );
 }
@@ -436,8 +363,13 @@ function RatesWidget({ item, size, settings, update }) {
   );
 }
 
-const BODIES = { clock: ClockWidget, agenda: AgendaWidget, todos: TodosWidget, note: NoteWidget, music: MusicWidget, clipboard: ClipboardWidget, timer: TimerWidget, system: SystemWidget, weather: WeatherWidget, matches: MatchesWidget, rates: RatesWidget };
-const WITH_SETTINGS = new Set(["clock", "weather", "rates", "matches"]);
+export const BODIES = {
+  clock: ClockWidget, agenda: AgendaWidget, todos: TodosWidget, note: NoteWidget, music: MusicWidget, clipboard: ClipboardWidget, timer: TimerWidget, system: SystemWidget, weather: WeatherWidget, matches: MatchesWidget, rates: RatesWidget,
+  messages: MessagesWidget, requests: RequestsWidget, projects: ProjectsWidget, ledger: LedgerWidget, equipment: EquipmentWidget, today: TodayWidget, contacts: ContactsWidget, notes: PinnedNotesWidget, quickadd: QuickAddWidget,
+  focus: FocusWidget, week: WeekWidget, month: MonthWidget, livematch: LiveMatchWidget, standings: StandingsWidget, studio: StudioWidget, launcher: LauncherWidget, dock: DockWidget,
+};
+// Ayarlar paneli olan türler (ana süreçteki katalogla aynı: app/widgets/catalog.js "settings").
+export const WITH_SETTINGS = new Set(["clock", "weather", "rates", "matches", "messages", "todos", "livematch", "standings", "launcher", "dock"]);
 
 /* ------------------------------ kabuk ------------------------------ */
 
@@ -466,7 +398,7 @@ export default function Widget() {
   if (!Body) return null;
   const item = cfg?.item;
   return (
-    <div className={`wg wg--${type} wg--${item?.size || "small"}${item?.locked ? " is-locked" : ""}`} style={{ "--wg-alpha": (item?.opacity ?? 92) / 100 }} onContextMenu={onContext} data-widget={type}>
+    <div className={`wg wg--${type} wg--${item?.size || "small"}${item?.locked ? " is-locked" : ""}`} style={{ "--wg-alpha": (item?.opacity ?? 92) / 100 }} onContextMenu={onContext} data-widget={type} data-ready={item ? "1" : undefined}>
       <header className="wg__head">
         <Icon name={ICONS[type]} size={12} /><span>{LABELS[type]}</span>
         {item?.locked && <Icon name="lock" size={10} />}
@@ -478,6 +410,24 @@ export default function Widget() {
       <main className="wg__body">
         {item ? <Body item={item} size={item.size} settings={settings && WITH_SETTINGS.has(type)} update={update} closeSettings={() => setSettings(false)} /> : null}
       </main>
+    </div>
+  );
+}
+
+/**
+ * Galeri önizlemesi (views/toolkit/WidgetGallery.jsx): widget'ın gerçek gövdesi, gerçek veriyle,
+ * katalogdaki boyutta; ayar değişiklikleri yalnız önizlemede kalır (masaüstüne eklenmez).
+ */
+export function WidgetPreview({ type, size = "small", width, height }) {
+  const [item, setItem] = useState(() => ({ id: "preview", type, size, opacity: 96, locked: false, level: "normal", options: {} }));
+  useEffect(() => { setItem((it) => ({ ...it, type, size, options: it.type === type ? it.options : {} })); }, [type, size]);
+  const Body = BODIES[type];
+  if (!Body) return null;
+  const update = (patch) => setItem((it) => ({ ...it, options: { ...it.options, ...(patch?.options || {}) } }));
+  return (
+    <div className={`wg wg-preview wg--${type} wg--${size}`} style={{ width, height, "--wg-alpha": 0.96 }} data-widget={type} aria-label={`${LABELS[type] || type} önizlemesi`}>
+      <header className="wg__head"><Icon name={ICONS[type]} size={12} /><span>{LABELS[type]}</span><span className="wg__grow" /></header>
+      <main className="wg__body"><Body item={item} size={size} settings={false} update={update} closeSettings={() => {}} /></main>
     </div>
   );
 }

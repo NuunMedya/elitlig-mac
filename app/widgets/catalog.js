@@ -7,19 +7,56 @@
  * net: internet gerekir. interactive: tıklanır / yazılır (masaüstüne gömülemez).
  */
 const CATALOG = [
-  { type: "clock", label: "Saat ve tarih", icon: "clock", hint: "Yerel saat, tarih ve dünya saatleri", sizes: { small: [200, 120], medium: [280, 210] } },
-  { type: "agenda", label: "Ajanda", icon: "calendar", hint: "Bugün ve yarının etkinlikleri", session: true, interactive: true, sizes: { small: [260, 220], medium: [320, 330] } },
-  { type: "todos", label: "Yapılacaklar", icon: "checkSquare", hint: "Bugünkü ve gecikmiş işler, işaretlenebilir", session: true, interactive: true, sizes: { small: [260, 240], medium: [320, 360] } },
-  { type: "note", label: "Hızlı not", icon: "note", hint: "Karalama alanı, son notlar ve yeni not", interactive: true, sizes: { small: [250, 210], medium: [320, 320] } },
-  { type: "music", label: "Müzik çalar", icon: "music", hint: "Çalan parça ve denetimler", interactive: true, sizes: { small: [250, 126], medium: [300, 160] } },
-  { type: "clipboard", label: "Pano", icon: "clipboard", hint: "Son kopyalananlar; tıkla, yeniden kopyala", interactive: true, sizes: { small: [260, 220], medium: [320, 330] } },
-  { type: "timer", label: "Sayaç / odak", icon: "timer", hint: "Odak sayacı, zamanlayıcı, kronometre", interactive: true, sizes: { small: [210, 150], medium: [260, 210] } },
-  { type: "system", label: "Sistem", icon: "activity", hint: "İşlemci, bellek, disk ve pil", sizes: { small: [220, 150], medium: [260, 220] } },
-  { type: "weather", label: "Hava durumu", icon: "sun", hint: "Şehir seçilir; Open-Meteo (anahtarsız)", net: true, sizes: { small: [220, 130], medium: [280, 230] } },
-  { type: "matches", label: "Yaklaşan maçlar", icon: "ball", hint: "Elitlig canlı ve yaklaşan maçlar", net: true, interactive: true, sizes: { small: [270, 230], medium: [330, 360] } },
-  { type: "rates", label: "Döviz kurları", icon: "wallet", hint: "USD, EUR, GBP… → ₺", net: true, sizes: { small: [210, 160], medium: [260, 240] } },
+  { type: "clock", category: "time", label: "Saat ve tarih", icon: "clock", hint: "Yerel saat, tarih ve dünya saatleri", settings: true, sizes: { small: [200, 120], medium: [280, 210] } },
+  { type: "agenda", category: "time", label: "Ajanda", icon: "calendar", hint: "Bugün ve yarının etkinlikleri", session: true, interactive: true, sizes: { small: [260, 220], medium: [320, 330] } },
+  { type: "week", category: "time", label: "Haftalık ajanda", icon: "calendar", hint: "Bu haftanın 7 günü: etkinlikler ve proje adımları", session: true, interactive: true, sizes: { small: [420, 210], medium: [560, 280] } },
+  { type: "month", category: "time", label: "Takvim (ay)", icon: "calendar", hint: "Ay görünümü; dolu günler işaretli, güne tıkla", session: true, interactive: true, sizes: { small: [270, 290], medium: [330, 370] } },
+  { type: "timer", category: "time", label: "Sayaç / odak", icon: "timer", hint: "Odak sayacı, zamanlayıcı, kronometre", interactive: true, sizes: { small: [210, 150], medium: [260, 210] } },
+  { type: "focus", category: "time", label: "Odak sayacı", icon: "target", hint: "Pomodoro halkası, tur, mola; başlat / atla / sıfırla", interactive: true, sizes: { small: [220, 210], medium: [280, 270] } },
+
+  { type: "messages", category: "comm", label: "Mesajlar", icon: "message", hint: "Okunmamış, son sohbetler ve hızlı yanıt; üye mesajları", session: true, interactive: true, settings: true, sizes: { small: [290, 270], medium: [350, 420] } },
+  { type: "requests", category: "comm", label: "Talepler", icon: "inbox", hint: "Bekleyen talep sayısı, türlere göre", session: true, interactive: true, sizes: { small: [240, 180], medium: [300, 300] } },
+
+  { type: "today", category: "work", label: "Bugün özeti", icon: "sun", hint: "Bugünün işleri, etkinlikleri ve ödemeleri", session: true, interactive: true, sizes: { small: [290, 270], medium: [350, 430] } },
+  { type: "todos", category: "work", label: "Yapılacaklar", icon: "checkSquare", hint: "Bugün / geciken / tümü, proje süzgeci; işaretlenebilir", session: true, interactive: true, settings: true, sizes: { small: [270, 250], medium: [330, 380] } },
+  { type: "projects", category: "work", label: "Projeler", icon: "layers", hint: "Aktif projeler: evre, ilerleme, yaklaşan adımlar", session: true, interactive: true, sizes: { small: [290, 250], medium: [350, 400] } },
+  { type: "quickadd", category: "work", label: "Hızlı kayıt", icon: "zap", hint: "Tek satırda görev, not ya da gider", session: true, interactive: true, sizes: { small: [300, 132], medium: [340, 190] } },
+  { type: "notes", category: "work", label: "Sabit notlar", icon: "pin", hint: "Sabitlenen notlar ve hızlı not", session: true, interactive: true, sizes: { small: [260, 240], medium: [320, 360] } },
+  { type: "note", category: "work", label: "Karalama", icon: "note", hint: "Karalama alanı, son notlar ve yeni not", interactive: true, sizes: { small: [250, 210], medium: [320, 320] } },
+  { type: "contacts", category: "work", label: "Rehber", icon: "users", hint: "Favori kişiler: ara, WhatsApp, e-posta", session: true, interactive: true, sizes: { small: [270, 250], medium: [330, 380] } },
+  { type: "equipment", category: "work", label: "Ekipman", icon: "box", hint: "Zimmetim, geciken iadeler, bakımı gelenler", session: true, interactive: true, sizes: { small: [270, 230], medium: [330, 360] } },
+
+  { type: "ledger", category: "finance", label: "Muhasebe", icon: "wallet", hint: "Bu ay gelir / gider / net, alacak, borç, yaklaşan ödemeler", session: true, interactive: true, sizes: { small: [290, 240], medium: [340, 380] } },
+  { type: "rates", category: "finance", label: "Döviz kurları", icon: "swap", hint: "USD, EUR, GBP… → ₺", net: true, settings: true, sizes: { small: [210, 160], medium: [260, 240] } },
+
+  { type: "livematch", category: "sport", label: "Canlı maç", icon: "ball", hint: "Seçtiğin maçın skorunu izle", net: true, interactive: true, settings: true, sizes: { small: [270, 150], medium: [310, 220] } },
+  { type: "matches", category: "sport", label: "Yaklaşan maçlar", icon: "ball", hint: "Elitlig canlı ve yaklaşan maçlar", net: true, interactive: true, settings: true, sizes: { small: [270, 230], medium: [330, 360] } },
+  { type: "standings", category: "sport", label: "Puan durumu", icon: "trophy", hint: "Lig seç; sıra, oynanan, averaj, puan", net: true, interactive: true, settings: true, sizes: { small: [290, 290], medium: [350, 440] } },
+
+  { type: "studio", category: "media", label: "Yayın Stüdyosu", icon: "broadcast", hint: "Yayında mı, süre, bit hızı, bağlantı", interactive: true, sizes: { small: [240, 150], medium: [290, 220] } },
+  { type: "music", category: "media", label: "Müzik çalar", icon: "music", hint: "Çalan parça ve denetimler", interactive: true, sizes: { small: [250, 126], medium: [300, 160] } },
+  { type: "clipboard", category: "media", label: "Pano", icon: "clipboard", hint: "Son kopyalananlar; tıkla, yeniden kopyala", interactive: true, sizes: { small: [260, 220], medium: [320, 330] } },
+
+  { type: "launcher", category: "access", label: "Başlatıcı", icon: "grid", hint: "Tüm araçlar tek tıkla + yeni görev / gider / not", interactive: true, sizes: { small: [300, 200], medium: [360, 290] } },
+  { type: "dock", category: "access", label: "Araç çubuğu", icon: "toolbox", hint: "Dock benzeri yatay şerit: sık araçlar", interactive: true, sizes: { small: [470, 74], medium: [720, 88] } },
+
+  { type: "system", category: "info", label: "Sistem", icon: "activity", hint: "İşlemci, bellek, disk ve pil", sizes: { small: [220, 150], medium: [260, 220] } },
+  { type: "weather", category: "info", label: "Hava durumu", icon: "sun", hint: "Şehir seçilir; Open-Meteo (anahtarsız)", net: true, settings: true, sizes: { small: [220, 130], medium: [280, 230] } },
+];
+/** Galeri kategorileri (sırasıyla). */
+const CATEGORIES = [
+  { key: "access", label: "Hızlı erişim" },
+  { key: "comm", label: "Mesajlar" },
+  { key: "work", label: "İş araçları" },
+  { key: "time", label: "Zaman ve takvim" },
+  { key: "finance", label: "Finans" },
+  { key: "sport", label: "Spor" },
+  { key: "media", label: "Medya ve yayın" },
+  { key: "info", label: "Bilgi ve sistem" },
 ];
 const TYPES = new Set(CATALOG.map((c) => c.type));
+/** Ayarlar paneli olan türler (⋯ menüsünde "Ayarlar…"). */
+const WITH_SETTINGS = new Set(CATALOG.filter((c) => c.settings).map((c) => c.type));
 const catalogOf = (type) => CATALOG.find((c) => c.type === type) || null;
 const LEVELS = ["normal", "top", "desktop"];
 const THEMES = ["auto", "light", "dark"];
@@ -38,6 +75,12 @@ function normalizeOptions(type, o) {
     case "rates": return { codes: (Array.isArray(x.codes) ? x.codes : ["USD", "EUR", "GBP"]).map((c) => str(c, 8).trim().toUpperCase()).filter((c, i, a) => /^[A-Z]{3}$/.test(c) && c !== "TRY" && a.indexOf(c) === i).slice(0, 6) };
     case "matches": return { city: str(x.city, 40).trim() };
     case "note": return { text: str(x.text, 4000) };
+    case "messages": return { source: ["all", "personal", "inbox"].includes(x.source) ? x.source : "all", reply: x.reply == null ? true : Boolean(x.reply) };
+    case "todos": return { filter: ["today", "overdue", "upcoming", "all"].includes(x.filter) ? x.filter : "today", project: Number.isInteger(Number(x.project)) && Number(x.project) > 0 ? Number(x.project) : null };
+    case "livematch": return { matchId: Number.isInteger(Number(x.matchId)) && Number(x.matchId) > 0 ? Number(x.matchId) : null, label: str(x.label, 100) };
+    case "standings": return { leagueId: Number(x.leagueId) > 0 ? Math.round(Number(x.leagueId)) : null, seasonId: Number(x.seasonId) > 0 ? Math.round(Number(x.seasonId)) : null, leagueName: str(x.leagueName, 80), team: str(x.team, 60) };
+    case "launcher":
+    case "dock": return { tools: Array.isArray(x.tools) ? x.tools.map((t) => str(t, 20)).filter((t, i, a) => /^[a-z]+$/.test(t) && a.indexOf(t) === i).slice(0, 16) : null };
     default: return {};
   }
 }
@@ -133,7 +176,23 @@ function clampToDisplays(rect, displays, keep = 48) {
   };
 }
 
+/**
+ * Boyut büyüyünce (küçük → orta) pencere ekrandan taşmasın: sağ / alt kenardan taşıyorsa
+ * içinde kaldığı ekranın çalışma alanına geri itilir (sol / üst kenar korunur).
+ */
+function fitInWorkArea(rect, displays, margin = 8) {
+  const cx = rect.x + Math.min(rect.width, 48) / 2;
+  const cy = rect.y + 10;
+  const d = (displays || []).find((x) => cx >= x.workArea.x && cx < x.workArea.x + x.workArea.width && cy >= x.workArea.y && cy < x.workArea.y + x.workArea.height) || (displays || [])[0];
+  if (!d) return { x: rect.x, y: rect.y };
+  const a = d.workArea;
+  return {
+    x: Math.round(Math.max(a.x, Math.min(rect.x, a.x + a.width - rect.width - margin))),
+    y: Math.round(Math.max(a.y, Math.min(rect.y, a.y + a.height - rect.height - margin))),
+  };
+}
+
 /** Kısa rastgele kimlik. */
 const newId = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
 
-module.exports = { CATALOG, TYPES, LEVELS, THEMES, catalogOf, normalizeOptions, normalizeItem, normalizeStore, sizeOf, placeNew, clampToDisplays, newId };
+module.exports = { CATALOG, CATEGORIES, WITH_SETTINGS, TYPES, LEVELS, THEMES, catalogOf, normalizeOptions, normalizeItem, normalizeStore, sizeOf, placeNew, clampToDisplays, fitInWorkArea, newId };

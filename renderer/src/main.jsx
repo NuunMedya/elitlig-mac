@@ -20,6 +20,9 @@ const FloatShelf = lazy(() => import("./views/files/Float"));
 // Masaüstü widget'ları (#widget=<tür>&id=<kimlik>): çerçevesiz, şeffaf küçük pencereler (app/widgets).
 const widget = window.location.hash.startsWith("#widget=");
 const Widget = lazy(() => import("./widgets/Widget"));
+// Hızlı geçiş penceresi (#launcher, ⌃⌥O): araç / kayıt ara ve aç (app/launcher).
+const launcher = window.location.hash === "#launcher";
+const Launcher = lazy(() => import("./launcher/Launcher"));
 
 // Menüdeki Geri Al / Yinele: yazı alanındaysa yerel geri alma, değilse açık
 // araca (ör. tablo düzenleyicisi) iletilir.
@@ -29,7 +32,7 @@ window.elitlig.onCommand((cmd) => {
   if (el && (el.isContentEditable || /^(INPUT|TEXTAREA)$/.test(el.tagName))) document.execCommand(cmd);
   else window.dispatchEvent(new Event(`elitlig:${cmd}`));
 });
-document.documentElement.dataset.window = quick ? "quick" : ledOutput ? "led" : shelfPanel ? "shelf" : floatShelf ? "float" : widget ? "widget" : "main";
+document.documentElement.dataset.window = quick ? "quick" : ledOutput ? "led" : shelfPanel ? "shelf" : floatShelf ? "float" : widget ? "widget" : launcher ? "launcher" : "main";
 // Platform sınıfı: Mac'te çerçevesiz pencere (trafik ışıkları), Windows'ta yerel
 // çerçeve — üst boşluklar ve kaydırma çubukları buna göre ayarlanır (styles.css).
 document.documentElement.classList.add(`platform-${String(window.elitlig.platform || "darwin").replace(/[^a-z0-9]/gi, "")}`);
@@ -40,6 +43,8 @@ createRoot(document.getElementById("root")).render(
       <Suspense fallback={null}><LedOutput /></Suspense>
     ) : widget ? (
       <ToastProvider><Suspense fallback={null}><Widget /></Suspense></ToastProvider>
+    ) : launcher ? (
+      <ToastProvider><Suspense fallback={null}><Launcher /></Suspense></ToastProvider>
     ) : shelfPanel || floatShelf ? (
       <ToastProvider><ConfirmProvider><Suspense fallback={null}>{shelfPanel ? <ShelfPanel /> : <FloatShelf />}</Suspense></ConfirmProvider></ToastProvider>
     ) : (

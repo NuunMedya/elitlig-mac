@@ -51,6 +51,8 @@ const { isAllowedExternal } = require("./links");
 const { registerDeskkit } = require("./toolkit");
 // Masaüstü widget'ları (saat, ajanda, yapılacaklar, sistem, hava, maçlar…): app/widgets.
 const { registerWidgets } = require("./widgets");
+// Masaüstünden her araca erişim: hızlı geçiş (⌃⌥O), Dock menüsü, atlama listesi, tepsi "Araçlar", derin bağlantı.
+const { registerLauncher, installEarly: installLauncherEarly } = require("./launcher");
 // Dosya Araçları (Float rafı dahil) ve Ekran Görüntüleri / Pano rafı: app/fileTools, app/shelf.
 const { registerFileTools } = require("./fileTools");
 const { registerShelf } = require("./shelf");
@@ -107,6 +109,7 @@ let chatLink;
 let studio;
 let deskkit = null;
 let widgets = null;
+let launcher = null;
 let fileTools;
 let shelf;
 let adminPanel = null;
@@ -312,6 +315,8 @@ function refreshTray() {
     { type: "separator" },
     // Araç Takımı ve masaüstü widget'ları menünün üstünde (app/toolkit.js trayTopItems).
     ...(deskkit ? deskkit.trayTopItems() : []),
+    // Tüm araçlar ve yeni kayıt eylemleri (app/launcher).
+    ...(launcher ? [launcher.trayItem(), { type: "separator" }] : []),
   ];
   if (signedIn) {
     const unread = chatLink?.unread() || 0;
@@ -344,6 +349,7 @@ function refreshTray() {
     { label: `${config.APP_NAME}'tan çık`, click: () => { quitting = true; app.quit(); } },
   );
   tray.setContextMenu(Menu.buildFromTemplate(template));
+  launcher?.refreshOsMenus({ force: false });
 }
 
 function createTray() {
@@ -630,7 +636,9 @@ function buildMenu() {
     ] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-  app.dock?.setMenu(Menu.buildFromTemplate([
+  // Dock menüsü (Mac) ve atlama listesi (Windows): app/launcher; o yoksa eski liste.
+  if (launcher) launcher.refreshOsMenus();
+  else app.dock?.setMenu(Menu.buildFromTemplate([
     { label: "Hızlı Kayıt…", click: () => showQuick() },
     { type: "separator" },
     ...ROUTES.map(([route, label]) => ({ label, click: () => showMain(route) })),
@@ -854,10 +862,12 @@ function notify({ title, body, route }) {
   n.show();
 }
 
+installLauncherEarly(app);
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => showMain());
+  // İkinci örnek: derin bağlantı / atlama listesi bağımsız değişkeni varsa onu aç, yoksa pencereyi öne getir.
+  app.on("second-instance", (_e, argv) => { if (!launcher?.handleArgv(argv)) showMain(); });
 
   app.whenReady().then(() => {
     sessionStore = createSessionStore({ dir: dataDir(), safeStorage });
@@ -966,9 +976,16 @@ if (!app.requestSingleInstanceLock()) {
       loadRenderer, webPreferences: secureWebPreferences, guardNavigation, showMain, broadcast, deskkit, isMac: IS_MAC,
       publicOrigin: process.env.ELITLIG_PUBLIC_API_ORIGIN || config.API_ORIGIN,
       refreshTray: () => refreshTray(), rebuildMenu: () => buildMenu(),
+      studio: () => studio, access: () => currentAccess(),
       log: (...args) => { if (!app.isPackaged) console.log(...args); },
     });
     deskkit.attachWidgets(widgets);
+    launcher = registerLauncher({
+      app, ipcMain, BrowserWindow, globalShortcut, screen, Menu,
+      loadRenderer, webPreferences: secureWebPreferences, guardNavigation, showMain, showQuick,
+      access: () => currentAccess(), widgets: () => widgets, isMac: IS_MAC, quickShortcut: config.QUICK_SHORTCUT,
+      log: (...args) => { if (!app.isPackaged) console.log(...args); },
+    });
     registerIpc();
     buildMenu();
     createTray();

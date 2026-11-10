@@ -38,6 +38,8 @@ uygulamada görünür.
 - **Her yerden hızlı kayıt: ⌃⌥N.** Hangi uygulamada olursanız olun küçük bir pencere açılır:
   görev, not, etkinlik ya da gider tek satırda kaydedilir. “yarın 14:00 sahayı ara !” gibi yazılan
   tarih, saat ve öncelik kendiliğinden anlaşılır.
+- **Her araca masaüstünden: ⌃⌥O hızlı geçiş**, Dock simgesi menüsü (Mac) / görev çubuğu atlama listesi
+  (Windows), menü çubuğunda *Araçlar*, Başlatıcı ve Araç çubuğu widget'ları, `elitlig-araclar://` bağlantıları.
 - **Mac bildirimleri.** Ajanda hatırlatmaları, zamanı gelen görevler ve vadesi yaklaşan / geciken düzenli ödemeler (fatura, maaş, kira, taksit) pencere kapalıyken de bildirim olarak gelir.
 - **Menü çubuğu simgesi.** Çalışan odak sayacının kalan süresi, yaklaşan etkinlikler ve açık iş sayısı.
 - **Dock rozeti.** Bugün ve gecikmiş iş sayısı, okunmamış mesajlar (üye mesajları dahil) ve bekleyen talepler.
@@ -676,6 +678,22 @@ Masaüstünde duran küçük, çerçevesiz, şeffaf, köşeleri yuvarlak pencere
 | Hava durumu | Şehir seçilir; Open-Meteo (anahtarsız), olmazsa wttr.in; 3 günlük tahmin (orta) |
 | Yaklaşan maçlar | Herkese açık Elitlig API'si: canlı skorlar (`/maclar/live`) ve 10 günlük fikstür (`/maclar/fixtures?date_from&date_to`), şehre göre süzülür; tıklayınca maç sayfası |
 | Döviz kurları | Seçilen para birimlerinin ₺ karşılığı (araç takımıyla aynı kur önbelleği) |
+| **Mesajlar** | Okunmamış sayısı, son sohbetler (avatar, son mesaj, saat); tıkla → sohbet uygulamada açılır; **hızlı yanıt** (Mesajlar'daki gönderme ucu: kişisel sohbet çevrimdışıyken kuyruğa alınır, üye mesajı yanıtı ElitLig Yönetimi adına ve bağlantı ister); kaynak: birleşik / kişisel / **üye mesajları**; bekleyen talep sayısı; **yeni mesajda widget vurgulanır** |
+| **Talepler** | Bekleyen talep sayısı ve türlere göre dağılım; tıkla → o tür |
+| **Bugün özeti** | Bugünün işleri (gecikmiş dahil, işaretlenebilir), etkinlikleri ve vadesi gelen düzenli ödemeler |
+| Yapılacaklar | Süzgeç: **Bugün / Geciken / Yaklaşan / Tümü** ve **proje** (⚙); işaretle → tamamlandı; süzülen projeye iş ekle |
+| **Projeler** | Aktif projeler: renk, ilerleme %, **evre** (aşama n/N), adım sayısı, gecikmiş, yaklaşan adımlar |
+| **Muhasebe** | Bu ay gelir / gider / net, bekleyen alacak / borç, vadesi geçen, yaklaşan düzenli ödemeler; + Gider |
+| **Ekipman** | Zimmetim, geciken iadeler, bakımı gelenler (yetki yoksa bildirir) |
+| **Rehber** | Favori kişiler; arama; ara (tel:), WhatsApp (wa.me), e-posta |
+| **Sabit notlar** | Sabitlenen notlar (yoksa son notlar) ve tek satır hızlı not |
+| **Hızlı kayıt** | Tek satırda görev (doğal dil tarihi), not ya da gider (“250 kırtasiye”) |
+| **Odak sayacı** | Pomodoro halkası, tur, mola; başlat / atla / sıfırla; tür (orta) — ana süreçteki sayacın denetimi |
+| **Haftalık ajanda** / **Takvim (ay)** | Pzt–Paz sütunları (önceki / sonraki hafta); ay ızgarası, dolu günler işaretli, güne tıkla |
+| **Canlı maç** | Seçilen maçın skoru (canlıyken 30 sn), gol olunca vurgu; maç sayfası |
+| **Puan durumu** | Lig seç (güncel sezon, herkese açık `/ligler`, `/sezonlar`, `/puan-durumu?seasonId=`); takımı vurgula |
+| **Yayın Stüdyosu** | Yayında mı, süre, bit hızı, FPS, bağlantı (ana süreçteki yayın motoru) |
+| **Başlatıcı** / **Araç çubuğu** | Tüm araçlar tek tıkla (seçilebilir) + yeni görev / gider / not / etkinlik; Dock benzeri yatay şerit |
 
 - Başlığından sürüklenir; konum, boyut (küçük / orta), arka plan saydamlığı, katman ve seçenekler
   `userData/widgets.json`'da saklanır ve **açılışta geri yüklenir** (çıkarılmış ekrandaki widget görünür
@@ -688,7 +706,22 @@ Masaüstünde duran küçük, çerçevesiz, şeffaf, köşeleri yuvarlak pencere
 - **⌃⌥W** (Windows Ctrl+Alt+W): tüm widget'ları göster / gizle (Masaüstü araçları'nda değiştirilir).
 - Ağ istekleri ana süreçte yapılır (arayüzün CSP'si dışarıya izin vermez). Ana süreç `app/widgets/`
   (`catalog.js` saf, `feeds.js`, `system.js`, `index.js`), arayüz `renderer/src/widgets/` (`#widget=<tür>`);
-  test `app/test/widgets.test.js`.
+  test `app/test/widgets.test.js`, `renderer/test/widgetModel.test.js`.
+- Galeri: kategoriler, arama ve **canlı önizleme** (widget'ın gerçek gövdesi, gerçek veriyle; küçük / orta).
+
+### Her araca masaüstünden erişim
+
+- **Hızlı geçiş** (⌃⌥O, Windows Ctrl+Alt+O): Spotlight benzeri küçük pencere — araç adı yaz → aç;
+  “yeni gider” gibi eylemler Hızlı kayıt'ı (⌃⌥N) o türle açar; 2+ harfte görev, not, kişi, proje, sohbet…
+  araması (komut paletiyle aynı mantık: `renderer/src/lib/paletteSearch.js`).
+- **Dock simgesi menüsü** (macOS): hızlı geçiş, hızlı kayıt, *Yeni kayıt* (görev, gider, not, etkinlik,
+  proje, kişi, sohbet), tüm araçlar, widget'ları göster / gizle. **Windows görev çubuğu atlama listesi**:
+  *Araçlar* kategorisi + yeni kayıt görevleri (`app.setJumpList`, olmazsa `setUserTasks`).
+- Menü çubuğu simgesinde **Araçlar** alt menüsü (hepsi + yeni kayıt).
+- **Derin bağlantı** `elitlig-araclar://projects/12`, `elitlig-araclar://new/task`,
+  `elitlig-araclar://launcher` (paketli uygulamada protokol kaydı; macOS `open-url`, Windows ikinci örnek).
+- Ana süreç `app/launcher/` (`tools.js` saf), arayüz `renderer/src/launcher/` (`#launcher`);
+  test `app/test/launcher.test.js`.
 
 ### Pencere yerleştirme (Magnet benzeri)
 

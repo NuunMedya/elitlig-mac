@@ -12,9 +12,70 @@ const F = require("../widgets/feeds");
 const { cpuPercent } = require("../widgets/system");
 const { registerWidgets } = require("../widgets");
 
-test("katalog: 11 tür, her birinin küçük ve orta boyutu var", () => {
-  assert.deepEqual(C.CATALOG.map((c) => c.type), ["clock", "agenda", "todos", "note", "music", "clipboard", "timer", "system", "weather", "matches", "rates"]);
-  for (const c of C.CATALOG) for (const s of ["small", "medium"]) assert.ok(c.sizes[s][0] >= 150 && c.sizes[s][1] >= 90, `${c.type} ${s}`);
+test("katalog: 28 tür (eski 11 tür korunur, 17 yeni), kategorisi ve küçük / orta boyutu var", () => {
+  const types = C.CATALOG.map((c) => c.type);
+  for (const t of ["clock", "agenda", "todos", "note", "music", "clipboard", "timer", "system", "weather", "matches", "rates"]) assert.ok(types.includes(t), t);
+  for (const t of ["messages", "requests", "projects", "ledger", "equipment", "today", "contacts", "notes", "quickadd", "focus", "week", "month", "livematch", "standings", "studio", "launcher", "dock"]) assert.ok(types.includes(t), t);
+  assert.equal(new Set(types).size, types.length);
+  const cats = new Set(C.CATEGORIES.map((c) => c.key));
+  for (const c of C.CATALOG) {
+    assert.ok(cats.has(c.category), `${c.type} kategori`);
+    // Araç çubuğu (dock) yatay şerittir: alçak ama geniş.
+    for (const s of ["small", "medium"]) assert.ok(c.sizes[s][0] >= 150 && c.sizes[s][1] >= (c.type === "dock" ? 60 : 90), `${c.type} ${s}`);
+  }
+  assert.ok(C.WITH_SETTINGS.has("messages") && C.WITH_SETTINGS.has("standings") && !C.WITH_SETTINGS.has("system"));
+});
+
+test("yeni widget seçenekleri süzülür", () => {
+  assert.deepEqual(C.normalizeOptions("messages", { source: "x" }), { source: "all", reply: true });
+  assert.deepEqual(C.normalizeOptions("messages", { source: "inbox", reply: 0 }), { source: "inbox", reply: false });
+  assert.deepEqual(C.normalizeOptions("todos", { filter: "overdue", project: "7" }), { filter: "overdue", project: 7 });
+  assert.deepEqual(C.normalizeOptions("todos", { filter: "drop table", project: -1 }), { filter: "today", project: null });
+  assert.deepEqual(C.normalizeOptions("livematch", { matchId: "11152", label: "A – B" }), { matchId: 11152, label: "A – B" });
+  assert.equal(C.normalizeOptions("livematch", { matchId: "1; x" }).matchId, null);
+  assert.deepEqual(C.normalizeOptions("standings", { leagueId: 1, seasonId: 160.4, leagueName: "FREELİG" }), { leagueId: 1, seasonId: 160, leagueName: "FREELİG", team: "" });
+  assert.deepEqual(C.normalizeOptions("launcher", { tools: ["projects", "todos", "projects", "../x", "Ledger"] }), { tools: ["projects", "todos"] });
+  assert.deepEqual(C.normalizeOptions("dock", {}), { tools: null });
+});
+
+test("canlı maç / lig / puan durumu ayrıştırma", () => {
+  const now = new Date(2026, 10, 10, 22, 0).getTime();
+  const live = F.parseMatchRow({ id: 5, first_team_name: " A FC ", second_team_name: "B", first_team_score: 2, second_team_score: "1", mac_durumu: "canli", date: "2026-11-10T00:00:00.000Z", time: "21:00:00", league_name: "L", city: "Ankara" }, now);
+  assert.equal(live.state, "live");
+  assert.equal(live.home, "A FC");
+  assert.deepEqual([live.homeScore, live.awayScore], [2, 1]);
+  const fx = F.parseMatchRow({ id: 6, first_team_name: "A", second_team_name: "B", first_team_score: null, mac_durumu: "", is_it_fixture: true, date: "2026-11-11T00:00:00.000Z", time: "20:00:00" }, now);
+  assert.equal(fx.state, "fixture");
+  assert.equal(fx.homeScore, null);
+  assert.equal(fx.startsIn, 22 * 60);
+  assert.equal(F.parseMatchRow({ id: 7, is_it_fixture: false, first_team_score: 0, second_team_score: 3 }).state, "done");
+  assert.equal(F.parseMatchRow(null), null);
+  const leagues = F.parseLeagues([{ id: 2, league_name: "B Lig", city: "İzmir" }, { id: 1, league_name: "A Lig", city: "Ankara" }, { id: 3, league_name: "Eski", city: "Ankara", is_archived: true }]);
+  assert.deepEqual(leagues.map((l) => l.id), [1, 2]);
+  const season = F.currentSeason([{ id: 84, league_id: 1, season_priority: 3, season_year: "2025" }, { id: 160, league_id: 1, season_priority: 1, season_year: "2026", season_name: "15. SEZON" }, { id: 9, league_id: 2, season_priority: 1 }, { id: 200, league_id: 1, season_priority: 0, is_archived: true }], 1);
+  assert.equal(season.id, 160);
+  assert.equal(F.currentSeason([], 1), null);
+  const rows = F.parseStandings([
+    { team_name: "C", display_points: 52, goal_diff: 103 }, { team_name: "A", display_points: 94, goal_diff: 142 },
+    { team_name: "B", display_points: 55, goal_diff: 94 }, { team_name: "D", total_points: 55, goal_diff: 90, goals_for: 1 }, { team_name: "" },
+  ]);
+  assert.deepEqual(rows.map((r) => [r.rank, r.team, r.points]), [[1, "A", 94], [2, "B", 55], [3, "D", 55], [4, "C", 52]]);
+});
+
+test("Yayın Stüdyosu durumu özeti", () => {
+  const { studioStatus } = require("../widgets");
+  assert.deepEqual(studioStatus(null), { ok: true, available: false });
+  const idle = studioStatus({ engine: { status: () => ({ state: "stopped" }), active: () => false } });
+  assert.equal(idle.active, false);
+  assert.equal(idle.state, "idle");
+  const on = studioStatus({ engine: { status: () => ({ state: "live", recordOnly: false, outTimeMs: 65000, bitrateKbps: 4500, fps: 30, rtmp: "up" }), active: () => true }, led: { status: () => ({ open: true }) } });
+  assert.equal(on.onAir, true);
+  assert.equal(on.durationMs, 65000);
+  assert.equal(on.bitrateKbps, 4500);
+  assert.equal(on.led, true);
+  const rec = studioStatus({ engine: { status: () => ({ state: "live", recordOnly: true, bitrateKbps: null }), active: () => true } });
+  assert.equal(rec.onAir, false);
+  assert.equal(rec.bitrateKbps, null);
 });
 
 test("kayıt süzülür: bilinmeyen tür / kimlik atılır, değerler sınırlanır, seçenekler temizlenir", () => {
@@ -281,4 +342,16 @@ test("açılışta geri yükleme: kayıtlı konum; çıkarılmış ekrandaki wid
   hidden.w.restore();
   await hidden.tick();
   assert.equal(hidden.windows[0].visible, false, "gizli bırakıldıysa gizli açılır");
+});
+
+test("büyüyen widget ekrandan taşmaz (fitInWorkArea)", () => {
+  const displays = [{ workArea: { x: 0, y: 25, width: 1600, height: 975 } }, { workArea: { x: 1600, y: 0, width: 1280, height: 1024 } }];
+  // sağ kenarda küçük (290) → orta (350): sola itilir
+  assert.deepEqual(C.fitInWorkArea({ x: 1294, y: 41, width: 350, height: 420 }, displays), { x: 1242, y: 41 });
+  // alt kenardan taşan: yukarı itilir
+  assert.deepEqual(C.fitInWorkArea({ x: 100, y: 800, width: 300, height: 400 }, displays), { x: 100, y: 592 });
+  // ikinci ekranda kalır
+  assert.deepEqual(C.fitInWorkArea({ x: 2700, y: 10, width: 330, height: 200 }, displays), { x: 2542, y: 10 });
+  // sığıyorsa dokunulmaz
+  assert.deepEqual(C.fitInWorkArea({ x: 40, y: 60, width: 200, height: 100 }, displays), { x: 40, y: 60 });
 });

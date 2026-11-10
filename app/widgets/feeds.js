@@ -112,6 +112,57 @@ const isoDay = (t) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
+/* ------------------------------ canlı maç / puan durumu ------------------------------ */
+
+/** /maclar/:id satırı → izlenen maç. Durum: canli | bitti (oynandı) | fikstur. */
+function parseMatchRow(row, now = Date.now()) {
+  if (!row || typeof row !== "object" || !row.id) return null;
+  const start = matchStart(row);
+  const raw = String(row.mac_durumu || "").toLocaleLowerCase("tr-TR");
+  const played = row.is_it_fixture === false || row.is_it_fixture === 0 || ["bitti", "tamamlandi", "tamamlandı", "oynandi", "oynandı"].includes(raw);
+  const state = raw === "canli" || raw === "canlı" ? "live" : played ? "done" : "fixture";
+  const score = (v) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+  return {
+    id: Number(row.id),
+    home: String(row.first_team_name || "").trim().slice(0, 40),
+    away: String(row.second_team_name || "").trim().slice(0, 40),
+    homeScore: state === "fixture" ? null : score(row.first_team_score) ?? 0,
+    awayScore: state === "fixture" ? null : score(row.second_team_score) ?? 0,
+    state,
+    start: start ? start.toISOString() : null,
+    startsIn: start ? Math.round((start.getTime() - now) / 60000) : null,
+    league: String(row.league_name || "").slice(0, 60),
+    field: String(row.match_field || "").slice(0, 60),
+    city: String(row.city || "").slice(0, 40),
+  };
+}
+
+/** Ligler (arşivlenmemiş), şehir ve ada göre. */
+function parseLeagues(list) {
+  return (Array.isArray(list) ? list : [])
+    .filter((l) => l && l.id && !l.is_archived)
+    .map((l) => ({ id: Number(l.id), name: String(l.league_name || "").trim().slice(0, 80), city: String(l.city || "").slice(0, 40), priority: Number(l.league_priority) || 0 }))
+    .sort((a, b) => a.city.localeCompare(b.city, "tr") || a.priority - b.priority || a.name.localeCompare(b.name, "tr"));
+}
+
+/** Ligin güncel sezonu: arşivlenmemiş, en küçük season_priority (1 = güncel), eşitse en yeni yıl. */
+function currentSeason(seasons, leagueId) {
+  const list = (Array.isArray(seasons) ? seasons : []).filter((s) => Number(s.league_id) === Number(leagueId) && !s.is_archived);
+  list.sort((a, b) => (Number(a.season_priority) || 999) - (Number(b.season_priority) || 999) || String(b.season_year || "").localeCompare(String(a.season_year || "")) || Number(b.id) - Number(a.id));
+  const s = list[0];
+  return s ? { id: Number(s.id), name: String(s.season_name || "").slice(0, 80), type: s.standings_type || null } : null;
+}
+
+/** Puan durumu satırları → sıralı tablo (puan, averaj, atılan gol). */
+function parseStandings(rows, { limit = 40 } = {}) {
+  const pts = (r) => Number(r.display_points ?? r.total_points ?? 0) || 0;
+  return (Array.isArray(rows) ? rows : [])
+    .filter((r) => r && r.team_name)
+    .sort((a, b) => pts(b) - pts(a) || (Number(b.goal_diff) || 0) - (Number(a.goal_diff) || 0) || (Number(b.goals_for) || 0) - (Number(a.goals_for) || 0) || String(a.team_name).localeCompare(String(b.team_name), "tr"))
+    .slice(0, limit)
+    .map((r, i) => ({ rank: i + 1, team: String(r.team_name).trim().slice(0, 40), teamId: Number(r.team_id) || null, played: Number(r.played) || 0, won: Number(r.wins) || 0, drawn: Number(r.draws) || 0, lost: Number(r.losses) || 0, gd: Number(r.goal_diff) || 0, points: pts(r), last5: String(r.last5 || "").slice(-5) }));
+}
+
 /* ------------------------------ getirici ------------------------------ */
 
 /**
@@ -175,7 +226,46 @@ function createFeeds({ net, publicOrigin }) {
     });
   }
 
-  return { weather, matches };
+  /** İzlenen maç (canlıyken 30 sn önbellek). */
+  async function match(id) {
+    const mid = Number(id);
+    if (!Number.isInteger(mid) || mid <= 0) return { ok: false, error: "Maç seçilmedi." };
+    return cached(`match:${mid}`, 25000, async () => {
+      const row = await getJson(`${publicOrigin}/maclar/${mid}`);
+      const m = parseMatchRow(row?.match || row);
+      if (!m) throw new Error("Maç bulunamadı.");
+      return { match: m, fetchedAt: Date.now() };
+    });
+  }
+
+  /** Ligler ve sezonlar (6 saat önbellek). */
+  async function leagues() {
+    return cached("leagues", 6 * 3600000, async () => {
+      const [ls, ss] = await Promise.all([getJson(`${publicOrigin}/ligler`), getJson(`${publicOrigin}/sezonlar`)]);
+      const list = parseLeagues(ls).map((l) => ({ ...l, season: currentSeason(ss, l.id) })).filter((l) => l.season);
+      return { leagues: list };
+    });
+  }
+
+  /** Puan durumu: sezon verilmezse ligin güncel sezonu (5 dk önbellek). */
+  async function standings({ leagueId = 0, seasonId = 0 } = {}) {
+    let sid = Number(seasonId) || 0;
+    let season = null;
+    let league = null;
+    if (leagueId) {
+      const l = await leagues();
+      const found = l.ok ? (l.leagues || []).find((x) => x.id === Number(leagueId)) : null;
+      if (found) { league = { id: found.id, name: found.name, city: found.city }; season = found.season || null; }
+      if (!sid) sid = season?.id || 0;
+    }
+    if (!sid) return { ok: false, error: "Lig seçin." };
+    return cached(`st:${sid}`, 5 * 60000, async () => {
+      const j = await getJson(`${publicOrigin}/puan-durumu?seasonId=${sid}`, 15000);
+      return { seasonId: sid, season, league, rows: parseStandings(j?.standings), fetchedAt: Date.now() };
+    });
+  }
+
+  return { weather, matches, match, leagues, standings };
 }
 
-module.exports = { createFeeds, parseOpenMeteo, parseWttr, parseMatches, matchStart, wmoKind, wwoKind, KIND_LABEL };
+module.exports = { createFeeds, parseOpenMeteo, parseWttr, parseMatches, matchStart, parseMatchRow, parseLeagues, currentSeason, parseStandings, wmoKind, wwoKind, KIND_LABEL };

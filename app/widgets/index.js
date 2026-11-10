@@ -1,6 +1,8 @@
 // Masaüstü widget'ları (ana süreç): kullanıcının masaüstüne yerleştirdiği küçük, çerçevesiz,
-// sürüklenebilir pencereler — saat, ajanda, yapılacaklar, not, müzik, pano, sayaç, sistem,
-// hava durumu, maçlar, döviz. Konumlar ve seçenekler userData/widgets.json'da; açılışta geri yüklenir.
+// sürüklenebilir pencereler — saat, ajanda (gün / hafta / ay), yapılacaklar, karalama, sabit notlar,
+// müzik, pano, sayaç, odak, sistem, hava, maçlar, canlı maç, puan durumu, döviz, mesajlar, talepler,
+// projeler, muhasebe, ekipman, bugün özeti, rehber, hızlı kayıt, Yayın Stüdyosu, başlatıcı ve araç
+// çubuğu (katalog: ./catalog.js). Konumlar ve seçenekler userData/widgets.json'da; açılışta geri yüklenir.
 //
 // Pencere davranışı:
 //   • çerçevesiz, şeffaf, köşeleri yuvarlak; Dock / görev çubuğunda görünmez (skipTaskbar)
@@ -14,7 +16,7 @@
 //
 // IPC: widgets:state · widgets:add · widgets:update · widgets:remove · widgets:visible · widgets:toggle
 //      widgets:theme · widgets:self · widgets:menu · widgets:system · widgets:weather · widgets:matches
-//      widgets:rates · widgets:open
+//      widgets:rates · widgets:open · widgets:match · widgets:leagues · widgets:standings · widgets:studio
 // Olaylar: widgets:changed (tüm pencereler) · widget:config (ilgili widget) · widget:settings
 "use strict";
 
@@ -50,7 +52,8 @@ function registerWidgets(deps) {
     visible: store.visible,
     theme: store.theme,
     items: store.items,
-    catalog: C.CATALOG.map(({ type, label, icon, hint, session, net: needsNet, interactive, sizes }) => ({ type, label, icon, hint, session: Boolean(session), net: Boolean(needsNet), interactive: Boolean(interactive), sizes })),
+    catalog: C.CATALOG.map(({ type, category, label, icon, hint, session, net: needsNet, interactive, settings, sizes }) => ({ type, category, label, icon, hint, session: Boolean(session), net: Boolean(needsNet), interactive: Boolean(interactive), settings: Boolean(settings), sizes })),
+    categories: C.CATEGORIES,
     canDesktop,
     platform,
     shortcut: deskkit?.settings().widgets?.shortcut || "",
@@ -133,7 +136,10 @@ function registerWidgets(deps) {
     if (prev.size !== it.size) {
       const s = C.sizeOf(it);
       const b = w.getBounds();
-      w.setBounds({ x: b.x, y: b.y, width: s.width, height: s.height });
+      // Büyüyen widget ekrandan taşmasın (konum kaydedilir).
+      const pos = C.fitInWorkArea({ x: b.x, y: b.y, ...s }, screen.getAllDisplays());
+      if (pos.x !== b.x || pos.y !== b.y) { it.x = pos.x; it.y = pos.y; save(); }
+      w.setBounds({ x: pos.x, y: pos.y, width: s.width, height: s.height });
     }
     if (prev.locked !== it.locked) w.setMovable(!it.locked);
     if (prev.level !== it.level) {
@@ -145,10 +151,11 @@ function registerWidgets(deps) {
 
   /* ------------------------------ işlemler ------------------------------ */
 
-  function add(type, options = {}) {
+  function add(type, options = {}, sizeKey = "small") {
     if (!C.TYPES.has(type)) return { ok: false, error: "Bilinmeyen widget türü." };
     if (store.items.length >= 24) return { ok: false, error: "En çok 24 widget eklenebilir." };
-    const draft = C.normalizeItem({ id: C.newId(), type, size: "small", options });
+    // Boyut baştan verilirse (galeri önizlemesinde seçilen) yer o boyuta göre aranır.
+    const draft = C.normalizeItem({ id: C.newId(), type, size: sizeKey === "medium" ? "medium" : "small", options });
     const size = C.sizeOf(draft);
     const primary = screen.getPrimaryDisplay();
     const existing = store.items.map((i) => ({ x: i.x, y: i.y, ...C.sizeOf(i) }));
@@ -221,7 +228,7 @@ function registerWidgets(deps) {
     if (!it) return;
     const c = C.catalogOf(it.type);
     const radio = (label, checked, click, extra = {}) => ({ label, type: "radio", checked, click, ...extra });
-    const hasSettings = ["clock", "weather", "rates", "matches"].includes(it.type);
+    const hasSettings = C.WITH_SETTINGS.has(it.type);
     const template = [
       { label: c?.label || "Widget", enabled: false },
       ...(hasSettings ? [{ label: "Ayarlar…", click: () => win.webContents.send("widget:settings", { open: true }) }] : []),
@@ -247,7 +254,7 @@ function registerWidgets(deps) {
 
   const senderWin = (event) => BrowserWindow.fromWebContents(event.sender);
   ipcMain.handle("widgets:state", () => state());
-  ipcMain.handle("widgets:add", (_e, type, options) => add(String(type || ""), options && typeof options === "object" ? options : {}));
+  ipcMain.handle("widgets:add", (_e, type, options, size) => add(String(type || ""), options && typeof options === "object" ? options : {}, size === "medium" ? "medium" : "small"));
   ipcMain.handle("widgets:update", (_e, id, patch) => update(String(id || ""), patch));
   ipcMain.handle("widgets:remove", (_e, id) => remove(String(id || "")));
   ipcMain.handle("widgets:visible", (_e, on) => setVisible(Boolean(on)));
@@ -269,6 +276,11 @@ function registerWidgets(deps) {
   ipcMain.handle("widgets:matches", (_e, opts) => feeds.matches({ city: String(opts?.city || "").slice(0, 40) }));
   ipcMain.handle("widgets:rates", (_e, force) => (deskkit ? deskkit.getRates({ force: Boolean(force) }) : { ok: false, error: "Kur servisi yok." }));
   ipcMain.handle("widgets:open", (_e, route) => { showMain(typeof route === "string" ? route.slice(0, 60) : undefined); return { ok: true }; });
+  ipcMain.handle("widgets:match", (_e, id) => feeds.match(Number(id) || 0));
+  ipcMain.handle("widgets:leagues", () => feeds.leagues());
+  ipcMain.handle("widgets:standings", (_e, opts) => feeds.standings({ leagueId: Number(opts?.leagueId) || 0, seasonId: Number(opts?.seasonId) || 0 }));
+  // Yayın Stüdyosu durumu: yayın motoru ana süreçte (app/studio/engine.js); arayüz "studio:status" olayını da dinler.
+  ipcMain.handle("widgets:studio", () => studioStatus(deps.studio?.() || null));
 
   // Müzik widget'ları: çalar durumu ana pencereden gelir (app/toolkit.js) ve buraya aktarılır.
   deskkit?.onMusicState((s) => {
@@ -296,4 +308,24 @@ function registerWidgets(deps) {
   };
 }
 
-module.exports = { registerWidgets };
+/** Yayın motorunun durumu → widget özeti (saf; widgets.test.js). */
+function studioStatus(studio) {
+  if (!studio?.engine) return { ok: true, available: false };
+  const st = studio.engine.status?.() || {};
+  const active = Boolean(studio.engine.active?.());
+  const state = active ? st.state || "starting" : "idle";
+  return {
+    ok: true, available: true, active, state,
+    onAir: active && st.recordOnly === false && ["live", "reconnecting"].includes(state),
+    recordOnly: Boolean(st.recordOnly),
+    durationMs: Number(st.outTimeMs) || 0,
+    bitrateKbps: Number.isFinite(Number(st.bitrateKbps)) && st.bitrateKbps !== null ? Number(st.bitrateKbps) : null,
+    fps: Number.isFinite(Number(st.fps)) && st.fps !== null ? Number(st.fps) : null,
+    droppedFrames: Number(st.droppedFrames) || 0,
+    rtmp: st.rtmp || null,
+    warning: st.warning || null,
+    led: Boolean(studio.led?.status?.().open),
+  };
+}
+
+module.exports = { registerWidgets, studioStatus };
