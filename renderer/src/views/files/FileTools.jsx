@@ -16,6 +16,8 @@ import ToolDialog from "./ToolDialog";
 import ImageEditor from "./ImageEditor";
 import MediaEditor from "./MediaEditor";
 import PdfPages from "./PdfPages";
+import DownloadDialog from "./DownloadDialog";
+import YtdlpSettings from "./YtdlpSettings";
 import { GROUPS, JOB_STATUS, KIND_ICONS, KIND_LABELS, formatBytes, kindsOf, toolsFor } from "../../lib/files/catalog";
 import { hasNativeQr, readQrCodes, runClientOp } from "../../lib/files/runClient";
 import { outputFormat } from "../../lib/files/imageOps";
@@ -390,7 +392,7 @@ export default function FileTools({ arg }) {
       {editor?.kind === "media" && <div className="ie-backdrop"><MediaEditor file={editor.file} mode={editor.mode} onClose={() => setEditor(null)} onRun={(spec) => runMain(spec, [editor.file])} /></div>}
       {editor?.kind === "pdf" && <div className="ie-backdrop"><PdfPages file={editor.file} onClose={() => setEditor(null)} onRun={(spec) => runMain(spec, [editor.file])} /></div>}
       {qr && <QrResults results={qr} onClose={() => setQr(null)} />}
-      {download && <DownloadDialog caps={caps} initialUrl={typeof download === "string" ? download : ""} onClose={() => setDownload(false)} onStart={(spec) => runMain(spec, [])} />}
+      {download && <DownloadDialog initialUrl={typeof download === "string" ? download : ""} onClose={() => setDownload(false)} onStart={(spec) => runMain(spec, [])} />}
     </div>
   );
 }
@@ -513,10 +515,10 @@ function Settings({ caps }) {
             {row(caps.gs, "PDF sıkıştırma (Ghostscript)", caps.gs ? "Görseller küçültülerek sıkıştırılır." : "Ghostscript yok: yalnız PDF yapısı yeniden yazılır. Mac: brew install ghostscript")}
             {row(caps.qrNative || caps.jsqr, "QR okuma", caps.qrNative ? "Sistemin barkod algılayıcısıyla." : caps.jsqr ? "Yerleşik QR çözücüyle." : "Bu özellik için uygulama güncellemesi gerekiyor.")}
             {row(caps.zip && caps.unzip, "ZIP", mac ? "macOS ditto ile." : caps.platform === "win32" ? "Windows PowerShell ile." : "zip / unzip ile.")}
-            {row(caps.ytdlp, "Web'den medya indirme", caps.ytdlp ? "yt-dlp bulundu." : "yt-dlp yüklü değil (isteğe bağlı). Mac: brew install yt-dlp · Windows: winget install yt-dlp")}
           </ul>
         )}
       </div>
+      <YtdlpSettings />
       <div className="card card--flat ft-privacy">
         <FIcon name="shield" size={18} />
         <p><strong>Gizlilik.</strong> Dönüştürme ve düzenleme bu bilgisayarda yapılır; dosyalarınız Elitlig sunucusuna ya da başka bir hizmete gönderilmez. Yalnız "Bağlantıdan indir" seçtiğiniz siteye bağlanır.</p>
@@ -545,28 +547,6 @@ function QrResults({ results, onClose }) {
           </li>
         ))}
       </ul>
-    </Modal>
-  );
-}
-
-/* --------------------------- bağlantıdan indir --------------------------- */
-
-function DownloadDialog({ caps, initialUrl, onClose, onStart }) {
-  const [url, setUrl] = useState(initialUrl || "");
-  const [audioOnly, setAudioOnly] = useState(false);
-  const ready = caps?.ytdlp;
-  const start = async () => {
-    const res = await onStart({ op: "webDownload", options: { url, audioOnly } });
-    if (res?.ok) onClose();
-  };
-  return (
-    <Modal title="Bağlantıdan medya indir" onClose={onClose} width={500}
-      footer={<><button type="button" className="btn" onClick={onClose}>Vazgeç</button><button type="button" className="btn btn--primary" onClick={start} disabled={!ready || !/^https?:\/\/\S+$/i.test(url.trim())}>İndir</button></>}>
-      <div className="ft-form">
-        {!ready && <div className="error-note"><span>Bu özellik bilgisayarda <strong>yt-dlp</strong> yüklüyse çalışır. Mac: <code>brew install yt-dlp</code> · Windows: <code>winget install yt-dlp</code>. Kurduktan sonra uygulamayı yeniden açın.</span></div>}
-        <Field label="Bağlantı" hint="Yalnız herkese açık, indirme hakkınız olan içerikler için kullanın."><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" autoFocus disabled={!ready} /></Field>
-        <label className="ft-check"><input type="checkbox" checked={audioOnly} onChange={(e) => setAudioOnly(e.target.checked)} disabled={!ready} /> Yalnız ses (MP3)</label>
-      </div>
     </Modal>
   );
 }

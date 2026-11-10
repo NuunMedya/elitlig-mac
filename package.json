@@ -12,10 +12,12 @@
     "build": "vite build --config renderer/vite.config.mjs",
     "start": "npm run build && electron .",
     "test": "vitest run --config renderer/vite.config.mjs && node --test --test-timeout=240000 app/test/*.test.js",
-    "dist": "npm run build && npm run ffmpeg && electron-builder --mac dmg zip --universal --publish never",
+    "dist": "npm run build && npm run ffmpeg && npm run ytdlp && electron-builder --mac dmg zip --universal --publish never",
     "ffmpeg": "node build/fetch-ffmpeg.js",
-    "dist:win": "npm run build && npm run ffmpeg:win && electron-builder --win nsis zip --x64 --publish never",
-    "ffmpeg:win": "node build/fetch-ffmpeg.js --platform win32"
+    "dist:win": "npm run build && npm run ffmpeg:win && npm run ytdlp:win && electron-builder --win nsis zip --x64 --publish never",
+    "ffmpeg:win": "node build/fetch-ffmpeg.js --platform win32",
+    "ytdlp": "node build/fetch-ytdlp.js --platform darwin",
+    "ytdlp:win": "node build/fetch-ytdlp.js --platform win32"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "4.3.4",
@@ -59,8 +61,18 @@
             "ffmpeg",
             "LICENSE.txt"
           ]
+        },
+        {
+          "from": "build/yt-dlp/mac",
+          "to": "yt-dlp",
+          "filter": [
+            "yt-dlp",
+            "LICENSE.txt",
+            "VERSION.txt"
+          ]
         }
       ],
+      "x64ArchFiles": "Contents/Resources/yt-dlp/yt-dlp",
       "extendInfo": {
         "NSCameraUsageDescription": "Yayın Stüdyosu'nda kamera görüntüsünü canlı yayına almak için kamera kullanılır.",
         "NSMicrophoneUsageDescription": "Elitlig ekip sohbetindeki sesli aramalar ve Yayın Stüdyosu'ndaki canlı yayın sesi için mikrofon kullanılır.",
@@ -115,6 +127,15 @@
           "filter": [
             "ffmpeg.exe",
             "LICENSE.txt"
+          ]
+        },
+        {
+          "from": "build/yt-dlp/win-x64",
+          "to": "yt-dlp",
+          "filter": [
+            "yt-dlp.exe",
+            "LICENSE.txt",
+            "VERSION.txt"
           ]
         },
         {

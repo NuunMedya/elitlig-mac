@@ -9,7 +9,8 @@
 //   - HEIC / TIFF / BMP / GIF: Mac'te sips, diğerlerinde ffmpeg.
 //   - PDF: pdf-lib (isteğe bağlı bağımlılık), görsel / HTML / metin → PDF: printToPDF.
 //   - ZIP: Mac ditto, Windows PowerShell.  Altyazı / metin kodlaması: saf JS (text.js).
-//   - Web'den medya: yalnız yt-dlp sistemde yüklüyse.
+//   - Web'den medya (YouTube, Instagram, X, TikTok, Facebook…): yt-dlp — uygulamayla
+//     gelir (build/fetch-ytdlp.js), uygulama içinden güncellenir (ytdlp.js).
 // Çıktılar ayarlardaki klasöre (varsayılan İndirilenler/Elitlig Dosyalar) ya da
 // kaynağın yanına yazılır; orijinal dosyalar asla değişmez.
 //
@@ -30,6 +31,8 @@ const { buildMediaArgs, buildJoinArgs, buildImageConvertArgs, parseEncoders } = 
 const native = require("./native");
 const text = require("./text");
 const { sanitizeName, stemOf } = require("./paths");
+const { createYtdlp } = require("./ytdlp");
+const { buildYtdlpArgs, parseYtdlpProgress, ytdlpError, siteOf, isHttpUrl } = require("./ytdlpArgs");
 
 const MEDIA_OPS = new Set(["convert", "trim", "compress", "speed", "mute", "extractAudio", "normalize", "resize", "cropAspect", "rotate", "gif", "snapshot", "split"]);
 const SUFFIX = {
@@ -78,7 +81,7 @@ function registerFileTools(deps) {
 
   const settingsFile = path.join(baseDir, "settings.json");
   const defaultOutDir = () => path.join(app.getPath("downloads"), "Elitlig Dosyalar");
-  let settings = { outDir: null, nextToSource: false, revealWhenDone: false };
+  let settings = { outDir: null, nextToSource: false, revealWhenDone: false, ytdlpPath: null };
   try { settings = { ...settings, ...JSON.parse(fs.readFileSync(settingsFile, "utf8")) }; } catch { /* varsayılan */ }
   const saveSettings = () => { try { fs.writeFileSync(settingsFile, JSON.stringify(settings)); } catch { /* yoksay */ } };
   const outDirFor = (inputPath) => (settings.nextToSource && inputPath ? path.dirname(inputPath) : settings.outDir && path.isAbsolute(settings.outDir) ? settings.outDir : defaultOutDir());
@@ -101,10 +104,11 @@ function registerFileTools(deps) {
     if (!info.path) throw new Error("ffmpeg bulunamadı. Ses ve video işlemleri için uygulamanın tam sürümü gerekir.");
     return info;
   };
+  const ytdlp = createYtdlp({ app, net: deps.net || require("electron").net, appRoot, getUserPath: () => settings.ytdlpPath, log });
   const tools = () => ({
     sips: IS_MAC ? native.findTool("sips", { platform }) : null,
     gs: native.findTool("gs", { platform }),
-    ytdlp: native.findTool("yt-dlp", { platform }),
+    ytdlp: ytdlp.resolve()?.path || null,
     zip: platform === "win32" ? native.powershellPath() : IS_MAC ? "/usr/bin/ditto" : native.findTool("zip", { platform }),
     unzip: platform === "win32" ? native.powershellPath() : IS_MAC ? "/usr/bin/ditto" : native.findTool("unzip", { platform }),
   });
@@ -115,7 +119,7 @@ function registerFileTools(deps) {
     return {
       ok: true, platform,
       ffmpeg: Boolean(info.path), ffmpegSource: info.source || null,
-      sips: Boolean(t.sips), gs: Boolean(t.gs), ytdlp: Boolean(t.ytdlp), zip: Boolean(t.zip), unzip: Boolean(t.unzip),
+      sips: Boolean(t.sips), gs: Boolean(t.gs), ytdlp: Boolean(t.ytdlp), ytdlpSource: ytdlp.resolve()?.source || null, zip: Boolean(t.zip), unzip: Boolean(t.unzip),
       pdfLib: Boolean(native.loadOptional("pdf-lib")?.PDFDocument), jsqr: typeof native.loadOptional("jsqr") === "function",
       heic: Boolean(t.sips) || Boolean(info.path),
     };
@@ -505,31 +509,41 @@ function registerFileTools(deps) {
         });
       }
       case "webDownload": {
-        const t = tools();
-        if (!t.ytdlp) throw new Error("yt-dlp yüklü değil. Mac'te: brew install yt-dlp · Windows'ta: winget install yt-dlp");
+        const tool = ytdlp.resolve();
+        if (!tool) throw Object.assign(new Error("yt-dlp bulunamadı. Dosya Araçları → Ayarlar'dan “yt-dlp'yi indir” ile kurun."), { code: "NO_YTDLP" });
         const url = String(o.url || "").trim();
-        if (!/^https?:\/\/[^\s]+$/i.test(url)) throw new Error("Geçerli bir http(s) bağlantısı girin.");
+        if (!isHttpUrl(url)) throw new Error("Geçerli bir http(s) bağlantısı girin.");
+        const site = siteOf(url);
         const info = await getFfmpeg();
+        const mode = ["video", "audio", "images"].includes(o.mode) ? o.mode : o.audioOnly ? "audio" : "video";
+        const opts = { url, mode, quality: o.quality || "best", audioFormat: o.audioFormat === "m4a" ? "m4a" : "mp3", playlist: Boolean(o.playlist), withImages: Boolean(o.withImages), cookiesBrowser: o.cookiesBrowser || null };
+        buildYtdlpArgs({ ...opts, workDir: "/" }); // seçenekleri kuyruğa koymadan doğrula
+        const labelMode = mode === "audio" ? ` · ${opts.audioFormat.toUpperCase()}` : mode === "images" ? " · görseller" : opts.quality !== "best" ? ` · ${opts.quality}p` : "";
         return jobs.enqueue({
-          op, label, kind: o.audioOnly ? "audio" : "video", inputs: [], outDir: outDirFor(null), options: { url, audioOnly: Boolean(o.audioOnly) },
+          op, label: `İndir · ${site.label || "Web"}${labelMode}`, kind: mode === "audio" ? "audio" : mode === "images" ? "image" : "video", inputs: [], outDir: outDirFor(null), options: { ...opts, site: site.key },
           run: async (ctx) => {
-            const args = [
-              "--newline", "--no-playlist", "--no-mtime", "--restrict-filenames", "--no-part",
-              "-o", path.join(ctx.workDir, "%(title).120B.%(ext)s"),
-              ...(info.path ? ["--ffmpeg-location", info.path] : []),
-              ...(o.audioOnly ? ["-f", "bestaudio/best", "-x", "--audio-format", "mp3"] : ["-f", "bv*+ba/b", "--merge-output-format", "mp4"]),
-              "--", url,
-            ];
-            await ctx.spawn(t.ytdlp, args, {
-              onStdout: (s) => {
-                const m = [...String(s).matchAll(/\[download\]\s+([\d.]+)%/g)].pop();
-                if (m) ctx.setProgress(Number(m[1]) / 100);
-              },
-            });
-            for (const n of fs.readdirSync(ctx.workDir)) {
-              const full = path.join(ctx.workDir, n);
-              if (fs.statSync(full).isFile() && !/\.(part|ytdl|temp)$/i.test(n)) ctx.output(full, { name: path.basename(n, path.extname(n)), ext: extOf(n) });
+            const args = buildYtdlpArgs({ ...opts, workDir: ctx.workDir, ffmpegPath: info.path || null, jsRuntime: ytdlp.jsRuntime() });
+            let state;
+            ctx.setProgress(0, { indeterminate: true });
+            try {
+              await ctx.spawn(tool.path, args, {
+                env: ytdlp.runEnv(),
+                group: true,
+                onStdout: (s) => {
+                  const r = parseYtdlpProgress(s, state);
+                  state = r.state;
+                  if (r.note) ctx.setNote(r.note);
+                  if (/\[download\]\s+[\d.]+%/.test(s)) ctx.setProgress(r.fraction);
+                },
+              });
+            } catch (e) {
+              if (e?.canceled) throw e;
+              throw new Error(ytdlpError(e?.stderr || e?.message, { site: site.key, cookies: Boolean(opts.cookiesBrowser) }));
             }
+            const made = fs.readdirSync(ctx.workDir).filter((n) => !/\.(part|ytdl|temp|tmp)$|^\./i.test(n) && fs.statSync(path.join(ctx.workDir, n)).isFile()).sort((a, b) => a.localeCompare(b, "tr", { numeric: true }));
+            if (!made.length) throw new Error(mode === "images" ? "Bu bağlantıda indirilebilir görsel bulunamadı." : "İndirilecek dosya bulunamadı.");
+            for (const n of made) ctx.output(path.join(ctx.workDir, n), { name: path.basename(n, path.extname(n)), ext: extOf(n) });
+            ctx.setNote(null);
           },
         });
       }
@@ -601,6 +615,29 @@ function registerFileTools(deps) {
     return { ok: true, encoding, preview: text.decodeText(buf, encoding).slice(0, 1200), encodings: text.ENCODINGS };
   });
   handle("ft:run", async (_e, spec) => ({ ok: true, job: await runOp(spec || {}) }));
+  // yt-dlp: durum, indir / güncelle, başka bir ikili seç, varsayılana dön.
+  handle("ft:ytdlp:status", async () => ({ ok: true, ...(await ytdlp.status()) }));
+  handle("ft:ytdlp:update", async () => {
+    const res = await ytdlp.update({ onProgress: (p) => broadcast("ft:ytdlp:progress", p) });
+    broadcast("ft:ytdlp:progress", { phase: "done", fraction: 1 });
+    return { ...res, status: await ytdlp.status() };
+  });
+  handle("ft:ytdlp:choose", async (event) => {
+    const parent = BrowserWindow.fromWebContents(event.sender) || undefined;
+    const res = await dialog.showOpenDialog(parent, { title: "yt-dlp seç", buttonLabel: "Kullan", properties: ["openFile"] });
+    if (res.canceled || !res.filePaths[0]) return { ok: false, canceled: true };
+    const v = await ytdlp.versionOf(res.filePaths[0]);
+    if (!v) throw new Error("Seçilen dosya çalışan bir yt-dlp değil.");
+    settings.ytdlpPath = res.filePaths[0];
+    saveSettings();
+    return { ok: true, status: await ytdlp.status() };
+  });
+  handle("ft:ytdlp:reset", async () => { settings.ytdlpPath = null; saveSettings(); return { ok: true, status: await ytdlp.status() }; });
+  // Panodaki bağlantı (indirme penceresi öneri olarak gösterir; pano değişmez).
+  handle("ft:clipboardLink", async () => {
+    const t = (await clipIo.readText()).trim();
+    return { ok: true, url: isHttpUrl(t) && !/\s/.test(t) ? t : null, site: isHttpUrl(t) ? siteOf(t) : null };
+  });
   handle("ft:cancel", (_e, id) => ({ ok: jobs.cancel(id) }));
   handle("ft:jobs", () => ({ ok: true, items: jobs.list() }));
   handle("ft:removeJob", (_e, id) => ({ ok: jobs.remove(id) }));

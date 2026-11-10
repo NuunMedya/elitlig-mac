@@ -265,6 +265,15 @@ contextBridge.exposeInMainWorld("elitlig", {
     chooseOutDir: () => ipcRenderer.invoke("ft:chooseOutDir"),
     // dragstart içinde çağrılır (e.preventDefault() ile): dosyalar başka uygulamaya taşınır.
     startDrag: (paths) => ipcRenderer.send("ft:drag", Array.isArray(paths) ? paths.map(String) : []),
+    // yt-dlp (Bağlantıdan indir): durum, indir / güncelle, başka ikili seç, varsayılan.
+    ytdlp: {
+      status: () => ipcRenderer.invoke("ft:ytdlp:status"),
+      update: () => ipcRenderer.invoke("ft:ytdlp:update"),
+      choose: () => ipcRenderer.invoke("ft:ytdlp:choose"),
+      reset: () => ipcRenderer.invoke("ft:ytdlp:reset"),
+      onProgress: on("ft:ytdlp:progress"),
+    },
+    clipboardLink: () => ipcRenderer.invoke("ft:clipboardLink"),
     onJob: on("ft:job"),
     onLibrary: on("ft:library"),
     onSelect: on("ft:select"),
