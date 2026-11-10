@@ -4,10 +4,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Field, Icon, Modal, Segmented, useResult } from "../../components/ui";
 import { get, patch, post, tempId, useDebounced, useResource } from "../../api";
 import {
-  CONDITIONS, IMPORT_TEMPLATE, MAINTENANCE_KINDS, MANUAL_STATUSES, STATUS_META, UNITS, amountInput, code39Text, dayIso, holderPayload, localInput, money, num, parseAmount, previewValue, rowsToObjects,
+  CONDITIONS, IMPORT_TEMPLATE, MAINTENANCE_KINDS, MANUAL_STATUSES, STATUS_META, UNITS, amountInput, code39Text, dayIso, holderPayload, localInput, money, num, parseAmount, previewValue, rowsToObjects, matchReservationDefaults,
 } from "../../lib/equipmentUtils";
 import { pickSheetRows, saveRowsXlsx } from "../projects/common";
 import { BASE, Thumb, printLabels } from "./common";
+import { LinkFields, LocationSelect, PersonPicker, ResponsibleSelect, SupplierField } from "./links";
 
 const setter = (set, key) => (e) => set((p) => ({ ...p, [key]: e?.target ? (e.target.type === "checkbox" ? e.target.checked : e.target.value) : e }));
 const Foot = ({ onClose, busy, label = "Kaydet", danger = false, disabled = false, form = "eq-form" }) => (
@@ -18,44 +19,9 @@ const Foot = ({ onClose, busy, label = "Kaydet", danger = false, disabled = fals
 );
 const ErrorLine = ({ text }) => (text ? <div className="error-note span3"><span>{text}</span></div> : null);
 
-/* --------------------------------- kişi seçici --------------------------------- */
-
-export function PersonPicker({ value, onChange, freeName, onFreeName, phone, onPhone, label = "Teslim alan" }) {
-  const [q, setQ] = useState("");
-  const query = useDebounced(q, 200);
-  const res = useResource(`${BASE}/people`, { q: query });
-  const items = res.data?.items || [];
-  if (value) {
-    return (
-      <div className="field span3">
-        <span className="field__label">{label}</span>
-        <div className="eq-picked"><Icon name={value.type === "staff" ? "shield" : "user"} /><strong>{value.name} <span className="muted small">· {value.subtitle}</span></strong><button type="button" className="btn btn--sm" onClick={() => onChange(null)}>Değiştir</button></div>
-        <input value={phone} onChange={(e) => onPhone(e.target.value)} placeholder={value.phone || "Telefon (isteğe bağlı)"} aria-label="Telefon" style={{ marginTop: 6 }} />
-      </div>
-    );
-  }
-  return (
-    <div className="field span3">
-      <span className="field__label">{label} · yönetim ekibi, personel ya da serbest ad</span>
-      <input value={q} onChange={(e) => { setQ(e.target.value); onFreeName(e.target.value); }} placeholder="Ad yazın ya da listeden seçin" aria-label={`${label} ara`} autoFocus />
-      <ul className="eq-people" aria-label="Kişiler">
-        {items.slice(0, 40).map((p) => <li key={p.key}><button type="button" onClick={() => onChange(p)}><Icon name={p.type === "staff" ? "shield" : "user"} size={14} /><span><b>{p.name}</b><small>{p.subtitle}</small></span></button></li>)}
-        {!items.length && <li className="muted small" style={{ padding: 8 }}>{res.loading ? "Yükleniyor…" : q ? `Listede yok; "${q}" adıyla serbest kayıt açılır.` : "Kayıtlı kişi yok."}</li>}
-      </ul>
-      {freeName.trim() && <input value={phone} onChange={(e) => onPhone(e.target.value)} placeholder="Telefon (isteğe bağlı)" aria-label="Telefon" style={{ marginTop: 6 }} />}
-    </div>
-  );
-}
-
-function LinkFields({ form, setForm }) {
-  const links = useResource(`${BASE}/links`);
-  return (
-    <>
-      <Field label="Proje (isteğe bağlı)"><select value={form.project_id || ""} onChange={setter(setForm, "project_id")}><option value="">Proje yok</option>{(links.data?.projects || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
-      <Field label="Maç (isteğe bağlı)"><select value={form.match_id || ""} onChange={setter(setForm, "match_id")}><option value="">Maç yok</option>{(links.data?.matches || []).map((m) => <option key={m.id} value={m.id}>{m.date} {m.time} · {m.label}</option>)}</select></Field>
-    </>
-  );
-}
+/* --------------------------- kişi seçici ve bağlar --------------------------- */
+// Gruplu kişi seçici, maç seçici, konum / tedarikçi / sorumlu seçiciler: ./links.jsx
+export { PersonPicker };
 
 const Conflicts = ({ list }) => (list?.length ? (
   <div className="eq-conflicts span3" role="alert"><b>Çakışma var</b><ul>{list.map((c, i) => <li key={`${c.item_id}-${c.id}-${i}`}>{c.item_name ? `${c.item_name}: ` : ""}{c.label}{c.start_at ? ` (${new Date(c.start_at).toLocaleString("tr-TR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })})` : ""}</li>)}</ul></div>
@@ -63,7 +29,7 @@ const Conflicts = ({ list }) => (list?.length ? (
 
 /* --------------------------------- kart formu --------------------------------- */
 
-const BLANK = { name: "", category_id: "", asset_tag: "", brand: "", model: "", serial_no: "", barcode: "", tracking: "unit", quantity: "1", unit: "adet", min_quantity: "", status: "in_stock", condition: "good", location_id: "", parent_id: "", photo_url: "", purchase_date: "", purchase_price: "", currency: "TRY", supplier: "", invoice_no: "", warranty_until: "", life_years: "", salvage_value: "", insurance_policy: "", insurance_company: "", insurance_until: "", maintenance_days: "", last_maintenance_at: "", next_maintenance_at: "", tags: "", notes: "", links: [] };
+const BLANK = { responsible_user_id: "", supplier_ref: "", name: "", category_id: "", asset_tag: "", brand: "", model: "", serial_no: "", barcode: "", tracking: "unit", quantity: "1", unit: "adet", min_quantity: "", status: "in_stock", condition: "good", location_id: "", parent_id: "", photo_url: "", purchase_date: "", purchase_price: "", currency: "TRY", supplier: "", invoice_no: "", warranty_until: "", life_years: "", salvage_value: "", insurance_policy: "", insurance_company: "", insurance_until: "", maintenance_days: "", last_maintenance_at: "", next_maintenance_at: "", tags: "", notes: "", links: [] };
 
 export function ItemForm({ item, meta, onClose, onSaved }) {
   const editing = Boolean(item?.id);
@@ -71,6 +37,7 @@ export function ItemForm({ item, meta, onClose, onSaved }) {
   const [form, setForm] = useState(() => (item ? {
     ...BLANK, ...Object.fromEntries(Object.entries(item).filter(([k]) => k in BLANK).map(([k, v]) => [k, v == null ? "" : v])),
     quantity: String(item.quantity ?? 1), purchase_price: amountInput(item.purchase_price), salvage_value: amountInput(item.salvage_value), tags: (item.tags || []).join(", "), links: item.links || [],
+    responsible_user_id: item.responsible_user_id || "", supplier_ref: item.supplier_ref || "",
   } : { ...BLANK }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -87,7 +54,7 @@ export function ItemForm({ item, meta, onClose, onSaved }) {
   const submit = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) { setError("Ekipmana bir ad verin."); return; }
-    const body = { ...form, category_id: form.category_id || null, location_id: form.location_id || null, parent_id: form.parent_id || null, quantity: form.tracking === "bulk" ? form.quantity : 1, links: (form.links || []).filter((l) => l.url) };
+    const body = { ...form, category_id: form.category_id || null, location_id: form.location_id || null, parent_id: form.parent_id || null, responsible_user_id: form.responsible_user_id || null, supplier_ref: form.supplier_ref || null, quantity: form.tracking === "bulk" ? form.quantity : 1, links: (form.links || []).filter((l) => l.url) };
     if (editing) { delete body.status; if (MANUAL_STATUSES.includes(form.status) && form.status !== item.status) body.status = form.status; }
     setBusy(true);
     setError("");
@@ -115,7 +82,7 @@ export function ItemForm({ item, meta, onClose, onSaved }) {
           <Field label="Miktar ve birim"><div style={{ display: "flex", gap: 6 }}><input value={form.quantity} onChange={setter(setForm, "quantity")} inputMode="decimal" aria-label="Miktar" /><select value={form.unit} onChange={setter(setForm, "unit")} aria-label="Birim">{UNITS.map((u) => <option key={u}>{u}</option>)}</select></div></Field>
         ) : <Field label="Bağlı olduğu ana ekipman"><select value={form.parent_id} onChange={setter(setForm, "parent_id")}><option value="">Bağımsız</option>{parentOptions.map((p) => <option key={p.id} value={p.id}>{p.asset_tag} · {p.name}</option>)}</select></Field>}
         {form.tracking === "bulk" && <Field label="Minimum stok" hint="Altına düşünce uyarı"><input value={form.min_quantity} onChange={setter(setForm, "min_quantity")} inputMode="decimal" /></Field>}
-        <Field label="Konum"><select value={form.location_id} onChange={setter(setForm, "location_id")}><option value="">Konum yok</option>{opt((meta?.locations || []).filter((l) => l.active))}</select></Field>
+        <LocationSelect value={form.location_id} onChange={(v) => setForm((p) => ({ ...p, location_id: v }))} />
         <Field label="Durum"><select value={form.status} onChange={setter(setForm, "status")} disabled={locked}>{locked && <option value={item.status}>{STATUS_META[item.status].label} (iade ile değişir)</option>}{MANUAL_STATUSES.map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}</select></Field>
         <Field label="Kondisyon"><select value={form.condition} onChange={setter(setForm, "condition")}>{Object.entries(CONDITIONS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
         <Field label="Fotoğraf bağlantısı" className="span2" hint="Fotoğraf yüklemek için web panelini kullanabilirsiniz"><input value={form.photo_url} onChange={setter(setForm, "photo_url")} placeholder="https://…" /></Field>
@@ -123,7 +90,7 @@ export function ItemForm({ item, meta, onClose, onSaved }) {
         <span className="eq-form-title">Satın alma ve değer</span>
         <Field label="Alış tarihi"><input type="date" value={form.purchase_date} onChange={setter(setForm, "purchase_date")} /></Field>
         <Field label={form.tracking === "bulk" ? "Birim alış fiyatı" : "Alış fiyatı"}><div style={{ display: "flex", gap: 6 }}><input value={form.purchase_price} onChange={setter(setForm, "purchase_price")} inputMode="decimal" placeholder="0,00" aria-label="Alış fiyatı" /><select value={form.currency} onChange={setter(setForm, "currency")} style={{ width: 80 }} aria-label="Para birimi">{["TRY", "USD", "EUR", "GBP"].map((c) => <option key={c}>{c}</option>)}</select></div></Field>
-        <Field label="Tedarikçi"><input value={form.supplier} onChange={setter(setForm, "supplier")} /></Field>
+        <SupplierField name={form.supplier} refValue={form.supplier_ref} onChange={(v) => setForm((p) => ({ ...p, ...v }))} />
         <Field label="Fatura no"><input value={form.invoice_no} onChange={setter(setForm, "invoice_no")} /></Field>
         <Field label="Garanti bitişi"><input type="date" value={form.warranty_until} onChange={setter(setForm, "warranty_until")} /></Field>
         <Field label="Amortisman ömrü (yıl)" hint={life ? `Boşsa kategoriden ${life} yıl` : "Boşsa amortisman yok"}><input value={form.life_years} onChange={setter(setForm, "life_years")} inputMode="decimal" /></Field>
@@ -134,6 +101,7 @@ export function ItemForm({ item, meta, onClose, onSaved }) {
         <Field label="Sigorta poliçesi"><input value={form.insurance_policy} onChange={setter(setForm, "insurance_policy")} /></Field>
         <Field label="Sigorta şirketi"><input value={form.insurance_company} onChange={setter(setForm, "insurance_company")} /></Field>
         <Field label="Sigorta bitişi"><input type="date" value={form.insurance_until} onChange={setter(setForm, "insurance_until")} /></Field>
+        <ResponsibleSelect value={form.responsible_user_id} onChange={(v) => setForm((p) => ({ ...p, responsible_user_id: v }))} />
         <Field label="Bakım aralığı (gün)"><input value={form.maintenance_days} onChange={setter(setForm, "maintenance_days")} inputMode="numeric" placeholder="ör. 90" /></Field>
         <Field label="Son bakım"><input type="date" value={form.last_maintenance_at} onChange={setter(setForm, "last_maintenance_at")} /></Field>
         <Field label="Sonraki bakım" hint="Boşsa son bakım + aralık"><input type="date" value={form.next_maintenance_at} onChange={setter(setForm, "next_maintenance_at")} /></Field>
@@ -266,6 +234,13 @@ export function ReserveDialog({ items, reservation = null, onClose, onDone }) {
   const [conflicts, setConflicts] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [person, setPerson] = useState(() => (reservation?.holder_user_id ? { type: "user", id: reservation.holder_user_id, name: reservation.holder_name, subtitle: "Yönetim ekibi" } : reservation?.holder_staff_id ? { type: "staff", id: reservation.holder_staff_id, name: reservation.holder_name, subtitle: "Personel" } : null));
+  const [phone, setPhone] = useState("");
+  // Maç seçilince ad ve saat maçtan önerilir.
+  const onMatch = (m) => {
+    const d = matchReservationDefaults(m, form.title);
+    if (d) setForm((p) => ({ ...p, title: p.title || d.title, start_at: localInput(d.start), end_at: localInput(d.end) }));
+  };
   const range = useDebounced(`${form.start_at}|${form.end_at}`, 300);
   useEffect(() => {
     const [s, en] = range.split("|");
@@ -279,7 +254,8 @@ export function ReserveDialog({ items, reservation = null, onClose, onDone }) {
     if (new Date(form.end_at) <= new Date(form.start_at)) { setError("Bitiş başlangıçtan sonra olmalıdır."); return; }
     setBusy(true);
     setError("");
-    const body = { ...form, start_at: new Date(form.start_at).toISOString(), end_at: new Date(form.end_at).toISOString(), project_id: form.project_id || null, match_id: form.match_id || null, allow_conflict: Boolean(conflicts?.length) };
+    const holder = person ? { holder_name: person.name, holder_user_id: person.type === "user" ? person.id : null, holder_staff_id: person.type === "staff" ? person.id : null } : { holder_name: form.holder_name, holder_user_id: null, holder_staff_id: null };
+    const body = { ...form, ...holder, start_at: new Date(form.start_at).toISOString(), end_at: new Date(form.end_at).toISOString(), project_id: form.project_id || null, match_id: form.match_id || null, allow_conflict: Boolean(conflicts?.length) };
     const res = editing
       ? await patch(`${BASE}/reservations/${reservation.id}`, { ...body, quantity: items[0]?.tracking === "bulk" ? parseAmount(qty[items[0].id]) : undefined })
       : await post(`${BASE}/reservations`, { ...body, item_ids: items.map((i) => i.id), quantities: Object.fromEntries(Object.entries(qty).map(([k, v]) => [k, parseAmount(v)])) }, { queue: false });
@@ -298,8 +274,8 @@ export function ReserveDialog({ items, reservation = null, onClose, onDone }) {
         <Field label="Etkinlik / amaç" className="span3"><input value={form.title} onChange={setter(setForm, "title")} placeholder="ör. Süper Lig finali yayını" autoFocus /></Field>
         <Field label="Başlangıç"><input type="datetime-local" value={form.start_at} onChange={setter(setForm, "start_at")} /></Field>
         <Field label="Bitiş"><input type="datetime-local" value={form.end_at} onChange={setter(setForm, "end_at")} /></Field>
-        <Field label="Sorumlu"><input value={form.holder_name} onChange={setter(setForm, "holder_name")} /></Field>
-        <LinkFields form={form} setForm={setForm} />
+        <LinkFields form={form} setForm={setForm} onMatch={onMatch} />
+        <PersonPicker label="Teslim alacak" value={person} onChange={setPerson} freeName={form.holder_name} onFreeName={(v) => setForm((p) => ({ ...p, holder_name: v }))} phone={phone} onPhone={setPhone} />
         <Field label="Not"><input value={form.note} onChange={setter(setForm, "note")} /></Field>
         {conflicts?.length ? <Conflicts list={conflicts} /> : live.length ? <Conflicts list={live} /> : check ? <div className="eq-ok span3">Seçilen aralıkta çakışma yok.</div> : null}
       </form>

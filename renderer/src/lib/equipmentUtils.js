@@ -103,6 +103,7 @@ export const amountInput = (v) => (v == null || v === "" ? "" : String(v).replac
 export const holderPayload = (person, freeName = "", phone = "") => {
   if (person?.type === "user") return { holder_type: "user", holder_user_id: person.id, holder_phone: phone || undefined };
   if (person?.type === "staff") return { holder_type: "staff", holder_staff_id: person.id, holder_phone: phone || undefined };
+  if (person?.type === "contact") return { holder_type: "contact", holder_contact_id: person.id, holder_phone: phone || undefined };
   return { holder_type: "other", holder_name: freeName.trim(), holder_phone: phone || undefined };
 };
 
@@ -308,3 +309,26 @@ export function todaySummary(dash, mine = []) {
 
 /** Türkçe harf ve aksan duyarsız içerir mi? */
 export const includesFold = (haystack, needle) => foldTr(haystack).includes(foldTr(needle).trim());
+
+/** Kişi avatarı için addan türeyen sabit renk. */
+const PERSON_TONES = ["#2563eb", "#7c3aed", "#0891b2", "#059669", "#d97706", "#db2777", "#475569", "#b45309"];
+export const personTone = (name = "") => PERSON_TONES[[...String(name)].reduce((s, ch) => (s * 31 + ch.charCodeAt(0)) % 9973, 7) % PERSON_TONES.length];
+
+/** Rezervasyonda maç seçilince önerilen ad ve saat aralığı (maçtan 3 saat önce / sonra). */
+export function matchReservationDefaults(match, title = "") {
+  if (!match?.date) return null;
+  const start = new Date(`${match.date}T${match.time || "20:00"}:00`);
+  if (Number.isNaN(start.getTime())) return null;
+  return { title: title || `${match.label} maçı`, start: new Date(start.getTime() - 3 * 3600000), end: new Date(start.getTime() + 3 * 3600000) };
+}
+
+/** Amortisman raporu → tablo satırları (Excel / CSV dışa aktarımı için). */
+export function depreciationRows(report) {
+  const rows = (report?.rows || []).map((r) => ({
+    Etiket: r.asset_tag, Ekipman: r.name, Kategori: r.category, Konum: r.location, "Alış tarihi": r.purchase_date || "", "Ömür (yıl)": r.life_years ?? "",
+    "Alış değeri": r.purchase_value, [`${report.year} amortismanı`]: r.year_depreciation, "Birikmiş amortisman": r.accumulated, "Defter değeri": r.book_value, "Gider işlendi": r.expensed ? "Evet" : "Hayır",
+  }));
+  const t = report?.totals || {};
+  if (rows.length) rows.push({ Etiket: "Toplam", Ekipman: `${t.count || 0} kalem`, Kategori: "", Konum: "", "Alış tarihi": "", "Ömür (yıl)": "", "Alış değeri": t.purchase_value, [`${report.year} amortismanı`]: t.year_depreciation, "Birikmiş amortisman": t.accumulated, "Defter değeri": t.book_value, "Gider işlendi": "" });
+  return rows;
+}

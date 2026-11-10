@@ -20,7 +20,7 @@ export default function EquipmentToday({ go }) {
       </header>
       {!s ? <Spinner /> : (<>
         <div className="counts">
-          <button type="button" onClick={() => go("equipment:zimmet")}><strong className={s.myLate ? "text-red" : ""}>{s.myCount}</strong><span>benim zimmetim</span></button>
+          <button type="button" onClick={() => go("equipment:zimmetim")}><strong className={s.myLate ? "text-red" : ""}>{s.myCount}</strong><span>zimmetimdekiler</span></button>
           <button type="button" onClick={() => go("equipment:zimmet")}><strong className={s.overdue ? "text-red" : ""}>{s.overdue}</strong><span>geciken iade</span></button>
           <button type="button" onClick={() => go("equipment:bakim")}><strong className={s.maintenance ? "text-red" : ""}>{s.maintenance}</strong><span>bakım zamanı</span></button>
         </div>
