@@ -45,7 +45,12 @@ const FINANCE_QUEUEABLE = /^\/api\/(finance\/entries|tools\/projects\/\d+\/finan
 const CHAT_QUEUEABLE = /^\/api\/chat\/conversations\/\d+\/messages$/;
 const isChatQueueable = (method, pathname, body) => method === "POST" && CHAT_QUEUEABLE.test(pathname)
   && (!body?.kind || body.kind === "text") && Boolean(body?.client_id) && Boolean(String(body?.body || "").trim());
-const isQueueable = (method, pathname, body) => QUEUEABLE.test(pathname)
+// Not Defteri ve Rehber (v2): defter ekle / düzenle / sil, çöpten geri alma,
+// hedef kitle ekle / düzenle / sil ve kitleye kişi ekleme-çıkarma kuyruğa
+// alınır (not ve kişi CRUD'u yukarıdaki QUEUEABLE'da). Paylaşım, sürüm geri
+// yükleme, kitle birleştirme, kişi birleştirme ve içe aktarma bağlantı ister.
+const NOTES_CONTACTS_QUEUEABLE = /^\/api\/tools\/(notes\/(notebooks(\/[\w-]+)?|[\w-]+\/restore)|contacts\/audiences(\/[\w-]+(\/members)?)?)$/;
+const isQueueable = (method, pathname, body) => QUEUEABLE.test(pathname) || NOTES_CONTACTS_QUEUEABLE.test(pathname)
   || ((method === "POST" || method === "PATCH") && (PROJECT_QUEUEABLE.test(pathname) || FINANCE_QUEUEABLE.test(pathname)))
   || isChatQueueable(method, pathname, body);
 const TEMP_ID = /^tmp_[\w-]+$/;

@@ -11,6 +11,7 @@ const ACTIONS = [
   { label: "Yeni grup", icon: "users", route: "messages:newGroup", hint: "Mesajlar · ⇧⌘N" },
   { label: "Yeni görev", icon: "plus", route: "todos:new", hint: "Yapılacaklar" },
   { label: "Yeni not", icon: "plus", route: "notes:new", hint: "Not Defteri" },
+  { label: "Şablondan yeni not (toplantı, maç raporu, saha keşfi…)", icon: "layers", route: "notes:template", hint: "Not Defteri" },
   { label: "Yeni etkinlik", icon: "plus", route: "agenda:new", hint: "Ajanda" },
   { label: "Yeni proje", icon: "plus", route: "projects:new", hint: "Projeler" },
   { label: "Projelerde bugün aranacaklar", icon: "phone", route: "projects", arg: { section: "followups" }, hint: "Projeler · Takip" },
@@ -54,6 +55,7 @@ export default function Palette({ onClose, go, routes }) {
       sources.current = {
         todos: todos.ok ? todos.data?.items || [] : [],
         notes: notes.ok ? notes.data?.items || [] : [],
+        notebooks: notes.ok ? notes.data?.notebooks || [] : [],
         contacts: contacts.ok ? contacts.data?.items || [] : [],
         sheets: sheets.ok ? sheets.data?.items || [] : [],
         ledger: ledger.ok ? ledger.data?.items || [] : [],
@@ -83,6 +85,7 @@ export default function Palette({ onClose, go, routes }) {
     });
     s.todos.filter((t) => includesTr(`${t.title} ${t.body}`, query)).slice(0, 6).forEach((t) => out.push({ label: t.title, icon: "checkSquare", hint: t.status === "done" ? "Tamamlandı" : t.dueAt ? formatDate(t.dueAt) : "Yapılacaklar", route: `todos:${t.id}` }));
     s.notes.filter((n) => includesTr(`${n.title} ${n.body} ${(n.tags || []).join(" ")} ${(n.checklist || []).map((c) => c.text).join(" ")}`, query)).slice(0, 6).forEach((n) => out.push({ label: n.title || (n.body || "Not").slice(0, 60), icon: "note", hint: "Not", route: `notes:${n.id}` }));
+    (s.notebooks || []).filter((nb) => includesTr(nb.name, query)).slice(0, 4).forEach((nb) => out.push({ label: `${nb.emoji ? `${nb.emoji} ` : ""}${nb.name}`, icon: "folder", hint: "Defter", route: "notes", arg: { notebook: nb.id } }));
     s.contacts.filter((c) => includesTr(`${c.name} ${c.company} ${c.phone} ${c.email} ${c.city}`, query)).slice(0, 6).forEach((c) => out.push({ label: c.name, icon: "user", hint: c.phone || c.company || "Kişi", route: `contacts:${c.id}` }));
     s.sheets.filter((x) => includesTr(x.title, query)).slice(0, 5).forEach((x) => out.push({ label: x.title, icon: "grid", hint: "Tablo", route: `sheets:${x.id}` }));
     s.projects.filter((p) => includesTr(`${p.name} ${p.description}`, query)).slice(0, 5).forEach((p) => out.push({ label: p.name, icon: "layers", hint: `Proje · %${p.stats?.steps?.progress ?? 0}`, route: "projects", arg: { id: p.id } }));
