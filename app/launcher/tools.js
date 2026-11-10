@@ -19,6 +19,7 @@ const TOOLS = Object.freeze([
   { key: "contacts", label: "Rehber", icon: "users", group: "Finans", keywords: "kişi telefon" },
   { key: "equipment", label: "Ekipman", icon: "box", group: "Finans", keywords: "zimmet demirbaş bakım" },
   { key: "messages", label: "Mesajlar", icon: "message", group: "İletişim", keywords: "sohbet chat" },
+  { key: "browser", label: "Tarayıcı", icon: "globe", group: "İletişim", keywords: "web internet sekme youtube google indir" },
   { key: "requests", label: "Talepler", icon: "inbox", group: "İletişim", needs: "requests", keywords: "onay başvuru" },
   { key: "studio", label: "Yayın Stüdyosu", icon: "broadcast", group: "Süreç", needs: "live", keywords: "canlı yayın panorama" },
   { key: "admin", label: "Yönetim paneli", icon: "overview", group: "Yönetim", needs: "requests", keywords: "admin site" },

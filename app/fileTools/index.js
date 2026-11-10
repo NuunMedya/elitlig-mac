@@ -260,7 +260,8 @@ function registerFileTools(deps) {
   /* ---------------------------------- işler ---------------------------------- */
 
   /** İş tanımını doğrular ve kuyruğa koyar. spec: { op, ids, options } */
-  async function runOp({ op, ids = [], options = {} } = {}) {
+  // internal: yalnız ana süreçten (ör. tarayıcı: profil çerezleri dosyası); IPC'den gelemez.
+  async function runOp({ op, ids = [], options = {} } = {}, internal = {}) {
     const files = (Array.isArray(ids) ? ids : []).map((id) => registry.resolve(id)).filter(Boolean);
     const o = options && typeof options === "object" ? options : {};
     const first = files[0] || null;
@@ -523,11 +524,11 @@ function registerFileTools(deps) {
         const site = siteOf(url);
         const info = await getFfmpeg();
         const mode = ["video", "audio", "images"].includes(o.mode) ? o.mode : o.audioOnly ? "audio" : "video";
-        const opts = { url, mode, quality: o.quality || "best", audioFormat: o.audioFormat === "m4a" ? "m4a" : "mp3", playlist: Boolean(o.playlist), withImages: Boolean(o.withImages), cookiesBrowser: o.cookiesBrowser || null };
+        const opts = { url, mode, quality: o.quality || "best", audioFormat: o.audioFormat === "m4a" ? "m4a" : "mp3", playlist: Boolean(o.playlist), withImages: Boolean(o.withImages), cookiesBrowser: o.cookiesBrowser || null, cookiesFile: internal?.cookiesFile || null };
         buildYtdlpArgs({ ...opts, workDir: "/" }); // seçenekleri kuyruğa koymadan doğrula
         const labelMode = mode === "audio" ? ` · ${opts.audioFormat.toUpperCase()}` : mode === "images" ? " · görseller" : opts.quality !== "best" ? ` · ${opts.quality}p` : "";
         return jobs.enqueue({
-          op, label: `İndir · ${site.label || "Web"}${labelMode}`, kind: mode === "audio" ? "audio" : mode === "images" ? "image" : "video", inputs: [], outDir: outDirFor(null), options: { ...opts, site: site.key },
+          op, label: `İndir · ${site.label || "Web"}${labelMode}`, kind: mode === "audio" ? "audio" : mode === "images" ? "image" : "video", inputs: [], outDir: outDirFor(null), options: { ...opts, cookiesFile: undefined, site: site.key },
           run: async (ctx) => {
             const args = buildYtdlpArgs({ ...opts, workDir: ctx.workDir, ffmpegPath: info.path || null, jsRuntime: ytdlp.jsRuntime() });
             let state;
@@ -739,6 +740,9 @@ function registerFileTools(deps) {
     float,
     jobs,
     allow: (p) => registry.allow(p),
+    // Tarayıcı (app/browser): aynı yt-dlp çözücüsü ve iş kuyruğu.
+    ytdlp,
+    run: (spec, internal) => runOp(spec || {}, internal || {}),
     dispose() { jobs.dispose(); registry.flush(); },
   };
 }

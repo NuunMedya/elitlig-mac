@@ -52,6 +52,38 @@ uygulamada görünür.
 - **Raflar: ⌃⌥T / ⌃⌥S / ⌃⌥A.** Her yerden ekran görüntüsü, pano ve bağlantı rafları; raflarda arama; işaretçinin altındaki ekranı yakalayıp kırpma (bkz. Ekran Görüntüleri ve Pano).
 - **Dosya Araçları ve Float.** Dosya dönüştürme / düzenleme uygulama içinde; Float rafındaki dosyalar başka uygulamalara sürüklenir.
 
+- **Tarayıcı: ⇧⌘B.** Uygulamanın kendi tarayıcısı (sekmeler, adres çubuğu, yer imleri, geçmiş, indirilenler) — bkz. aşağıda **Tarayıcı**.
+
+## Tarayıcı
+
+Kenar çubuğunda **Tarayıcı** (⇧⌘B). Sekmeler ana süreçte ayrı gömülü görünümlerdir (`app/browser`);
+web sayfalarına uygulamanın hiçbir köprüsü verilmez (contextIsolation + sandbox, ön yükleme yok).
+
+- **Sekmeler.** Yeni (⌘T), kapat (⌘W), kapatılanı geri aç (⇧⌘T), çoğalt, başa iğnele, sesi kapat / siteyi
+  hep sessize al, sürükleyerek sırala, sekme ara (⇧⌘K), ⌃Tab ile gezin. Açık sekmeler, profiller, yer imleri
+  ve geçmiş yeniden açılışta geri gelir (arka plandaki sekmeler tıklanınca yüklenir).
+- **Profiller (ayrı oturumlar).** Her profil kendi çerez / giriş / önbellek bölmesidir: iki Google hesabı
+  iki profilde aynı anda açık kalır. Sekme renkleri profile göre; bir sekme başka profile taşınabilir ya da
+  bağlantı “başka profilde aç”ılabilir. Gizli sekme (⇧⌘N) yalnız bellekte. Profil silinince verisi de silinir.
+  Kullanıcı aracısı sıradan Chrome'dur (Google girişi çalışır).
+- **Sabitle (⇧⌘S).** İzlenen video (YouTube'da oynatıcının kendisi) her zaman üstte duran küçük pencereye
+  alınır: köşelere yapışır, boyutu ve saydamlığı ayarlanır, oynat / 10 sn ileri-geri / ses düğmeleri vardır;
+  diğer sekmelerde ve uygulamanın başka araçlarında gezinirken açık kalır. İstenirse tarayıcının yan paneline
+  yerleşir; Chromium'un kendi “resim içinde resim” penceresi de seçilebilir.
+- **Yan yana.** İki sekme (farklı profillerden de) bölünmüş görünümde; ayırıcı sürüklenir.
+- **Medya: görsel ve videoyu özgün kalitede indir.** Sayfadaki görseller (srcset'in en büyük adayı,
+  og:image, arka plan görselleri; Twitter / YouTube kapakları / Wikimedia / Google görsellerinde özgün boyut),
+  videolar ve sesler çözünürlük ve dosya boyutuyla listelenir; tek tıkla ya da toplu indirilir, görsel panoya
+  kopyalanır. Akış videoları (YouTube, Instagram, X, TikTok…) **Yüksek kalitede indir** ile Dosya Araçları'nın
+  yt-dlp köprüsünden, kalite seçilerek (4K / 1080p / 720p…, yalnız ses, gönderi görselleri) ve profilin
+  oturumuyla indirilir. Sağ tık: görseli farklı kaydet / kopyala, videoyu indir, bağlantıyı yeni sekmede /
+  başka profilde / yan yana aç, öğeyi incele.
+- **Ayrıca.** Reklam / izleyici engelleyici (site başına kapatılır, kendi alan adlarınız eklenir), okuma kipi,
+  karanlık kipi zorla (site başına), sayfayı çevir, sayfada bul, yakınlaştırma (sekme başına), ekran
+  görüntüsü ve tam sayfa görüntüsü (Raf'a ya da panoya), PDF, site izinleri (kamera, mikrofon, bildirim,
+  konum: profil başına hatırlanır), hızlı arama anahtar sözcükleri (“yt maç özeti”, “w Galatasaray”),
+  arama motoru seçimi.
+
 ## Kurulum
 
 ### Mac

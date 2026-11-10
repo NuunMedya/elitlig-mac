@@ -447,6 +447,21 @@ contextBridge.exposeInMainWorld("elitlig", {
     onDownloads: on("admin:downloads"),
     onFocus: on("admin:focus"),
   },
+  // Tarayıcı (app/browser, ⇧⌘B): sekmeler ana süreçte; arayüz sayfa alanlarının konumunu
+  // (main / side / dock) bildirir ve komut yollar. Web sayfaları bu köprüyü GÖRMEZ.
+  browser: {
+    state: () => ipcRenderer.invoke("browser:state"),
+    attach: (rects) => ipcRenderer.invoke("browser:attach", rects || null),
+    bounds: (rects) => ipcRenderer.invoke("browser:bounds", rects || null),
+    detach: () => ipcRenderer.invoke("browser:detach"),
+    cover: (on) => ipcRenderer.invoke("browser:cover", Boolean(on)),
+    cmd: (name, arg) => ipcRenderer.invoke("browser:cmd", String(name || ""), arg ?? null),
+    downloads: () => ipcRenderer.invoke("browser:downloads"),
+    onState: on("browser:state"),
+    onDownloads: on("browser:downloads"),
+    onDownloaded: on("browser:downloaded"),
+    onKey: on("browser:key"),
+  },
   // Hızlı geçiş (app/launcher, ⌃⌥O): araç aç, yeni kayıt, Dock / atlama listesi ile aynı liste.
   launcher: {
     state: () => ipcRenderer.invoke("launcher:state"),

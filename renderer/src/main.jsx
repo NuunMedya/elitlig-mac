@@ -23,6 +23,9 @@ const Widget = lazy(() => import("./widgets/Widget"));
 // Hızlı geçiş penceresi (#launcher, ⌃⌥O): araç / kayıt ara ve aç (app/launcher).
 const launcher = window.location.hash === "#launcher";
 const Launcher = lazy(() => import("./launcher/Launcher"));
+// Tarayıcı · sabitlenen video penceresi (#browser-pip): denetim çubuğu (app/browser/pip.js).
+const browserPip = window.location.hash === "#browser-pip";
+const PipBar = lazy(() => import("./views/browser/PipBar"));
 
 // Menüdeki Geri Al / Yinele: yazı alanındaysa yerel geri alma, değilse açık
 // araca (ör. tablo düzenleyicisi) iletilir.
@@ -32,14 +35,16 @@ window.elitlig.onCommand((cmd) => {
   if (el && (el.isContentEditable || /^(INPUT|TEXTAREA)$/.test(el.tagName))) document.execCommand(cmd);
   else window.dispatchEvent(new Event(`elitlig:${cmd}`));
 });
-document.documentElement.dataset.window = quick ? "quick" : ledOutput ? "led" : shelfPanel ? "shelf" : floatShelf ? "float" : widget ? "widget" : launcher ? "launcher" : "main";
+document.documentElement.dataset.window = quick ? "quick" : ledOutput ? "led" : shelfPanel ? "shelf" : floatShelf ? "float" : widget ? "widget" : launcher ? "launcher" : browserPip ? "browser-pip" : "main";
 // Platform sınıfı: Mac'te çerçevesiz pencere (trafik ışıkları), Windows'ta yerel
 // çerçeve — üst boşluklar ve kaydırma çubukları buna göre ayarlanır (styles.css).
 document.documentElement.classList.add(`platform-${String(window.elitlig.platform || "darwin").replace(/[^a-z0-9]/gi, "")}`);
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    {ledOutput ? (
+    {browserPip ? (
+      <Suspense fallback={null}><PipBar /></Suspense>
+    ) : ledOutput ? (
       <Suspense fallback={null}><LedOutput /></Suspense>
     ) : widget ? (
       <ToastProvider><Suspense fallback={null}><Widget /></Suspense></ToastProvider>
