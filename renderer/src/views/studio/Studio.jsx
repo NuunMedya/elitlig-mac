@@ -149,6 +149,9 @@ import logoInline from "../../assets/elitlig-beyaz.png?inline";
 import OutMuteButton from "./audio/OutMuteButton";
 import { applyNative as applyOutMuteNative, getOutMute, setOutMute, toggleOutMute, useOutMute } from "./audio/outMute";
 import "./studio.css";
+// [panorama] yayın türü seçimi: Maç yayını | Panorama (maç seçmeden web içerikleri)
+import StudioModeGate from "./panorama/ModeGate";
+import PanoramaStudio from "./panorama/PanoramaStudio";
 
 // Paralel geliştirilen isteğe bağlı modüller (yoksa yapı bozulmaz, yuva boş kalır):
 //   ./audio/ProgramAudioStrip.jsx  <ProgramAudioStrip mixer config programIds />  (program monitörünün altı)
@@ -240,7 +243,7 @@ function HelpModal({ hotkeys, onClose }) {
   );
 }
 
-export default function Studio({ auth, go }) {
+function MatchStudio({ auth, go, onSwitchMode }) {
   const toast = useToast();
   const confirm = useConfirm();
   const ask = useCallback((opts) => (confirm ? confirm(opts) : Promise.resolve(window.confirm(opts.message))), [confirm]);
@@ -1894,6 +1897,12 @@ export default function Studio({ auth, go }) {
     <div ref={rootRef} className={`studio ws-${ws.key} ${hints ? "" : "no-hints"} ${showMicWarning ? "is-micwarn" : ""}`} style={settings.view.scale !== 100 ? { zoom } : undefined} onPointerDown={mixer.resume}>
       <header className="st-top">
         <div className="st-top__title"><Icon name="broadcast" size={17} strokeWidth={2.2} /><strong>Yayın Stüdyosu</strong></div>
+        {onSwitchMode && ( /* [panorama] yayın türü */
+          <div className="pn-mode" role="tablist" aria-label="Yayın türü">
+            <button type="button" role="tab" aria-selected="true" className="is-on">Maç yayını</button>
+            <button type="button" role="tab" aria-selected="false" disabled={engine.active} onClick={onSwitchMode} title={engine.active ? "Yayın sürerken tür değiştirilemez" : "Panorama yayınına geç (maç seçmeden web içerikleri)"}>Panorama</button>
+          </div>
+        )}
         {live.match
           ? <button type="button" className="st-top__match" onClick={() => setTab("yonetim")} title={`${matchName} — Maç yönetimi`}><b>{live.score.home}–{live.score.away}</b><span>{matchName}</span>{live.match && <small>{live.minute}'</small>}</button>
           : <button type="button" className="st-top__match is-empty" onClick={() => setTab("yonetim")} title="Maç seçmek için Maç yönetimi">Maç seçilmedi</button>}
@@ -1987,4 +1996,9 @@ export default function Studio({ auth, go }) {
     </div>
     </PartsProvider>
   );
+}
+
+/** [panorama] Yayın Stüdyosu: Maç yayını (yukarıdaki görünüm) ya da Panorama (./panorama). */
+export default function Studio(props) {
+  return <StudioModeGate {...props} Match={MatchStudio} Panorama={PanoramaStudio} />;
 }

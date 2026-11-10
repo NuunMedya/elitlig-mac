@@ -538,6 +538,55 @@ anında son ~10 saniye klip olarak kaydedilip oyuncunun profiline yüklenir. Yet
   kodlama ve uçtan uca klip testi yapar. Geliştirmede `ELITLIG_FFMPEG=/yol/ffmpeg` ya da Homebrew
   ffmpeg'i kullanılır. Lisans metni: `Contents/Resources/ffmpeg/LICENSE.txt`.
 
+## Panorama yayını
+
+Yayın Stüdyosu'nun ikinci yayın türü: **maç seçmeden**, web sitesinin içerikleri ve 4-5 kamera açısıyla
+stüdyo programı (Elitlig Panorama). İlk girişte "Maç yayını | Elitlig Panorama" seçimi gelir; seçim
+hatırlanır (`studio.mode`), iki görünümün üst çubuğundaki "Maç yayını | Panorama" düğmesiyle değiştirilir
+(yayın sürerken kilitli). Stüdyoyu önceden maç yayınında kullananlar doğrudan Maç yayınına girer.
+
+- **Altyapı ortak, kopya yok.** Panorama açıları Maç yayınının sahne biçimine çevrilir
+  (`renderer/src/lib/studio/panorama/model.js` `buildPanoramaScenes`) ve aynı karıştırıcı
+  (`useCompositor`: ayrı iş parçacığı / ana iş parçacığı motoru, geçişler, siyaha geçiş), aynı kaynak
+  altyapısı (`useStudioSources`, Kaynak ekle penceresi: kamera, ekran, pencere, görsel, video, renk,
+  metin, saat, telefon, RTMP girişi…), aynı yayın motoru (`useEngine` → ana süreç ffmpeg → RTMP / RTMPS,
+  prova / yalnız kayıt, yerel tam kayıt MP4), müzik çalar ve LED çıkışı kullanılır. Durum ayrı
+  saklanır: `studio.panorama.v1` (kaynaklar, açılar, kart listesi, bant, tema, kapsam),
+  `studio.panorama.prefs.v1` (kalite, geçiş, hedef, kayıt), `studio.panorama.templates.v1`.
+- **Açılar (kamera düzenleri).** İçerik tam ekran · Tek kamera · Sunucu + içerik · Kamera + kart kutusu ·
+  Sunucu + konuk · İki kamera + içerik · Izgara 2×2 · 2×2 + içerik · 2 + 3 · Büyük + küçükler (1 + 4) ·
+  Şerit (5) + içerik · Üç kamera + içerik. Açı başına kaynak yerleri, içerik kartı, alt bant, künye ve
+  isim bantları seçilir. Tık: önizleme, çift tık / `Shift`+sayı: doğrudan yayın, `1–9` önizleme,
+  `Boşluk` / `Enter` GEÇİŞ (seçili geçiş türü), `C` kes; FTB düğmesi.
+- **İçerik kartları (program tuvaline çizilir).** Puan durumu (sayfalı, form), fikstür, son sonuçlar,
+  canlı maçlar ve skorlar (yoksa sıradaki maçlar), gol krallığı, asist krallığı, en değerliler (puan),
+  haftanın enleri, haberler / duyurular (görsel + başlık + özet, döner), takım kartı, takım
+  karşılaştırma, il / sezon özeti, sponsorlar, siteye bağlantı (QR), saat / tarih, serbest duyuru.
+  Kartlar grafik katmanında çizilir (`lib/studio/panorama/draw.js`; `drawGraphics` panorama anlık
+  görüntüsünü buraya yönlendirir): ana iş parçacığında da çizim işçisinde de aynı kod, yayına / kayda /
+  LED'e giden görüntüde görünür (DOM kaplaması değil). Kart gövdesi önbellekli katmandır (saniyede bir
+  ya da görsel yüklenince yeniden boyanır; kare başına ~0,5 ms). Görseller (armalar, oyuncu
+  fotoğrafları, haber kapakları) medya vekiliyle yüklenir, işçiye `ImageBitmap` olarak aktarılır.
+- **Oynatma listesi.** Kart başına süre (4–600 sn), otomatik döngü, elle sabitleme (`P`), ileri / geri
+  (`←` / `→`), döngüden çıkarma, sıralama; kartta kalan süre çubuğu, uzun listelerde sayfalar kart
+  süresine bölünür (en az 5 sn).
+- **Künye ve alt bant.** Logo, program başlığı, il · lig · sezon, İstanbul saati ve tarih; kayan alt bant
+  (canlı skorlar, son sonuçlar, yaklaşan maçlar, haber başlıkları, serbest metin; etiket ve hız);
+  isteğe bağlı sponsor kutusu (sitenin sponsor kayıtlarından dönen logolar). Temalar Elitlig
+  renkleriyle: Menekşe, Gece & Altın, Lacivert, Kağıt. 1080p30 (varsayılan), 720p30, 1080p60.
+- **Şablonlar.** Hazır: Hafta değerlendirmesi, Canlı skor masası, Puan durumu özel, Haber bülteni
+  (açılar + kart sırası + alt bant + tema). O anki düzen ad verilerek kaydedilir, uygulanır, silinir.
+- **Veri.** Şehir (il), lig, sezon ve grup / etap seçilir; 45 sn'de bir tazelenir, hata olursa son
+  sağlam veri ekranda kalır. Birincil kaynak sunucunun toplu ucu
+  `GET /api/broadcast/panorama?cityId=&leagueId=&seasonId=&groupId=` (elitlig-server
+  `routes/broadcastPanorama.js`; herkese açık, 30 sn önbellekli, yalnız sitede herkese açık bilgiler).
+  Uç sunucuda yoksa (404) aynı veri sitenin herkese açık uçlarından kurulur: `/api/meta/*`,
+  `/api/standings`, `/maclar`, `/api/players/statistics`, `/api/weekly-awards/public`, `/api/news`,
+  `/public/sponsors`.
+- **Yayın.** Hedef: YouTube yayın anahtarı (`rtmp://a.rtmp.youtube.com/live2/<anahtar>`) ya da özel
+  RTMP / RTMPS sunucu + anahtar; "Prova / yalnız kayıt"; "Bu bilgisayara da kaydet" (klasör seçilir).
+  Bağlantı, yeniden bağlanma, tanılama günlüğü ve sağlık göstergesi Maç yayınıyla aynıdır.
+
 ## Masaüstü araç takımı, pencere yerleştirme ve müzik
 
 ### Araç takımı paneli (⌃⌥Boşluk)
