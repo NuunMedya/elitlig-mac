@@ -9,7 +9,7 @@ const path = require("node:path");
 const rules = require("../shelf/rules");
 const { createShelfStore } = require("../shelf/store");
 const { watchFolders, listRecent, watchClipboard, screenshotDir } = require("../shelf/watchers");
-const { mergeSettings, publicItem, DEFAULT_SETTINGS } = require("../shelf");
+const { mergeSettings, migrateSettings, publicItem, DEFAULT_SETTINGS } = require("../shelf");
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "shelf-"));
 const DAY = 86400000;
@@ -198,28 +198,109 @@ test("klasör izleme: yeni ekran görüntüsü alınır, eski / gizli / ekran g�
   assert.equal(listRecent(dir, { days: 7 }).length, 2);
 });
 
-test("pano yoklayıcısı: açılıştaki içerik ve uygulamanın kendi kopyası alınmaz; gizli içerik okunmaz", () => {
+// Electron 44 pano API'sini (eşzamansız, W3C ClipboardItem) taklit eden sahte pano.
+function fakeAsyncClipboard() {
+  const state = { types: ["text/plain"], text: "başlangıç", png: null, raw: {}, reads: 0, writes: [] };
+  const item = () => ({
+    types: [...state.types, ...Object.keys(state.raw).map((k) => `electron application/osclipboard;format="${k}"`)],
+    getType: async (t) => {
+      if (t === "text/plain") { state.reads += 1; return new Blob([state.text]); }
+      if (t === "image/png") { state.reads += 1; return new Blob([state.png]); }
+      const m = t.match(/format="(.*)"/);
+      if (m && state.raw[m[1]] != null) return new Blob([state.raw[m[1]]]);
+      throw new Error("yok");
+    },
+  });
+  const clipboard = {
+    read: async () => [item()],
+    readText: async () => state.text,
+    writeText: async (t) => { state.writes.push({ "text/plain": t }); },
+    write: async (items) => { state.writes.push(items[0].data); },
+  };
+  class ClipboardItem { constructor(data) { this.data = data; } }
+  return { state, clipboard, ClipboardItem };
+}
+
+test("pano yoklayıcısı (Electron 44 eşzamansız API): metin / bağlantı / görsel alınır; açılıştaki içerik ve kendi kopyamız alınmaz; gizli içerik okunmaz", async () => {
+  const { state, clipboard, ClipboardItem } = fakeAsyncClipboard();
+  assert.equal(typeof clipboard.availableFormats, "undefined", "yeni API'de eşzamanlı availableFormats yok");
+  const got = [];
+  const src = { text: true, link: true, image: true };
+  const w = watchClipboard({ clipboard, ClipboardItem, sources: () => src, onCapture: (c) => got.push(c) });
+  await w.tick();
+  assert.equal(got.length, 0, "açılıştaki içerik alınmaz");
+  state.text = "Toplantı notu: Cumartesi 10:00";
+  await w.tick();
+  assert.deepEqual(got, [{ kind: "text", text: "Toplantı notu: Cumartesi 10:00" }]);
+  state.text = "https://elitlig.com";
+  await w.tick();
+  assert.deepEqual(got[1], { kind: "link", text: "https://elitlig.com" });
+  state.types = ["image/png"];
+  state.text = "";
+  state.png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+  await w.tick();
+  assert.equal(got[2].kind, "image");
+  assert.ok(Buffer.isBuffer(got[2].png) && got[2].png.length === 7);
+  state.png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 9, 9, 9]);
+  await w.tick();
+  assert.equal(got.length, 4, "aynı biçimde ikinci (farklı) görsel de alınır");
+  w.markOwnWrite();
+  state.types = ["text/plain"];
+  state.text = "kendi kopyamız";
+  await w.tick();
+  assert.equal(got.length, 4);
+  const before = state.reads;
+  state.raw = { "org.nspasteboard.ConcealedType": "" };
+  state.text = "parola";
+  await w.tick();
+  assert.equal(state.reads, before, "gizli içerik okunmaz");
+  assert.equal(got.length, 4);
+  // Üst üste binen yoklamalar tek okumaya iner.
+  const a = w.tick();
+  const b = w.tick();
+  assert.equal(a, b);
+  await a;
+});
+
+test("pano yoklayıcısı: eski (eşzamanlı) Electron API'si de desteklenir", async () => {
   let formats = ["text/plain"];
   let txt = "başlangıç";
   let reads = 0;
   const clipboard = { availableFormats: () => formats, readText: () => { reads += 1; return txt; }, readImage: () => ({ isEmpty: () => true }) };
   const got = [];
   const w = watchClipboard({ clipboard, sources: () => ({ text: true, link: true, image: false }), onCapture: (c) => got.push(c) });
-  w.tick();
+  await w.tick();
   assert.equal(got.length, 0);
   txt = "https://elitlig.com";
-  w.tick();
+  await w.tick();
   assert.deepEqual(got, [{ kind: "link", text: "https://elitlig.com" }]);
-  w.markOwnWrite();
-  txt = "kendi kopyamız";
-  w.tick();
-  assert.equal(got.length, 1);
   const before = reads;
   formats = ["text/plain", "org.nspasteboard.ConcealedType"];
   txt = "parola";
-  w.tick();
+  await w.tick();
   assert.equal(reads, before, "gizli içerik okunmaz");
   assert.equal(got.length, 1);
+});
+
+test("clipboardIo: ham biçimler sadeleşir; yazma ClipboardItem ile (metin, görsel, bağlantı, ham)", async () => {
+  const { createClipboardIo, normalizeTypes } = require("../clipboardIo");
+  assert.deepEqual(normalizeTypes(["text/plain", 'electron application/osclipboard;format="NSFilenamesPboardType"', "text/plain"]), ["text/plain", "NSFilenamesPboardType"]);
+  const { state, clipboard, ClipboardItem } = fakeAsyncClipboard();
+  const io = createClipboardIo({ clipboard, ClipboardItem });
+  assert.equal(io.legacy, false);
+  state.raw = { "FileNameW": Buffer.from("C:\\a.png\0", "utf16le") };
+  assert.ok((await io.formats()).includes("FileNameW"));
+  assert.equal((await io.readRaw("FileNameW")).toString("utf16le").replace(/\0+$/, ""), "C:\\a.png");
+  assert.equal(await io.readImagePng(), null);
+  await io.writeText("merhaba");
+  await io.writeImage(Buffer.from([1, 2]), { text: "alt" });
+  await io.writeLink("https://elitlig.com", "Elitlig");
+  await io.writeRaw({ NSFilenamesPboardType: "<plist/>" });
+  assert.deepEqual(state.writes[0], { "text/plain": "merhaba" });
+  assert.equal(state.writes[1]["text/plain"], "alt");
+  assert.ok(state.writes[1]["image/png"] instanceof Blob);
+  assert.deepEqual(state.writes[2]["electron application/bookmark"], { title: "Elitlig", url: "https://elitlig.com" });
+  assert.equal(state.writes[3]['electron application/osclipboard;format="NSFilenamesPboardType"'], "<plist/>");
 });
 
 test("ekran görüntüsü klasörü: Mac'te özel konum, yoksa Masaüstü; Windows'ta Resimler\\Screenshots", async () => {
@@ -241,5 +322,18 @@ test("ayarlar: kaynak / saklama / klasör / kısayol doğrulaması", () => {
   assert.deepEqual(s.extraDirs, ["/a", "/b", "/c"]);
   assert.equal(s.shortcuts.toggle, "Control+Alt+K");
   assert.equal(s.shortcuts.search, "Control+Alt+S");
-  assert.equal(DEFAULT_SETTINGS.sources.text, false, "varsayılan değişmez");
+  assert.equal(DEFAULT_SETTINGS.sources.text, true, "varsayılan: kopyalanan metinler tutulur");
+  assert.equal(DEFAULT_SETTINGS.sources.image, false, "varsayılan: kopyalanan görseller kapalı (ilk açılış kartında sorulur)");
+  assert.equal(DEFAULT_SETTINGS.onboarded, false);
+  assert.equal(mergeSettings(DEFAULT_SETTINGS, { onboarded: true }).onboarded, true);
+});
+
+test("ayar göçü: sürüm 1 dosyasında metin toplama açılır; sürüm 2'de kullanıcı seçimi korunur", () => {
+  const v1 = migrateSettings({ sources: { screenshots: true, image: false, text: false, link: true }, since: 5 });
+  assert.equal(v1.sources.text, true);
+  assert.equal(v1.version, 2);
+  assert.equal(v1.since, 5);
+  const v2 = migrateSettings({ version: 2, sources: { text: false } });
+  assert.equal(v2.sources.text, false, "sürüm 2'de kapatılan metin toplama kapalı kalır");
+  assert.deepEqual(migrateSettings(null), {});
 });

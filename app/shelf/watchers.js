@@ -6,7 +6,7 @@
 // adlandırır; dosya boyutu iki ölçümde aynı kalınca alınır.
 //
 // Pano: Electron'da pano değişti olayı yoktur; yoklanır (ayarlarda açılan
-// kaynaklar için). Gizli içerik (parola yöneticileri) rules.classifyClipboard
+// kaynaklar için; okuma app/clipboardIo.js ile, Electron 44 eşzamansız API). Gizli içerik (parola yöneticileri) rules.classifyClipboard
 // ile atlanır; uygulamanın kendi kopyalaması yok sayılır.
 "use strict";
 
@@ -16,6 +16,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
 const rules = require("./rules");
+const { createClipboardIo } = require("../clipboardIo");
 
 const expandHome = (p) => (String(p || "").startsWith("~") ? path.join(os.homedir(), String(p).slice(1)) : String(p || ""));
 
@@ -113,44 +114,48 @@ function listRecent(dir, { days = 7, screenshotsOnly = true, now = Date.now(), l
 }
 
 /**
- * Pano yoklayıcısı. clipboard: Electron clipboard. sources(): { image, text, link }.
- * onCapture({ kind, text?, image? (nativeImage) }).
+ * Pano yoklayıcısı. clipboard: Electron clipboard (ya da io: app/clipboardIo.js).
+ * sources(): { image, text, link }. onCapture({ kind, text?, png? (Buffer) }).
+ *
+ * Electron 44'te pano okuma eşzamansızdır: her yoklama bir öncekinin bitmesini
+ * bekler (üst üste binmez). Gizli içerikte (parola yöneticileri) metin / görsel
+ * hiç okunmaz.
  */
-function watchClipboard({ clipboard, sources, onCapture, intervalMs = 900, onSkip = () => {} }) {
+function watchClipboard({ clipboard, io = null, ClipboardItem, sources, onCapture, intervalMs = 900, onSkip = () => {} }) {
+  const cio = io || createClipboardIo({ clipboard, ClipboardItem });
   let last = null;
   let ownUntil = 0;
   let timer = null;
+  let busy = null;
 
-  const fingerprint = (formats, text, wantImage) => {
-    let img = "";
-    let image = null;
-    if (wantImage && rules.hasImageFormat(formats)) {
-      image = clipboard.readImage();
-      if (image && !image.isEmpty()) {
-        const s = image.getSize();
-        const small = image.resize({ width: 24, quality: "good" }).toBitmap();
-        img = `${s.width}x${s.height}:${crypto.createHash("sha1").update(small).digest("hex")}`;
-      } else image = null;
-    }
-    return { sig: `${formats.join("|")}\n${text}\n${img}`, image };
+  const sigOf = (snap) => {
+    const img = snap.png ? `${snap.png.length}:${crypto.createHash("sha1").update(snap.png).digest("hex")}` : "";
+    return `${snap.formats.join("|")}\n${snap.text}\n${img}`;
   };
 
-  const tick = () => {
-    let formats;
-    try { formats = clipboard.availableFormats(); } catch { return; }
+  async function check() {
     const src = sources() || {};
     if (!src.image && !src.text && !src.link) { last = null; return; }
+    let snap;
+    try {
+      snap = await cio.snapshot({ text: Boolean(src.text || src.link), image: Boolean(src.image), skip: rules.isConcealed });
+    } catch { return; }
     // Gizli içerik: hiç okunmaz.
-    if (rules.isConcealed(formats)) { last = `concealed:${formats.join("|")}`; return; }
-    const text = (src.text || src.link) ? clipboard.readText() : "";
-    const { sig, image } = fingerprint(formats, text, Boolean(src.image));
+    if (snap.skipped) { last = `concealed:${snap.formats.join("|")}`; return; }
+    const sig = sigOf(snap);
     if (sig === last) return;
     const first = last === null;
     last = sig;
     if (first || Date.now() < ownUntil) return; // açılıştaki içerik ve kendi kopyalamamız alınmaz
-    const verdict = rules.classifyClipboard({ formats, text, hasImage: Boolean(image) }, src);
+    const verdict = rules.classifyClipboard({ formats: snap.formats, text: snap.text, hasImage: Boolean(snap.png) }, src);
     if (verdict.skip) { onSkip(verdict.skip); return; }
-    onCapture(verdict.kind === "image" ? { kind: "image", image } : { kind: verdict.kind, text: verdict.text });
+    onCapture(verdict.kind === "image" ? { kind: "image", png: snap.png } : { kind: verdict.kind, text: verdict.text });
+  }
+  /** Bir yoklama; önceki sürüyorsa onu bekler (Promise döner). */
+  const tick = () => {
+    if (busy) return busy;
+    busy = check().finally(() => { busy = null; });
+    return busy;
   };
 
   return {

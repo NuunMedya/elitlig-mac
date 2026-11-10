@@ -18,7 +18,8 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { pathToFileURL } = require("node:url");
+const { pathToFileURL, fileURLToPath } = require("node:url");
+const { createClipboardIo } = require("../clipboardIo");
 const ff = require("../studio/ffmpeg");
 const { killProcess } = require("../studio/proc");
 const { createJobs } = require("./jobs");
@@ -135,37 +136,45 @@ function registerFileTools(deps) {
 
   const entries = (paths) => (paths || []).slice(0, 500).map((p) => registry.allow(String(p))).filter(Boolean);
 
-  /** Pano: dosyalar (Finder / Gezgin), görsel, bağlantı ya da metin. */
-  function readClipboardFiles() {
+  /** Pano: dosyalar (Finder / Gezgin), görsel, bağlantı ya da metin. Electron 44: eşzamansız (app/clipboardIo.js). */
+  const clipIo = createClipboardIo({ clipboard, ClipboardItem: deps.ClipboardItem || require("electron").ClipboardItem, nativeImage });
+  async function readClipboardFiles() {
     const found = [];
     try {
-      if (IS_MAC) {
-        const plist = clipboard.read("NSFilenamesPboardType");
-        if (plist) for (const m of plist.matchAll(/<string>([^<]+)<\/string>/g)) found.push(m[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
-        if (!found.length) {
-          const url = clipboard.read("public.file-url");
-          if (url && url.startsWith("file://")) found.push(decodeURIComponent(new URL(url).pathname));
-        }
-      } else if (platform === "win32") {
-        const raw = clipboard.readBuffer("FileNameW");
+      const fm = await clipIo.formats();
+      if (IS_MAC && fm.includes("NSFilenamesPboardType")) {
+        const plist = String((await clipIo.readRaw("NSFilenamesPboardType")) || "");
+        for (const m of plist.matchAll(/<string>([^<]+)<\/string>/g)) found.push(m[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
+      }
+      if (!found.length && IS_MAC && fm.includes("public.file-url")) {
+        const url = String((await clipIo.readRaw("public.file-url")) || "").replace(/\0+$/, "");
+        if (url.startsWith("file://")) found.push(fileUrlToPath(url));
+      }
+      if (!found.length && platform === "win32" && fm.includes("FileNameW")) {
+        const raw = await clipIo.readRaw("FileNameW");
         if (raw?.length) found.push(raw.toString("utf16le").replace(/\0+$/g, ""));
+      }
+      if (!found.length && fm.includes("text/uri-list")) {
+        const list = String((await clipIo.readRaw("text/uri-list")) || "");
+        for (const line of list.split(/\r?\n/)) if (line.startsWith("file://")) found.push(fileUrlToPath(line.trim()));
       }
     } catch { /* yoksay */ }
     return found.filter((p) => p && path.isAbsolute(p));
   }
+  const fileUrlToPath = (u) => { try { return fileURLToPath(u); } catch { return ""; } };
 
   const stamp = () => new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
-  function paste() {
-    const files = readClipboardFiles();
+  async function paste() {
+    const files = await readClipboardFiles();
     if (files.length) return { ok: true, kind: "files", files: entries(files) };
-    const image = clipboard.readImage();
-    if (image && !image.isEmpty()) {
+    const png = await clipIo.readImagePng();
+    if (png?.length) {
       fs.mkdirSync(importsDir, { recursive: true });
       const p = path.join(importsDir, `Pano ${stamp()}.png`);
-      fs.writeFileSync(p, image.toPNG());
+      fs.writeFileSync(p, png);
       return { ok: true, kind: "image", files: entries([p]) };
     }
-    const t = clipboard.readText();
+    const t = await clipIo.readText();
     if (t && t.trim()) {
       const trimmed = t.trim();
       if (/^https?:\/\/\S+$/i.test(trimmed)) return { ok: true, kind: "link", url: trimmed, files: [] };
@@ -628,7 +637,7 @@ function registerFileTools(deps) {
     const err = await shell.openPath(String(p));
     return { ok: !err };
   });
-  handle("ft:copyPaths", (_e, paths) => { clipboard.writeText((paths || []).map(String).join("\n")); return { ok: true }; });
+  handle("ft:copyPaths", async (_e, paths) => { await clipIo.writeText((paths || []).map(String).join("\n")); return { ok: true }; });
   handle("ft:settings", () => ({ ok: true, settings: publicSettings() }));
   handle("ft:setSettings", (_e, patch = {}) => {
     if (typeof patch.nextToSource === "boolean") settings.nextToSource = patch.nextToSource;

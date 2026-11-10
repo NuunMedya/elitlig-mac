@@ -148,3 +148,10 @@
 .shc__pin { position: absolute; top: 4px; right: 4px; z-index: 1; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--tool); color: #fff; }
 .shp__foot { display: flex; gap: 14px; justify-content: center; padding: 4px 10px 8px; font-size: 11px; color: var(--muted); }
 .shp__foot span { display: inline-flex; gap: 3px; align-items: center; }
+
+/* İlk açılış: pano geçmişi seçimi */
+.shl-onb { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border: 1px solid var(--tool, #0a84ff); background: var(--tool-soft, rgba(10, 132, 255, 0.08)); }
+.shl-onb__icon { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--tool, #0a84ff); color: #fff; }
+.shl-onb__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.shl-onb__body p { margin: 0; }
+.shl-onb__opts { display: flex; flex-wrap: wrap; gap: 4px 18px; }
