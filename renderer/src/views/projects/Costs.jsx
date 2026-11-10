@@ -3,6 +3,8 @@
 // hesap ayarları, satış fiyatı, başabaş noktası, senaryolar ve kategori
 // dağılımı. "Muhasebeye işle" kalemi projenin bütçesine (Bütçe sekmesi →
 // hesap) yazar; kayıt ödenince gerçekleşen kendiliğinden gelir.
+import ExportButton from "../../components/ExportButton";
+import { matrixReport } from "../../lib/export/reports";
 import React, { useEffect, useMemo, useState } from "react";
 import { Empty, ErrorNote, Field, Icon, MenuButton, Modal, Segmented, Spinner, useConfirm } from "../../components/ui";
 import { useCommand } from "../../api";
@@ -149,6 +151,16 @@ export default function Costs({ ctx }) {
         <span className="spacer" />
         {editable && <button type="button" className="btn btn--primary btn--sm" onClick={() => setDialog({ kind: "cost" })}><Icon name="plus" size={13} /> Gider kalemi</button>}
         {editable && <button type="button" className="btn btn--sm" onClick={() => setDialog({ kind: "revenue" })}><Icon name="plus" size={13} /> Gelir kalemi</button>}
+        <ExportButton id="project-costs-table" title={`${project.name} — Maliyet`} text="" report={() => {
+          const cols = COST_EXPORT(statusLabel, basisLabel);
+          const items = data.items.filter((i) => filter === "all" || i.kind === filter);
+          const r = matrixReport(`${project.name} — Maliyet tablosu`, cols.map((c) => c[0]), items.map((i) => cols.map(([, g]) => g(i) ?? "")), {
+            filters: filter === "all" ? [] : [filter === "cost" ? "Giderler" : "Gelirler"],
+            summary: [{ label: "Toplam gider", value: s.cost?.total ?? s.cost, type: "money", tone: "red" }, { label: "Toplam gelir", value: s.revenue?.total ?? s.revenue, type: "money", tone: "green" }, { label: "Kâr / zarar", value: s.profit, type: "money" }].filter((x) => typeof x.value === "number"),
+          });
+          r.sections[0].groupBy = "c0";
+          return r;
+        }} />
         <MenuButton label="Maliyet işlemleri" items={[
           editable && { label: `Tedarik tekliflerinden ekle${pending.length ? ` (${pending.length})` : ""}`, icon: "handshake", disabled: !pending.length, onClick: () => costs.call("POST", "/import-suppliers", {}, (r) => `${r.created} kalem eklendi.`) },
           editable && { label: `Tümünü muhasebeye işle${unposted ? ` (${unposted})` : ""}`, icon: "wallet", disabled: !unposted, onClick: async () => { if (await costs.call("POST", "/post-all", {}, (r) => `${r.posted} kalem muhasebeye işlendi.`)) changedFinance(); } },

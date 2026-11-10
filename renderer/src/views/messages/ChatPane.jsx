@@ -17,6 +17,9 @@ import { del, get, post, put, request, useCommand } from "../../api";
 import { Avatar, C, PointMenu, chatApi, fileToPayload, isImageName } from "./common";
 import { Bubble } from "./Bubble";
 import Composer from "./Composer";
+import ExportDialog from "../../lib/export/ExportDialog";
+import { useExportDone } from "../../components/ExportButton";
+import { chatReport } from "../../lib/export/reports";
 import { AttachPreview, ForwardModal, Lightbox, LocationModal, MessageInfoModal, PollModal, ReactionsModal, VotersModal } from "./Pickers";
 import {
   QUICK_REACTIONS, albumize, applyReaction, canDelete, canEdit, canForward, groupMessages, isGroupChat, lastSeenLabel,
@@ -38,6 +41,8 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
   const [reply, setReply] = useState(null);
   const [edit, setEdit] = useState(null);
   const [selecting, setSelecting] = useState(null);
+  const [chatExport, setChatExport] = useState(null);
+  const exportDone = useExportDone();
   const [menu, setMenu] = useState(null);
   const [modal, setModal] = useState(null);
   const [highlight, setHighlight] = useState(null);
@@ -459,6 +464,14 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
       onDragOver={(e) => { if ([...e.dataTransfer.types].includes("Files") && !disabledReason) { e.preventDefault(); setDrag(true); } }}
       onDragLeave={(e) => { if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget)) setDrag(false); }}
       onDrop={(e) => { e.preventDefault(); setDrag(false); if (!disabledReason) takeFiles(e.dataTransfer.files); }}>
+      {chatExport && <ExportDialog id="chat" title={`Sohbet — ${conv.title}`} formats={["pdf", "docx", "xlsx", "md", "csv"]} initialFormat={chatExport.format}
+        scopes={[{ value: "view", label: `Yüklenen mesajlar (${messages.length})` }, ...(selecting?.size ? [{ value: "picked", label: `Seçili mesajlar (${selecting.size})` }] : [])]}
+        report={({ scope: sc }) => chatReport((sc === "picked" ? messages.filter((m) => selecting?.has(m.id)) : messages).filter((m) => m.id && !m.deleted), {
+          title: `Sohbet dökümü — ${conv.title}`, conversation: conv.subtitle || "",
+          senderName: (m) => (m.kind === "system" ? "Sistem" : m.sender?.is_me ? me.name : m.sender?.name || ""),
+          textOf: (m) => (m.kind === "text" || !m.kind ? String(m.body || "") : quoteText(m)),
+        })}
+        onClose={() => setChatExport(null)} onDone={exportDone} />}
       <header className={`ms-chat__head ${inbox ? "is-inbox" : ""}`}>
         {onBack && <button type="button" className="icon-btn ms-back" aria-label="Sohbetlere dön" onClick={onBack}><Icon name="chevronLeft" size={20} /></button>}
         {inbox ? (
@@ -504,6 +517,7 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
             { label: "Medya, bağlantılar ve belgeler", icon: "image", onClick: () => setPanel({ kind: "media" }) },
             { label: "Yıldızlı mesajlar", icon: "star", onClick: () => setPanel({ kind: "starred" }) },
             { label: "Mesajları seç", icon: "checkSquare", onClick: () => setSelecting(new Set()) },
+            { label: "Sohbet dökümü (PDF / Word)…", icon: "download", onClick: () => setChatExport({ format: "pdf" }) },
             "-",
             { label: conv.muted ? "Bildirimleri aç" : "Sessize al", icon: conv.muted ? "bell" : "bellOff", onClick: () => actions.mute(conv) },
             { label: conv.pinned ? "Sabitlemeyi kaldır" : "Sohbeti sabitle", icon: "pin", onClick: () => actions.pin(conv) },
@@ -547,6 +561,7 @@ export default function ChatPane({ conv, me, conversations, subscribe, typing, p
           <strong>{selecting.size} seçildi</strong>
           <span className="spacer" />
           <button type="button" className="btn btn--sm" disabled={!selectedList.length || !selectedList.every((m) => m.kind === "text")} onClick={() => { navigator.clipboard.writeText(selectedList.map((m) => `[${new Date(m.created_at).toLocaleString("tr-TR")}] ${m.sender?.is_me ? me.name : m.sender?.name}: ${m.body}`).join("\n")); toast("Kopyalandı.", { tone: "success" }); }}><Icon name="copy" size={14} /> Kopyala</button>
+          <button type="button" className="btn btn--sm" disabled={!selectedList.length} onClick={() => setChatExport({ format: "pdf" })}><Icon name="download" size={14} /> Dışa aktar</button>
           {!inbox && <>
           <button type="button" className="btn btn--sm" disabled={!selectedList.length} onClick={() => star(selectedList, !selectedList.every((m) => m.starred))}><Icon name="star" size={14} /> Yıldızla</button>
           <button type="button" className="btn btn--sm" disabled={!selectedList.length || !selectedList.every(canDelete)} onClick={() => removeMsgs(selectedList)}><Icon name="trash" size={14} /> Sil</button>

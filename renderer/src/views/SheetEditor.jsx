@@ -13,6 +13,8 @@ import {
   normRange, pasteBlock, rangeLabel, renameSheet, shiftAxis, sortRange, styleRange, uniqueSheetName, usedBounds, workbooksDiffer, writeCells,
 } from "../lib/sheets/sheetOps";
 import { workbookToXlsx } from "../lib/sheets/xlsxExport";
+import ExportButton from "../components/ExportButton";
+import { sheetReport } from "../lib/export/reports";
 import { importFile as readSheetFile } from "../lib/sheets/importFile";
 import { relativeTime } from "../lib/helpers";
 import {
@@ -623,10 +625,17 @@ export default function SheetEditor({ id, onClose }) {
         <span className="spacer" />
         {meta.updated_by_name && <span className="muted small">Son: {meta.updated_by_name} · {relativeTime(meta.updatedAt)}</span>}
         {!readOnly && <button type="button" className="btn btn--sm btn--ghost" onClick={importIntoBook}><Icon name="upload" /> Sayfa içe aktar</button>}
-        <MenuButton icon="download" label="Dışa aktar" items={[
-          { label: "Excel (.xlsx)", icon: "grid", onClick: exportXlsx },
+        <ExportButton id="sheet" title={title} formats={["pdf", "docx", "md", "json"]} print={false}
+          scopes={[{ value: "view", label: `Bu sayfa (${sheet.name})` }, ...(book.sheets.length > 1 ? [{ value: "all", label: `Tüm sayfalar (${book.sheets.length})` }] : [])]}
+          report={({ scope: sc }) => sheetReport(title, (sc === "all" ? book.sheets.map((sh, i) => [sh, i]) : [[sheet, si]]).map(([sh, i]) => {
+            const u = usedBounds(sh);
+            const rows = Array.from({ length: u.rows }, (_, r) => Array.from({ length: u.cols }, (_, c) => { const key = addr(c, r); const cell = sh.cells[key]; return !cell || cell.v === "" ? "" : String(formatValue(evaluator.value(i, key), cell.s || {})); }));
+            return { name: sh.name, rows };
+          }))}
+          extraItems={[
+          { label: "Excel (.xlsx) — formüllerle", icon: "grid", onClick: exportXlsx },
           { label: "CSV (bu sayfa)", icon: "download", onClick: exportCsv },
-          { label: "PDF", icon: "printer", onClick: () => printSheet(true) },
+          { label: "PDF — tablo görünümü", icon: "printer", onClick: () => printSheet(true) },
           { label: "Yazdır", icon: "printer", onClick: () => printSheet(false) },
         ]} />
         {meta.access === "owner" && <button type="button" className="btn btn--sm" onClick={() => setShareOpen(true)}><Icon name="share" /> Paylaş{meta.shares?.length ? ` (${meta.shares.length})` : ""}</button>}

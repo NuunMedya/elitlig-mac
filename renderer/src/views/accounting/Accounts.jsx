@@ -5,6 +5,8 @@ import React, { useMemo, useState } from "react";
 import { Empty, ErrorNote, Field, Icon, MenuButton, Modal, Segmented, Spinner, useConfirm, useResult } from "../../components/ui";
 import { AccessDialog, AclEditor, EntryDialog, EntryStatusPill, LevelLegend } from "../../components/finance";
 import { del, patch, post, tempId, useResource } from "../../api";
+import ExportButton from "../../components/ExportButton";
+import { accountsReport, statementReport } from "../../lib/export/reports";
 import { formatDate, isoDay } from "../../lib/helpers";
 import { SCOPE_ORDER, accessBadge, accountActions, aclPayload, entryTotals, filterFinanceEntries, markPaidPatch, payLabel } from "../../lib/financeUtils";
 import { ACCOUNT_COLORS, ACCOUNT_KINDS, Kpi, SCOPE_LABEL, TransferDialog, money, signed } from "./common";
@@ -62,6 +64,12 @@ export default function Accounts({ accountsRes }) {
           <button type="button" className="btn btn--green" onClick={() => setEntry({ draft: { type: "income", account_id: shown.find((a) => a.can_post)?.id } })}><Icon name="plus" /> Gelir</button>
           <button type="button" className="btn btn--red" onClick={() => setEntry({ draft: { type: "expense", account_id: shown.find((a) => a.can_post)?.id } })}><Icon name="plus" /> Gider</button>
         </>}
+        <ExportButton id="accounts" title="Hesaplar" text="" report={() => {
+          const r = accountsReport(shown.map((a) => ({ ...a, scopeLabel: `${SCOPE_LABEL[a.scope] || ""}${a.city_name ? ` · ${a.city_name}` : ""}` })), { title: "Hesaplar", filters: scopeFilter === "all" ? [] : [SCOPE_LABEL[scopeFilter]], kindLabel: (a) => ACCOUNT_KINDS[a.kind]?.label || a.kind });
+          r.sections[0].columns.splice(1, 0, { key: "scopeLabel", label: "Kapsam" });
+          r.sections[0].columns.push({ key: "pin", label: "Bekleyen gelir", type: "money", total: "sum", get: (a) => a.pending?.income || 0, hidden: true }, { key: "pex", label: "Bekleyen gider", type: "money", total: "sum", get: (a) => a.pending?.expense || 0, hidden: true });
+          return r;
+        }} />
         <button type="button" className="btn btn--soft" disabled={accounts.filter((a) => a.can_manage).length < 2} onClick={() => setTransfer({})}><Icon name="swap" /> Virman yap</button>
         {creatable.length > 0 && <button type="button" className="btn btn--primary" onClick={() => setEditing({})}><Icon name="plus" /> Hesap aç</button>}
       </div>
@@ -359,6 +367,7 @@ function Statement({ account }) {
       <input type="date" className="select-sm" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} aria-label="Bitiş" />
       <span className="spacer" />
       {st && <><span className="pill">Devreden {money(st.opening)}</span><span className="pill pill--tool">Kapanış {money(st.closing)}</span></>}
+      {st && <ExportButton id="statement" title={`Ekstre — ${account.name}`} report={() => statementReport(account, st.items.map((m) => ({ date: m.date, description: m.title, party: m.note || m.party || "", kind: `${SOURCE[m.source] || m.source}${m.projectId ? " · proje" : ""}`, amount: m.amount })), { opening: st.opening, filters: [range.from || range.to ? `${range.from ? formatDate(range.from) : "…"} – ${range.to ? formatDate(range.to) : "…"}` : "Tüm hareketler"] })} />}
     </div>
     {!st ? (res.error ? <ErrorNote error={res.error} onRetry={res.reload} /> : <Spinner />) : st.items.length ? (
       <div className="table-wrap" style={{ maxHeight: 440 }}>

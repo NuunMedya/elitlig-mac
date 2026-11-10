@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { Icon, MenuButton, OfflineNote, Segmented, Spinner, useConfirm, useResult } from "../../components/ui";
 import { del, post, useResource } from "../../api";
 import { CONDITIONS, EVENT_ICONS, EVENT_LABELS, code39Svg, daysLabel, fmtDateTime, fmtDay, money, num, qtyText } from "../../lib/equipmentUtils";
-import { BASE, CondBadge, Flags, StatusBadge, Thumb, printReceipt, useEq } from "./common";
+import { BASE, CondBadge, Flags, StatusBadge, Thumb, printReceipt, saveReceiptDocx, useEq } from "./common";
 
 const Row = ({ label, children, wide }) => (children == null || children === "" || children === "—" ? null : <div className={wide ? "is-wide" : undefined}><dt>{label}</dt><dd>{children}</dd></div>);
 
@@ -132,6 +132,7 @@ export default function ItemPanel({ id, onClose }) {
             <span className={`pill pill--xs ${a.status === "open" ? (a.overdue ? "pill--red" : "pill--blue") : a.status === "lost" ? "pill--red" : "pill--green"}`}>{a.status === "open" ? (a.overdue ? "Gecikti" : "Açık") : a.status === "lost" ? "Kayıp" : "İade"}</span>
             {(a.condition_out || a.condition_in) && <small>{CONDITIONS[a.condition_out] || "—"} → {CONDITIONS[a.condition_in] || "—"}</small>}
             <button type="button" className="btn btn--sm" onClick={() => printReceipt(group(a))}><Icon name="printer" size={12} /> Tutanak</button>
+            <button type="button" className="btn btn--sm" onClick={() => saveReceiptDocx(group(a))} title="Zimmet tutanağı (Word)"><Icon name="file" size={12} /> Word</button>
           </div>
         </div>
       )) : <p className="muted">Henüz zimmet yok.</p>)}

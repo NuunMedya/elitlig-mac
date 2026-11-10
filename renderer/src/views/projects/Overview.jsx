@@ -12,6 +12,8 @@ import BriefEditor, { sectionOf } from "./BriefEditor";
 import OverviewOps from "./OverviewOps";
 import { useBrief } from "./useLifecycle";
 import "./lifecycle.css";
+import ExportButton from "../../components/ExportButton";
+import { projectBriefReport } from "../../lib/export/reports";
 
 const TAB_OF = { surec: "process", maliyet: "costs", sorular: "questions", ayarlar: "settings", butce: "budget" };
 
@@ -155,6 +157,7 @@ export default function Overview({ ctx }) {
             <button type="button" className={`btn btn--sm ${canEdit ? "btn--primary" : ""}`} onClick={() => open("identity")}><Icon name={canEdit ? "pencil" : "eye"} size={13} /> {canEdit ? "Künyeyi düzenle" : "Künyeyi gör"}</button>
             <button type="button" className="btn btn--sm" onClick={() => summary(true)}><Icon name="download" size={13} /> Proje özeti (PDF)</button>
             <button type="button" className="icon-btn" onClick={() => summary(false)} aria-label="Proje özetini yazdır" title="Yazdır"><Icon name="printer" size={15} /></button>
+            <ExportButton id="project-brief" title="Proje künyesi" text="" print={false} report={() => projectBriefReport({ project, view, team: team.map((m) => ({ name: m.name, role: m.title || ROLE_LABEL[m.role] })) })} />
           </div>
         </div>
         <div className={`lc-hero__count ${days != null && days < 0 ? "is-past" : ""}`} aria-label="Geri sayım">

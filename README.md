@@ -786,6 +786,59 @@ iş akışı ve Araçlarım'ı gösteriyordu). Masaüstündeki yedek menü kopya
 `app/adminPanel/adminNav.snapshot.json` dosyasıdır; web menüsü değişince
 `node scripts/sync-admin-nav.mjs ../elitlig-client` ile yenilenir.
 
+## Dışa aktar: PDF, Excel, Word, CSV, Markdown
+
+Her araçta **Dışa aktar** düğmesi (indirme simgesi) tek tıkla biçim menüsünü açar:
+PDF, Excel (.xlsx), Word (.docx), CSV, Markdown (bazı araçlarda JSON) ve Yazdır.
+Biçim seçilince **"Ne aktarılsın?"** penceresi açılır:
+
+- **Kapsam:** şu anki görünüm / tümü / seçili kayıtlar (araca göre).
+- **Tarih aralığı:** Tümü, Bu ay, Geçen ay, Önümüzdeki 30 gün, Bu yıl ya da özel.
+- **Bölümler ve sütunlar:** hangi tablo ve sütunların çıkacağı; varsayılanda gizli
+  sütunlar (not, belge no…) tek tıkla eklenir.
+- **Gruplama:** herhangi bir metin/tarih sütununa göre grup başlıkları ve ara toplamlar.
+- **Özet kartları**, **sayfa yönü** (otomatik/dikey/yatay) ve **dosya adı**.
+- Son seçimler araç başına hatırlanır. Kaydedince "Finder'da göster" (Windows'ta
+  "Klasörde göster") eylemli bildirim çıkar.
+
+Rapor kalitesi: Elitlig başlık şeridi ve logo, süzgeç özeti ("Kasım 2026 · Gider ·
+Saha kirası"), tr-TR tarih ve ₺ biçimi, toplam ve ara toplam satırları, sayfa
+numarası ("Sayfa 2 / 5"). Excel'de biçimli başlık, dondurulmuş ve süzgeçli başlık
+satırı, para/tarih/yüzde biçimleri, SUBTOTAL formüllü toplamlar ve birden çok
+sayfa (Özet + her bölüm); Word'de başlık/alt bilgi, tekrarlanan tablo başlığı,
+madde işaretleri ve logo. Dış kütüphane yoktur (renderer/src/lib/export).
+
+Araçlar: Yapılacaklar, Ajanda (gün/hafta/ay/liste), Not Defteri (tek not ve
+listedeki notlar), Projeler (liste, tam proje dökümü, künye, süreç, kişiler,
+sorular, portföy, iletişim, maliyet tablosu, bütçe, sponsorluk paketleri; teklif
+ve sunum önizlemesinde **Word olarak kaydet**), Muhasebe (hesaplar, ekstre, ön
+muhasebe, düzenli ödemeler, bütçe, proje maliyetleri, maç muhasebesi, Türkiye
+geneli), Ekipman (envanter, rezervasyon, bakım raporu, **zimmet tutanağı Word**),
+Rehber (kişiler — hedef kitleye göre gruplanabilir, takım rehberi), Tablolar
+(PDF/Word/Markdown; formüllü .xlsx eskisi gibi), Mesajlar (sohbet dökümü,
+seçili mesajlar), Talepler, Saha ve maç planlama. Eski dışa aktarmalar (formüllü
+Excel, vCard, .ics, klasik CSV) aynı menünün altında durur.
+
+Yeni bir ekrana eklemek (geliştirici):
+
+```jsx
+import ExportButton from "../components/ExportButton";
+import { tableReport } from "../lib/export/reports";
+
+<ExportButton id="maclar" title="Maçlar"
+  scopes={[{ value: "view", label: "Şu anki görünüm" }, { value: "all", label: "Tümü" }]}
+  report={({ scope }) => tableReport({
+    title: "Maçlar", filters: ["Kasım 2026"],
+    columns: [{ key: "date", label: "Tarih", type: "date" }, { key: "home", label: "Ev sahibi" }, { key: "fee", label: "Ücret", type: "money", total: "sum" }],
+    rows: scope === "all" ? all : shown, dateKey: "date",
+  })} />
+```
+
+Rapor modeli `renderer/src/lib/export/exportCore.js` başında; hazır modeller
+`reports.js`'te (`todosReport`, `ledgerReport`, `defsReport` — `[etiket, getter]`
+sütunlarından, `matrixReport` — başlık + satır dizisinden). Aynı klasör web
+deposunda `src/features/export` olarak birebir aynıdır.
+
 ## Oturum süresi
 
 Uygulama girişte sunucuya `client: "desktop"` ve `X-Client-Platform: desktop` gönderir. Sunucu bu

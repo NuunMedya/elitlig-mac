@@ -4,7 +4,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Empty, ErrorNote, Icon, Segmented, Spinner, useConfirm, useResult } from "../../components/ui";
 import { del, patch, post, useResource } from "../../api";
 import { EVENT_ICONS, EVENT_LABELS, LOCATION_KINDS, daysFrom, daysLabel, fmtDateTime, fmtDay, includesFold, money, num } from "../../lib/equipmentUtils";
-import { BASE, printReceipt, useEq } from "./common";
+import { BASE, printReceipt, saveReceiptDocx, useEq } from "./common";
+import ExportButton from "../../components/ExportButton";
+import { equipmentMaintenanceReport, equipmentReservationsReport } from "../../lib/export/reports";
 import { ExtendDialog } from "./dialogs";
 
 const useVersioned = (res) => {
@@ -133,6 +135,7 @@ export function Holders() {
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <button type="button" className="btn btn--sm" onClick={() => printReceipt(h.items)}><Icon name="printer" size={12} /> Tutanak</button>
                 <button type="button" className="btn btn--sm" onClick={() => printReceipt(h.items, { pdf: true })}><Icon name="download" size={12} /> PDF</button>
+                <button type="button" className="btn btn--sm" onClick={() => saveReceiptDocx(h.items)}><Icon name="file" size={12} /> Word</button>
                 {eq.perms.assign && groups.length === 1 && h.items.length > 1 && <button type="button" className="btn btn--sm" onClick={() => returnAll(h, groups[0])}><Icon name="undo" size={12} /> Tümünü iade al</button>}
               </div>
             </section>
@@ -171,6 +174,7 @@ export function Reservations() {
       <div className="filters">
         <Segmented size="sm" value={range} onChange={setRange} ariaLabel="Aralık" options={[{ value: "upcoming", label: "Yaklaşan" }, { value: "past", label: "Geçmiş" }, { value: "all", label: "Tümü" }]} />
         <span className="spacer" />
+        {res.data && <ExportButton id="eq-reservations" title="Ekipman rezervasyonları" text="" report={() => equipmentReservationsReport(res.data.items || [], { filters: [{ upcoming: "Yaklaşan", past: "Geçmiş", all: "Tümü" }[range]] })} />}
         {eq.perms.assign && <button type="button" className="btn btn--sm btn--primary" onClick={() => eq.goInventory({}, "Rezerve edilecek ekipmanı seçip Rezerve et'e basın.")}><Icon name="plus" size={13} /> Yeni rezervasyon</button>}
       </div>
       <ErrorNote error={res.error && !res.data ? res.error : null} onRetry={res.reload} />
@@ -225,7 +229,8 @@ export function Maintenance() {
         )) : <p className="muted small">Açık arıza kaydı yok.</p>}
       </section>
       <section className="card" style={{ gridColumn: "1 / -1" }}>
-        <header className="card__head"><h2 className="card__title"><Icon name="checks" /> Son bakım kayıtları</h2><span className="muted small">Bu yıl gider: <b>{money(d.cost_year)}</b></span></header>
+        <header className="card__head"><h2 className="card__title"><Icon name="checks" /> Son bakım kayıtları</h2><span className="muted small">Bu yıl gider: <b>{money(d.cost_year)}</b></span>
+          <ExportButton id="eq-maintenance" title="Bakım raporu" text="" report={() => equipmentMaintenanceReport(d, { days })} /></header>
         {d.recent.length ? <div className="table-wrap"><table className="table"><thead><tr><th>Tarih</th><th>Ekipman</th><th>İş</th><th>Servis</th><th style={{ textAlign: "right" }}>Maliyet</th></tr></thead>
           <tbody>{d.recent.map((m) => <tr key={m.id} onClick={() => eq.openItem(m.item_id)}><td>{fmtDay(m.performed_at)}</td><td><span className="eq-tag">{m.asset_tag}</span> {m.item_name}</td><td>{m.title}</td><td>{m.vendor || "—"}</td><td style={{ textAlign: "right" }}>{m.cost != null ? money(m.cost) : "—"}</td></tr>)}</tbody></table></div> : <p className="muted small">Henüz tamamlanmış bakım yok.</p>}
       </section>

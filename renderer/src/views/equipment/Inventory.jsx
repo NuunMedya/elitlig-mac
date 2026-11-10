@@ -2,6 +2,8 @@
 // Excel / CSV dışa aktarma. Liste çevrimdışıyken önbellekten gelir.
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Empty, ErrorNote, Icon, MenuButton, Segmented, Spinner, useConfirm, useResult } from "../../components/ui";
+import ExportButton from "../../components/ExportButton";
+import { equipmentInventoryReport } from "../../lib/export/reports";
 import { get, post, useCommand, useDebounced, useResource } from "../../api";
 import { ALERTS, CONDITIONS, EXPORT_COLUMNS, STATUS_META, filterParams, fmtDay, money, num, qtyText, selectionSummary } from "../../lib/equipmentUtils";
 import { saveRowsCsv, saveRowsXlsx } from "../projects/common";
@@ -70,7 +72,14 @@ export default function Inventory({ preset, openId }) {
         <select className="select-sm" value={f.alert} onChange={set("alert")} aria-label="Uyarı"><option value="">Uyarı: hepsi</option>{Object.entries(ALERTS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
         <select className="select-sm" value={f.sort} onChange={set("sort")} aria-label="Sıralama">{[["tag", "Etiket no"], ["name", "Ad"], ["value_desc", "Değer"], ["newest", "En yeni"], ["updated", "Son değişen"], ["location", "Konum"], ["category", "Kategori"]].map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
         <Segmented size="sm" value={view} onChange={chooseView} ariaLabel="Görünüm" options={[{ value: "table", icon: "list", label: "Tablo" }, { value: "grid", icon: "grid", label: "Kart" }]} />
-        <MenuButton icon="download" label="Dışa aktar (⌘E)" items={[{ label: "Excel (.xlsx)", icon: "download", onClick: () => exportRows("xlsx") }, { label: "CSV", icon: "download", onClick: () => exportRows("csv") }]} />
+        <ExportButton id="eq-inventory" title="Ekipman envanteri" text=""
+          scopes={[{ value: "view", label: `Listedekiler (${items.length})` }, { value: "all", label: "Süzgece uyan tümü" }, ...(picked.length ? [{ value: "picked", label: `Seçili (${picked.length})` }] : [])]}
+          report={async ({ scope: sc }) => {
+            let list = sc === "picked" ? picked : items;
+            if (sc === "all") { const r = await get(`${BASE}/items`, { ...filterParams(f), export: 1 }); if (r.ok) list = r.data.items; }
+            return equipmentInventoryReport(list, EXPORT_COLUMNS, { filters: [f.q && `"${f.q}"`, f.status.map((k) => STATUS_META[k]?.label).join(", "), (eq.meta?.categories || []).find((c) => String(c.id) === String(f.category_id))?.name, (eq.meta?.locations || []).find((l) => String(l.id) === String(f.location_id))?.name].filter(Boolean) });
+          }}
+          extraItems={[{ label: "Excel — klasik (⌘E)", icon: "download", onClick: () => exportRows("xlsx") }, { label: "CSV — klasik", icon: "download", onClick: () => exportRows("csv") }]} />
         {eq.perms.manage && <button type="button" className="btn btn--sm" onClick={eq.openImport}><Icon name="upload" size={13} /> İçe aktar</button>}
       </div>
       <div className="filters">

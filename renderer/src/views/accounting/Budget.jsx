@@ -5,6 +5,8 @@
 import React, { useState } from "react";
 import { Empty, ErrorNote, Field, Icon, Modal, OfflineNote, Segmented, Spinner, useConfirm, useResult } from "../../components/ui";
 import { del, patch, post, useCommand, useResource } from "../../api";
+import ExportButton from "../../components/ExportButton";
+import { budgetReport } from "../../lib/export/reports";
 import { PRESET_CATEGORIES, parseAmount } from "../../lib/ledgerUtils";
 import { formatMoney } from "../../lib/helpers";
 import { budgetBar, currentMonth, monthTitle, shiftMonth } from "../../lib/recurringUtils";
@@ -41,6 +43,11 @@ export default function Budget() {
           {month !== currentMonth() && <button type="button" className="btn btn--sm btn--soft" onClick={() => setMonth(currentMonth())}>Bu ay</button>}
         </div>
         <span className="spacer" />
+        {d && <ExportButton id="budget" title="Bütçe" report={() => {
+          const r = budgetReport(items.map((b) => ({ category: b.category, type: b.type, planned: b.amount, actual: (Number(b.actual) || 0) + (Number(b.pending) || 0) })), { title: `Bütçe — ${monthTitle(month)}` });
+          if (d.unbudgeted?.length) r.sections.push({ id: "unbudgeted", title: "Bütçesi olmayan harcamalar", columns: [{ key: "category", label: "Kategori" }, { key: "count", label: "Kayıt", type: "number", total: "sum" }, { key: "spent", label: "Harcanan", type: "money", total: "sum", get: (u) => (Number(u.actual) || 0) + (Number(u.pending) || 0) }, { key: "avg3", label: "3 ay ortalaması", type: "money" }], rows: d.unbudgeted });
+          return r;
+        }} />}
         <button type="button" className="btn btn--primary" onClick={() => setEditing({ type: "expense" })}><Icon name="plus" /> Bütçe</button>
       </div>
       <OfflineNote offline={data.offline} savedAt={data.savedAt} />

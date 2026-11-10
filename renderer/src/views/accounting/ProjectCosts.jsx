@@ -4,10 +4,12 @@
 // Gerçekleşen: bütçenin ödenen kayıtları + muhasebeye işlenmemiş kalemlerin
 // gerçekleşeni. Sunucu: services/projectCosts.js financeReport.
 import React, { useState } from "react";
-import { Empty, ErrorNote, Icon, MenuButton, Spinner } from "../../components/ui";
+import { Empty, ErrorNote, Icon, Spinner } from "../../components/ui";
 import { useResource } from "../../api";
 import { saveRowsCsv, saveRowsXlsx } from "../projects/common";
 import { money } from "./common";
+import ExportButton from "../../components/ExportButton";
+import { matrixReport } from "../../lib/export/reports";
 import "../projects/lifecycle.css";
 
 const Diff = ({ value, inverse = false }) => {
@@ -42,7 +44,8 @@ export default function ProjectCosts({ go }) {
       <div className="filters">
         <label className="lc-check"><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Arşivdeki projeler de</label>
         <span className="spacer" />
-        <MenuButton icon="download" label="Dışa aktar" items={[
+        <ExportButton id="project-costs" title="Proje maliyetleri" report={() => { const r = rows(); return matrixReport("Proje maliyetleri", r[0], r.slice(1), { filters: archived ? ["Arşiv dahil"] : [], summary: [{ label: "Planlanan gider", value: t.planned_expense, type: "money" }, { label: "Gerçekleşen gider", value: t.actual_expense, type: "money", tone: "red" }, { label: "Planlanan gelir", value: t.planned_income, type: "money" }, { label: "Gerçekleşen net", value: t.actual_net, type: "money", tone: t.actual_net < 0 ? "red" : "green" }] }); }}
+          extraItems={[
           { label: "Excel (.xlsx)", icon: "grid", disabled: !d.items.length, onClick: () => saveRowsXlsx("Proje-maliyetleri", rows(), "Proje maliyetleri", widths) },
           { label: "CSV", icon: "download", disabled: !d.items.length, onClick: () => saveRowsCsv("Proje-maliyetleri", rows()) },
         ]} />

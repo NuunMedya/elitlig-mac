@@ -17,6 +17,8 @@ import Budget from "./Budget";
 import Costs from "./Costs";
 import Feed from "./Feed";
 import "./lifecycle.css";
+import ExportButton from "../../components/ExportButton";
+import { projectReport } from "../../lib/export/reports";
 import { useFeedUnread } from "./useLifecycle";
 import ProposalsTab from "./proposals/Proposals";
 import SponsorshipTab from "./proposals/Sponsorship";
@@ -126,7 +128,15 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
             <Progress value={st.progress} color={item.color} />
             <small>{st.done}/{st.total - st.skipped} adım{st.overdue ? <> · <b className="text-red">{st.overdue} geciken</b></> : ""}</small>
           </div>
-          <MenuButton icon="download" label="Dışa aktar" items={[
+          <ExportButton id="project" title={item.name} text=""
+            report={() => projectReport({
+              project: item, statusLabel: label(data.meta.project_statuses, item.status), people: data.people || {},
+              stepRows: stepsToRows({ phases: data.phases, steps: data.steps, people: data.people, meta: data.meta }),
+              leadRows: leadsToRows({ leads: data.leads, settings: item.settings }),
+              questions: data.questions, portfolio: data.portfolio, activities: data.activities || [],
+              portfolioStatus: (k) => ({ active: "Aktif", passive: "Pasif", renewal: "Yenilenecek" }[k] || k),
+            })}
+            extraItems={[
             { label: "Adımlar — Excel (.xlsx)", icon: "grid", onClick: () => exportSteps("xlsx") },
             { label: "Adımlar — CSV", icon: "download", onClick: () => exportSteps("csv") },
             "-",

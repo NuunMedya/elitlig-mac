@@ -2,11 +2,12 @@
 // İllerden alınacak maç başı ücretler (tahakkuk), tahsilatlar, ek kalemler,
 // tutar düzeltmeleri ve tarifeler.
 import React, { useMemo, useState } from "react";
-import { Empty, ErrorNote, Field, Icon, MenuButton, Modal, Segmented, Spinner, useConfirm, useResult } from "../../components/ui";
+import { Empty, ErrorNote, Field, Icon, Modal, Segmented, Spinner, useConfirm, useResult } from "../../components/ui";
 import { request, useResource } from "../../api";
 import { formatDate, includesTr, isoDay } from "../../lib/helpers";
 import { parseAmount } from "../../lib/ledgerUtils";
 import { toCsvText } from "../../lib/sheets/sheetEngine";
+import ExportButton from "../../components/ExportButton";
 import { AccountStrip, FlowChart, Kpi, MONTH_PRESETS, PeriodPicker, money, monthRange } from "./common";
 
 const BASE = "/api/admin/national-accounting";
@@ -43,7 +44,14 @@ export default function National({ accounts, onTransfer, onManageAccounts }) {
         <span className="spacer" />
         <button type="button" className="btn btn--green" onClick={() => setEntry({ kind: "payment" })}><Icon name="plus" /> Tahsilat</button>
         <button type="button" className="btn btn--soft" onClick={() => setEntry({ kind: "charge" })}><Icon name="plus" /> Ek kalem</button>
-        <MenuButton icon="download" label="Dışa aktar" items={[
+        <ExportButton id="national" title="Türkiye geneli" report={() => ({
+          title: "Türkiye geneli muhasebe", filters: [range?.from ? `${range.from} – ${range.to}` : ""].filter(Boolean),
+          summary: t ? Object.entries({ due: "Tahakkuk", paid: "Tahsilat", balance: "Bakiye" }).filter(([k]) => t[k] != null).map(([k, label]) => ({ label, value: t[k], type: "money" })) : [],
+          sections: [
+            { id: "cities", title: "İller", columns: [{ key: "name", label: "İl" }, { key: "opening", label: "Devreden", type: "money", total: "sum" }, { key: "matchCount", label: "Maç", type: "number", total: "sum" }, { key: "due", label: "Tahakkuk", type: "money", total: "sum" }, { key: "paid", label: "Tahsilat", type: "money", total: "sum" }, { key: "balance", label: "Bakiye", type: "money", total: "sum" }], rows: s?.cities || [] },
+            { id: "lines", title: "Sezon satırları", groupBy: "city", columns: [{ key: "city", label: "İl" }, { key: "period", label: "Ay" }, { key: "seasonName", label: "Sezon" }, { key: "matchCount", label: "Maç", type: "number", total: "sum" }, { key: "fee", label: "Ücret", type: "money" }, { key: "amount", label: "Tutar", type: "money", total: "sum" }], rows: (s?.cities || []).flatMap((c) => c.lines.map((l) => ({ ...l, city: c.name }))) },
+          ],
+        })} text="" extraItems={[
           { label: "İller (CSV)", onClick: () => exportCsv("Iller", ["İl", "Devreden", "Maç", "Tahakkuk", "Tahsilat", "Bakiye"], (s?.cities || []).map((c) => [c.name, c.opening, c.matchCount, c.due, c.paid, c.balance])) },
           { label: "Sezon satırları (CSV)", onClick: () => exportCsv("Sezon-satirlari", ["İl", "Ay", "Sezon", "Maç", "Ücret", "Tutar"], (s?.cities || []).flatMap((c) => c.lines.map((l) => [c.name, l.period, l.seasonName || "", l.matchCount, l.fee, l.amount]))) },
         ]} />

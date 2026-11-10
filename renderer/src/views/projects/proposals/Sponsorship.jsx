@@ -11,6 +11,8 @@ import PresentationEditor from "./PresentationEditor";
 import ProposalEditor from "./ProposalEditor";
 import MailComposer from "./MailComposer";
 import "./proposals.css";
+import ExportButton from "../../../components/ExportButton";
+import { sponsorshipReport } from "../../../lib/export/reports";
 
 function Cell({ pkg, feature, canEdit, onSet }) {
   const v = pkg.features?.[String(feature.id)];
@@ -197,7 +199,7 @@ export default function Sponsorship({ ctx }) {
       </div>
 
       <section className="card sl-card">
-        <header className="sl-card__head"><h3><Icon name="award" size={15} /> Sponsorluk paketleri <span className="muted">{sales.packages.length}</span></h3>{canEdit && <button type="button" className="btn btn--primary btn--sm" onClick={() => setEditing({})}><Icon name="plus" size={12} /> Paket ekle</button>}</header>
+        <header className="sl-card__head"><h3><Icon name="award" size={15} /> Sponsorluk paketleri <span className="muted">{sales.packages.length}</span></h3><ExportButton id="sponsorship" title="Sponsorluk paketleri" text="" print={false} report={() => sponsorshipReport(sales, ctx.project?.name, { dealStatus: (k) => DEAL_STATUS[k]?.label || k, proposalNo: displayNumber })} />{canEdit && <button type="button" className="btn btn--primary btn--sm" onClick={() => setEditing({})}><Icon name="plus" size={12} /> Paket ekle</button>}</header>
         {!sales.packages.length ? (
           <Empty icon="award" title="Henüz paket yok" text="Ana sponsor, Altın, Gümüş… paketlerinizi oluşturun; haklarını işaretleyin, kontenjan ve fiyat verin. Hızlı başlamak için örnek seti kurabilirsiniz."
             action={canEdit && <div className="row-gap"><button type="button" className="btn btn--primary" onClick={async () => { if (await call({ method: "POST", path: `${base}/starter`, body: {} }, "Örnek hak kataloğu ve 4 paket eklendi.")) refreshSales(); }}><Icon name="sparkles" size={13} /> Örnek paket setini kur</button><button type="button" className="btn" onClick={() => setEditing({})}>Boş paket ekle</button></div>} />
