@@ -15,6 +15,7 @@ import {
 import { workbookToXlsx } from "../lib/sheets/xlsxExport";
 import ExportButton from "../components/ExportButton";
 import { sheetReport } from "../lib/export/reports";
+import { markPrintHandled } from "../lib/export/exportRegistry";
 import { importFile as readSheetFile } from "../lib/sheets/importFile";
 import { relativeTime } from "../lib/helpers";
 import {
@@ -551,7 +552,7 @@ export default function SheetEditor({ id, onClose }) {
 
   useEffect(() => window.elitlig.onCommand((cmd) => {
     if (cmd === "export") exportXlsx();
-    if (cmd === "print") printSheet(false);
+    if (cmd === "print") { markPrintHandled(); printSheet(false); }
     if (cmd === "find") document.querySelector(".formula-bar input")?.focus();
   }));
 

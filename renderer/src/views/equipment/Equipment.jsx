@@ -22,6 +22,7 @@ import { Dashboard, History, Holders, Maintenance, Reservations, Settings } from
 import { AssignDialog, FaultDialog, ImportDialog, ItemForm, LabelDialog, MaintenanceDialog, ReserveDialog, ReturnDialog } from "./dialogs";
 import { DepreciationReport, ExpenseDialog, MineSection } from "./links";
 import { saveRowsXlsx } from "../projects/common";
+import { markPrintHandled } from "../../lib/export/exportRegistry";
 
 const SECTIONS = [
   { value: "pano", label: "Pano", icon: "overview" },
@@ -88,7 +89,7 @@ export default function Equipment({ arg, argSeq, go: goRoute }) {
   }), [meta, perms, version, bump, go, metaRes, holdersRes.data, offerReceipt, toast, result, goRoute]);
 
   useCommand("new", () => { if (perms.manage) setDialog({ type: "form", item: null }); });
-  useCommand("print", () => { if (openId) setDialog({ type: "labels", items: [{ id: openId, asset_tag: "", name: "" }] }); });
+  useCommand("print", () => { if (openId) markPrintHandled(); if (openId) setDialog({ type: "labels", items: [{ id: openId, asset_tag: "", name: "" }] }); });
 
   const denied = metaRes.error?.status === 403;
   const notDeployed = metaRes.error?.status === 404;

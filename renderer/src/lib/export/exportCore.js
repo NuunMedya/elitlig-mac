@@ -117,6 +117,23 @@ export const hasDateFilter = (report) => (report?.sections || []).some((s) => s.
 /** Gruplanabilir sütunlar (metin/tarih/bool), her bölüm için. */
 export const groupableColumns = (section) => (section.columns || []).filter((c) => !isNumericType(c.type) && c.type !== "longtext" && c.groupable !== false);
 
+/**
+ * "Gruplu" görünüm için en anlamlı sütun: tekrar eden değerleri olan (2 ≤ farklı değer < kayıt),
+ * en az farklı değerli metin sütunu; tarih sütunları sona bırakılır.
+ */
+export function suggestGroupColumn(section) {
+  const cols = groupableColumns(section);
+  const rows = (section.rows || []).filter(Boolean);
+  let best = null;
+  for (const c of cols) {
+    const distinct = new Set(rows.map((r) => formatValue(cellValue(c, r), c.type))).size;
+    const ok = distinct >= 2 && distinct < rows.length;
+    const score = (ok ? 0 : 10000) + (["date", "datetime", "time"].includes(c.type) ? 1000 : 0) + distinct;
+    if (!best || score < best.score) best = { c, score };
+  }
+  return best?.c || null;
+}
+
 function aggregate(rows, col) {
   if (col.total === "count") return rows.filter((r) => { const v = cellValue(col, r); return v != null && v !== ""; }).length;
   const nums = rows.map((r) => toNumber(cellValue(col, r))).filter((n) => n != null);
@@ -141,8 +158,10 @@ function totalsRow(rows, columns) {
  * Raporu seçeneklere göre hazırlar: sütun seçimi, tarih aralığı, gruplama,
  * ara toplam / toplam satırları. Bütün yazıcılar bu çıktıyı kullanır.
  *
- * opts: { columns: { [sectionId]: string[] }, from, to, groupBy: { [sectionId]: key } | key,
- *         includeSummary = true, orientation: "portrait" | "landscape" | "auto", sections: string[] }
+ * opts: { columns: { [sectionId]: string[] } (sıra korunur), from, to, groupBy: { [sectionId]: key } | key,
+ *         includeSummary = true, orientation: "portrait" | "landscape" | "auto", sections: string[],
+ *         query (satır arama), totals: false (toplam / ara toplam yok), layout ("grouped" → varsayılan
+ *         gruplama), title / subtitle (başlığı geçersiz kılar) }
  */
 export function prepareReport(report, opts = {}) {
   const now = opts.now ? new Date(opts.now) : new Date();
@@ -157,9 +176,12 @@ export function prepareReport(report, opts = {}) {
     if (kind !== "table") { sections.push({ ...section, id, kind }); return; }
     const all = section.columns || [];
     const chosen = opts.columns?.[id];
-    let columns = chosen ? all.filter((c) => chosen.includes(c.key)) : all.filter((c) => !c.hidden);
+    // Seçim sırası korunur (sütunlar iletişim kutusunda yeniden sıralanabilir).
+    let columns = chosen ? chosen.map((k) => all.find((c) => c.key === k)).filter(Boolean) : all.filter((c) => !c.hidden);
     if (!columns.length) columns = all.slice(0, 1);
     let rows = (section.rows || []).filter(Boolean);
+    const query = String(opts.query || "").trim().toLocaleLowerCase("tr-TR");
+    if (query) rows = rows.filter((r) => columns.some((c) => formatValue(cellValue(c, r), c.type).toLocaleLowerCase("tr-TR").includes(query)));
     if ((from || to) && section.dateKey) {
       rows = rows.filter((r) => {
         const k = dayKey(typeof section.dateKey === "function" ? section.dateKey(r) : r[section.dateKey]);
@@ -167,8 +189,11 @@ export function prepareReport(report, opts = {}) {
         return (!from || k >= from) && (!to || k <= to);
       });
     }
-    const groupKey = typeof opts.groupBy === "object" && opts.groupBy ? opts.groupBy[id] : (opts.groupBy ?? section.groupBy);
+    let groupKey = typeof opts.groupBy === "object" && opts.groupBy ? opts.groupBy[id] : (opts.groupBy ?? section.groupBy);
+    // "Gruplu" görünümde gruplama sütunu seçilmediyse ilk gruplanabilir sütun kullanılır.
+    if (!groupKey && opts.layout === "grouped") groupKey = suggestGroupColumn({ columns, rows })?.key || "";
     const groupCol = groupKey ? all.find((c) => c.key === groupKey) : null;
+    const noTotals = opts.totals === false;
     let groups;
     if (groupCol) {
       const map = new Map();
@@ -177,15 +202,16 @@ export function prepareReport(report, opts = {}) {
         if (!map.has(label)) map.set(label, []);
         map.get(label).push(r);
       }
-      groups = [...map.entries()].map(([label, list]) => ({ label: `${groupCol.label}: ${label}`, rows: list, subtotal: totalsRow(list, columns) }));
+      groups = [...map.entries()].map(([label, list]) => ({ label: `${groupCol.label}: ${label}`, value: label, rows: list, subtotal: noTotals ? null : totalsRow(list, columns) }));
     } else groups = [{ label: null, rows, subtotal: null }];
     const toCells = (r) => columns.map((c) => cellValue(c, r));
     sections.push({
       ...section, id, kind, columns,
       groupLabel: groupCol?.label || null,
-      groups: groups.map((g) => ({ label: g.label, rows: g.rows.map(toCells), subtotal: g.subtotal })),
+      groupKey: groupCol?.key || null,
+      groups: groups.map((g) => ({ label: g.label, value: g.value, rows: g.rows.map(toCells), subtotal: g.subtotal })),
       rowCount: rows.length,
-      totals: section.totals === false || !rows.length ? null : totalsRow(rows, columns),
+      totals: noTotals || section.totals === false || !rows.length ? null : totalsRow(rows, columns),
     });
   });
   const filters = [...(report.filters || []).filter(Boolean)];
@@ -196,8 +222,8 @@ export function prepareReport(report, opts = {}) {
     ? opts.orientation
     : (report.orientation || (widest > 6 ? "landscape" : "portrait"));
   return {
-    title: report.title || "Rapor",
-    subtitle: report.subtitle || "",
+    title: String(opts.title || "").trim() || report.title || "Rapor",
+    subtitle: opts.subtitle != null && String(opts.subtitle).trim() ? String(opts.subtitle).trim() : report.subtitle || "",
     filters,
     filterText: filters.join(" · "),
     summary: opts.includeSummary === false ? [] : (report.summary || []).filter((s) => s && s.label),

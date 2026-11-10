@@ -5,6 +5,26 @@ import { Icon } from "../../components/ui";
 import { request } from "../../api";
 import { CARD_KINDS, addDays, localIso, matchesQuery, outcomeMeta, timeLabel } from "../../lib/planningUtils";
 import { A, OutcomeTag, Tag, TeamPicker } from "./shared";
+import ExportButton from "../../components/ExportButton";
+import { tableReport } from "../../lib/export/reports";
+
+/** Kayıtlar → rapor (Dışa aktar / ⌘P yazdırma stüdyosu). */
+function logReport(list, filters) {
+  return tableReport({
+    title: "Planlama kayıtları", filters, sectionTitle: "Kayıtlar", dateKey: "created_at", groupBy: "day",
+    columns: [
+      { key: "day", label: "Gün", get: (r) => dayHead(localIso(new Date(r.created_at))), hidden: true },
+      { key: "created_at", label: "Zaman", type: "datetime" },
+      { key: "source", label: "Tür", get: (r) => (r.source === "call" ? "Görüşme" : "Talep hareketi") },
+      { key: "team", label: "Takım", get: (r) => r.team_name || (r.team_id ? `Takım #${r.team_id}` : "") },
+      { key: "subject", label: "Konu", get: (r) => (r.source === "call" ? r.outcome_label || outcomeMeta(r.outcome).label || "" : r.task_title) },
+      { key: "event", label: "Hareket", get: (r) => (r.source === "call" ? [r.venue_name, r.slot_label].filter(Boolean).join(" · ") : `${EVENT_LABELS[r.type] || r.type}${["stage", "kind", "reopened"].includes(r.type) && r.to_label ? `: ${r.from_label} → ${r.to_label}` : ""}`) },
+      { key: "note", label: "Not", type: "longtext", get: (r) => r.note || r.text || "" },
+      { key: "author", label: "Yazan", get: (r) => r.author || "", hidden: true },
+    ],
+    rows: list,
+  });
+}
 
 const EVENT_LABELS = { created: "Talep açıldı", note: "Talep notu", stage: "Durum değişti", kind: "Türü değişti", options: "Saat seçenekleri", matched: "Maç ayarlandı", reopened: "Yeniden açıldı" };
 const EVENT_ICONS = { created: "plus", note: "message", stage: "chevronRight", kind: "swap", options: "calendar", matched: "ball", reopened: "rotate" };
@@ -61,6 +81,9 @@ export function ActivityLog({ refreshKey, venues, allTeams, cards = [], onOpenTe
         {active > 0 && <button type="button" className="link-btn small" onClick={() => { setType(""); setTeam(""); setVenue(""); setRange(""); }}><Icon name="x" size={10} /> Temizle</button>}
         <span className="spacer" />
         <small className="muted">{visible.length} / {(rows || []).length} kayıt</small>
+        {rows && <ExportButton id="planning-log" title="Planlama kayıtları" text="" defaultDesign={{ layout: "list" }}
+          scopes={[{ value: "view", label: `Süzülmüş kayıtlar (${visible.length})` }, { value: "all", label: `Tüm kayıtlar (${rows.length})` }]}
+          report={({ scope }) => logReport(scope === "all" ? rows : visible, scope === "all" ? [] : [TYPES.find((t) => t.key === type)?.label, range && RANGES.find((r) => r.key === range)?.label, q && `“${q}”`].filter((x) => x && x !== "Tümü"))} />}
       </div>
       {!rows ? <div className="pl-skeleton">{[0, 1, 2].map((i) => <i key={i} />)}</div> : visible.length === 0 ? <div className="empty"><span className="empty__icon"><Icon name="clock" size={26} /></span><strong>{rows.length ? "Süzgece uyan kayıt yok." : "Henüz kayıt yok."}</strong></div> : (
         <div className="pl-logdays">

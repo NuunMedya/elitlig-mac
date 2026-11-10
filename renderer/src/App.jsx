@@ -2,6 +2,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmProvider, Icon, Kbd, Modal, Spinner, isMac, keyLabel, useToast } from "./components/ui";
 import Palette from "./components/Palette";
+import { PagePrintHost } from "./lib/export/PagePrint";
 import Login from "./views/Login";
 import { refreshAll, useResource } from "./api";
 import { formatClock } from "./lib/helpers";
@@ -267,11 +268,15 @@ function Shell({ auth }) {
         </Suspense>
       </main>
       {palette && <Palette onClose={() => setPalette(false)} go={go} routes={routes} />}
+      {!bare && <PagePrintHost subscribe={subscribePrint} />}
       {shortcuts && <ShortcutsHelp onClose={() => setShortcuts(false)} />}
     </div>
     </MusicProvider>
   );
 }
+
+/** ⌘P (Dosya ▸ Yazdır…): sayfanın birincil dışa aktarması ya da "Bu sayfayı yazdır" (lib/export/PagePrint). */
+const subscribePrint = (fn) => window.elitlig.onCommand((cmd) => { if (cmd === "print") fn(); });
 
 /** Dar kenar çubuğunda ipucu balonu: fareyle üzerine gelince ya da klavye odağında. */
 function railTip(collapsed, setTip, label, shortcut, extra) {

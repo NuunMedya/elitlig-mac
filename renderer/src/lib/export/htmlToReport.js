@@ -10,7 +10,10 @@
 
 const clean = (s) => String(s || "").replace(/\s+/g, " ").trim();
 
-function inlineMd(node) {
+/** Metin; öğe sınırlarında boşlukla (yan yana span'ler birleşmesin). */
+const spacedText = (el) => [...el.childNodes].map((n) => (n.nodeType === 3 ? n.nodeValue : n.nodeType === 1 && !["script", "style", "svg"].includes(n.tagName.toLowerCase()) ? ` ${spacedText(n)} ` : "")).join("");
+const FORMAT_TAGS = new Set(["b", "strong", "i", "em", "a", "code", "u", "s", "sub", "sup", "mark"]);
+function inlineMd(node, spaced = false) {
   let out = "";
   node.childNodes.forEach((n) => {
     if (n.nodeType === 3) { out += n.nodeValue.replace(/\s+/g, " "); return; }
@@ -18,7 +21,9 @@ function inlineMd(node) {
     const tag = n.tagName.toLowerCase();
     if (["script", "style", "svg", "img", "noscript"].includes(tag)) return;
     if (tag === "br") { out += "\n"; return; }
-    const inner = inlineMd(n);
+    // Uygulama ekranları (spaced): yan yana span / time / small öğeleri boşlukla ayrılır.
+    if (spaced && !FORMAT_TAGS.has(tag) && out && !/\s$/.test(out)) out += " ";
+    const inner = inlineMd(n, spaced);
     if (!clean(inner)) { out += inner; return; }
     if (tag === "b" || tag === "strong") out += `**${clean(inner)}**`;
     else if (tag === "i" || tag === "em") out += `*${clean(inner)}*`;
@@ -32,7 +37,7 @@ const BLOCK = new Set(["p", "div", "section", "article", "header", "footer", "ma
 const hasBlockChild = (el) => [...el.children].some((c) => BLOCK.has(c.tagName.toLowerCase()));
 
 /** html: tam belge ya da parça. Dönen rapor exportCore modelindedir. */
-export function htmlToReport(html, title = "Belge", { subtitle = "", filters = [] } = {}) {
+export function htmlToReport(html, title = "Belge", { subtitle = "", filters = [], spaced = false } = {}) {
   const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
   doc.querySelectorAll("script,style,noscript,template").forEach((n) => n.remove());
   const sections = [];
@@ -50,7 +55,7 @@ export function htmlToReport(html, title = "Belge", { subtitle = "", filters = [
         text.push(`${"#".repeat(Math.min(3, Number(tag[1]) - 1 || 1))} ${t}`);
       } else if (tag === "table") {
         flush();
-        const rows = [...n.querySelectorAll("tr")].map((tr) => [...tr.children].map((c) => clean(c.textContent)));
+        const rows = [...n.querySelectorAll("tr")].map((tr) => [...tr.children].map((c) => clean(spaced ? spacedText(c) : c.textContent)));
         if (!rows.length) return;
         const headIsTh = n.querySelector("thead") || [...(n.querySelector("tr")?.children || [])].every((c) => c.tagName === "TH");
         // İki sütunlu, başlıksız tablolar (künye) anahtar/değer olarak yazılır.
@@ -61,10 +66,10 @@ export function htmlToReport(html, title = "Belge", { subtitle = "", filters = [
         const columns = Array.from({ length: width }, (_, i) => ({ key: `c${i}`, label: head[i] || `Sütun ${i + 1}` }));
         sections.push({ id: `tb${sections.length}`, columns, rows: body.map((r) => Object.fromEntries(columns.map((c, i) => [c.key, r[i] ?? ""]))), totals: false });
       } else if (tag === "ul" || tag === "ol") {
-        const items = [...n.children].filter((li) => li.tagName === "LI").map((li, i) => `${tag === "ol" ? `${i + 1}.` : "-"} ${clean(inlineMd(li))}`);
+        const items = [...n.children].filter((li) => li.tagName === "LI").map((li, i) => `${tag === "ol" ? `${i + 1}.` : "-"} ${clean(inlineMd(li, spaced))}`);
         if (items.length) text.push(items.join("\n"));
       } else if (tag === "blockquote") {
-        const t = clean(inlineMd(n));
+        const t = clean(inlineMd(n, spaced));
         if (t) text.push(`> ${t}`);
       } else if (tag === "pre") {
         text.push(`\`\`\`\n${n.textContent.trim()}\n\`\`\``);
@@ -75,7 +80,7 @@ export function htmlToReport(html, title = "Belge", { subtitle = "", filters = [
         if (boundary && text.length) text.push("---");
         walk(n);
       } else {
-        const t = inlineMd(n).replace(/[ \t]+/g, " ").replace(/\n /g, "\n").trim();
+        const t = inlineMd(n, spaced).replace(/[ \t]+/g, " ").replace(/\n /g, "\n").trim();
         if (t) text.push(t);
       }
     });
