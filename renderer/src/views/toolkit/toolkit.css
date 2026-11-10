@@ -311,3 +311,5 @@ input[type="checkbox"].switch:focus-visible { box-shadow: var(--focus-ring); out
 .tk-all__item span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tk-all__item .ic { color: var(--tool); }
 .tk-all__item:hover { background: var(--tool-soft); border-color: color-mix(in srgb, var(--tool) 40%, transparent); }
+.tk-all__item { position: relative; }
+.tk-all__item .tk-all__ext { position: absolute; top: 4px; right: 4px; color: var(--muted); }

@@ -30,7 +30,7 @@ const readTab = () => { try { return localStorage.getItem(TAB_KEY) || "home"; } 
 const ACTIVE = new Set(["queued", "running"]);
 const when = (t) => (t ? new Date(t).toLocaleString("tr-TR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
 
-export default function FileTools({ arg }) {
+export default function FileTools({ arg, argSeq }) {
   const toast = useToast();
   const confirm = useConfirm();
   const [tab, setTab] = useState(readTab);
@@ -113,6 +113,11 @@ export default function FileTools({ arg }) {
     return () => off?.();
   }, [addEntries]);
   useEffect(() => { if (arg === "paste") paste(); }, [arg, paste]);
+  // Araç Takımı kısayolları: files:download (Bağlantıdan indir) · files:record (Ekran kaydı).
+  useEffect(() => {
+    if (arg === "download") setDownload(true);
+    if (arg === "record") setRecorder(true);
+  }, [arg, argSeq]);
 
   const onDrop = async (e) => {
     e.preventDefault();

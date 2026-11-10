@@ -440,11 +440,12 @@ function registerDeskkit(deps) {
         { type: "separator" },
         // Birleşik Araç Takımı'nın bölümleri: eski kısayollar aynen (eskiden Görünüm menüsündeydi).
         { label: "Dosya Araçları", accelerator: "CmdOrCtrl+Shift+D", click: () => showMain("files") },
+        { label: "Bağlantıdan İndir…", click: () => showMain("files:download") },
         { label: "Ekran Görüntüleri ve Pano", accelerator: "CmdOrCtrl+Shift+P", click: () => showMain("shelf") },
         { label: "Hesap Araçları", accelerator: "CmdOrCtrl+8", click: () => showMain("calc") },
         { label: "Odak Sayacı", accelerator: "CmdOrCtrl+9", click: () => showMain("focus") },
         { label: "Lig ve Organizasyon Araçları", click: () => showMain("toolkit:kat-lig") },
-        { label: "Ağ ve Sistem Araçları", click: () => showMain("toolkit:kat-sistem") },
+        { label: "Masaüstü ve Sistem Araçları", click: () => showMain("toolkit:kat-masaustu") },
         { type: "separator" },
         { label: "Pencere Düzeni", enabled: wm.supported, submenu: layoutItems(true) },
         { label: "Müzik", submenu: musicItems() },

@@ -31,7 +31,8 @@ test("katalog: anahtarlar tekil, panelin eski araçlarının hepsi var, her ara�
 
 test("arama: Türkçe karakterden bağımsız, başlık eşleşmesi önde", () => {
   expect(searchEntries("fikstur")[0].key).toBe("fixture");
-  expect(searchEntries("ekran görüntüsü")[0].key).toBe("shelf");
+  // Tur 4: "Ekran görüntüsü al" eylemi de var; kütüphane ilk ikide.
+  expect(searchEntries("ekran görüntüsü").slice(0, 2).map((e) => e.key)).toEqual(expect.arrayContaining(["shelf", "capture"]));
   expect(searchEntries("maas")[0].key).toBe("salary");
   expect(searchEntries("pomodoro").map((e) => e.key)).toContain("focus");
   expect(searchEntries("iban")[0].key).toBe("iban");

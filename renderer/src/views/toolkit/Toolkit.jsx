@@ -9,7 +9,8 @@ import { acceleratorLabel } from "./shortcutUtils";
 import { deskkit, useStored } from "./toolkitUi";
 import LayoutTool from "./LayoutTool";
 import { TOOLS } from "./toolRegistry";
-import { ALL_TOOLS, CATEGORIES, SECTIONS, TOOL_BY_KEY, entryOf, routeOf, searchEntries } from "./hub/catalog";
+import { CATEGORIES, TOOL_BY_KEY, entryOf, groupsOf, searchEntries } from "./hub/catalog";
+import { runAction } from "./hub/actions";
 import { useHubLists } from "./hub/ToolkitHub";
 import CommandCard from "./hub/CommandCard";
 import { COMMAND_HINTS, runCommand } from "./lib/command";
@@ -43,7 +44,8 @@ export default function Toolkit() {
   const openEntry = (e) => {
     setCmd("");
     if (e.kind === "tool") { setTab(e.key); visit(e.id); return; }
-    window.elitlig.app.showMain(routeOf(e));
+    if (e.kind === "action") { visit(e.id); runAction(e.key, { toast, fromPanel: true }); return; }
+    window.elitlig.app.showMain(e.route);
     dk?.hidePanel();
   };
 
@@ -126,7 +128,7 @@ export default function Toolkit() {
         <main className="tk-body tk-cmdres" aria-label="Sonuçlar">
           {cmdResult && <CommandCard cmd={cmdResult} compact go={(r) => { const k = r.replace(/^toolkit:/, ""); if (TOOL_BY_KEY.has(k)) { setCmd(""); setTab(k); } }} />}
           {cmdMatches.length > 0 && <div className="tk-sub"><h4>Araçlar</h4>{cmdMatches.map((e) => (
-            <button key={e.id} type="button" className="tk-hit" onClick={() => openEntry(e)}><Icon name={e.icon} size={15} /><span><strong>{e.title}</strong><small>{e.hint}</small></span>{e.kind === "section" && <Icon name="external" size={12} />}</button>
+            <button key={e.id} type="button" className="tk-hit" onClick={() => openEntry(e)}><Icon name={e.icon} size={15} /><span><strong>{e.title}</strong><small>{e.hint}</small></span>{e.kind !== "tool" && e.kind !== "action" && <Icon name="external" size={12} />}</button>
           ))}</div>}
           {!cmdResult && !cmdMatches.length && <p className="tk-note">Sonuç yok. Örnekler: {COMMAND_HINTS.join(" · ")}</p>}
         </main>
@@ -186,20 +188,23 @@ export default function Toolkit() {
   );
 }
 
-/** Panelin "Tümü" sekmesi: sabitlenenler, kategorilere göre bütün araçlar, Araç Takımı bölümleri. */
+/** Panelin "Tümü" sekmesi: sık kullanılanlar, sonra Araç Takımı ile AYNI kategoriler (hub/catalog.js).
+ *  Araçlar panelde açılır; bölümler ve kısayollar (↗) uygulamada, eylemler hemen çalışır. */
 function AllTools({ pins, onOpen }) {
   const pinned = pins.map(entryOf).filter(Boolean);
+  const btn = (e) => (
+    <button key={e.id} type="button" className="tk-all__item" data-entry={e.id} data-tool-key={e.kind === "tool" ? e.key : undefined} onClick={() => onOpen(e)} title={e.kind === "tool" ? e.title : `${e.title} — ${e.hint}`}>
+      <Icon name={e.icon} size={16} /><span>{e.kind === "tool" ? e.label : e.title}</span>{e.kind !== "tool" && e.kind !== "action" && <Icon name="external" size={10} className="tk-all__ext" />}
+    </button>
+  );
   return (
     <div className="tk-all">
-      {pinned.length > 0 && <section className="tk-sub"><h4>Sabitlenenler</h4><div className="tk-all__grid">{pinned.map((e) => <button key={e.id} type="button" className="tk-all__item" onClick={() => onOpen(e)}><Icon name={e.icon} size={16} /><span>{e.kind === "tool" ? e.label : e.title}</span></button>)}</div></section>}
+      {pinned.length > 0 && <section className="tk-sub"><h4>Sık kullanılanlar</h4><div className="tk-all__grid">{pinned.map(btn)}</div></section>}
       {CATEGORIES.map((c) => (
-        <section key={c.key} className="tk-sub"><h4>{c.title}</h4>
-          <div className="tk-all__grid">{ALL_TOOLS.filter((t) => t.cat === c.key).map((t) => <button key={t.key} type="button" className="tk-all__item" data-tool-key={t.key} onClick={() => onOpen(entryOf(`tool:${t.key}`))} title={t.title}><Icon name={t.icon} size={16} /><span>{t.label}</span></button>)}</div>
+        <section key={c.key} className="tk-sub" data-cat={c.key}><h4>{c.title}</h4>
+          <div className="tk-all__grid">{groupsOf(c.key).flatMap((g) => g.items).map(btn)}</div>
         </section>
       ))}
-      <section className="tk-sub"><h4>Uygulamada açılır</h4>
-        <div className="tk-all__grid">{SECTIONS.map((s) => <button key={s.key} type="button" className="tk-all__item" onClick={() => onOpen(entryOf(`section:${s.key}`))} title={s.hint}><Icon name={s.icon} size={16} /><span>{s.title}</span></button>)}</div>
-      </section>
     </div>
   );
 }
