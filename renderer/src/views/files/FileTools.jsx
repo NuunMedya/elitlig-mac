@@ -18,6 +18,7 @@ import MediaEditor from "./MediaEditor";
 import PdfPages from "./PdfPages";
 import DownloadDialog from "./DownloadDialog";
 import YtdlpSettings from "./YtdlpSettings";
+import ScreenRecorder from "./ScreenRecorder";
 import { GROUPS, JOB_STATUS, KIND_ICONS, KIND_LABELS, formatBytes, kindsOf, toolsFor } from "../../lib/files/catalog";
 import { hasNativeQr, readQrCodes, runClientOp } from "../../lib/files/runClient";
 import { outputFormat } from "../../lib/files/imageOps";
@@ -43,6 +44,7 @@ export default function FileTools({ arg }) {
   const [editor, setEditor] = useState(null); // { kind: image|media|pdf, file, mode }
   const [qr, setQr] = useState(null);
   const [download, setDownload] = useState(false);
+  const [recorder, setRecorder] = useState(false);
   const [dropMods, setDropMods] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const lastClick = useRef(null);
@@ -233,7 +235,7 @@ export default function FileTools({ arg }) {
   useCommand("find", () => { if (tab === "library") document.getElementById("ft-lib-search")?.focus(); });
   useEffect(() => {
     const onKey = (e) => {
-      if (wheel || dialog || editor || qr || download || tab !== "home") return;
+      if (wheel || dialog || editor || qr || download || recorder || tab !== "home") return;
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || document.activeElement?.isContentEditable) return;
       if (document.querySelector(".modal-backdrop, .palette-backdrop")) return;
@@ -270,6 +272,7 @@ export default function FileTools({ arg }) {
       onDragLeave={(e) => { if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget)) setDragOver(false); }} onDrop={onDrop}>
       <ViewHeader title="Dosya Araçları" icon="folder" subtitle="Dönüştür, düzenle, sıkıştır, birleştir — tüm işlemler bu bilgisayarda yapılır, dosyalarınız hiçbir yere gönderilmez.">
         <button type="button" className="btn" onClick={() => window.elitlig.float.show()} title="Float rafı: dosyaları başka uygulamalara sürükleyin"><FIcon name="paperclip" size={15} /> Float</button>
+        <button type="button" className="btn" onClick={() => setRecorder(true)} title="Ekranın ya da bir pencerenin videosunu kaydet"><FIcon name="video" size={15} /> Ekran kaydı</button>
         <button type="button" className="btn" onClick={() => setDownload(true)}><FIcon name="download" size={15} /> Bağlantıdan indir</button>
         <button type="button" className="btn btn--primary" onClick={() => pick(false)}><FIcon name="plus" size={15} /> Dosya seç</button>
       </ViewHeader>
@@ -393,6 +396,7 @@ export default function FileTools({ arg }) {
       {editor?.kind === "media" && <div className="ie-backdrop"><MediaEditor file={editor.file} mode={editor.mode} onClose={() => setEditor(null)} onRun={(spec) => runMain(spec, [editor.file])} /></div>}
       {editor?.kind === "pdf" && <div className="ie-backdrop"><PdfPages file={editor.file} onClose={() => setEditor(null)} onRun={(spec) => runMain(spec, [editor.file])} /></div>}
       {qr && <QrResults results={qr} onClose={() => setQr(null)} />}
+      {recorder && <ScreenRecorder onClose={() => setRecorder(false)} onRunMain={(spec) => runMain(spec, [])} />}
       {download && <DownloadDialog initialUrl={typeof download === "string" ? download : ""} onClose={() => setDownload(false)} onStart={(spec) => runMain(spec, [])} />}
     </div>
   );

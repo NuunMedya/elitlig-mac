@@ -257,3 +257,13 @@
 .ft-dl__install { display: flex; align-items: center; gap: 10px; }
 .ft-dl__install span { flex: 1; }
 .ft-ytdlp .ft-cap { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+
+/* Ekran kaydı */
+.ft-rec__sources { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; max-height: 260px; overflow: auto; }
+.ft-rec__src { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--line, rgba(0,0,0,.12)); border-radius: 10px; background: transparent; cursor: pointer; text-align: left; }
+.ft-rec__src.is-active { border-color: var(--tool, #0a84ff); box-shadow: 0 0 0 2px var(--tool-soft, rgba(10,132,255,.2)); }
+.ft-rec__src img, .ft-rec__ph { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: rgba(0,0,0,.06); display: grid; place-items: center; }
+.ft-rec__src small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ft-rec__live { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; font-weight: 600; color: #e11d48; }
+.ft-rec__dot { width: 9px; height: 9px; border-radius: 50%; background: #e11d48; animation: ft-rec-blink 1s infinite; }
+@keyframes ft-rec-blink { 50% { opacity: 0.25; } }

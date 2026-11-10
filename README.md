@@ -380,6 +380,7 @@ basılıysa Dönüştür, ⌘ (Windows: Ctrl) Araçlar, ⌃ (Windows: Alt) Dosya
 | Ses / video | ffmpeg ile (uygulamayla gelir): MP4 / MOV / WEBM / MKV / GIF, MP3 / M4A / WAV / OGG / FLAC; **kırp** (In / Out tutamakları, Boşluk oynat, ⇧Boşluk aralığı oynat, ← → 1 sn, I / O), sıkıştır (kalite ya da hedef MB), hız, sesi kapat, sesi ayıkla, birleştir, böl, kare yakala, ses normalize, çözünürlük, oranla kırp, döndür, GIF |
 | PDF | Birleştir, böl (her sayfa / aralıklar), sayfaları düzenle (sırala, döndür, çoğalt, sil), döndür, sıkıştır (Ghostscript varsa görseller küçültülür) |
 | Diğer | ZIP oluştur / aç (Mac `ditto`, Windows PowerShell), altyazı SRT ↔ VTT, HTML / metin → PDF, metin kodlaması (UTF-8, UTF-16, Windows-1254, ISO-8859-9; satır sonu), toplu yeniden adlandırma (şablon: `{ad}`, `{n:3}`, `{tarih}`…; kopyalar yazılır) |
+| Ekran kaydı | Ekranın ya da bir pencerenin videosu (isteğe bağlı mikrofon sesiyle), bitince MP4'e (H.264) dönüştürülür; Kütüphane'de görünür (en çok 1 saat) |
 | Bağlantıdan indir | **YouTube** (oynatma listesi dahil), **Instagram** (gönderi, reel, çoklu görsel), **X / Twitter**, **TikTok**, **Facebook** ve yt-dlp'nin desteklediği yüzlerce site: video (en iyi / 4K / 1080p / 720p / 480p, H.264 MP4 tercihli), yalnız ses (MP3 / M4A), görseller; panodaki bağlantı otomatik önerilir; oturum isteyen içerikler için **tarayıcı çerezleri** (Chrome, Safari, Firefox, Edge, Brave); ilerleme, iptal, Kütüphane |
 
 - **Orijinaller asla değişmez.** Çıktılar ayarlardaki klasöre (varsayılan İndirilenler/Elitlig Dosyalar) ya da

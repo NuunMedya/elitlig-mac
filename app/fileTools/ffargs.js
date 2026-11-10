@@ -56,12 +56,16 @@ const VIDEO_TARGETS = new Set(["mp4", "mov", "m4v", "webm", "mkv"]);
 const AUDIO_TARGETS = new Set(["mp3", "m4a", "wav", "ogg", "flac", "aac", "opus"]);
 
 /** Kapsayıcıya uygun video + ses kodlama argümanları. */
-function videoTargetArgs(ext, { encoder = "libx264", crf = 23, bitrateKbps = null, height = null, audioKbps = 160 } = {}) {
+// vfr: kare hızı bilinmeyen / anlamsız kaynaklar (ör. MediaRecorder WEBM'i "1000 fps"
+// bildirir) zaman damgalarıyla kodlanır; yoksa ffmpeg kareleri 1000 fps'e çoğaltıp
+// dakikalarca uğraşır.
+function videoTargetArgs(ext, { encoder = "libx264", crf = 23, bitrateKbps = null, height = null, audioKbps = 160, vfr = false } = {}) {
+  const fps = vfr ? ["-fps_mode", "vfr"] : [];
   if (ext === "webm") {
     const rate = bitrateKbps ? ["-b:v", `${bitrateKbps}k`] : ["-b:v", "0", "-crf", String(Math.round(crf + 10))];
-    return ["-c:v", "libvpx-vp9", ...rate, "-row-mt", "1", "-deadline", "good", "-cpu-used", "4", "-pix_fmt", "yuv420p", "-c:a", "libopus", "-b:a", `${audioKbps}k`];
+    return ["-c:v", "libvpx-vp9", ...rate, "-row-mt", "1", "-deadline", "good", "-cpu-used", "4", "-pix_fmt", "yuv420p", ...fps, "-c:a", "libopus", "-b:a", `${audioKbps}k`];
   }
-  const out = [...videoCodecArgs(encoder, { crf, bitrateKbps, height }), "-c:a", "aac", "-b:a", `${audioKbps}k`];
+  const out = [...videoCodecArgs(encoder, { crf, bitrateKbps, height }), ...fps, "-c:a", "aac", "-b:a", `${audioKbps}k`];
   if (ext === "mp4" || ext === "mov" || ext === "m4v") out.push("-movflags", "+faststart");
   return out;
 }
@@ -121,9 +125,10 @@ function buildMediaArgs({ op, input, output, kind = "video", probe = {}, outExt,
   const dur = Number(probe.durationMs) || null;
   const encoder = pickVideoEncoder(encoders, platform);
   const isVideo = kind === "video";
+  const vfr = isVideo && !(Number(probe.fps) > 0 && Number(probe.fps) <= 120);
   const hasAudio = probe.hasAudio !== false;
   const map = isVideo ? ["-map", "0:v:0?", ...(hasAudio ? ["-map", "0:a:0?"] : [])] : ["-map", "0:a:0?"];
-  const enc = (ext, extra = {}) => (AUDIO_TARGETS.has(ext) ? ["-vn", ...audioCodecArgs(ext, { encoders, kbps: extra.audioKbps })] : videoTargetArgs(ext, { encoder, height: probe.height, ...extra }));
+  const enc = (ext, extra = {}) => (AUDIO_TARGETS.has(ext) ? ["-vn", ...audioCodecArgs(ext, { encoders, kbps: extra.audioKbps })] : videoTargetArgs(ext, { encoder, height: probe.height, vfr, ...extra }));
   const audioOnlyEnc = (ext) => audioCodecArgs(ext, { encoders });
   const range = () => {
     const start = Math.max(0, Number(o.startMs) || 0);
@@ -159,14 +164,14 @@ function buildMediaArgs({ op, input, output, kind = "video", probe = {}, outExt,
         bitrateKbps = Math.max(120, Math.floor(totalKbps * 0.96 - audioKbps));
       }
       const vf = maxH ? ["-vf", `scale=-2:'min(${even(maxH)},ih)':flags=bicubic`] : [];
-      return { args: [...BASE, "-i", input, ...map, ...vf, ...videoTargetArgs(outExt, { encoder, crf: preset.crf, bitrateKbps, height: maxH || probe.height, audioKbps }), output], expectedMs: dur };
+      return { args: [...BASE, "-i", input, ...map, ...vf, ...videoTargetArgs(outExt, { encoder, vfr, crf: preset.crf, bitrateKbps, height: maxH || probe.height, audioKbps }), output], expectedMs: dur };
     }
     case "speed": {
       const f = Math.min(4, Math.max(0.25, Number(o.factor) || 1));
       const expectedMs = dur ? dur / f : null;
       if (!isVideo) return { args: [...BASE, "-i", input, "-map", "0:a:0?", "-filter:a", atempoChain(f), ...audioOnlyEnc(outExt), output], expectedMs };
       const audio = hasAudio && !o.mute ? ["-filter:a", atempoChain(f)] : ["-an"];
-      return { args: [...BASE, "-i", input, ...map, "-filter:v", `setpts=PTS/${f}`, ...audio, ...videoTargetArgs(outExt, { encoder, height: probe.height }), output], expectedMs };
+      return { args: [...BASE, "-i", input, ...map, "-filter:v", `setpts=PTS/${f}`, ...audio, ...videoTargetArgs(outExt, { encoder, vfr, height: probe.height }), output], expectedMs };
     }
     case "mute":
       return { args: [...BASE, "-i", input, "-map", "0:v:0?", "-c:v", "copy", "-an", output], expectedMs: dur };
@@ -179,10 +184,10 @@ function buildMediaArgs({ op, input, output, kind = "video", probe = {}, outExt,
     }
     case "resize": {
       const h = even(o.height || 720);
-      return { args: [...BASE, "-i", input, ...map, "-vf", `scale=-2:${h}:flags=bicubic`, ...videoTargetArgs(outExt, { encoder, height: h }), output], expectedMs: dur };
+      return { args: [...BASE, "-i", input, ...map, "-vf", `scale=-2:${h}:flags=bicubic`, ...videoTargetArgs(outExt, { encoder, vfr, height: h }), output], expectedMs: dur };
     }
     case "cropAspect":
-      return { args: [...BASE, "-i", input, ...map, "-vf", cropAspectFilter(o.aspect || "1:1"), ...videoTargetArgs(outExt, { encoder, height: probe.height }), output], expectedMs: dur };
+      return { args: [...BASE, "-i", input, ...map, "-vf", cropAspectFilter(o.aspect || "1:1"), ...videoTargetArgs(outExt, { encoder, vfr, height: probe.height }), output], expectedMs: dur };
     case "rotate": {
       const vf = ROTATE_FILTERS[o.direction] || ROTATE_FILTERS.cw;
       return { args: [...BASE, "-i", input, ...map, "-vf", vf, ...videoCodecArgs(encoder, { height: probe.height }), ...(hasAudio ? ["-c:a", "copy"] : []), ...(outExt === "mp4" || outExt === "mov" ? ["-movflags", "+faststart"] : []), output], expectedMs: dur };
