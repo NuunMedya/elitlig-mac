@@ -32,11 +32,14 @@ const ToolkitPage = lazy(() => import("./views/toolkit/ToolkitPage"));
 // Yönetim: elitlig.com yönetim panelinin tamamı (gömülü, masaüstü oturumuyla) ve kenar çubuğundaki bölüm listesi.
 const AdminPanel = lazy(() => import("./views/admin/AdminPanel"));
 import AdminNavTree from "./views/admin/AdminNavTree";
+// Tarayıcı (⇧⌘B): sekmeler, profiller (ayrı oturumlar), video sabitleme, medya indirme (app/browser).
+const Browser = lazy(() => import("./views/browser/Browser"));
 
 export const ROUTES = [
   { key: "today", label: "Bugün", icon: "sun", view: Today, shortcut: "⌘1", group: "Günlük" },
   { key: "toolkit", label: "Araç Takımı", icon: "toolbox", view: ToolkitPage, shortcut: "⇧⌘A", group: "Günlük" },
   { key: "messages", label: "Mesajlar", icon: "message", view: Messages, shortcut: "⇧⌘M", group: "Günlük" },
+  { key: "browser", label: "Tarayıcı", icon: "globe", view: Browser, shortcut: "⇧⌘B", group: "Günlük" },
   { key: "requests", label: "Talepler", icon: "inbox", view: Requests, shortcut: "⇧⌘T", group: "Günlük", needs: "requests" },
   { key: "todos", label: "Yapılacaklar", icon: "checkSquare", view: Todos, shortcut: "⌘2", group: "Günlük" },
   { key: "agenda", label: "Ajanda", icon: "calendar", view: Agenda, shortcut: "⌘3", group: "Günlük" },
@@ -338,6 +341,11 @@ function ShortcutsHelp({ onClose }) {
     ["Tablolar: ⌘Z / ⇧⌘Z", "Geri al / yinele"],
     ["⇧⌘D", "Araç Takımı › Dosya Araçları (⌘V yapıştır, ⌘↩ çark, ⌘O dosya seç)"],
     ["⇧⌘P", "Araç Takımı › Ekran Görüntüleri ve Pano kütüphanesi"],
+    ["⇧⌘B", "Tarayıcı: sekmeler, profiller (ayrı Google hesapları), video sabitleme, medya indirme"],
+    ["Tarayıcı: ⌘T / ⌘W / ⇧⌘T", "Yeni sekme / sekmeyi kapat / kapatılanı geri aç"],
+    ["Tarayıcı: ⌘L · ⌘D · ⌘Y", "Adres çubuğu · yer imi · geçmiş"],
+    ["Tarayıcı: ⇧⌘S · ⇧⌘K · ⇧⌘N", "Videoyu sabitle · sekme ara · gizli sekme"],
+    ["Tarayıcı: ⌃Tab · ⌘[ ⌘] · ⌘+ ⌘-", "Sekmeler arası · geri / ileri · yakınlaştır"],
     ["⇧⌘L", "Yönetim paneli: maç, oyuncu, takım, lig, sezon… elitlig.com yönetiminin tamamı"],
     ["Yönetim: ⌘[ / ⌘] · ⌘R · ⌘F · ⌘P", "Geri / ileri · yenile · sayfada bul · yazdır"],
     ["⌃⌥T / ⌃⌥S", "Raflar: göster/gizle · arama odaklı (her yerden)"],

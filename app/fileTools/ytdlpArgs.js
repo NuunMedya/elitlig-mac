@@ -44,7 +44,7 @@ const COOKIE_BROWSERS = Object.freeze(["chrome", "safari", "firefox", "edge", "b
 /**
  * yt-dlp argümanları.
  * o: { url, mode: "video" | "audio" | "images", quality, audioFormat: "mp3" | "m4a",
- *      playlist (bool), withImages (bool), cookiesBrowser, workDir, ffmpegPath, jsRuntime }
+ *      playlist (bool), withImages (bool), cookiesBrowser, cookiesFile, workDir, ffmpegPath, jsRuntime }
  * jsRuntime: YouTube'un JS doğrulaması için node uyumlu çalıştırıcı (Electron ikilisi,
  * ELECTRON_RUN_AS_NODE=1 ile) — yt-dlp 2025.11'den beri gerekir.
  */
@@ -62,7 +62,9 @@ function buildYtdlpArgs(o = {}) {
   if (o.jsRuntime) args.push("--js-runtimes", `node:${o.jsRuntime}`);
   args.push(o.playlist ? "--yes-playlist" : "--no-playlist");
   if (o.playlist) args.push("--playlist-items", "1:300");
-  if (o.cookiesBrowser) {
+  // Tarayıcı profilinin çerezleri (app/browser): uygulamanın kendi yazdığı cookies.txt.
+  if (o.cookiesFile) args.push("--cookies", String(o.cookiesFile));
+  else if (o.cookiesBrowser) {
     const b = String(o.cookiesBrowser).toLowerCase();
     if (!COOKIE_BROWSERS.includes(b)) throw new Error("Desteklenmeyen tarayıcı.");
     args.push("--cookies-from-browser", b);

@@ -61,6 +61,8 @@ const { createFileProtocol, SCHEME_PRIVILEGES: FILE_SCHEME_PRIVILEGES } = requir
 // Yönetim: elitlig.com yönetim panelinin tamamı uygulama içinde, masaüstü oturumuyla (app/adminPanel).
 const { WebContentsView } = require("electron");
 const { registerAdminPanel } = require("./adminPanel");
+// Tarayıcı (⇧⌘B): sekmeler, yalıtılmış profiller, video sabitleme, medya indirme (app/browser).
+const { registerBrowser } = require("./browser");
 const { applyTestSession } = require("./testSession");
 
 // Sohbet medyası (fotoğraf, ses, belge) bu şemayla ana süreç üzerinden açılır:
@@ -114,6 +116,7 @@ let launcher = null;
 let fileTools;
 let shelf;
 let adminPanel = null;
+let browser = null;
 let chatNotes = new Map();
 let probedAccess = null;
 let requestsInfo = { total: 0, categories: [] };
@@ -630,6 +633,7 @@ function buildMenu() {
     },
     ...(deskkit ? [deskkit.menuTemplate()] : []),
     ...(adminPanel ? [adminPanel.menuTemplate()] : []),
+    ...(browser ? [browser.menuTemplate()] : []),
     { label: "Pencere", role: "window", submenu: [
       { role: "minimize", label: "Küçült" },
       ...(IS_MAC ? [{ role: "zoom", label: "Büyüt" }, { type: "separator" }, { role: "front", label: "Tümünü Öne Getir" }] : []),
@@ -978,6 +982,12 @@ if (!app.requestSingleInstanceLock()) {
       verifySession: async () => (await api.request({ path: "/api/users/verify", cache: false, queue: false })).ok,
       log: (...args) => { if (!app.isPackaged) console.log(...args); },
     });
+    browser = registerBrowser({
+      app, ipcMain, BrowserWindow, WebContentsView, electronSession, shell, dialog, Menu, clipboard, nativeImage, screen,
+      getMainWindow: () => mainWindow, showMain, broadcast, loadRenderer, secureWebPreferences, guardNavigation, isOwnUrl, isMac: IS_MAC,
+      fileTools: () => fileTools, shelf: () => shelf,
+      log: (...args) => { if (!app.isPackaged) console.log(...args); },
+    });
     widgets = registerWidgets({
       app, ipcMain, BrowserWindow, Menu, screen, net, nativeTheme,
       loadRenderer, webPreferences: secureWebPreferences, guardNavigation, showMain, broadcast, deskkit, isMac: IS_MAC,
@@ -1027,7 +1037,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on("before-quit", () => { quitting = true; });
-  app.on("will-quit", () => { globalShortcut.unregisterAll(); studio?.dispose(); fileTools?.dispose(); shelf?.dispose(); adminPanel?.dispose(); });
+  app.on("will-quit", () => { globalShortcut.unregisterAll(); studio?.dispose(); fileTools?.dispose(); shelf?.dispose(); adminPanel?.dispose(); browser?.dispose(); });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
   app.on("web-contents-created", (_e, contents) => contents.on("will-attach-webview", (event) => event.preventDefault()));
 }
