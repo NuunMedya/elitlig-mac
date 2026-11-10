@@ -7,12 +7,18 @@ import { includesTr } from "../../lib/helpers";
 import { Avatar, BASE, ProjectBadge, Progress, ROLE_LABEL, label, money } from "./common";
 import NewProject from "./NewProject";
 import { GlobalPortfolio } from "./Portfolio";
+import { PROJECT_VIEWS, PROJECT_SORTS, sortProjects } from "../../lib/projectViews";
+import "./projHome.css";
 
 export default function Home({ section, newProject, nonce, onSection, onOpen, go, auth }) {
   const [archived, setArchived] = useState("0");
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [creating, setCreating] = useState(Boolean(newProject));
+  const [view, setView] = useState(() => { try { return localStorage.getItem("projects:view") || "cards"; } catch { return "cards"; } });
+  const [sort, setSort] = useState(() => { try { return localStorage.getItem("projects:sort") || "updated"; } catch { return "updated"; } });
+  const chooseView = (v) => { setView(v); try { localStorage.setItem("projects:view", v); } catch { /* yoksay */ } };
+  const chooseSort = (v) => { setSort(v); try { localStorage.setItem("projects:sort", v); } catch { /* yoksay */ } };
   const list = useResource(BASE, { archived });
   const follow = useResource(`${BASE}/followups`, { days: 7 });
   const searchRef = useRef(null);
@@ -22,7 +28,7 @@ export default function Home({ section, newProject, nonce, onSection, onOpen, go
 
   const items = useMemo(() => list.data?.items || [], [list.data]);
   const meta = list.data?.meta || {};
-  const shown = items.filter((p) => (!status || p.status === status) && (!q || includesTr(`${p.name} ${p.description} ${p.owner_name}`, q)));
+  const shown = sortProjects(items.filter((p) => (!status || p.status === status) && (!q || includesTr(`${p.name} ${p.description} ${p.owner_name}`, q))), sort);
   const fu = useMemo(() => groupFollowups(follow.data), [follow.data]);
   const dueCount = fu.overdueLeads.length + fu.todayLeads.length + fu.overdueSteps.length;
   const totals = items.reduce((t, p) => ({ steps: t.steps + p.stats.steps.total, done: t.done + p.stats.steps.done, leads: t.leads + p.stats.leads.total, due: t.due + p.stats.leads.due }), { steps: 0, done: 0, leads: 0, due: 0 });
@@ -55,7 +61,15 @@ export default function Home({ section, newProject, nonce, onSection, onOpen, go
             <option value="">Tüm durumlar</option>
             {(meta.project_statuses || []).map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
           </select>
+          <select className="select-sm" value={sort} onChange={(e) => chooseSort(e.target.value)} aria-label="Sıralama">
+            {PROJECT_SORTS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
           <span className="spacer" />
+          <div className="proj-views" role="radiogroup" aria-label="Görünüm">
+            {PROJECT_VIEWS.map((v) => (
+              <button key={v.key} type="button" role="radio" aria-checked={view === v.key} aria-label={v.label} title={v.label} className={view === v.key ? "is-active" : ""} onClick={() => chooseView(v.key)}><Icon name={v.icon} size={15} /></button>
+            ))}
+          </div>
           <Segmented size="sm" value={archived} onChange={setArchived} options={[{ value: "0", label: "Etkin" }, { value: "1", label: "Arşiv", icon: "archive" }]} />
         </div>
         {dueCount > 0 && archived === "0" && (
@@ -67,8 +81,16 @@ export default function Home({ section, newProject, nonce, onSection, onOpen, go
         )}
         <ErrorNote error={list.error && !list.data ? list.error : null} onRetry={list.reload} />
         {list.loading && !list.data ? <Spinner /> : (
-          <div className="proj-grid">
-            {shown.map((p) => <ProjectCard key={p.id} p={p} meta={meta} onOpen={(extra) => onOpen(p.id, extra)} onOpenStep={(stepId) => onOpen(p.id, { tab: "process", step: stepId })} onOpenLeads={() => onOpen(p.id, { tab: "leads", kind: "customer", leadFilter: { due: "due" } })} />)}
+          (view === "list" || view === "table") ? (
+            <>
+              {view === "list"
+                ? <div className="proj-list">{shown.map((p) => <ProjectRow key={p.id} p={p} meta={meta} onOpen={(extra) => onOpen(p.id, extra)} onOpenStep={(stepId) => onOpen(p.id, { tab: "process", step: stepId })} />)}</div>
+                : <ProjectTable items={shown} meta={meta} onOpen={(id, extra) => onOpen(id, extra)} />}
+              {!shown.length && <Empty icon="layers" title={archived === "1" ? "Arşivde proje yok" : q || status ? "Eşleşen proje yok" : "Henüz proje yok"} text={q || status ? "Süzgeçleri değiştirip yeniden deneyin." : "Yeni proje ile başlayın."} action={archived === "0" && !q && !status ? <button type="button" className="btn btn--primary" onClick={() => setCreating(true)}><Icon name="plus" /> Yeni proje</button> : null} />}
+            </>
+          ) : (
+          <div className={`proj-grid proj-grid--${view}`}>
+            {shown.map((p) => <ProjectCard key={p.id} p={p} meta={meta} compact={view === "compact"} onOpen={(extra) => onOpen(p.id, extra)} onOpenStep={(stepId) => onOpen(p.id, { tab: "process", step: stepId })} onOpenLeads={() => onOpen(p.id, { tab: "leads", kind: "customer", leadFilter: { due: "due" } })} />)}
             {archived === "0" && !q && !status && (
               <button type="button" className="proj-card proj-card--new" onClick={() => setCreating(true)}>
                 <span className="proj-card__plus"><Icon name="plus" size={22} /></span>
@@ -78,6 +100,7 @@ export default function Home({ section, newProject, nonce, onSection, onOpen, go
             )}
             {!shown.length && (q || status || archived === "1") && <Empty icon="layers" title={archived === "1" ? "Arşivde proje yok" : "Eşleşen proje yok"} text="Süzgeçleri değiştirip yeniden deneyin." />}
           </div>
+          )
         )}
       </>)}
 
@@ -89,29 +112,31 @@ export default function Home({ section, newProject, nonce, onSection, onOpen, go
   );
 }
 
-function ProjectCard({ p, meta, onOpen, onOpenStep, onOpenLeads }) {
+const endLabel = (p) => (p.end_date ? new Date(`${p.end_date}T12:00:00`).toLocaleDateString("tr-TR", { day: "numeric", month: "short", year: "numeric" }) : null);
+const PROJECT_MENU = (onOpen) => [
+  { label: "Süreç", icon: "list", onClick: () => onOpen({ tab: "process" }) },
+  { label: "Müşteri görüşmeleri", icon: "users", onClick: () => onOpen({ tab: "leads", kind: "customer" }) },
+  { label: "Tedarik görüşmeleri", icon: "handshake", onClick: () => onOpen({ tab: "leads", kind: "supplier" }) },
+  { label: "Bütçe", icon: "wallet", onClick: () => onOpen({ tab: "budget" }) },
+  { label: "Portföy", icon: "briefcase", onClick: () => onOpen({ tab: "portfolio" }) },
+  "-",
+  { label: "Ayarlar", icon: "sliders", onClick: () => onOpen({ tab: "settings" }) },
+];
+
+function ProjectCard({ p, meta, compact = false, onOpen, onOpenStep, onOpenLeads }) {
   const s = p.stats;
   const tone = PROJECT_STATUS_TONE[p.status];
   return (
-    <article className="proj-card" style={{ "--pc": p.color }} onClick={() => onOpen()} onKeyDown={(e) => { if (e.key === "Enter" && e.target === e.currentTarget) onOpen(); }} tabIndex={0} role="button" aria-label={p.name}>
+    <article className={`proj-card${compact ? " proj-card--compact" : ""}`} style={{ "--pc": p.color }} onClick={() => onOpen()} onKeyDown={(e) => { if (e.key === "Enter" && e.target === e.currentTarget) onOpen(); }} tabIndex={0} role="button" aria-label={p.name}>
       <header className="proj-card__head">
         <ProjectBadge project={p} size={42} />
-        <div>
-          <strong>{p.name}</strong>
-          <small>{[label(meta.project_statuses, p.status), p.end_date ? `bitiş ${new Date(`${p.end_date}T12:00:00`).toLocaleDateString("tr-TR", { day: "numeric", month: "short" })}` : null].filter(Boolean).join(" · ")}</small>
+        <div className="proj-card__title">
+          <strong title={p.name}>{p.name}</strong>
+          <small><span className={`pill pill--xs ${tone ? `pill--${tone}` : ""}`}>{label(meta.project_statuses, p.status)}</span>{endLabel(p) ? <> · bitiş {endLabel(p)}</> : null}</small>
         </div>
-        <span className={`pill ${tone ? `pill--${tone}` : ""}`}>{label(meta.project_statuses, p.status)}</span>
-        <MenuButton label="Proje kısayolları" items={[
-          { label: "Süreç", icon: "list", onClick: () => onOpen({ tab: "process" }) },
-          { label: "Müşteri görüşmeleri", icon: "users", onClick: () => onOpen({ tab: "leads", kind: "customer" }) },
-          { label: "Tedarik görüşmeleri", icon: "handshake", onClick: () => onOpen({ tab: "leads", kind: "supplier" }) },
-          { label: "Bütçe", icon: "wallet", onClick: () => onOpen({ tab: "budget" }) },
-          { label: "Portföy", icon: "briefcase", onClick: () => onOpen({ tab: "portfolio" }) },
-          "-",
-          { label: "Ayarlar", icon: "sliders", onClick: () => onOpen({ tab: "settings" }) },
-        ]} />
+        <MenuButton label="Proje kısayolları" items={PROJECT_MENU(onOpen)} />
       </header>
-      {p.description && <p className="proj-card__desc">{p.description}</p>}
+      {p.description && !compact && <p className="proj-card__desc">{p.description}</p>}
       <div className="proj-card__progress">
         <div><strong>%{s.steps.progress}</strong><span>{s.steps.done}/{s.steps.total - s.steps.skipped} adım tamamlandı</span></div>
         <Progress value={s.steps.progress} color={p.color} />
@@ -123,7 +148,7 @@ function ProjectCard({ p, meta, onOpen, onOpenStep, onOpenLeads }) {
         <span title="Portföy"><Icon name="briefcase" size={12} /> {s.portfolio} portföy</span>
         {s.finance && (s.finance.estimate_income || s.finance.estimate_expense) ? <button type="button" title="Tahmini net bütçe" className={s.finance.estimate_net < 0 ? "is-alert" : ""} onClick={(e) => { e.stopPropagation(); onOpen({ tab: "budget" }); }}><Icon name="wallet" size={12} /> {money(s.finance.estimate_net)}</button> : null}
       </div>
-      {s.next_due && (
+      {s.next_due && !compact && (
         <button type="button" className={`proj-card__next ${s.next_due.overdue ? "is-late" : ""}`} onClick={(e) => { e.stopPropagation(); onOpenStep(s.next_due.id); }}>
           <span>Sıradaki</span><strong>{s.next_due.title}</strong><em>{dueLabel(s.next_due.due_date)}</em>
         </button>
@@ -136,6 +161,71 @@ function ProjectCard({ p, meta, onOpen, onOpenStep, onOpenLeads }) {
         <span className="pill pill--xs">{ROLE_LABEL[p.access?.role]}</span>
       </footer>
     </article>
+  );
+}
+
+function ProjectRow({ p, meta, onOpen, onOpenStep }) {
+  const s = p.stats;
+  const tone = PROJECT_STATUS_TONE[p.status];
+  return (
+    <div className="proj-row" style={{ "--pc": p.color }} role="button" tabIndex={0} onClick={() => onOpen()} onKeyDown={(e) => { if (e.key === "Enter" && e.target === e.currentTarget) onOpen(); }} aria-label={p.name}>
+      <ProjectBadge project={p} size={36} />
+      <div className="proj-row__main">
+        <strong>{p.name}</strong>
+        <small><span className={`pill pill--xs ${tone ? `pill--${tone}` : ""}`}>{label(meta.project_statuses, p.status)}</span>{endLabel(p) ? ` · bitiş ${endLabel(p)}` : ""}{p.owner_name ? ` · ${p.owner_name}` : ""}{p.member_count ? ` + ${p.member_count} üye` : ""}</small>
+      </div>
+      <div className="proj-row__progress">
+        <span><strong>%{s.steps.progress}</strong> {s.steps.done}/{s.steps.total - s.steps.skipped} adım</span>
+        <Progress value={s.steps.progress} color={p.color} />
+      </div>
+      <div className="proj-row__chips">
+        {s.steps.overdue > 0 && <span className="is-alert"><Icon name="clock" size={12} /> {s.steps.overdue} geciken</span>}
+        {s.open_questions > 0 && <span><Icon name="help" size={12} /> {s.open_questions} soru</span>}
+        {s.leads.due > 0 && <span className="is-warn"><Icon name="phone" size={12} /> {s.leads.due} aranacak</span>}
+        {s.next_due && <button type="button" className={s.next_due.overdue ? "is-alert" : ""} onClick={(e) => { e.stopPropagation(); onOpenStep(s.next_due.id); }} title={s.next_due.title}><Icon name="flag" size={12} /> {dueLabel(s.next_due.due_date)}</button>}
+      </div>
+      <span onClick={(e) => e.stopPropagation()} role="presentation"><MenuButton label="Proje kısayolları" items={PROJECT_MENU(onOpen)} /></span>
+    </div>
+  );
+}
+
+const TABLE_COLS = [
+  ["name", "Proje"], ["status", "Durum"], ["progress", "İlerleme"], ["overdue", "Geciken"], ["questions", "Soru"], ["due", "Aranacak"], ["portfolio", "Portföy"], ["budget", "Tahmini net"], ["end", "Bitiş"], ["owner", "Sahip"],
+];
+function ProjectTable({ items, meta, onOpen }) {
+  const [order, setOrder] = useState({ key: null, dir: 1 });
+  const rows = useMemo(() => {
+    if (!order.key) return items;
+    const val = (p) => ({ name: p.name, status: label(meta.project_statuses, p.status), progress: p.stats.steps.progress, overdue: p.stats.steps.overdue, questions: p.stats.open_questions, due: p.stats.leads.due, portfolio: p.stats.portfolio, budget: p.stats.finance?.estimate_net ?? 0, end: p.end_date || "9999", owner: p.owner_name || "" }[order.key]);
+    return [...items].sort((a, b) => { const x = val(a); const y = val(b); return (typeof x === "number" ? x - y : String(x).localeCompare(String(y), "tr")) * order.dir; });
+  }, [items, order, meta]);
+  const head = (k, t) => <th key={k} className={["progress", "overdue", "questions", "due", "portfolio", "budget"].includes(k) ? "num" : ""}><button type="button" className="proj-table__sort" onClick={() => setOrder((o) => ({ key: k, dir: o.key === k ? -o.dir : 1 }))}>{t}{order.key === k ? (order.dir > 0 ? " ▲" : " ▼") : ""}</button></th>;
+  if (!items.length) return null;
+  return (
+    <div className="table-wrap proj-table">
+      <table className="table">
+        <thead><tr>{TABLE_COLS.map(([k, t]) => head(k, t))}</tr></thead>
+        <tbody>
+          {rows.map((p) => {
+            const s = p.stats;
+            return (
+              <tr key={p.id} className="is-clickable" onClick={() => onOpen(p.id)}>
+                <td><span className="proj-table__name"><ProjectBadge project={p} size={26} /><strong>{p.name}</strong></span></td>
+                <td><span className={`pill pill--xs ${PROJECT_STATUS_TONE[p.status] ? `pill--${PROJECT_STATUS_TONE[p.status]}` : ""}`}>{label(meta.project_statuses, p.status)}</span></td>
+                <td className="num"><span className="proj-table__prog"><Progress value={s.steps.progress} color={p.color} /> %{s.steps.progress}</span></td>
+                <td className={`num ${s.steps.overdue ? "text-red" : ""}`}>{s.steps.overdue}</td>
+                <td className="num">{s.open_questions}</td>
+                <td className="num">{s.leads.due}</td>
+                <td className="num">{s.portfolio}</td>
+                <td className={`num ${(s.finance?.estimate_net || 0) < 0 ? "text-red" : ""}`}>{s.finance && (s.finance.estimate_income || s.finance.estimate_expense) ? money(s.finance.estimate_net) : "—"}</td>
+                <td>{endLabel(p) || "—"}</td>
+                <td>{p.owner_name || "—"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
