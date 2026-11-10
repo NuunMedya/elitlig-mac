@@ -3,6 +3,8 @@
 import React from "react";
 import { Icon, isMac } from "../../components/ui";
 import { deskkit } from "./toolkitUi";
+// Bugün ekranında Araç Takımı sayfası açılmadan da gösterilir: stiller bileşenle birlikte yüklenmeli.
+import "./toolkit.css";
 
 const ITEMS = [
   ["calc", "calculator", "Hesap ve döviz"],
