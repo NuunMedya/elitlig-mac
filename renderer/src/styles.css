@@ -1844,3 +1844,94 @@ button.team-badge--lg:not(:disabled):hover { background: color-mix(in srgb, var(
 .today-req__total { display: flex; align-items: baseline; gap: 8px; }
 .today-req__total strong { font-size: 30px; font-weight: 800; line-height: 1; }
 .today-req__total span { color: var(--muted); }
+
+/* ============================ Düzenli Ödemeler (rec-*) ============================ */
+.rec-kinds { display: flex; flex-wrap: wrap; gap: 6px; }
+.rec-kinds--center { justify-content: center; margin-top: 6px; }
+.rec-kind { --kc: #64748b; display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--kc) 30%, transparent); background: color-mix(in srgb, var(--kc) 9%, var(--surface)); color: var(--text); font-size: 12.5px; font-weight: 600; }
+.rec-kind .ic { color: var(--kc); }
+.rec-kind:hover { border-color: var(--kc); }
+.rec-kind.is-active { background: var(--kc); color: #fff; border-color: transparent; box-shadow: 0 6px 14px -8px var(--kc); }
+.rec-kind.is-active .ic { color: #fff; }
+
+.rec-month { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rec-month h3 { margin: 0; min-width: 120px; text-align: center; font: 750 15px var(--display); }
+.rec-progress { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.rec-progress__bar { width: 160px; height: 7px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.rec-progress__bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--tool), var(--tool-2)); transition: width 0.3s; }
+.rec-progress small { color: var(--muted); font-weight: 700; font-size: 11.5px; }
+
+.rec-late { border-color: color-mix(in srgb, var(--red) 40%, transparent); background: linear-gradient(135deg, var(--red-soft), var(--surface) 60%); }
+.rec-late .card__title { color: var(--red); }
+.rec-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rec-occ { --kc: #64748b; display: grid; grid-template-columns: 44px 32px minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); }
+.rec-occ.is-late { border-color: color-mix(in srgb, var(--red) 45%, transparent); }
+.rec-occ--paid, .rec-occ--skipped, .rec-occ--untracked { opacity: 0.72; }
+.rec-occ--skipped .rec-occ__main strong, .rec-occ--untracked .rec-occ__main strong { text-decoration: line-through; }
+.rec-occ__date { display: flex; flex-direction: column; align-items: center; line-height: 1.05; padding: 3px 0; border-radius: 9px; background: var(--surface-2); }
+.rec-occ__date strong { font: 750 16px var(--display); }
+.rec-occ__date small { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--muted); }
+.rec-occ__main { display: flex; flex-direction: column; min-width: 0; }
+.rec-occ__main strong, .rec-occ__main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-occ__main small { color: var(--muted); font-size: 11.5px; }
+.rec-occ__amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rec-occ__actions { display: flex; gap: 4px; justify-content: flex-end; flex-wrap: wrap; }
+.rec-dot { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; color: #fff; background: var(--kc); flex: none; }
+.rec-dot--lg { width: 32px; height: 32px; border-radius: 10px; }
+.rec-name { display: flex; align-items: center; gap: 9px; }
+.rec-name > span:last-child { display: flex; flex-direction: column; min-width: 0; }
+.table tr.is-muted td { opacity: 0.55; }
+
+.rec-mix { display: flex; flex-direction: column; gap: 8px; }
+.rec-mix__bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--surface-3); }
+.rec-mix__bar span { display: block; height: 100%; }
+.rec-mix__legend { display: flex; flex-wrap: wrap; gap: 6px; }
+.rec-mix__legend button { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); font-size: 12px; }
+.rec-mix__legend button.is-active { border-color: var(--tool); box-shadow: 0 0 0 3px var(--tool-soft); }
+.rec-mix__legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.rec-mix__legend small { color: var(--muted); }
+
+.rec-flow__note { margin: 0; max-width: 560px; }
+.rec-flow__start { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.rec-flow__start input { width: 130px; text-align: right; }
+.rec-flow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; padding: 12px; border-radius: 14px; background: var(--surface-2); }
+.rec-flow__col { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+.rec-flow__bars { height: 130px; width: 100%; display: flex; align-items: flex-end; justify-content: center; gap: 4px; }
+.rec-flow__bars span { width: min(22px, 40%); min-height: 2px; border-radius: 6px 6px 2px 2px; background-image: none; }
+.rec-flow__bars .bg-green { background: #10b981; }
+.rec-flow__bars .bg-red { background: #e11d48; }
+.rec-flow__col small { font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: var(--muted); }
+.rec-flow__col strong { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+.today-bills { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; border-radius: 12px; border: 1px dashed var(--border-strong); background: var(--surface-2); text-align: left; color: var(--text); }
+.today-bills > span { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.today-bills small { color: var(--muted); font-size: 11.5px; }
+.today-bills.is-late { border-style: solid; border-color: color-mix(in srgb, var(--red) 45%, transparent); background: var(--red-soft); color: var(--red); }
+
+@media (max-width: 900px) {
+  .rec-occ { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .rec-occ .rec-dot--lg { display: none; }
+  .rec-occ > .pill { grid-column: 2; justify-self: start; }
+  .rec-occ__actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
+/* ==================================== Bütçe (bud-*) ==================================== */
+.bud-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 980px) { .bud-grid { grid-template-columns: 1fr; } }
+.bud-list { display: flex; flex-direction: column; gap: 8px; }
+.bud-row { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); text-align: left; color: var(--text); }
+.bud-row:hover { border-color: color-mix(in srgb, var(--tool) 40%, transparent); }
+.bud-row.is-warn { border-color: color-mix(in srgb, var(--amber) 50%, transparent); }
+.bud-row.is-over { border-color: color-mix(in srgb, var(--red) 50%, transparent); background: linear-gradient(135deg, var(--red-soft), var(--surface) 70%); }
+.bud-row__top, .bud-row__meta { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.bud-row__top > span { font-size: 12.5px; color: var(--text-2); }
+.bud-row__meta small { font-size: 11.5px; }
+.bud-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--surface-3); }
+.bud-bar__paid { background: linear-gradient(90deg, var(--tool), var(--tool-2)); }
+.bud-bar__pending { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--tool) 50%, transparent) 0 4px, color-mix(in srgb, var(--tool) 22%, transparent) 4px 8px); }
+.bud-row.is-warn .bud-bar__paid { background: var(--amber); }
+.bud-row.is-over .bud-bar__paid { background: var(--red); }
+.bud-row.is-income .bud-bar__paid { background: #10b981; }
+.bud-free { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
+.bud-free > span { display: flex; flex-direction: column; min-width: 0; }
+.bud-free small { font-size: 11px; }

@@ -17,7 +17,7 @@ uygulamada görünür.
 | ⌘4 | **Not Defteri** | Yazdıkça kaydedilen notlar, işaretlenebilir listeler, renk, etiket, sabitleme, arşiv; Markdown dışa aktarma |
 | ⌘0 | **Projeler** | Uçtan uca süreç ve satış takibi: hazır şablonlar (Organizasyon sezonu: 19 aşama, 208 adım), tamamen düzenlenebilir aşama ve adımlar, sorumlu rol → kişi eşleme, sonuç/cevap, kontrol listesi, bağlantılar; Kişiler (CRM): müşteri ve **tedarik görüşmeleri** (fiyat al, karşılaştır, anlaş → gidere yaz), tablo ve pano, tek tıkla görüşme sonucu, sonraki arama planı; **Bütçe** (gelir/gider kalemleri tahmin → bekliyor → ödendi, ödenince muhasebe hesabına işlenir); **Rehberden aktarma** (Rehberim, Elitlig üye rehberi, portföy → proje listesi); soru-cevap, iletişim geçmişi, portföy; adımın aracı adımın içinde açılır; Excel'den adım ve kişi aktarma, Excel/CSV dışa aktarma |
 | ⇧⌘0 | **Saha ve maç planlama** | Sitedeki Saha ve Maç Planlama (çağrı merkezi) masaüstünde: **Talepler** (uygulamadan, telefonla, saat havuzundan ve geri aramalardan gelen bütün talepler tek listede; kaynak, gün / saat / saha, uygunluk, son görüşme), talep ayrıntısı (mini hafta tablosu, maç kurma, görüşme etiketi ve notu sonradan düzenlenir), **Program** (saha başına hafta panosu, tüm sahalar tek gün, saat paneli), **Takımlar** (il, en çok oynadığı sezon, toplam maç; takım kartı), **Kayıtlar** |
-| ⌘5 | **Muhasebe** | Dört bölüm: **Hesaplar ve Virman** (kasa/banka/kart ve ortak/proje hesapları, hesaba doğrudan gelir/gider — tahmin, bekliyor, ödendi —, defterlere bağlı canlı bakiye, **hesap bazlı yetki** (kullanıcı, rol ya da proje ekibi: görüntüler / kayıt girer / yönetir), hesaplar ve defterler arası virman, ekstre); **Ön Muhasebe** (kişisel gelir-gider, kayıt girerken hesap seçimi, KDV, cari, vade takibi, Excel/CSV/PDF); **Maç Muhasebesi** (il defteri: maç maç gelir/gider kutucukları, genel kayıtlar, raporlar, personel ödemeleri, takım tahsilatları, eksikler, ayarlar); **Türkiye Geneli** (illerden tahakkuk, tahsilat, ek kalem, tutar düzeltme, maç başı ücret tarifeleri) |
+| ⌘5 | **Muhasebe** | Altı bölüm: **Hesaplar ve Virman** (kasa/banka/kart ve ortak/proje hesapları, hesaba doğrudan gelir/gider — tahmin, bekliyor, ödendi —, defterlere bağlı canlı bakiye, **hesap bazlı yetki** (kullanıcı, rol ya da proje ekibi: görüntüler / kayıt girer / yönetir), hesaplar ve defterler arası virman, ekstre); **Ön Muhasebe** (kişisel gelir-gider, kayıt girerken hesap seçimi, KDV, cari, vade takibi, Excel/CSV/PDF); **Düzenli Ödemeler** (fatura, maaş, kira, abonelik, kredi taksiti, vergi/SGK, sigorta ve düzenli gelirler: ödeme takvimi, öde / fatura geldi / atla, gecikenler, 6 aylık nakit akışı, vade bildirimleri); **Bütçe** (kategori başına aylık limit, gerçekleşen ve bekleyen, 3 ay ortalaması, bütçesiz harcamalar); **Maç Muhasebesi** (il defteri: maç maç gelir/gider kutucukları, genel kayıtlar, raporlar, personel ödemeleri, takım tahsilatları, eksikler, ayarlar); **Türkiye Geneli** (illerden tahakkuk, tahsilat, ek kalem, tutar düzeltme, maç başı ücret tarifeleri) |
 | ⌘6 | **Tablolar** | Formüllü hesap tablosu (TOPLA, EĞER, DÜŞEYARA, ETOPLA…), çoklu sayfa, biçimlendirme, sıralama, doldurma, satır/sütun işlemleri; Excel/CSV içe ve dışa aktarma; paylaşım ve eşzamanlı düzenlemede otomatik birleştirme |
 | ⌘7 | **Rehber** | **Takımlar**: takım adı öne çıkan takım rehberi (il, lig, sezon, G-B-M, maç sayısı, başkanlar, hesaplı oyuncu / kadro, iletişimi olanlar; il, arama, sıralama), takım kartı (başkanlar, kadro, sezonlar, son ve gelecek maçlar; ara, WhatsApp, e-posta, Mesajlar'da yaz, rehberime ekle, takımla grup kur, takımı `.vcf` / CSV, telefonları kopyala). **Kişiler**: siteye kaydolan üyeler ve elle eklenen kişiler tek listede, takım rozeti ve takıma göre gruplama; Üye / Oyuncu / Takım başkanı / Yönetim / Manuel / Favoriler; üyeye kişisel not ve favori; arama, WhatsApp, e-posta, Mesaj gönder; `.vcf` ve CSV |
 | ⌘8 | **Hesap Araçları** | Hesap makinesi (geçmişiyle), KDV, yüzde, iskonto zinciri, masraf bölüştürme, taksit, tarih farkı |
@@ -32,7 +32,7 @@ uygulamada görünür.
 - **Her yerden hızlı kayıt: ⌃⌥N.** Hangi uygulamada olursanız olun küçük bir pencere açılır:
   görev, not, etkinlik ya da gider tek satırda kaydedilir. “yarın 14:00 sahayı ara !” gibi yazılan
   tarih, saat ve öncelik kendiliğinden anlaşılır.
-- **Mac bildirimleri.** Ajanda hatırlatmaları ve zamanı gelen görevler pencere kapalıyken de bildirim olarak gelir.
+- **Mac bildirimleri.** Ajanda hatırlatmaları, zamanı gelen görevler ve vadesi yaklaşan / geciken düzenli ödemeler (fatura, maaş, kira, taksit) pencere kapalıyken de bildirim olarak gelir.
 - **Menü çubuğu simgesi.** Çalışan odak sayacının kalan süresi, yaklaşan etkinlikler ve açık iş sayısı.
 - **Dock rozeti.** Bugün ve gecikmiş iş sayısı, okunmamış mesajlar (üye mesajları dahil) ve bekleyen talepler.
 - **Talep bildirimleri.** Yeni talep gelince (socket “admin:requests”) pencere arka plandaysa Mac bildirimi
@@ -327,6 +327,38 @@ defterlerin gelir/gider toplamlarını bozmaz. Bu özellik sunucudaki değişikl
   işlemleri gösterir.
 - **Çevrimdışı.** Hesap hareketi ekleme ve “Ödendi” yapma kuyruğa alınır; hesap açma, virman, yetki
   değişikliği ve kayıt silme bağlantı ister.
+
+## Düzenli ödemeler ve bütçe
+
+Muhasebe → **Düzenli Ödemeler**: sabit giderler ve tekrar eden ödemeler bir kez tanımlanır, her dönem
+kendiliğinden takvime gelir.
+
+- **Türler:** fatura (elektrik, su, doğalgaz, internet…), maaş, kira, abonelik, kredi / taksit,
+  vergi / SGK, sigorta, düzenli gelir (aidat, sponsorluk) ve diğer.
+- **Tekrar:** haftalık, aylık, 2 / 3 / 6 ayda bir, yıllık; süresiz, bir tarihte biten ya da taksit sayısıyla
+  (ör. 24 taksit — “10/24”). Ayın 31'i gibi günler kısa aylarda ayın son gününe kayar.
+- **Değişken tutar:** faturalarda tahmini tutar girilir; fatura gelince gerçek tutar yazılır.
+- **Ödeme takvimi:** ay ay gezilir; her dönem için **Öde** (Ön Muhasebe'ye “ödendi” fişi düşer, seçili
+  hesabın bakiyesine yansır), **Fatura geldi** (tutar + son ödeme tarihi → “ödenecek” fişi, sonra tek
+  tıkla “Ödendi”), **Atla** ve **Geri al**. Önceki aylardan ödenmeyenler en üstte listelenir. Aynı dönem
+  iki kez işlenemez. Tanım sonradan girildiyse geçmiş dönemler “gecikti” sayılmaz (isteğe bağlı).
+- **Tanımlar:** aylık sabit gider dağılımı (türlere göre), sonraki vade, son ödeme, bu yıl ödenen;
+  durdur / sürdür, kopyala, CSV.
+- **Nakit akışı:** önümüzdeki 6 ayın beklenen gelir-gideri (düzenli ödemeler + Ön Muhasebe'deki vadeli
+  alacak ve borçlar) ve kişisel hesap bakiyesinden başlayan dönem sonu bakiyesi.
+- **Bildirimler:** hatırlatma süresine girince (varsayılan 3 gün önce), vade günü ve gecikince Mac /
+  Windows bildirimi; ödenmeyen geciken ödeme 3 günde bir yeniden hatırlatılır. Bildirimler 09:00'dan
+  önce gönderilmez; çok sayıda ödeme tek bildirimde toplanır. Menü çubuğu / görev çubuğu menüsünde ve
+  Bugün ekranında geciken ve yaklaşan ödemeler görünür.
+- **Çevrimdışı:** tanım ekleme / düzenleme / silme kuyruğa alınır; bir dönemi işlemek ya da atlamak
+  bağlantı ister (sunucu çift kaydı önler).
+
+Muhasebe → **Bütçe**: kategori başına aylık gider limiti ya da gelir hedefi. Gerçekleşen ve bekleyen
+tutar Ön Muhasebe kayıtlarından hesaplanır; %85'i geçen kategori sarı, aşan kırmızı görünür. Son 3 ay
+ortalaması ve bütçesi olmayan harcamalar (tek tıkla “Bütçe koy”) gösterilir.
+
+Sunucu tarafı `elitlig-server` 'da (`/api/tools/recurring`, `/api/tools/budgets`); web sitesinde de
+aynı bölümler vardır.
 
 ## Yayın Stüdyosu
 

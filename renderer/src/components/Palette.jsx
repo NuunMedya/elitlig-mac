@@ -16,6 +16,8 @@ const ACTIONS = [
   { label: "Projelerde bugün aranacaklar", icon: "phone", route: "projects", arg: { section: "followups" }, hint: "Projeler · Takip" },
   { label: "Portföy", icon: "briefcase", route: "projects", arg: { section: "portfolio" }, hint: "Projeler" },
   { label: "Yeni gelir/gider kaydı", icon: "plus", route: "ledger:new", hint: "Ön Muhasebe" },
+  { label: "Düzenli ödemeler (fatura, maaş, kira)", icon: "repeat", route: "ledger:duzenli", hint: "Muhasebe" },
+  { label: "Bütçe", icon: "target", route: "ledger:butce", hint: "Muhasebe" },
   { label: "Yeni tablo", icon: "plus", route: "sheets:new", hint: "Tablolar" },
   { label: "Yeni kişi", icon: "plus", route: "contacts:new", hint: "Rehber" },
   { label: "Odak turunu başlat", icon: "play", run: () => window.elitlig.focus.command("start"), hint: "Odak Sayacı" },

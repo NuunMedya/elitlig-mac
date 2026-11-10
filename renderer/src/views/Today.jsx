@@ -66,7 +66,7 @@ export default function Today({ go, auth }) {
         <div className="hero__clock">{formatTime(now)}</div>
       </header>
       <nav className="launcher" aria-label="Araçlar">
-        {[["todos", "checkSquare", "Yapılacaklar", "Görev, pano, maç masası"], ["agenda", "calendar", "Ajanda", "Takvim ve hatırlatmalar"], ["notes", "note", "Not Defteri", "Notlar ve listeler"], ["projects", "layers", "Projeler", "Süreç, kişiler, portföy"], ["ledger", "wallet", "Muhasebe", "Hesaplar, maç ve Türkiye geneli"], ["sheets", "grid", "Tablolar", "Formüllü tablolar"], ["contacts", "users", "Rehber", "Üyeler ve kişiler"]].map(([key, icon, label, hint]) => (
+        {[["todos", "checkSquare", "Yapılacaklar", "Görev, pano, maç masası"], ["agenda", "calendar", "Ajanda", "Takvim ve hatırlatmalar"], ["notes", "note", "Not Defteri", "Notlar ve listeler"], ["projects", "layers", "Projeler", "Süreç, kişiler, portföy"], ["ledger", "wallet", "Muhasebe", "Hesaplar, düzenli ödemeler, bütçe"], ["sheets", "grid", "Tablolar", "Formüllü tablolar"], ["contacts", "users", "Rehber", "Üyeler ve kişiler"]].map(([key, icon, label, hint]) => (
           <button key={key} type="button" data-tool={key} onClick={() => go(key)}>
             <span className="nav-item__icon"><Icon name={icon} size={15} strokeWidth={2} /></span>
             <strong>{label}</strong><small>{hint}</small>
@@ -142,6 +142,16 @@ export default function Today({ go, auth }) {
               <div className="stat"><span>Vadesi geçen</span><strong className={o.ledger.overdue ? "text-red" : ""}>{o.ledger.overdue}</strong></div>
             </div>
           ) : <Spinner />}
+          {o?.recurring?.count > 0 && (
+            <button type="button" className={`today-bills${o.recurring.overdue ? " is-late" : ""}`} onClick={() => go("ledger:duzenli")}>
+              <Icon name="repeat" />
+              <span>
+                <strong>{o.recurring.overdue ? `${o.recurring.overdue} geciken düzenli ödeme` : o.recurring.due_week ? `7 günde ${o.recurring.due_week} ödeme · ${formatMoney(o.recurring.due_week_amount, 0)}` : "Yaklaşan düzenli ödeme yok"}</strong>
+                {o.recurring.next && <small>Sıradaki: {o.recurring.next.name} · {formatDate(o.recurring.next.due_date)}</small>}
+              </span>
+              <Icon name="chevronRight" size={14} />
+            </button>
+          )}
         </section>
 
         <section className="card">

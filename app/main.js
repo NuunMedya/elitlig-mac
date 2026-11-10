@@ -186,6 +186,7 @@ function signOutLocal(reason) {
   api.clearOutbox();
   app.dock?.setBadge("");
   trayInfo = { upcoming: [], summary: null };
+  billsCache = { at: 0, items: [] };
   refreshTray();
   broadcast("auth:changed", { signedIn: false, reason: reason || null });
 }
@@ -225,6 +226,24 @@ async function keepSessionFresh() {
   if (result.ok && result.data?.token) {
     sessionStore.save({ ...session, token: result.data.token, user: result.data.user || session.user });
   }
+}
+
+/* ---------------------------- düzenli ödemeler ---------------------------- */
+
+// Hatırlatıcı her dakika çalışır; düzenli ödemeler 30 dakikada bir okunur
+// (dönemler gün bazındadır). Tepsi menüsü de buradan beslenir.
+const BILLS_TTL = 30 * 60000;
+let billsCache = { at: 0, items: [] };
+async function loadBills(now = Date.now(), { force = false } = {}) {
+  if (!force && now - billsCache.at < BILLS_TTL) return billsCache.items;
+  const res = await api.request({ path: "/api/tools/recurring" });
+  if (res.ok && res.data) {
+    billsCache = { at: now, items: [...(res.data.overdue || []), ...(res.data.occurrences || [])] };
+    trayInfo.bills = res.data.summary || null;
+  } else if (res.error?.status === 404) {
+    billsCache = { at: now, items: [] }; // sunucu henüz güncellenmedi
+  }
+  return billsCache.items;
 }
 
 /* ---------------------------- rozet ve tepsi ---------------------------- */
@@ -274,6 +293,10 @@ function refreshTray() {
     template.push({ label: unread ? `${unread} okunmamış mesaj` : "Mesajlar", click: () => showMain("messages") });
     if (currentAccess().requests) template.push({ label: requestsInfo.total ? `${requestsInfo.total} bekleyen talep` : "Talepler", click: () => showMain("requests") });
     template.push({ label: s ? `${s.open || 0} açık iş${s.overdue ? ` · ${s.overdue} gecikmiş` : ""}${s.today ? ` · ${s.today} bugün` : ""}` : "Yapılacaklar", click: () => showMain("todos") });
+    const bills = trayInfo.bills;
+    if (bills?.active_count) {
+      template.push({ label: bills.overdue_count ? `${bills.overdue_count} geciken düzenli ödeme` : `Bu ay kalan ödeme: ${Math.round(bills.remaining_expense || 0).toLocaleString("tr-TR")} ₺`, click: () => showMain("ledger:duzenli") });
+    }
     template.push({ label: "Yaklaşan", enabled: false }, ...(upcoming.length ? upcoming : [{ label: "Önümüzdeki 7 gün boş", enabled: false }]));
     template.push({ type: "separator" });
   }
@@ -589,6 +612,7 @@ function registerIpc() {
       if (p.startsWith("/api/chat/")) chatLink.refreshSoon(800);
       else if (p.startsWith("/api/admin/chat/")) chatLink.refreshInboxSoon(600, false);
       else {
+        if (/^\/api\/tools\/(recurring|ledger)/.test(p)) billsCache.at = 0;
         setTimeout(refreshSummary, 500);
         // Onay / ret uçları talebi kendiliğinden kapatır; özet tazelenir.
         refreshRequestsSoon(700);
@@ -841,11 +865,12 @@ if (!app.requestSingleInstanceLock()) {
       load: async () => {
         if (!authState().signedIn) return { events: [], todos: [] };
         const now = Date.now();
-        const [events, todos] = await Promise.all([
+        const [events, todos, bills] = await Promise.all([
           api.request({ path: "/api/tools/events", query: { from: new Date(now - 86400000).toISOString(), to: new Date(now + 2 * 86400000).toISOString(), todos: "0" } }),
           api.request({ path: "/api/todos", query: { view: "mine", status: "active" } }),
+          loadBills(now),
         ]);
-        return { events: events.ok ? events.data?.items || [] : [], todos: todos.ok ? todos.data?.items || [] : [] };
+        return { events: events.ok ? events.data?.items || [] : [], todos: todos.ok ? todos.data?.items || [] : [], bills };
       },
     });
 

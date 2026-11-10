@@ -18,7 +18,10 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { EventEmitter } = require("node:events");
 
-const QUEUEABLE = /^\/api\/(tools\/(notes|events|ledger|contacts)|todos)(\/[\w-]+)?$/;
+// Düzenli ödeme ve bütçe tanımları (ekle / düzenle / sil) da kuyruğa alınır;
+// bir dönemi işlemek ya da atlamak (/api/tools/recurring/:id/post|skip) sunucuda
+// çift kayıt denetimi gerektirdiği için bağlantı ister.
+const QUEUEABLE = /^\/api\/(tools\/(notes|events|ledger|contacts|recurring|budgets)|todos)(\/[\w-]+)?$/;
 // Projeler: sahada en çok yapılan, sırası önemsiz ve kimliğe bağımlı olmayan
 // yazmalar kuyruğa alınır: iletişim kaydı (arama sonucu, not), soru ekleme ve
 // cevaplama, adımın ve kişinin alan güncellemesi. Proje, aşama, adım ve kişi

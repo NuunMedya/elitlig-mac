@@ -22,3 +22,34 @@ test("hatırlatma zamanı gelen etkinlik ve görev bildirilir, gösterilen tekra
   assert.equal(due[1].title, "Zamanı geldi: Sahayı ara");
   assert.equal(dueNotifications({ events, todos, now, sent: new Set(due.map((d) => d.key)) }).length, 0);
 });
+
+/* ------------------------------ düzenli ödemeler ------------------------------ */
+
+const { billNotifications } = require("../reminders");
+const bill = (over = {}) => ({ key: "1:2026-11-15", name: "Elektrik", type: "expense", party: "Enerjisa", amount: 1200, estimated: true, status: "due_soon", late: false, days: 3, ...over });
+const at = (h) => new Date(2026, 10, 12, h, 0, 0).getTime();
+
+test("düzenli ödeme: yaklaşırken, vade günü ve gecikince birer kez; gece sessiz", () => {
+  const soon = billNotifications({ bills: [bill()], now: at(10) });
+  assert.equal(soon.length, 1);
+  assert.equal(soon[0].key, "bill:1:2026-11-15:soon");
+  assert.match(soon[0].body, /3 gün sonra · ~1\.200,00 ₺ · Enerjisa/);
+  assert.equal(soon[0].route, "ledger:duzenli");
+  assert.deepEqual(billNotifications({ bills: [bill()], now: at(10), sent: new Set(["bill:1:2026-11-15:soon"]) }), []);
+  assert.equal(billNotifications({ bills: [bill({ days: 0 })], now: at(10) })[0].body.startsWith("Bugün son gün"), true);
+  const late = billNotifications({ bills: [bill({ status: "overdue", late: true, days: -2 })], now: at(10) });
+  assert.equal(late[0].title, "Gecikti: Elektrik");
+  assert.deepEqual(billNotifications({ bills: [bill()], now: at(6) }), []);
+  // Ödenmiş, atlanmış ve uzak dönemler bildirilmez; aynı dönem iki listede gelirse tek sayılır.
+  assert.deepEqual(billNotifications({ bills: [bill({ status: "paid" }), bill({ key: "2:x", status: "skipped" }), bill({ key: "3:x", status: "upcoming", days: 12 })], now: at(10) }), []);
+  assert.equal(billNotifications({ bills: [bill(), bill()], now: at(10) }).length, 1);
+});
+
+test("düzenli ödeme: çok sayıda bildirim tek bildirimde toplanır", () => {
+  const many = [1, 2, 3, 4, 5].map((i) => bill({ key: `${i}:2026-11-01`, name: `Ödeme ${i}`, status: "overdue", late: true, days: -5 }));
+  const out = billNotifications({ bills: many, now: at(10) });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].title, "5 düzenli ödeme gecikti");
+  assert.equal(out[0].key.length, 5);
+  assert.match(out[0].body, /ve 2 tane daha/);
+});
