@@ -17,7 +17,7 @@ function parseArg(arg) {
   if (typeof arg === "object") return arg;
   if (arg === "new") return { newProject: true };
   if (/^\d+$/.test(String(arg))) return { id: Number(arg) };
-  if (["projects", "followups", "portfolio"].includes(arg)) return { section: arg };
+  if (["projects", "timeline", "followups", "portfolio"].includes(arg)) return { section: arg };
   return null;
 }
 

@@ -6,6 +6,7 @@ import { dueLabel, formatWhen, groupFollowups, PROJECT_STATUS_TONE } from "../..
 import { includesTr } from "../../lib/helpers";
 import { Avatar, BASE, ProjectBadge, Progress, ROLE_LABEL, label, money } from "./common";
 import NewProject from "./NewProject";
+import Timeline from "./timeline/Timeline";
 import { GlobalPortfolio } from "./Portfolio";
 
 export default function Home({ section, newProject, nonce, onSection, onOpen, go, auth }) {
@@ -29,6 +30,7 @@ export default function Home({ section, newProject, nonce, onSection, onOpen, go
 
   const sections = [
     { key: "projects", label: "Projeler", icon: "layers", hint: items.length ? `${items.length} proje · ${totals.done}/${totals.steps} adım` : "Süreçler ve şablonlar" },
+    { key: "timeline", label: "Takvim", icon: "calendar", hint: "Dönemler, Gantt, çakışmalar" },
     { key: "followups", label: "Takip", icon: "bell", hint: dueCount ? `${fu.todayLeads.length + fu.overdueLeads.length} arama · ${fu.overdueSteps.length} geciken adım` : "Bugün aranacaklar, adımlarım" },
     { key: "portfolio", label: "Portföy", icon: "briefcase", hint: "Satışı kapananlar" },
   ];
@@ -81,6 +83,7 @@ export default function Home({ section, newProject, nonce, onSection, onOpen, go
         )}
       </>)}
 
+      {section === "timeline" && <Timeline onOpenProject={(id) => onOpen(id, { tab: "timeline" })} />}
       {section === "followups" && <Followups res={follow} fu={fu} onOpen={onOpen} />}
       {section === "portfolio" && <GlobalPortfolio projects={items} onOpenProject={(id) => onOpen(id, { tab: "portfolio" })} />}
 

@@ -16,6 +16,7 @@ import Settings from "./Settings";
 import Budget from "./Budget";
 import Costs from "./Costs";
 import Feed from "./Feed";
+import Timeline from "./timeline/Timeline";
 import "./lifecycle.css";
 import { useFeedUnread } from "./useLifecycle";
 import ProposalsTab from "./proposals/Proposals";
@@ -24,6 +25,7 @@ import SponsorshipTab from "./proposals/Sponsorship";
 const TABS = [
   { key: "overview", label: "Genel bakış", icon: "overview" },
   { key: "process", label: "Süreç", icon: "list" },
+  { key: "timeline", label: "Takvim", icon: "calendar" },
   { key: "leads", label: "Kişiler", icon: "users" },
   { key: "budget", label: "Bütçe", icon: "wallet" },
   { key: "costs", label: "Maliyet", icon: "calculator" },
@@ -145,6 +147,7 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
         <div className="proj-body" key={tab}>
           {tab === "overview" && <Overview ctx={ctx} />}
           {tab === "process" && <Process ctx={ctx} selectedId={stepId} focusPhase={route.phase} initialFilter={route.processFilter} />}
+          {tab === "timeline" && <Timeline projectId={Number(id)} />}
           {tab === "leads" && <Leads ctx={ctx} selectedId={leadId} initialFilter={route.leadFilter} initialKind={route.kind} />}
           {tab === "budget" && <Budget ctx={ctx} />}
           {tab === "costs" && <Costs ctx={ctx} />}

@@ -749,7 +749,7 @@ function registerIpc() {
         const parent = BrowserWindow.fromWebContents(event.sender);
         const { canceled, filePath } = await dialog.showSaveDialog(parent, { defaultPath: path.join(app.getPath("downloads"), `${title || "Elitlig"}.pdf`), filters: [{ name: "PDF", extensions: ["pdf"] }] });
         if (canceled || !filePath) return { ok: false };
-        fs.writeFileSync(filePath, await win.webContents.printToPDF({ printBackground: true, pageSize: "A4", landscape: Boolean(pdf.landscape) }));
+        fs.writeFileSync(filePath, await win.webContents.printToPDF({ printBackground: true, pageSize: pdf.pageSize === "A3" ? "A3" : "A4", landscape: Boolean(pdf.landscape) }));
         return { ok: true, path: filePath };
       }
       return await new Promise((resolve) => win.webContents.print({ printBackground: true }, (ok, reason) => resolve({ ok, reason })));

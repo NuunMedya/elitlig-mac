@@ -20,7 +20,7 @@ export const isProjectItem = (item) => item?.source === "project";
 export const projectKindOf = (item) => PROJECT_KINDS[item?.kind] || PROJECT_KINDS.step;
 
 // Sunucunun (web) sekme adları → masaüstü Projeler sekmeleri.
-const TAB_MAP = { genel: "overview", surec: "process", kisiler: "leads", sorular: "questions", butce: "budget", iletisim: "activity", portfoy: "portfolio" };
+const TAB_MAP = { genel: "overview", surec: "process", takvim: "timeline", kisiler: "leads", sorular: "questions", butce: "budget", iletisim: "activity", portfoy: "portfolio" };
 
 /** go("projects", …) argümanı: { id, tab, step | lead | question }. */
 export function projectRoute(link) {
@@ -104,3 +104,42 @@ export function validScope(scope, options = []) {
 
 /** Saatsiz (tüm gün) son tarih mi? Proje adımında 23:59 gösterilmez. */
 export const isAllDayDue = (task) => Boolean(task?.allDay);
+
+/* ------------------------- proje takvimi dönem şeritleri ------------------------- */
+// Sunucu /api/tools/events → project_periods (services/projectTimeline.js agendaBands).
+// Ay görünümünde her dönem gün hücresinin üstünde ince renkli şerit; kilometre
+// taşları (kayıt son günü, kura, final…) elmas işaret. Şerit sırası (lane)
+// hafta boyunca aynı kalır ki çubuk kesintisiz görünsün.
+
+export const MAX_BAND_LANES = 3;
+const dayKeyOf = (day) => `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+
+/** Görünür dönemler şeritlere dizilir: { ranged: [{…, lane}], milestones, lanes }. */
+export function periodBands(periods = [], { show = true, hidden = [] } = {}) {
+  if (!show) return { ranged: [], milestones: [], lanes: 0 };
+  const list = periods.filter((p) => !hidden.includes(p.project?.id ?? p.project_id));
+  const ends = [];
+  const ranged = list
+    .filter((p) => p.kind !== "milestone")
+    .sort((a, b) => a.start_date.localeCompare(b.start_date) || b.end_date.localeCompare(a.end_date))
+    .map((p) => {
+      let lane = ends.findIndex((end) => end < p.start_date);
+      if (lane < 0) { lane = ends.length; ends.push(p.end_date); } else ends[lane] = p.end_date;
+      return { ...p, lane };
+    })
+    .filter((p) => p.lane < MAX_BAND_LANES);
+  return { ranged, milestones: list.filter((p) => p.kind === "milestone"), lanes: Math.min(MAX_BAND_LANES, ends.length) };
+}
+
+/** O günün şeritleri: lane başına { period, part, label } ya da boşluk (null); kilometre taşları. */
+export function bandsOnDay(bands, day) {
+  const key = dayKeyOf(day);
+  const lanes = Array.from({ length: bands.lanes }, () => null);
+  bands.ranged.forEach((p) => {
+    if (p.start_date > key || p.end_date < key) return;
+    const part = p.start_date === key && p.end_date === key ? "single" : p.start_date === key ? "start" : p.end_date === key ? "end" : "middle";
+    lanes[p.lane] = { period: p, part, label: p.start_date === key || day.getDay() === 1 };
+  });
+  while (lanes.length && !lanes[lanes.length - 1]) lanes.pop();
+  return { lanes, milestones: bands.milestones.filter((m) => m.start_date === key) };
+}

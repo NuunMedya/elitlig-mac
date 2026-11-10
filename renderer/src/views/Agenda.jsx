@@ -13,7 +13,8 @@ import {
 } from "../lib/agendaUtils";
 import { formatTime, isoDay, localInput, formatDate } from "../lib/helpers";
 import { toIcs } from "../lib/ics";
-import { isProjectItem, projectKindOf, projectLegend, projectRoute, projectSubtitle, spanPart, visibleProjectItems } from "../lib/projectAgenda";
+import { bandsOnDay, isProjectItem, periodBands, projectKindOf, projectLegend, projectRoute, projectSubtitle, spanPart, visibleProjectItems } from "../lib/projectAgenda";
+import "./projects/timeline/timeline.css";
 import "./agendaProjects.css";
 
 const readJson = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
@@ -37,6 +38,9 @@ export default function Agenda({ arg, argSeq, go }) {
   const data = useResource("/api/tools/events", { from: range.from.toISOString(), to: range.to.toISOString(), todos: showTodos ? undefined : "0" });
 
   const legend = useMemo(() => projectLegend(data.data?.projects || []), [data.data]);
+  // Proje takvimi dönemleri ay görünümünde arka plan şeridi (Projeler düğmesi ve açıklama listesiyle gizlenir).
+  const bands = useMemo(() => periodBands(data.data?.project_periods || [], { show: showProjects, hidden: hiddenProjects }), [data.data, showProjects, hiddenProjects]);
+  const openBand = (period) => go("projects", { id: Number(period.project?.id ?? period.project_id), tab: "timeline" });
   const items = useMemo(() => [
     ...(data.data?.items || []),
     ...(showTodos ? data.data?.todos || [] : []),
@@ -85,6 +89,7 @@ export default function Agenda({ arg, argSeq, go }) {
         <button type="button" className={`ag-projtoggle ${showProjects ? "is-on" : ""}`} aria-pressed={showProjects} onClick={() => setShowProjects(!showProjects)} title="Projelerdeki tarihleri göster / gizle">
           <Icon name="layers" size={13} /> Projeler{(data.data?.projects || []).length > 0 && <b>{data.data.projects.length}</b>}
         </button>
+        <button type="button" className="btn btn--sm" title="Projeleri dönemleriyle zaman çizelgesinde planlayın" onClick={() => go("projects", { section: "timeline" })}><Icon name="calendar" size={13} /> Proje takvimi</button>
         <button type="button" className="icon-btn" title="Mac Takvim'ine aktar (.ics)" onClick={exportIcs}><Icon name="download" /></button>
         <button type="button" className="btn btn--primary" onClick={() => setEditing({ draft: {} })}><Icon name="plus" /> Etkinlik</button>
       </ViewHeader>
@@ -103,7 +108,7 @@ export default function Agenda({ arg, argSeq, go }) {
         </div>
       )}
 
-      {view === "month" && <MonthView cursor={cursor} items={items} today={today} onOpen={open} onCreate={(day) => setEditing({ draft: { day } })} onMove={moveTo} onDay={(day) => { setCursor(day); changeView("day"); }} />}
+      {view === "month" && <MonthView cursor={cursor} items={items} today={today} onOpen={open} onCreate={(day) => setEditing({ draft: { day } })} onMove={moveTo} onDay={(day) => { setCursor(day); changeView("day"); }} bands={bands} onOpenBand={openBand} />}
       {(view === "week" || view === "day") && <TimeGrid days={view === "week" ? weekDays(cursor) : [startOfDay(cursor)]} items={items} today={today} onOpen={open} onCreate={(day, hour) => setEditing({ draft: { day, hour } })} onMove={moveTo} />}
       {view === "list" && <ListView items={items} onOpen={open} />}
 
@@ -163,7 +168,28 @@ function useDropTarget(items, onMove) {
   return { over, bind };
 }
 
-function MonthView({ cursor, items, today, onOpen, onCreate, onMove, onDay }) {
+/** Ay hücresinin üstünde proje dönemi şeritleri ve kilometre taşları. */
+function DayBands({ bands, day, onOpenBand }) {
+  if (!bands || (!bands.ranged.length && !bands.milestones.length)) return null;
+  const { lanes, milestones } = bandsOnDay(bands, day);
+  if (!lanes.length && !milestones.length) return null;
+  const labelled = lanes.find((slot) => slot?.label);
+  return (
+    <div className="ag-bands">
+      {lanes.map((slot, i) => (slot ? (
+        <button key={slot.period.occurrence_key} type="button" className={`ag-band is-${slot.part === "single" ? "start is-end" : slot.part}`} style={{ "--bc": slot.period.color }}
+          title={`${slot.period.title} · ${slot.period.start_date} – ${slot.period.end_date}`} aria-label={`Proje dönemi: ${slot.period.title}`}
+          onClick={(e) => { e.stopPropagation(); onOpenBand(slot.period); }} />
+      ) : <span key={`gap-${i}`} className="ag-band is-gap" aria-hidden="true" />))}
+      {labelled && <span className="ag-band__label" style={{ "--bc": labelled.period.color }}>{labelled.period.title}</span>}
+      {milestones.map((m) => (
+        <button key={m.occurrence_key} type="button" className="ag-ms" style={{ "--bc": m.color }} title={m.title} aria-label={`Kilometre taşı: ${m.title}`} onClick={(e) => { e.stopPropagation(); onOpenBand(m); }}>{m.name}</button>
+      ))}
+    </div>
+  );
+}
+
+function MonthView({ cursor, items, today, onOpen, onCreate, onMove, onDay, bands, onOpenBand }) {
   const days = monthGrid(cursor.getFullYear(), cursor.getMonth());
   const { over, bind } = useDropTarget(items, onMove);
   return (
@@ -175,6 +201,7 @@ function MonthView({ cursor, items, today, onOpen, onCreate, onMove, onDay }) {
         return (
           <div key={day.toISOString()} className={`month__day ${outside ? "is-outside" : ""} ${sameDay(day, today) ? "is-today" : ""} ${over === isoDay(day) ? "is-over" : ""}`} onDoubleClick={() => onCreate(day)} {...bind(day)}>
             <button type="button" className="month__num" onClick={() => onDay(day)}>{day.getDate()}</button>
+            <DayBands bands={bands} day={day} onOpenBand={onOpenBand} />
             <div className="month__items">
               {list.slice(0, 4).map((item) => <Chip key={item.occurrence_key} item={item} onOpen={onOpen} day={day} />)}
               {list.length > 4 && <button type="button" className="month__more" onClick={() => onDay(day)}>+{list.length - 4} daha</button>}
