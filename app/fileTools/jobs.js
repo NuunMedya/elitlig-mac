@@ -136,12 +136,15 @@ function createJobs({ dir, concurrency = 1, killImpl = (c) => { try { c.kill("SI
       },
       setNote(note) { job.note = note; emit(job); },
       /** ffmpeg (ya da başka bir araç) çalıştırır; -progress satırlarından ilerleme. */
-      spawn(file, args, { expectedMs = null, cwd = workDir, env = undefined, onStdout = null, base = 0, span = 1 } = {}) {
+      // group: süreç kendi süreç grubunda başlar, iptalde tüm grup öldürülür (Mac / Linux:
+      // yt-dlp tek dosyalık ikilisi asıl işi bir alt süreçte yapar; yalnız ebeveyni
+      // öldürmek indirmeyi durdurmaz). Windows'ta killImpl zaten ağacı öldürür.
+      spawn(file, args, { expectedMs = null, cwd = workDir, env = undefined, onStdout = null, base = 0, span = 1, group = false } = {}) {
         return new Promise((resolve, reject) => {
           if (job.abort.signal.aborted) { reject(Object.assign(new Error("İptal edildi."), { canceled: true })); return; }
           let child;
           try {
-            child = spawnImpl(file, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+            child = spawnImpl(file, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, ...(group && process.platform !== "win32" ? { detached: true } : {}) });
           } catch (e) { reject(e); return; }
           job.child = child;
           let stderr = "";
@@ -158,7 +161,10 @@ function createJobs({ dir, concurrency = 1, killImpl = (c) => { try { c.kill("SI
             if (expectedMs && outMs != null) ctx.setProgress(base + span * Math.min(0.99, outMs / expectedMs));
           });
           child.stderr.on("data", (chunk) => { stderr = (stderr + String(chunk)).slice(-6000); });
-          const onAbort = () => killImpl(child);
+          const onAbort = () => {
+            if (group && process.platform !== "win32" && child.pid) { try { process.kill(-child.pid, "SIGKILL"); } catch { /* grup bitmiş */ } }
+            killImpl(child);
+          };
           job.abort.signal.addEventListener("abort", onAbort, { once: true });
           child.on("error", (e) => { job.abort.signal.removeEventListener("abort", onAbort); reject(e.code === "ENOENT" ? new Error("Gerekli araç bulunamadı.") : e); });
           child.on("close", (code) => {

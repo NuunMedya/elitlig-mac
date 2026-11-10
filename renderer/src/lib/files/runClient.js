@@ -4,6 +4,9 @@
 import { blankEdit, collageLayout, encodeCanvas, fitSize, loadBitmap, outputFormat, renderCollage, renderEdit, scaleCanvas } from "./imageOps";
 import { extOf } from "./catalog";
 
+/** "Otomatik" sıkıştırmada hedef: PNG / GIF / BMP → WEBP (kayıplı, saydamlık korunur). */
+export const compressFormat = (ext) => (["png", "gif", "bmp"].includes(String(ext || "").toLowerCase()) ? "webp" : outputFormat(ext));
+
 const stem = (name) => String(name || "gorsel").replace(/\.[^.]+$/, "");
 const LABELS = {
   canvasConvert: "Görsel dönüştür", imgResize: "Yeniden boyutlandır", imgRotate: "Döndür", imgCompress: "Sıkıştır",
@@ -35,8 +38,9 @@ async function processOne(op, file, o) {
         const size = max ? fitSize(bitmap.width, bitmap.height, { mode: "max", maxW: max, maxH: max }) : { width: bitmap.width, height: bitmap.height };
         const base = renderEdit(bitmap, blankEdit());
         const canvas = size.width === base.width ? base : scaleCanvas(base, size.width, size.height);
-        // PNG kayıplı sıkıştırılamaz: "aynı biçim" seçilse de PNG için WEBP önerilir (arayüz uyarır).
-        const fmt = o.format && o.format !== "same" ? o.format : outputFormat(ext) === "png" ? "png" : outputFormat(ext);
+        // PNG kayıpsızdır: kalite ayarı PNG'yi küçültmez (çıktı çoğu zaman büyür). "Otomatik"te
+        // PNG / GIF / BMP saydamlığı koruyan kayıplı WEBP'ye sıkıştırılır.
+        const fmt = o.format && o.format !== "same" ? o.format : compressFormat(ext);
         return { canvas, fmt, name: `${stem(file.name)}-sikistirildi`, quality: (Number(o.quality) || 75) / 100 };
       }
       case "imgStrip": {
@@ -62,6 +66,7 @@ export async function runClientOp({ op, files, options = {}, label = null, onPro
   if (!start.ok) throw new Error(start.error?.message || "İş başlatılamadı.");
   const jobId = start.job.id;
   const errors = [];
+  const notes = [];
   try {
     if (op === "imgCollage") {
       const bitmaps = [];
@@ -82,6 +87,7 @@ export async function runClientOp({ op, files, options = {}, label = null, onPro
         try {
           const out = await processOne(op, files[i], options);
           const bytes = await encodeCanvas(out.canvas, out.fmt, out.quality);
+          if (op === "imgCompress" && files[i].size && bytes.length >= files[i].size) notes.push(`${files[i].name} zaten sıkıştırılmış; daha küçük bir sürüm elde edilemedi`);
           const res = await ft.client.file(jobId, { name: out.name, ext: out.fmt, bytes, progress: (i + 1) / files.length });
           if (!res.ok) errors.push(`${files[i].name}: ${res.error?.message}`);
         } catch (e) {
@@ -93,7 +99,7 @@ export async function runClientOp({ op, files, options = {}, label = null, onPro
   } catch (e) {
     errors.push(String(e?.message || e));
   }
-  const done = await ft.client.done(jobId, { error: errors.length ? errors.slice(0, 3).join(" · ") : null });
+  const done = await ft.client.done(jobId, { error: errors.length ? errors.slice(0, 3).join(" · ") : null, note: notes.length ? `${notes.slice(0, 2).join(" · ")}.` : null });
   return { job: done.job, errors };
 }
 

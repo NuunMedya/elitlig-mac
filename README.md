@@ -382,7 +382,8 @@ basılıysa Dönüştür, ⌘ (Windows: Ctrl) Araçlar, ⌃ (Windows: Alt) Dosya
 | Ses / video | ffmpeg ile (uygulamayla gelir): MP4 / MOV / WEBM / MKV / GIF, MP3 / M4A / WAV / OGG / FLAC; **kırp** (In / Out tutamakları, Boşluk oynat, ⇧Boşluk aralığı oynat, ← → 1 sn, I / O), sıkıştır (kalite ya da hedef MB), hız, sesi kapat, sesi ayıkla, birleştir, böl, kare yakala, ses normalize, çözünürlük, oranla kırp, döndür, GIF |
 | PDF | Birleştir, böl (her sayfa / aralıklar), sayfaları düzenle (sırala, döndür, çoğalt, sil), döndür, sıkıştır (Ghostscript varsa görseller küçültülür) |
 | Diğer | ZIP oluştur / aç (Mac `ditto`, Windows PowerShell), altyazı SRT ↔ VTT, HTML / metin → PDF, metin kodlaması (UTF-8, UTF-16, Windows-1254, ISO-8859-9; satır sonu), toplu yeniden adlandırma (şablon: `{ad}`, `{n:3}`, `{tarih}`…; kopyalar yazılır) |
-| Web'den medya | Yalnız bilgisayarda **yt-dlp** yüklüyse (`brew install yt-dlp` / `winget install yt-dlp`) |
+| Ekran kaydı | Ekranın ya da bir pencerenin videosu (isteğe bağlı mikrofon sesiyle), bitince MP4'e (H.264) dönüştürülür; Kütüphane'de görünür (en çok 1 saat) |
+| Bağlantıdan indir | **YouTube** (oynatma listesi dahil), **Instagram** (gönderi, reel, çoklu görsel), **X / Twitter**, **TikTok**, **Facebook** ve yt-dlp'nin desteklediği yüzlerce site: video (en iyi / 4K / 1080p / 720p / 480p, H.264 MP4 tercihli), yalnız ses (MP3 / M4A), görseller; panodaki bağlantı otomatik önerilir; oturum isteyen içerikler için **tarayıcı çerezleri** (Chrome, Safari, Firefox, Edge, Brave); ilerleme, iptal, Kütüphane |
 
 - **Orijinaller asla değişmez.** Çıktılar ayarlardaki klasöre (varsayılan İndirilenler/Elitlig Dosyalar) ya da
   kaynağın yanına yazılır; ad çakışırsa “foto (2).jpg”. İş, çıktı klasöründe gizli bir çalışma klasöründe
@@ -395,6 +396,13 @@ basılıysa Dönüştür, ⌘ (Windows: Ctrl) Araçlar, ⌃ (Windows: Alt) Dosya
 - **Güvenlik.** ffmpeg / sips / ditto / PowerShell çağrıları argüman dizisiyle yapılır (kabuk yok);
   PowerShell'e yollar ortam değişkeninde JSON olarak verilir. Yerel dosyalar `elitlig-file://` ile yalnız
   izin listesindeki (kullanıcının eklediği ya da uygulamanın ürettiği) yollardan sunulur.
+- **Bağlantıdan indir (yt-dlp).** yt-dlp uygulamayla gelir (`build/fetch-ytdlp.js`: sabit sürüm, SHA-256 ve
+  SHA2-256SUMS doğrulamalı; Mac universal2, Windows x64). Siteler değiştikçe Dosya Araçları → Ayarlar →
+  **Güncelle** son sürümü GitHub'dan indirir, sağlamasını doğrular ve uygulamanın veri klasörüne koyar
+  (paketli sürümden eskiyse kullanılmaz); **Başka bir yt-dlp seç…** ile kendi kopyanız da kullanılabilir.
+  Çözüm sırası: seçilen yol → güncellenmiş kopya → paketli → sistem (PATH / Homebrew). YouTube'un JS
+  doğrulaması için ayrı kurulum gerekmez: uygulamanın kendi ikilisi `ELECTRON_RUN_AS_NODE` ile node olarak
+  verilir. “Bot değilim” / yaş sınırı / Instagram oturumu gibi durumlar Türkçe ve çözüm önerisiyle bildirilir.
 - PDF düzenleme `pdf-lib`, QR okuma (BarcodeDetector'ın olmadığı sistemlerde) `jsqr` kullanır; bunlar
   yüklü değilse ilgili araç "güncelleme gerekiyor" der, uygulamanın geri kalanı etkilenmez.
 
@@ -405,8 +413,10 @@ odaklı; her yerden) ve Görünüm → **Ekran Görüntüleri** kütüphanesi (�
 
 - **Toplama.** Ekran görüntüsü klasörü izlenir (Mac: Ekran Görüntüsü uygulamasının kayıt yeri,
   `defaults read com.apple.screencapture location`, yoksa Masaüstü; Windows: Resimler\Ekran Görüntüleri).
-  En çok 3 ek klasör. Pano: bağlantılar varsayılan açık; metin ve görsel toplama Ayarlar'dan ayrı ayrı açılır.
-  Parola yöneticilerinin gizli işaretlediği içerik (`org.nspasteboard.ConcealedType` vb.) hiç okunmaz.
+  En çok 3 ek klasör. Pano: kopyalanan **metinler ve bağlantılar varsayılan açık** (uygulama yeniden açılınca
+  da durur), kopyalanan görseller isteğe bağlı; kütüphanenin ilk açılışında neyin toplanacağı sorulur.
+  Parola yöneticilerinin gizli işaretlediği içerik (`org.nspasteboard.ConcealedType`, Windows
+  `ExcludeClipboardContentFromMonitorProcessing` vb.) hiç okunmaz; uygulamanın kendi kopyalaması alınmaz.
   **Ekranı yakala** (⌃⌥A): işaretçinin altındaki ekran alınır, kırpma düzenleyicisi açılır.
 - **Raflar.** Görseller, Metinler, Bağlantılar: ← → öğe, ↑ ↓ raflar arası, Tab raf, 1–9 numaralı kart,
   Boşluk önizle, ↩ kopyala ve kapat (odak önceki uygulamaya döner), ⌘C kopyala, P sabitle, F yalnız

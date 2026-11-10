@@ -2,8 +2,10 @@
 //
 //   Toplama   ekran görüntüsü klasörü (Mac: `defaults read com.apple.screencapture
 //             location`, yoksa Masaüstü; Windows: Resimler\Ekran Görüntüleri), en çok
-//             3 ek klasör, isteğe bağlı pano (görsel / metin / bağlantı ayrı ayrı;
-//             varsayılan: yalnız bağlantılar), uygulama içi ekran yakalama (⌃⌥A).
+//             3 ek klasör, pano (görsel / metin / bağlantı ayrı ayrı; varsayılan:
+//             metin ve bağlantı açık, görsel kapalı — gizli / parola içerikleri her
+//             zaman atlanır; ilk açılışta kütüphanede seçim kartı gösterilir),
+//             uygulama içi ekran yakalama (⌃⌥A).
 //   Raflar    alt kenarda açılan pencere (#shelf): Görseller, Metinler, Bağlantılar.
 //             ⌃⌥T göster/gizle, ⌃⌥S arama odaklı. Kısayollar Ayarlar'dan değişir.
 //   Kütüphane ana penceredeki "Ekran Görüntüleri" görünümü (renderer/src/views/shelf).
@@ -19,13 +21,20 @@ const path = require("node:path");
 const { createShelfStore } = require("./store");
 const { screenshotDir, watchFolders, listRecent, watchClipboard } = require("./watchers");
 const rules = require("./rules");
+const { createClipboardIo } = require("../clipboardIo");
 const { serveFile } = require("../fileTools/protocol");
 
 const DEFAULT_SHORTCUTS = Object.freeze({ toggle: "Control+Alt+T", search: "Control+Alt+S", capture: "Control+Alt+A" });
 const PANEL_H = 400;
 
+// Ayar sürümü 2: pano metinleri varsayılan açık. Sürüm 1'de metin toplama kapalı
+// başlıyordu ve (Electron 44 pano API değişikliği yüzünden) pano izleme hiç
+// çalışmadığı için kimse bu ayara dayanmadı; sürüm 1 ayar dosyalarında metin açılır.
+const SETTINGS_VERSION = 2;
 const DEFAULT_SETTINGS = Object.freeze({
-  sources: { screenshots: true, image: false, text: false, link: true },
+  version: SETTINGS_VERSION,
+  onboarded: false,
+  sources: { screenshots: true, image: false, text: true, link: true },
   extraDirs: [],
   retention: { image: 30, text: 30, link: 30 },
   shortcuts: { ...DEFAULT_SHORTCUTS },
@@ -43,7 +52,17 @@ function mergeSettings(current, patch = {}) {
   if (patch.shortcuts && typeof patch.shortcuts === "object") for (const k of Object.keys(DEFAULT_SHORTCUTS)) if (typeof patch.shortcuts[k] === "string") next.shortcuts[k] = patch.shortcuts[k].trim().slice(0, 60);
   if (typeof patch.enrichLinks === "boolean") next.enrichLinks = patch.enrichLinks;
   if (typeof patch.editAfterCapture === "boolean") next.editAfterCapture = patch.editAfterCapture;
+  if (typeof patch.onboarded === "boolean") next.onboarded = patch.onboarded;
   return next;
+}
+
+/** Diskteki ayar dosyasını güncel sürüme taşır (saf). */
+function migrateSettings(raw) {
+  if (!raw || typeof raw !== "object") return {};
+  const out = { ...raw };
+  if (!(Number(raw.version) >= 2)) out.sources = { ...(raw.sources || {}), text: true };
+  out.version = SETTINGS_VERSION;
+  return out;
 }
 
 /** Arayüze giden öğe: dosya adları yerine elitlig-file adresleri. */
@@ -69,6 +88,8 @@ function registerShelf(deps) {
     fileProtocol, preloadPath, loadRenderer, broadcast, isOwnUrl, guardWindow, showMain, userAgent = "ElitligAraclar", log = () => {},
   } = deps;
   const IS_MAC = process.platform === "darwin";
+  // Electron 44: pano API'si eşzamansız (app/clipboardIo.js).
+  const clipIo = createClipboardIo({ clipboard, ClipboardItem: deps.ClipboardItem || require("electron").ClipboardItem, nativeImage });
   const dir = path.join(app.getPath("userData"), "shelf");
   fs.mkdirSync(dir, { recursive: true });
 
@@ -87,7 +108,11 @@ function registerShelf(deps) {
 
   const settingsFile = path.join(dir, "settings.json");
   let settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
-  try { settings = mergeSettings(settings, JSON.parse(fs.readFileSync(settingsFile, "utf8"))); settings.since = JSON.parse(fs.readFileSync(settingsFile, "utf8")).since || null; } catch { /* ilk açılış */ }
+  try {
+    const raw = migrateSettings(JSON.parse(fs.readFileSync(settingsFile, "utf8")));
+    settings = mergeSettings(settings, raw);
+    settings.since = raw.since || null;
+  } catch { /* ilk açılış */ }
   if (!settings.since) settings.since = Date.now();
   const saveSettings = () => { try { fs.writeFileSync(settingsFile, JSON.stringify(settings)); } catch { /* yoksay */ } };
   saveSettings();
@@ -115,11 +140,11 @@ function registerShelf(deps) {
   }
 
   const clip = watchClipboard({
-    clipboard,
+    io: clipIo,
     sources: () => ({ image: settings.sources.image, text: settings.sources.text, link: settings.sources.link }),
-    onCapture: ({ kind, text, image }) => {
+    onCapture: ({ kind, text, png }) => {
       try {
-        if (kind === "image") store.addImage({ buffer: image.toPNG(), ext: "png", source: "clipboard" });
+        if (kind === "image") store.addImage({ buffer: png, ext: "png", source: "clipboard" });
         else {
           const { item, duplicate } = store.addText(text, { source: "clipboard", kind });
           if (kind === "link" && !duplicate && settings.enrichLinks) enrich(item.id).catch(() => {});
@@ -261,7 +286,7 @@ function registerShelf(deps) {
   /* ------------------------------ kopyalama ------------------------------ */
 
   const imagePath = (item) => store.filePath(item, "image");
-  function copyItems(ids) {
+  async function copyItems(ids) {
     const items = (ids || []).map((id) => store.get(id)).filter((i) => i && !i.trashedAt);
     if (!items.length) return { ok: false, error: { message: "Kopyalanacak öğe yok." } };
     const images = items.filter((i) => i.kind === "image");
@@ -273,18 +298,18 @@ function registerShelf(deps) {
       // Birden çok görsel: Finder dosya listesi (hedef uygulama destekliyorsa hepsi yapıştırılır).
       const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       const plist = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><array>${images.map((i) => `<string>${esc(imagePath(i))}</string>`).join("")}</array></plist>`;
-      clipboard.writeBuffer("NSFilenamesPboardType", Buffer.from(plist));
+      await clipIo.writeRaw({ NSFilenamesPboardType: plist });
     } else if (images.length) {
       const img = nativeImage.createFromPath(imagePath(images[0]));
       if (img.isEmpty()) return { ok: false, error: { message: "Görsel okunamadı." } };
-      if (texts.length) clipboard.write({ image: img, text: joined });
-      else clipboard.writeImage(img);
+      await clipIo.writeImage(img.toPNG(), { text: texts.length ? joined : null });
       if (images.length > 1) note = "Birden çok görselden yalnız ilki kopyalandı.";
     } else if (texts.length === 1 && texts[0].kind === "link") {
-      clipboard.write({ text: texts[0].url, ...(IS_MAC ? { bookmark: texts[0].linkTitle || texts[0].title || texts[0].url } : {}) });
+      await clipIo.writeLink(texts[0].url, texts[0].linkTitle || texts[0].title || texts[0].url);
     } else {
-      clipboard.writeText(joined);
+      await clipIo.writeText(joined);
     }
+    clip.markOwnWrite();
     store.markCopied(items.map((i) => i.id));
     return { ok: true, count: items.length, note };
   }
@@ -292,7 +317,7 @@ function registerShelf(deps) {
   /* --------------------------- dışa aktarma / sürükleme --------------------------- */
 
   const { uniquePath, sanitizeName } = require("../fileTools/paths");
-  const itemBaseName = (item) => sanitizeName(item.title || (item.name ? item.name.replace(/\.[^.]+$/, "") : "") || (item.kind === "link" ? item.linkTitle || item.domain : "") || `${{ image: "Görsel", text: "Metin", link: "Bağlantı" }[item.kind]} ${new Date(item.createdAt).toISOString().slice(0, 16).replace(/[T:]/g, "-")}`);
+  const itemBaseName = (item) => sanitizeName(item.title || (item.name ? item.name.replace(/\.[^.]+$/, "") : "") || (item.kind === "link" ? item.linkTitle || item.domain : "") || (item.kind === "text" ? String(item.text || "").trim().split(/\r?\n/)[0].slice(0, 60) : "") || `${{ image: "Görsel", text: "Metin", link: "Bağlantı" }[item.kind]} ${new Date(item.createdAt).toISOString().slice(0, 16).replace(/[T:]/g, "-")}`);
   /** Öğeyi verilen klasöre dosya olarak yazar (görsel / .txt / .webloc | .url). */
   function writeItemFile(item, outDir) {
     if (item.kind === "image") {
@@ -361,8 +386,8 @@ function registerShelf(deps) {
   handle("shelf:restore", (_e, ids) => ({ ok: true, count: store.restore(ids) }));
   handle("shelf:purge", (_e, ids) => ({ ok: true, count: store.purge(ids) }));
   handle("shelf:emptyTrash", () => ({ ok: true, count: store.emptyTrash() }));
-  handle("shelf:copy", (_e, ids, opts = {}) => {
-    const res = copyItems(ids);
+  handle("shelf:copy", async (_e, ids, opts = {}) => {
+    const res = await copyItems(ids);
     if (res.ok && opts?.close) hideShelf({ returnFocus: true });
     return res;
   });
@@ -492,4 +517,4 @@ function registerShelf(deps) {
   };
 }
 
-module.exports = { registerShelf, mergeSettings, publicItem, DEFAULT_SETTINGS, DEFAULT_SHORTCUTS };
+module.exports = { registerShelf, mergeSettings, migrateSettings, publicItem, DEFAULT_SETTINGS, DEFAULT_SHORTCUTS, SETTINGS_VERSION };

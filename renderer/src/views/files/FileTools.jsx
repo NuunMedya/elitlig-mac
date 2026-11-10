@@ -16,6 +16,9 @@ import ToolDialog from "./ToolDialog";
 import ImageEditor from "./ImageEditor";
 import MediaEditor from "./MediaEditor";
 import PdfPages from "./PdfPages";
+import DownloadDialog from "./DownloadDialog";
+import YtdlpSettings from "./YtdlpSettings";
+import ScreenRecorder from "./ScreenRecorder";
 import { GROUPS, JOB_STATUS, KIND_ICONS, KIND_LABELS, formatBytes, kindsOf, toolsFor } from "../../lib/files/catalog";
 import { hasNativeQr, readQrCodes, runClientOp } from "../../lib/files/runClient";
 import { outputFormat } from "../../lib/files/imageOps";
@@ -41,6 +44,7 @@ export default function FileTools({ arg }) {
   const [editor, setEditor] = useState(null); // { kind: image|media|pdf, file, mode }
   const [qr, setQr] = useState(null);
   const [download, setDownload] = useState(false);
+  const [recorder, setRecorder] = useState(false);
   const [dropMods, setDropMods] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const lastClick = useRef(null);
@@ -114,7 +118,8 @@ export default function FileTools({ arg }) {
     e.preventDefault();
     setDragOver(false);
     const mods = { shift: e.shiftKey, mod: isMac() ? e.metaKey : e.ctrlKey, alt: isMac() ? e.ctrlKey || e.altKey : e.altKey };
-    const res = await ft().addFiles(e.dataTransfer.files);
+    // FileList contextBridge'den geçerken File kimliğini yitirir (yol okunamaz): dizi olarak verilir.
+    const res = await ft().addFiles(Array.from(e.dataTransfer.files || []));
     if (!res.ok || !res.files.length) { toast(res.error?.message || "Dosya eklenemedi.", { tone: "error" }); return; }
     addEntries(res.files);
     // Bırakırken basılı tuş: ilgili çark doğrudan açılır (yalnız bırakılan dosyalar seçili).
@@ -230,7 +235,7 @@ export default function FileTools({ arg }) {
   useCommand("find", () => { if (tab === "library") document.getElementById("ft-lib-search")?.focus(); });
   useEffect(() => {
     const onKey = (e) => {
-      if (wheel || dialog || editor || qr || download || tab !== "home") return;
+      if (wheel || dialog || editor || qr || download || recorder || tab !== "home") return;
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || document.activeElement?.isContentEditable) return;
       if (document.querySelector(".modal-backdrop, .palette-backdrop")) return;
@@ -267,6 +272,7 @@ export default function FileTools({ arg }) {
       onDragLeave={(e) => { if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget)) setDragOver(false); }} onDrop={onDrop}>
       <ViewHeader title="Dosya Araçları" icon="folder" subtitle="Dönüştür, düzenle, sıkıştır, birleştir — tüm işlemler bu bilgisayarda yapılır, dosyalarınız hiçbir yere gönderilmez.">
         <button type="button" className="btn" onClick={() => window.elitlig.float.show()} title="Float rafı: dosyaları başka uygulamalara sürükleyin"><FIcon name="paperclip" size={15} /> Float</button>
+        <button type="button" className="btn" onClick={() => setRecorder(true)} title="Ekranın ya da bir pencerenin videosunu kaydet"><FIcon name="video" size={15} /> Ekran kaydı</button>
         <button type="button" className="btn" onClick={() => setDownload(true)}><FIcon name="download" size={15} /> Bağlantıdan indir</button>
         <button type="button" className="btn btn--primary" onClick={() => pick(false)}><FIcon name="plus" size={15} /> Dosya seç</button>
       </ViewHeader>
@@ -390,7 +396,8 @@ export default function FileTools({ arg }) {
       {editor?.kind === "media" && <div className="ie-backdrop"><MediaEditor file={editor.file} mode={editor.mode} onClose={() => setEditor(null)} onRun={(spec) => runMain(spec, [editor.file])} /></div>}
       {editor?.kind === "pdf" && <div className="ie-backdrop"><PdfPages file={editor.file} onClose={() => setEditor(null)} onRun={(spec) => runMain(spec, [editor.file])} /></div>}
       {qr && <QrResults results={qr} onClose={() => setQr(null)} />}
-      {download && <DownloadDialog caps={caps} initialUrl={typeof download === "string" ? download : ""} onClose={() => setDownload(false)} onStart={(spec) => runMain(spec, [])} />}
+      {recorder && <ScreenRecorder onClose={() => setRecorder(false)} onRunMain={(spec) => runMain(spec, [])} />}
+      {download && <DownloadDialog initialUrl={typeof download === "string" ? download : ""} onClose={() => setDownload(false)} onStart={(spec) => runMain(spec, [])} />}
     </div>
   );
 }
@@ -513,10 +520,10 @@ function Settings({ caps }) {
             {row(caps.gs, "PDF sıkıştırma (Ghostscript)", caps.gs ? "Görseller küçültülerek sıkıştırılır." : "Ghostscript yok: yalnız PDF yapısı yeniden yazılır. Mac: brew install ghostscript")}
             {row(caps.qrNative || caps.jsqr, "QR okuma", caps.qrNative ? "Sistemin barkod algılayıcısıyla." : caps.jsqr ? "Yerleşik QR çözücüyle." : "Bu özellik için uygulama güncellemesi gerekiyor.")}
             {row(caps.zip && caps.unzip, "ZIP", mac ? "macOS ditto ile." : caps.platform === "win32" ? "Windows PowerShell ile." : "zip / unzip ile.")}
-            {row(caps.ytdlp, "Web'den medya indirme", caps.ytdlp ? "yt-dlp bulundu." : "yt-dlp yüklü değil (isteğe bağlı). Mac: brew install yt-dlp · Windows: winget install yt-dlp")}
           </ul>
         )}
       </div>
+      <YtdlpSettings />
       <div className="card card--flat ft-privacy">
         <FIcon name="shield" size={18} />
         <p><strong>Gizlilik.</strong> Dönüştürme ve düzenleme bu bilgisayarda yapılır; dosyalarınız Elitlig sunucusuna ya da başka bir hizmete gönderilmez. Yalnız "Bağlantıdan indir" seçtiğiniz siteye bağlanır.</p>
@@ -545,28 +552,6 @@ function QrResults({ results, onClose }) {
           </li>
         ))}
       </ul>
-    </Modal>
-  );
-}
-
-/* --------------------------- bağlantıdan indir --------------------------- */
-
-function DownloadDialog({ caps, initialUrl, onClose, onStart }) {
-  const [url, setUrl] = useState(initialUrl || "");
-  const [audioOnly, setAudioOnly] = useState(false);
-  const ready = caps?.ytdlp;
-  const start = async () => {
-    const res = await onStart({ op: "webDownload", options: { url, audioOnly } });
-    if (res?.ok) onClose();
-  };
-  return (
-    <Modal title="Bağlantıdan medya indir" onClose={onClose} width={500}
-      footer={<><button type="button" className="btn" onClick={onClose}>Vazgeç</button><button type="button" className="btn btn--primary" onClick={start} disabled={!ready || !/^https?:\/\/\S+$/i.test(url.trim())}>İndir</button></>}>
-      <div className="ft-form">
-        {!ready && <div className="error-note"><span>Bu özellik bilgisayarda <strong>yt-dlp</strong> yüklüyse çalışır. Mac: <code>brew install yt-dlp</code> · Windows: <code>winget install yt-dlp</code>. Kurduktan sonra uygulamayı yeniden açın.</span></div>}
-        <Field label="Bağlantı" hint="Yalnız herkese açık, indirme hakkınız olan içerikler için kullanın."><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" autoFocus disabled={!ready} /></Field>
-        <label className="ft-check"><input type="checkbox" checked={audioOnly} onChange={(e) => setAudioOnly(e.target.checked)} disabled={!ready} /> Yalnız ses (MP3)</label>
-      </div>
     </Modal>
   );
 }

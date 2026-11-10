@@ -93,6 +93,27 @@ function unzipCommand({ input, dest, platform = process.platform, env = process.
   return { file: findTool("unzip", { env, platform }) || "unzip", args: ["-q", input, "-d", dest] };
 }
 
+/**
+ * Windows: HEIC / HEIF / TIFF / WEBP gibi görselleri Windows Imaging Component ile
+ * PNG'ye çevirir (HEIC için Microsoft Store'daki "HEIF Görüntü Uzantıları" gerekir).
+ * ffmpeg'in çözemediği iPhone fotoğrafları için yedek yol. Yollar ortam değişkeniyle
+ * geçer (tırnak / boşluk sorunu yok).
+ */
+function wicDecodeCommand({ input, output, env = process.env }) {
+  const script = [
+    "$ErrorActionPreference='Stop'",
+    "Add-Type -AssemblyName PresentationCore",
+    "$p = $env:ELITLIG_ARGS | ConvertFrom-Json",
+    "$in = [IO.File]::OpenRead($p.src)",
+    "try { $d = [Windows.Media.Imaging.BitmapDecoder]::Create($in, [Windows.Media.Imaging.BitmapCreateOptions]::PreservePixelFormat, [Windows.Media.Imaging.BitmapCacheOption]::OnLoad) } finally { $in.Close() }",
+    "$e = New-Object Windows.Media.Imaging.PngBitmapEncoder",
+    "$e.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($d.Frames[0]))",
+    "$out = [IO.File]::Create($p.dest)",
+    "try { $e.Save($out) } finally { $out.Close() }",
+  ].join("; ");
+  return { file: powershellPath(env), args: ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], env: { ...env, ELITLIG_ARGS: JSON.stringify({ src: input, dest: output }) } };
+}
+
 /** ZIP için kopyaları hazırlar (APFS'te klonlanır, yer kaplamaz). Aynı adlar numaralanır. */
 function stageInputs(inputs, staging) {
   fs.mkdirSync(staging, { recursive: true });
@@ -220,6 +241,6 @@ function readQr(image) {
 }
 
 module.exports = {
-  loadOptional, UPDATE_NEEDED, findTool, powershellPath, run, SIPS_FORMATS, sipsArgs, zipCommand, unzipCommand, stageInputs,
+  loadOptional, UPDATE_NEEDED, findTool, powershellPath, run, SIPS_FORMATS, sipsArgs, zipCommand, unzipCommand, stageInputs, wicDecodeCommand,
   pdfLib, pdfInfo, pdfMerge, pdfOrganize, pdfSplit, pdfResave, gsCompressArgs, bgraToRgba, readQr,
 };

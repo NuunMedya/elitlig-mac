@@ -49,6 +49,13 @@ jobs:
             build/ffmpeg/x64
           key: ffmpeg-mac-${{ hashFiles('build/fetch-ffmpeg.js') }}
 
+      # Dosya Araçları "Bağlantıdan indir": yt-dlp (universal2) build/fetch-ytdlp.js ile indirilir (npm run dist içinde).
+      - name: yt-dlp önbelleği
+        uses: actions/cache@v4
+        with:
+          path: build/yt-dlp/mac
+          key: ytdlp-mac-${{ hashFiles('build/fetch-ytdlp.js') }}
+
       - name: Electron / electron-builder indirme önbelleği
         uses: actions/cache@v4
         with:
@@ -112,6 +119,20 @@ jobs:
           # 2.11: açı kopya kipi (işlemci ölçümü), yerel tam kayıt, röportaj.
           ELITLIG_FFMPEG="$FF" node --test app/test/studio-stability-integration.test.js
 
+      - name: Bağlantıdan indir — yt-dlp testi (paketli ikili)
+        run: |
+          APP=$(ls -d dist/mac-universal/*.app)
+          Y="$PWD/$APP/Contents/Resources/yt-dlp/yt-dlp"
+          test -x "$Y" || { echo "yt-dlp pakette yok: $Y"; exit 1; }
+          lipo -info "$Y"
+          codesign --verify --strict --verbose=2 "$Y" || echo "::warning::yt-dlp imzası doğrulanamadı"
+          cat "$PWD/$APP/Contents/Resources/yt-dlp/VERSION.txt"
+          "$Y" --version
+          # YouTube JS doğrulaması: uygulamanın kendi ikilisi node olarak çalışabilmeli (ELECTRON_RUN_AS_NODE).
+          BIN=$(ls "$APP"/Contents/MacOS/* | head -1)
+          ELECTRON_RUN_AS_NODE=1 "$BIN" -e "console.log('node', process.versions.node)"
+          node --test app/test/ytdlp.test.js
+
       - name: Sürüm bilgisi
         id: version
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
@@ -157,6 +178,13 @@ jobs:
           path: build/ffmpeg/win-x64
           key: ffmpeg-win-${{ hashFiles('build/fetch-ffmpeg.js') }}
 
+      # Dosya Araçları "Bağlantıdan indir": yt-dlp.exe build/fetch-ytdlp.js ile indirilir (npm run dist:win içinde).
+      - name: yt-dlp önbelleği
+        uses: actions/cache@v4
+        with:
+          path: build/yt-dlp/win-x64
+          key: ytdlp-win-${{ hashFiles('build/fetch-ytdlp.js') }}
+
       - name: Electron / electron-builder indirme önbelleği
         uses: actions/cache@v4
         with:
@@ -178,6 +206,14 @@ jobs:
           ls -la dist
           test -s "dist/Elitlig-Araclar-Setup-$(node -p "require('./package.json').version" | tr -d '\r').exe"
           test -f "dist/win-unpacked/resources/ffmpeg/ffmpeg.exe"
+
+      - name: Bağlantıdan indir — yt-dlp testi (paketli yt-dlp.exe)
+        run: |
+          Y="$PWD/dist/win-unpacked/resources/yt-dlp/yt-dlp.exe"
+          test -f "$Y" || { echo "yt-dlp pakette yok: $Y"; exit 1; }
+          cat "$PWD/dist/win-unpacked/resources/yt-dlp/VERSION.txt"
+          "$Y" --version
+          ELECTRON_RUN_AS_NODE=1 "$PWD/dist/win-unpacked/Elitlig Araclar.exe" -e "console.log('node', process.versions.node)"
 
       - name: Sessiz kurulum testi (NSIS /S, kullanıcıya özel)
         shell: pwsh

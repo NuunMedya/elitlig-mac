@@ -53,7 +53,12 @@ export default function ShelfPanel() {
       setTimeout(() => (search ? searchRef.current?.focus() : rootRef.current?.focus()), 40);
     });
     const offNotice = sh().onNotice((err) => toast(err?.message || "İşlem yapılamadı.", { tone: "error", timeout: 7000 }));
-    return () => { offOpen(); offNotice(); };
+    // İlk açılışta "shelf:open" React dinleyicisi kurulmadan gelebilir: klavye (← → ↩)
+    // hemen çalışsın diye raf odağı açılışta ve pencere her odaklandığında alınır.
+    const focusRoot = () => { const a = document.activeElement; if (!a || a === document.body || a === document.documentElement) rootRef.current?.focus(); };
+    const t = setTimeout(focusRoot, 0);
+    window.addEventListener("focus", focusRoot);
+    return () => { offOpen(); offNotice(); clearTimeout(t); window.removeEventListener("focus", focusRoot); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => sh().onChange(() => load()), [load]);
   useEffect(() => { const t = setTimeout(() => load(), 120); return () => clearTimeout(t); }, [query, pinned]); // eslint-disable-line react-hooks/exhaustive-deps

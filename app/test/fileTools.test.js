@@ -368,3 +368,22 @@ test("ffmpeg: üretilen kısa videodan MP4 dönüştürme + ses ayıklama + GIF 
   assert.ok(fs.existsSync(src), "kaynak yerinde");
   jobs.dispose();
 });
+
+test("Windows HEIC yedeği: WIC (PowerShell) komutu yolları ortam değişkeniyle geçirir", () => {
+  const cmd = native.wicDecodeCommand({ input: "C:\\Foto lar\\IMG 1'.HEIC", output: "C:\\t\\o.png", env: { SystemRoot: "C:\\Windows" } });
+  if (cmd.file) assert.match(cmd.file, /powershell(\.exe)?$/i); // Windows dışında bulunamaz (null)
+  assert.ok(cmd.args.includes("-NoProfile") && cmd.args.includes("-NonInteractive"));
+  const script = cmd.args[cmd.args.indexOf("-Command") + 1];
+  assert.match(script, /BitmapDecoder\]::Create/);
+  assert.match(script, /PngBitmapEncoder/);
+  assert.ok(!script.includes("IMG 1"), "yol betiğe gömülmez");
+  assert.deepEqual(JSON.parse(cmd.env.ELITLIG_ARGS), { src: "C:\\Foto lar\\IMG 1'.HEIC", dest: "C:\\t\\o.png" });
+});
+
+test("kare hızı bilinmeyen video (MediaRecorder WEBM, '1000 fps') zaman damgalarıyla kodlanır", () => {
+  const base = { op: "convert", input: "/a/kayit.webm", output: "/o/kayit.mp4", kind: "video", outExt: "mp4", options: { format: "mp4" }, encoders: { libx264: true }, platform: "linux" };
+  const rec = ffargs.buildMediaArgs({ ...base, probe: { durationMs: null, width: 1600, height: 1000, fps: null, hasAudio: false } }).args;
+  assert.equal(rec[rec.indexOf("-fps_mode") + 1], "vfr");
+  const normal = ffargs.buildMediaArgs({ ...base, input: "/a/klip.mp4", probe: { durationMs: 4000, width: 640, height: 360, fps: 25, hasAudio: true } }).args;
+  assert.ok(!normal.includes("-fps_mode"), "kare hızı bilinen videoda değişiklik yok");
+});

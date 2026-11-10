@@ -9,7 +9,8 @@
 //   - HEIC / TIFF / BMP / GIF: Mac'te sips, diğerlerinde ffmpeg.
 //   - PDF: pdf-lib (isteğe bağlı bağımlılık), görsel / HTML / metin → PDF: printToPDF.
 //   - ZIP: Mac ditto, Windows PowerShell.  Altyazı / metin kodlaması: saf JS (text.js).
-//   - Web'den medya: yalnız yt-dlp sistemde yüklüyse.
+//   - Web'den medya (YouTube, Instagram, X, TikTok, Facebook…): yt-dlp — uygulamayla
+//     gelir (build/fetch-ytdlp.js), uygulama içinden güncellenir (ytdlp.js).
 // Çıktılar ayarlardaki klasöre (varsayılan İndirilenler/Elitlig Dosyalar) ya da
 // kaynağın yanına yazılır; orijinal dosyalar asla değişmez.
 //
@@ -18,7 +19,8 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { pathToFileURL } = require("node:url");
+const { pathToFileURL, fileURLToPath } = require("node:url");
+const { createClipboardIo } = require("../clipboardIo");
 const ff = require("../studio/ffmpeg");
 const { killProcess } = require("../studio/proc");
 const { createJobs } = require("./jobs");
@@ -29,6 +31,8 @@ const { buildMediaArgs, buildJoinArgs, buildImageConvertArgs, parseEncoders } = 
 const native = require("./native");
 const text = require("./text");
 const { sanitizeName, stemOf } = require("./paths");
+const { createYtdlp } = require("./ytdlp");
+const { buildYtdlpArgs, parseYtdlpProgress, ytdlpError, siteOf, isHttpUrl } = require("./ytdlpArgs");
 
 const MEDIA_OPS = new Set(["convert", "trim", "compress", "speed", "mute", "extractAudio", "normalize", "resize", "cropAspect", "rotate", "gif", "snapshot", "split"]);
 const SUFFIX = {
@@ -77,7 +81,7 @@ function registerFileTools(deps) {
 
   const settingsFile = path.join(baseDir, "settings.json");
   const defaultOutDir = () => path.join(app.getPath("downloads"), "Elitlig Dosyalar");
-  let settings = { outDir: null, nextToSource: false, revealWhenDone: false };
+  let settings = { outDir: null, nextToSource: false, revealWhenDone: false, ytdlpPath: null };
   try { settings = { ...settings, ...JSON.parse(fs.readFileSync(settingsFile, "utf8")) }; } catch { /* varsayılan */ }
   const saveSettings = () => { try { fs.writeFileSync(settingsFile, JSON.stringify(settings)); } catch { /* yoksay */ } };
   const outDirFor = (inputPath) => (settings.nextToSource && inputPath ? path.dirname(inputPath) : settings.outDir && path.isAbsolute(settings.outDir) ? settings.outDir : defaultOutDir());
@@ -100,10 +104,11 @@ function registerFileTools(deps) {
     if (!info.path) throw new Error("ffmpeg bulunamadı. Ses ve video işlemleri için uygulamanın tam sürümü gerekir.");
     return info;
   };
+  const ytdlp = createYtdlp({ app, net: deps.net || require("electron").net, appRoot, getUserPath: () => settings.ytdlpPath, log });
   const tools = () => ({
     sips: IS_MAC ? native.findTool("sips", { platform }) : null,
     gs: native.findTool("gs", { platform }),
-    ytdlp: native.findTool("yt-dlp", { platform }),
+    ytdlp: ytdlp.resolve()?.path || null,
     zip: platform === "win32" ? native.powershellPath() : IS_MAC ? "/usr/bin/ditto" : native.findTool("zip", { platform }),
     unzip: platform === "win32" ? native.powershellPath() : IS_MAC ? "/usr/bin/ditto" : native.findTool("unzip", { platform }),
   });
@@ -114,7 +119,7 @@ function registerFileTools(deps) {
     return {
       ok: true, platform,
       ffmpeg: Boolean(info.path), ffmpegSource: info.source || null,
-      sips: Boolean(t.sips), gs: Boolean(t.gs), ytdlp: Boolean(t.ytdlp), zip: Boolean(t.zip), unzip: Boolean(t.unzip),
+      sips: Boolean(t.sips), gs: Boolean(t.gs), ytdlp: Boolean(t.ytdlp), ytdlpSource: ytdlp.resolve()?.source || null, zip: Boolean(t.zip), unzip: Boolean(t.unzip),
       pdfLib: Boolean(native.loadOptional("pdf-lib")?.PDFDocument), jsqr: typeof native.loadOptional("jsqr") === "function",
       heic: Boolean(t.sips) || Boolean(info.path),
     };
@@ -135,37 +140,45 @@ function registerFileTools(deps) {
 
   const entries = (paths) => (paths || []).slice(0, 500).map((p) => registry.allow(String(p))).filter(Boolean);
 
-  /** Pano: dosyalar (Finder / Gezgin), görsel, bağlantı ya da metin. */
-  function readClipboardFiles() {
+  /** Pano: dosyalar (Finder / Gezgin), görsel, bağlantı ya da metin. Electron 44: eşzamansız (app/clipboardIo.js). */
+  const clipIo = createClipboardIo({ clipboard, ClipboardItem: deps.ClipboardItem || require("electron").ClipboardItem, nativeImage });
+  async function readClipboardFiles() {
     const found = [];
     try {
-      if (IS_MAC) {
-        const plist = clipboard.read("NSFilenamesPboardType");
-        if (plist) for (const m of plist.matchAll(/<string>([^<]+)<\/string>/g)) found.push(m[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
-        if (!found.length) {
-          const url = clipboard.read("public.file-url");
-          if (url && url.startsWith("file://")) found.push(decodeURIComponent(new URL(url).pathname));
-        }
-      } else if (platform === "win32") {
-        const raw = clipboard.readBuffer("FileNameW");
+      const fm = await clipIo.formats();
+      if (IS_MAC && fm.includes("NSFilenamesPboardType")) {
+        const plist = String((await clipIo.readRaw("NSFilenamesPboardType")) || "");
+        for (const m of plist.matchAll(/<string>([^<]+)<\/string>/g)) found.push(m[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
+      }
+      if (!found.length && IS_MAC && fm.includes("public.file-url")) {
+        const url = String((await clipIo.readRaw("public.file-url")) || "").replace(/\0+$/, "");
+        if (url.startsWith("file://")) found.push(fileUrlToPath(url));
+      }
+      if (!found.length && platform === "win32" && fm.includes("FileNameW")) {
+        const raw = await clipIo.readRaw("FileNameW");
         if (raw?.length) found.push(raw.toString("utf16le").replace(/\0+$/g, ""));
+      }
+      if (!found.length && fm.includes("text/uri-list")) {
+        const list = String((await clipIo.readRaw("text/uri-list")) || "");
+        for (const line of list.split(/\r?\n/)) if (line.startsWith("file://")) found.push(fileUrlToPath(line.trim()));
       }
     } catch { /* yoksay */ }
     return found.filter((p) => p && path.isAbsolute(p));
   }
+  const fileUrlToPath = (u) => { try { return fileURLToPath(u); } catch { return ""; } };
 
   const stamp = () => new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
-  function paste() {
-    const files = readClipboardFiles();
+  async function paste() {
+    const files = await readClipboardFiles();
     if (files.length) return { ok: true, kind: "files", files: entries(files) };
-    const image = clipboard.readImage();
-    if (image && !image.isEmpty()) {
+    const png = await clipIo.readImagePng();
+    if (png?.length) {
       fs.mkdirSync(importsDir, { recursive: true });
       const p = path.join(importsDir, `Pano ${stamp()}.png`);
-      fs.writeFileSync(p, image.toPNG());
+      fs.writeFileSync(p, png);
       return { ok: true, kind: "image", files: entries([p]) };
     }
-    const t = clipboard.readText();
+    const t = await clipIo.readText();
     if (t && t.trim()) {
       const trimmed = t.trim();
       if (/^https?:\/\/\S+$/i.test(trimmed)) return { ok: true, kind: "link", url: trimmed, files: [] };
@@ -193,6 +206,13 @@ function registerFileTools(deps) {
     if (info.path) {
       const res = await native.run(info.path, ["-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-i", file, "-frames:v", "1", out], { timeout: 60000 });
       if (res.ok && fs.existsSync(out)) return out;
+    }
+    if (platform === "win32") {
+      // ffmpeg çözemediyse Windows Imaging Component (HEIF Görüntü Uzantıları kuruluysa HEIC dahil).
+      const cmd = native.wicDecodeCommand({ input: file, output: out });
+      const res = await native.run(cmd.file, cmd.args, { timeout: 60000, env: cmd.env });
+      if (res.ok && fs.existsSync(out)) return out;
+      if (/^(heic|heif)$/.test(extOf(file))) throw new Error(`${path.basename(file)} çözülemedi: HEIC fotoğrafları için Microsoft Store'dan “HEIF Görüntü Uzantıları”nı kurun.`);
     }
     throw new Error(`${path.basename(file)} çözülemedi${IS_MAC ? "" : " (HEIC için güncel ffmpeg gerekir)"}.`);
   }
@@ -496,31 +516,41 @@ function registerFileTools(deps) {
         });
       }
       case "webDownload": {
-        const t = tools();
-        if (!t.ytdlp) throw new Error("yt-dlp yüklü değil. Mac'te: brew install yt-dlp · Windows'ta: winget install yt-dlp");
+        const tool = ytdlp.resolve();
+        if (!tool) throw Object.assign(new Error("yt-dlp bulunamadı. Dosya Araçları → Ayarlar'dan “yt-dlp'yi indir” ile kurun."), { code: "NO_YTDLP" });
         const url = String(o.url || "").trim();
-        if (!/^https?:\/\/[^\s]+$/i.test(url)) throw new Error("Geçerli bir http(s) bağlantısı girin.");
+        if (!isHttpUrl(url)) throw new Error("Geçerli bir http(s) bağlantısı girin.");
+        const site = siteOf(url);
         const info = await getFfmpeg();
+        const mode = ["video", "audio", "images"].includes(o.mode) ? o.mode : o.audioOnly ? "audio" : "video";
+        const opts = { url, mode, quality: o.quality || "best", audioFormat: o.audioFormat === "m4a" ? "m4a" : "mp3", playlist: Boolean(o.playlist), withImages: Boolean(o.withImages), cookiesBrowser: o.cookiesBrowser || null };
+        buildYtdlpArgs({ ...opts, workDir: "/" }); // seçenekleri kuyruğa koymadan doğrula
+        const labelMode = mode === "audio" ? ` · ${opts.audioFormat.toUpperCase()}` : mode === "images" ? " · görseller" : opts.quality !== "best" ? ` · ${opts.quality}p` : "";
         return jobs.enqueue({
-          op, label, kind: o.audioOnly ? "audio" : "video", inputs: [], outDir: outDirFor(null), options: { url, audioOnly: Boolean(o.audioOnly) },
+          op, label: `İndir · ${site.label || "Web"}${labelMode}`, kind: mode === "audio" ? "audio" : mode === "images" ? "image" : "video", inputs: [], outDir: outDirFor(null), options: { ...opts, site: site.key },
           run: async (ctx) => {
-            const args = [
-              "--newline", "--no-playlist", "--no-mtime", "--restrict-filenames", "--no-part",
-              "-o", path.join(ctx.workDir, "%(title).120B.%(ext)s"),
-              ...(info.path ? ["--ffmpeg-location", info.path] : []),
-              ...(o.audioOnly ? ["-f", "bestaudio/best", "-x", "--audio-format", "mp3"] : ["-f", "bv*+ba/b", "--merge-output-format", "mp4"]),
-              "--", url,
-            ];
-            await ctx.spawn(t.ytdlp, args, {
-              onStdout: (s) => {
-                const m = [...String(s).matchAll(/\[download\]\s+([\d.]+)%/g)].pop();
-                if (m) ctx.setProgress(Number(m[1]) / 100);
-              },
-            });
-            for (const n of fs.readdirSync(ctx.workDir)) {
-              const full = path.join(ctx.workDir, n);
-              if (fs.statSync(full).isFile() && !/\.(part|ytdl|temp)$/i.test(n)) ctx.output(full, { name: path.basename(n, path.extname(n)), ext: extOf(n) });
+            const args = buildYtdlpArgs({ ...opts, workDir: ctx.workDir, ffmpegPath: info.path || null, jsRuntime: ytdlp.jsRuntime() });
+            let state;
+            ctx.setProgress(0, { indeterminate: true });
+            try {
+              await ctx.spawn(tool.path, args, {
+                env: ytdlp.runEnv(),
+                group: true,
+                onStdout: (s) => {
+                  const r = parseYtdlpProgress(s, state);
+                  state = r.state;
+                  if (r.note) ctx.setNote(r.note);
+                  if (/\[download\]\s+[\d.]+%/.test(s)) ctx.setProgress(r.fraction);
+                },
+              });
+            } catch (e) {
+              if (e?.canceled) throw e;
+              throw new Error(ytdlpError(e?.stderr || e?.message, { site: site.key, cookies: Boolean(opts.cookiesBrowser) }));
             }
+            const made = fs.readdirSync(ctx.workDir).filter((n) => !/\.(part|ytdl|temp|tmp)$|^\./i.test(n) && fs.statSync(path.join(ctx.workDir, n)).isFile()).sort((a, b) => a.localeCompare(b, "tr", { numeric: true }));
+            if (!made.length) throw new Error(mode === "images" ? "Bu bağlantıda indirilebilir görsel bulunamadı." : "İndirilecek dosya bulunamadı.");
+            for (const n of made) ctx.output(path.join(ctx.workDir, n), { name: path.basename(n, path.extname(n)), ext: extOf(n) });
+            ctx.setNote(null);
           },
         });
       }
@@ -592,6 +622,29 @@ function registerFileTools(deps) {
     return { ok: true, encoding, preview: text.decodeText(buf, encoding).slice(0, 1200), encodings: text.ENCODINGS };
   });
   handle("ft:run", async (_e, spec) => ({ ok: true, job: await runOp(spec || {}) }));
+  // yt-dlp: durum, indir / güncelle, başka bir ikili seç, varsayılana dön.
+  handle("ft:ytdlp:status", async () => ({ ok: true, ...(await ytdlp.status()) }));
+  handle("ft:ytdlp:update", async () => {
+    const res = await ytdlp.update({ onProgress: (p) => broadcast("ft:ytdlp:progress", p) });
+    broadcast("ft:ytdlp:progress", { phase: "done", fraction: 1 });
+    return { ...res, status: await ytdlp.status() };
+  });
+  handle("ft:ytdlp:choose", async (event) => {
+    const parent = BrowserWindow.fromWebContents(event.sender) || undefined;
+    const res = await dialog.showOpenDialog(parent, { title: "yt-dlp seç", buttonLabel: "Kullan", properties: ["openFile"] });
+    if (res.canceled || !res.filePaths[0]) return { ok: false, canceled: true };
+    const v = await ytdlp.versionOf(res.filePaths[0]);
+    if (!v) throw new Error("Seçilen dosya çalışan bir yt-dlp değil.");
+    settings.ytdlpPath = res.filePaths[0];
+    saveSettings();
+    return { ok: true, status: await ytdlp.status() };
+  });
+  handle("ft:ytdlp:reset", async () => { settings.ytdlpPath = null; saveSettings(); return { ok: true, status: await ytdlp.status() }; });
+  // Panodaki bağlantı (indirme penceresi öneri olarak gösterir; pano değişmez).
+  handle("ft:clipboardLink", async () => {
+    const t = (await clipIo.readText()).trim();
+    return { ok: true, url: isHttpUrl(t) && !/\s/.test(t) ? t : null, site: isHttpUrl(t) ? siteOf(t) : null };
+  });
   handle("ft:cancel", (_e, id) => ({ ok: jobs.cancel(id) }));
   handle("ft:jobs", () => ({ ok: true, items: jobs.list() }));
   handle("ft:removeJob", (_e, id) => ({ ok: jobs.remove(id) }));
@@ -628,7 +681,7 @@ function registerFileTools(deps) {
     const err = await shell.openPath(String(p));
     return { ok: !err };
   });
-  handle("ft:copyPaths", (_e, paths) => { clipboard.writeText((paths || []).map(String).join("\n")); return { ok: true }; });
+  handle("ft:copyPaths", async (_e, paths) => { await clipIo.writeText((paths || []).map(String).join("\n")); return { ok: true }; });
   handle("ft:settings", () => ({ ok: true, settings: publicSettings() }));
   handle("ft:setSettings", (_e, patch = {}) => {
     if (typeof patch.nextToSource === "boolean") settings.nextToSource = patch.nextToSource;

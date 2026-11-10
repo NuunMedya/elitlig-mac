@@ -14,6 +14,7 @@ import { useCommand } from "../../api";
 import { FIcon } from "../files/icons";
 import Preview from "./Preview";
 import ImageEditor from "../files/ImageEditor";
+import ShelfOnboarding from "./ShelfOnboarding";
 import { RETENTION_OPTIONS, SHELVES, SOURCE_LABELS, accelLabel, acceleratorFromEvent, folderTree, gridMove, itemTitle, relativeTime } from "../../lib/shelf/shelfUtils";
 import { formatBytes } from "../../lib/files/catalog";
 import "../files/files.css";
@@ -186,7 +187,7 @@ export default function Shelf({ arg }) {
     e.preventDefault();
     setDragOver(false);
     if (e.dataTransfer.files?.length) {
-      const r = await sh().importFiles(e.dataTransfer.files);
+      const r = await sh().importFiles(Array.from(e.dataTransfer.files)); // FileList köprüden geçmez: dizi
       if (r.ok && r.count) toast(`${r.count} görsel kütüphaneye eklendi.`, { tone: "success" });
       else toast("Yalnız görsel dosyaları eklenebilir.", { tone: "warn" });
     } else {
@@ -258,6 +259,7 @@ export default function Shelf({ arg }) {
           </nav>
 
           <section className={`shl__main ${dragOver ? "is-over" : ""}`} aria-label={scopeLabel()}>
+            <ShelfOnboarding />
             <div className="filters">
               <div className="shl__search"><FIcon name="search" size={14} /><input ref={searchRef} type="search" placeholder="Ara: metin, başlık, not, #etiket, alan adı…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Kütüphanede ara" /></div>
               <span className="muted">{data.total} öğe</span>
