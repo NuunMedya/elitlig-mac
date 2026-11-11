@@ -5,6 +5,7 @@ import { SIZE_PRESETS, effectiveTier, sizeLimits, tierOf } from "./dashModel";
 import { ACTION_CHOICES, ROUTE_CHOICES, TIER_LABELS, TIER_SHORT } from "./registry";
 import { useData } from "./data";
 import { chatPreview } from "../../lib/chatUtils";
+import { ButtonsField, IconField, ImageField, LeagueField, NoteField, SpecField } from "./ActionPicker";
 
 const EmbedBody = lazy(() => import("./tiles/embedBody"));
 export const SWATCHES = ["#7c3aed", "#2563eb", "#0891b2", "#059669", "#16a34a", "#ca8a04", "#ea580c", "#dc2626", "#db2777", "#475569"];
@@ -50,6 +51,12 @@ function OptionField({ opt, value, onChange }) {
     case "action": return <select value={v} onChange={(e) => onChange(e.target.value)} aria-label={opt.label}>{ACTION_CHOICES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>;
     case "project": return <ProjectSelect value={value} onChange={onChange} />;
     case "conversation": return <ConversationSelect value={value} onChange={onChange} />;
+    case "spec": return <SpecField value={value ?? opt.def} onChange={onChange} />;
+    case "icon": return <IconField value={value || ""} onChange={onChange} />;
+    case "buttons": return <ButtonsField value={value ?? opt.def ?? ""} onChange={onChange} />;
+    case "league": return <LeagueField value={value} onChange={onChange} />;
+    case "note": return <NoteField value={value} onChange={onChange} />;
+    case "image": return <ImageField value={value || ""} onChange={onChange} />;
     default: return <input type={opt.type === "url" ? "url" : "text"} value={v} onChange={(e) => onChange(e.target.value)} aria-label={opt.label} />;
   }
 }

@@ -88,6 +88,7 @@ export default function Tile({ item, meta, edit, ctx, onPatch, onRemove, onDupli
   const tileCtx = { ...ctx, set: (patch) => onPatch(item.i, { o: patch }), openSettings: () => onSettings(item.i) };
   return (
     <div ref={ref} className={`dt-tile is-${tier}${edit ? " is-edit" : ""}${showHead ? "" : " is-bare"}${item.h === 1 && tier !== "xs" ? " is-row" : ""}`} data-t={item.t} data-i={item.i} data-tier={tier}
+      onDoubleClick={edit ? (e) => { if (!e.target.closest("button, input, select, textarea, .menu")) onSettings(item.i); } : undefined}
       style={accent ? { "--accent": accent, "--tool": accent, "--tool-2": `color-mix(in srgb, ${accent} 78%, #000)` } : undefined}>
       {showHead && (
         <header className="dt-tile__head">
@@ -108,7 +109,7 @@ export default function Tile({ item, meta, edit, ctx, onPatch, onRemove, onDupli
             <span className="dt-tile__wh" title={raw !== tier ? `${TIER_LABELS[raw]} boyut; bu bileşen en çok / en az ${TIER_LABELS[tier]}` : TIER_LABELS[tier]}>{item.w}×{item.h} · {TIER_SHORT[tier]}</span>
             <span className="dt-grow" />
             <MenuButton items={sizeMenu} icon="layout" label={`${title}: boyut`} size={12} className="dt-tile__btn" />
-            <button type="button" className="dt-tile__btn" onClick={() => onSettings(item.i)} aria-label={`${title} ayarları`} title="Ayarlar (başlık, renk, seçenekler)"><Icon name="sliders" size={12} /></button>
+            <button type="button" className="dt-tile__btn is-cfg" onClick={() => onSettings(item.i)} aria-label={`${title} ayarları`} title="Ayarlar (başlık, renk, seçenekler)"><Icon name="sliders" size={12} /></button>
             <button type="button" className="dt-tile__btn" onClick={() => onDuplicate(item.i)} aria-label={`${title} kopyala`} title="Kopyala"><Icon name="copy" size={12} /></button>
             <button type="button" className="dt-tile__btn is-danger" onClick={() => onRemove(item.i)} aria-label={`${title} kaldır`} title="Kaldır"><Icon name="x" size={12} /></button>
           </div>

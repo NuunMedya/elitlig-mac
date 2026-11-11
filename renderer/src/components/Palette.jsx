@@ -44,6 +44,8 @@ const ACTIONS = [
   { label: "Ekran görüntüleri kütüphanesi", icon: "image", route: "shelf", hint: "Araç Takımı › Ekran Görüntüleri · ⇧⌘P" },
   { label: "Raf ayarları (kaynaklar, saklama, kısayollar)", icon: "sliders", route: "shelf:settings", hint: "Ekran Görüntüleri" },
 ];
+/** Bugün panosu düğmeleri de aynı komutları çalıştırır (views/today/actions.js). */
+export { ACTIONS as PALETTE_ACTIONS };
 
 export default function Palette({ onClose, go, routes }) {
   const [q, setQ] = useState("");

@@ -15,14 +15,18 @@
 //             type: text | url | number | select | toggle | route | project | conversation | action | textarea | date
 //   tint      varsayılan vurgu rengi
 
+import { EXTRA } from "./catalog";
+
 export const TIERS = ["xs", "s", "m", "l", "xl"];
 export const TIER_LABELS = { xs: "Düğme", s: "Küçük", m: "Orta", l: "Büyük", xl: "Çok büyük" };
 export const TIER_SHORT = { xs: "1×1", s: "K", m: "O", l: "B", xl: "XL" };
 /** Kademeye geçerken kullanılan boyut (en × boy). */
 export const TIER_SIZES = { xs: [1, 1], s: [3, 2], m: [4, 3], l: [6, 4], xl: [8, 6] };
-export const OPTION_TYPES = ["text", "url", "number", "select", "toggle", "route", "project", "conversation", "action", "textarea", "date"];
+export const OPTION_TYPES = ["text", "url", "number", "select", "toggle", "route", "project", "conversation", "action", "textarea", "date", "spec", "icon", "buttons", "league", "note", "image"];
 
 export const CATEGORIES = [
+  { key: "buttons", label: "Düğmeler", icon: "zap" },
+  { key: "groups", label: "Düğme grupları ve klasörler", icon: "folder" },
   { key: "quick", label: "Hızlı işlemler", icon: "zap" },
   { key: "sport", label: "Spor ve maç", icon: "ball" },
   { key: "money", label: "Muhasebe", icon: "wallet" },
@@ -30,6 +34,9 @@ export const CATEGORIES = [
   { key: "work", label: "Yapılacaklar ve takvim", icon: "checkSquare" },
   { key: "comm", label: "Mesajlar ve talepler", icon: "message" },
   { key: "info", label: "Saat, hava, odak, medya", icon: "clock" },
+  { key: "browser", label: "Tarayıcı, indirme ve pano", icon: "globe" },
+  { key: "system", label: "Sistem ve medya", icon: "activity" },
+  { key: "design", label: "Metin, görsel ve düzen", icon: "type" },
   { key: "access", label: "Kısayollar ve bölümler", icon: "grid" },
 ];
 
@@ -63,7 +70,7 @@ const ALL = ["xs", "s", "m", "l", "xl"];
 const UP_TO_L = ["xs", "s", "m", "l"];
 const UP_TO_M = ["xs", "s", "m"];
 
-export const REGISTRY = [
+const BASE = [
   /* ---------------------------- hızlı işlemler ---------------------------- */
   { id: "download", cat: "quick", label: "Bağlantıdan indir", icon: "download", tint: "#dc2626", hint: "Bağlantıyı yapıştır, indir: YouTube, Instagram, X, TikTok…", keys: "youtube video ses yt-dlp link yapıştır mp3", tiers: ALL, size: [4, 3], route: "files",
     options: [{ key: "mode", type: "select", label: "Varsayılan tür", choices: [["video", "Video"], ["audio", "Yalnız ses"], ["images", "Görseller"]], def: "video" }, { key: "quality", type: "select", label: "Kalite", choices: [["best", "En iyi"], ["1080", "1080p"], ["720", "720p"], ["480", "480p"]], def: "best" }] },
@@ -142,6 +149,8 @@ export const REGISTRY = [
   { id: "toolkit", cat: "access", label: "Araç Takımı şeridi", icon: "toolbox", tint: "#7c3aed", hint: "Hesap, KDV, fikstür, kura, QR, dosya araçları, panel", keys: "araç takımı şerit", tiers: ALL, size: [12, 1], route: "toolkit" },
 ];
 
+/** Kütüphane: ilk 53 bileşen (kimlikleri sabit) + tur 5 genişlemesi (catalog.js). */
+export const REGISTRY = [...BASE, ...EXTRA];
 export const REGISTRY_MAP = new Map(REGISTRY.map((m) => [m.id, m]));
 export const metaOf = (id) => REGISTRY_MAP.get(id) || null;
 

@@ -8,22 +8,30 @@ import "react-resizable/css/styles.css";
 import { Icon, MenuButton, Modal, useConfirm, useResult, useToast } from "../../components/ui";
 import {
   COLS, TEMPLATES, activePage, addItem, addPage, applyGrid, colsForWidth, compactFor, defaultState, duplicateItem, loadState, movePage,
-  patchItem, removeItem, removePage, renamePage, replacePage, resizeItem, saveState, setActive, setTier, sizeForTier, sizeLimits, storageKey, updateItems,
+  patchItem, removeItem, removePage, renamePage, replacePage, resizeItem, saveState, setActive, setTier, settleWidth, sizeForTier, sizeLimits, storageKey, updateItems,
 } from "./dashModel";
 import { isAllowed, metaOf } from "./registry";
 import Tile from "./Tile";
 import Library, { libDrag } from "./Library";
 import TileSettings from "./TileSettings";
 import "./today.css";
+import "./tiles.css";
+import "./library.css";
 
 const store = () => { try { return window.localStorage; } catch { return null; } };
 
 function useWidth(ref) {
   const [width, setWidth] = useState(1100);
+  const guard = useRef(null);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return undefined;
-    const measure = () => setWidth(Math.max(280, Math.floor(el.clientWidth)));
+    // Kaydırma çubuğu belirip kaybolunca en ↔ satır yüksekliği ↔ içerik yüksekliği döngüsüne girmesin.
+    const measure = () => {
+      const next = settleWidth(guard.current, Math.max(280, Math.floor(el.clientWidth)), performance.now());
+      guard.current = next.state;
+      setWidth(next.width);
+    };
     measure();
     if (typeof ResizeObserver === "undefined") return undefined;
     const ro = new ResizeObserver(measure);
@@ -85,7 +93,7 @@ export default function Dashboard({ go, auth }) {
   }, [key]);
   useEffect(() => {
     if (!edit) return undefined;
-    const onKey = (e) => { if (e.key === "Escape" && !document.querySelector(".modal-backdrop, .menu__list, .dt-lib")) setEdit(false); };
+    const onKey = (e) => { if (e.key === "Escape" && !document.querySelector(".modal-backdrop, .menu__list, .dl-scrim")) setEdit(false); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [edit]);
@@ -172,7 +180,7 @@ export default function Dashboard({ go, auth }) {
   const ctx = useMemo(() => ({ go, auth, result, toast }), [go, auth, result, toast]);
 
   return (
-    <div className={`dt${edit ? " is-edit" : ""}${lib ? " has-lib" : ""}`}>
+    <div className={`dt${edit ? " is-edit" : ""}${lib ? " has-lib" : ""}`} data-lib-open={lib ? "1" : undefined}>
       <div className="dt-toolbar" role="toolbar" aria-label="Bugün düzeni">
         <div className="dt-pages" role="tablist" aria-label="Bugün sayfaları">
           {state.pages.map((p) => (renaming === p.id ? (
