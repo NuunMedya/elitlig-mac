@@ -12,6 +12,8 @@ import { NEW_TAB_URL, displayUrl, downloadProgress, filterTabs, hostOf, isSecure
 import { NewTabPage, ErrorPage, PinnedPlaceholder, ReaderView, GoogleBanner } from "./pages";
 import { Panel } from "./panels";
 import "./browser.css";
+// Çalışma alanı: menü komutları yalnız odaktaki bölmedeyken (workspace/gate).
+import { useCommandGate } from "../../workspace/gate";
 
 const COVER_SELECTOR = ".modal-backdrop, .palette-backdrop, .menu__list, .ft-wheel-backdrop, [data-browser-cover]";
 const api = () => window.elitlig.browser;
@@ -126,7 +128,9 @@ export default function Browser() {
   }), [focusOmni, openFind, togglePanel, openReader]);
 
   // Menü komutları (⌘R, ⌘P, ⌘F): uygulamanın kendi arayüzü odaktayken.
+  const paneGate = useCommandGate();
   useEffect(() => window.elitlig.onCommand((c) => {
+    if (!paneGate()) return;
     if (c === "refresh") cmd("reload");
     if (c === "print") cmd("print");
     if (c === "find") openFind();

@@ -1,6 +1,8 @@
 // Arayüzün veri katmanı. Ağ isteği ana süreçte yapılır (window.elitlig.request);
 // burada yalnız React kancaları ve kısa yollar var.
 import { useCallback, useEffect, useRef, useState } from "react";
+// Çalışma alanı: komut yalnız odaktaki bölmenin etkin sekmesine gider (workspace/gate.js).
+import { useCommandGate } from "./workspace/gate";
 
 const bridge = () => window.elitlig;
 
@@ -69,11 +71,25 @@ export function useResource(path, query, { enabled = true } = {}) {
   return { ...state, reload: load, setData };
 }
 
-/** Uygulama komutlarını (menü/kısayol) dinler: new, export, print, find, refresh, undo, redo. */
+// Menü komutları: tek IPC dinleyicisi (çalışma alanında birçok görünüm aynı anda bağlı kalır;
+// her useCommand ayrı dinleyici eklerse MaxListenersExceededWarning verir).
+const commandListeners = new Set();
+let commandBound = false;
+function onAppCommand(fn) {
+  commandListeners.add(fn);
+  if (!commandBound) {
+    commandBound = true;
+    bridge().onCommand((cmd) => { for (const cb of [...commandListeners]) cb(cmd); });
+  }
+  return () => { commandListeners.delete(fn); };
+}
+
+/** Uygulama komutlarını (menü/kısayol) dinler: new, export, print, find, refresh, undo, redo. Yalnız odaktaki bölmede. */
 export function useCommand(name, handler) {
   const ref = useRef(handler);
   ref.current = handler;
-  useEffect(() => bridge().onCommand((cmd) => { if (cmd === name) ref.current?.(); }), [name]);
+  const gate = useCommandGate();
+  useEffect(() => onAppCommand((cmd) => { if (cmd === name && gate()) ref.current?.(); }), [name, gate]);
 }
 
 /** Basit gecikmeli değer (arama kutuları için). */

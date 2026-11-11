@@ -16,6 +16,7 @@ import { workbookToXlsx } from "../lib/sheets/xlsxExport";
 import ExportButton from "../components/ExportButton";
 import { sheetReport } from "../lib/export/reports";
 import { markPrintHandled } from "../lib/export/exportRegistry";
+import { useCommandGate } from "../workspace/gate";
 import { importFile as readSheetFile } from "../lib/sheets/importFile";
 import { relativeTime } from "../lib/helpers";
 import {
@@ -550,7 +551,9 @@ export default function SheetEditor({ id, onClose }) {
     else window.elitlig.print(html, title);
   };
 
+  const paneGate = useCommandGate();
   useEffect(() => window.elitlig.onCommand((cmd) => {
+    if (!paneGate()) return; // çalışma alanında yalnız odaktaki bölme
     if (cmd === "export") exportXlsx();
     if (cmd === "print") { markPrintHandled(); printSheet(false); }
     if (cmd === "find") document.querySelector(".formula-bar input")?.focus();
