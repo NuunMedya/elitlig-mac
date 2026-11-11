@@ -96,6 +96,12 @@
 .br-prompt > span { flex: 1; }
 .br-prompt small { color: var(--muted); }
 .br-prompt svg { color: var(--tool); }
+.br-google { flex-wrap: wrap; }
+.br-google > span { min-width: 280px; }
+.br-google small { display: block; margin-top: 2px; line-height: 1.45; }
+.br-google--err { background: color-mix(in srgb, #d97706 12%, var(--surface)); }
+.br-google--err svg { color: #d97706; }
+.br-ident { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; word-break: break-all; color: var(--muted); }
 
 /* ----------------------------------- gövde ----------------------------------- */
 .br-body { position: relative; flex: 1; min-height: 0; display: flex; }

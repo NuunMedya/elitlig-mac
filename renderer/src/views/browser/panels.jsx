@@ -376,6 +376,8 @@ function SettingsPanel({ st, cmd, toast }) {
   const [custom, setCustom] = useState((s.customBlock || []).join("\n"));
   const [info, setInfo] = useState(null);
   useEffect(() => { cmd("blocklistInfo").then(setInfo); }, [cmd, s.customBlock]);
+  const [ident, setIdent] = useState(null);
+  useEffect(() => { cmd("identityInfo").then(setIdent); }, [cmd]);
   return (
     <div className="br-settings">
       <label className="br-field"><span>Arama motoru</span>
@@ -386,6 +388,17 @@ function SettingsPanel({ st, cmd, toast }) {
       </label>
       <label className="br-check"><input type="checkbox" checked={s.showBookmarks !== false} onChange={(e) => cmd("settings", { showBookmarks: e.target.checked })} /> Yer imleri çubuğunu göster</label>
       <label className="br-check"><input type="checkbox" checked={s.popOutOnLeave !== false} onChange={(e) => cmd("settings", { popOutOnLeave: e.target.checked })} /> Tarayıcıdan çıkınca yana sabitlenen video yüzen pencereye geçsin</label>
+
+      <h4>Google girişi</h4>
+      <label className="br-field"><span>Google girişi uyumluluk modu</span>
+        <select className="input input--sm" value={s.googleCompat || "auto"} onChange={(e) => cmd("settings", { googleCompat: e.target.value }).then(() => cmd("identityInfo").then(setIdent))} aria-label="Google girişi uyumluluk modu">
+          <option value="auto">Otomatik</option>
+          <option value="chrome">Chrome</option>
+          <option value="firefox">Firefox</option>
+        </select>
+      </label>
+      <p className="br-help">Tarayıcı sitelere standart bir masaüstü Chrome olarak tanıtılır. <strong>Otomatik</strong>: önce Chrome; Google “güvenli olmayabilir” derse o profilde yalnız Google giriş sayfası (accounts.google.com) Firefox olarak açılır. <strong>Firefox</strong>: giriş sayfası her zaman Firefox kimliğiyle. Yalnız kimlik sunumu değişir; giriş bilgileriniz yalnız Google'a gider.{(s.googleFallback || []).length > 0 && <> Firefox'a geçilen profiller: {(s.googleFallback || []).join(", ")}.</>}</p>
+      {ident && <p className="br-ident" title="Gönderilen kimlik">Chrome: {ident.chrome}<br />{ident.brands}<br />Firefox (Google girişi): {ident.firefox}</p>}
 
       <h4>Reklam ve izleyici engelleyici</h4>
       <label className="br-check"><input type="checkbox" checked={s.adblock !== false} onChange={(e) => cmd("settings", { adblock: e.target.checked })} /> Açık ({info ? `${info.builtIn} yerleşik + ${info.custom} sizin alan adınız` : "…"})</label>
