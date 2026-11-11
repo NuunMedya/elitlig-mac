@@ -66,6 +66,14 @@ web sayfalarına uygulamanın hiçbir köprüsü verilmez (contextIsolation + sa
   iki profilde aynı anda açık kalır. Sekme renkleri profile göre; bir sekme başka profile taşınabilir ya da
   bağlantı “başka profilde aç”ılabilir. Gizli sekme (⇧⌘N) yalnız bellekte. Profil silinince verisi de silinir.
   Kullanıcı aracısı sıradan Chrome'dur (Google girişi çalışır).
+- **Tarayıcı kimliği ve Google girişi uyumluluk modu.** Her sekme ve açılır pencere sitelere standart masaüstü
+  Chrome olarak tanıtılır: motorun gerçek ana sürümüyle UA, buna uyan `Sec-CH-UA*` başlıkları ve
+  `navigator.userAgentData` (“Google Chrome” markası dahil; CDP `Emulation.setUserAgentOverride`, DevTools açıkken de).
+  Ayarlar › **Google girişi uyumluluk modu**: *Otomatik* (Chrome; Google “Bu tarayıcı veya uygulama güvenli
+  olmayabilir” derse o profilde yalnız accounts.google.com Firefox kimliğiyle yeniden açılır), *Chrome*, *Firefox*
+  (giriş sayfası her zaman Firefox UA'sıyla, istemci ipucu yok). Yine reddedilirse sekmede şerit: **Uyumluluk modunu
+  değiştir ve tekrar dene** / **Sistem tarayıcısında aç**. “Google ile giriş” açılır pencereleri aynı profil
+  bölmesi ve aynı kimlikle açılır (ön yükleme / Node yok). Yalnız kimlik sunumu yapılır (`app/browser/identity.js`, `compat.js`).
 - **Sabitle (⇧⌘S).** İzlenen video (YouTube'da oynatıcının kendisi) her zaman üstte duran küçük pencereye
   alınır: köşelere yapışır, boyutu ve saydamlığı ayarlanır, oynat / 10 sn ileri-geri / ses düğmeleri vardır;
   diğer sekmelerde ve uygulamanın başka araçlarında gezinirken açık kalır. İstenirse tarayıcının yan paneline

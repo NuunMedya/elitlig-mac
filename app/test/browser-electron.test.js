@@ -124,6 +124,11 @@ test("Tarayıcı: profiller ayrı oturum, medya indirme, sabitleme, kalıcılık
     assert.deepEqual(who, ["is", "kisisel"]);
     const ua = await (await page((u) => u.endsWith("/kim"))).evaluate(() => navigator.userAgent);
     assert.doesNotMatch(ua, /Electron|Elitlig/i, "sıradan Chrome kullanıcı aracısı");
+    // Tutarlı Chrome kimliği (CDP): UA motorun ana sürümüyle, userAgentData "Google Chrome" içerir.
+    const kimlik = await (await page((u) => u.endsWith("/kim"))).evaluate(() => ({ ua: navigator.userAgent, brands: navigator.userAgentData?.brands?.map((b) => `${b.brand}/${b.version}`) || [] }));
+    const major = kimlik.ua.match(/Chrome\/(\d+)\.0\.0\.0 Safari/)?.[1];
+    assert.ok(major, kimlik.ua);
+    assert.ok(kimlik.brands.includes(`Google Chrome/${major}`) && kimlik.brands.includes(`Chromium/${major}`), kimlik.brands.join(","));
 
     // target=_blank → yeni sekme (aynı profil); file:// engellenir.
     await B("navigate", { id: first, input: `${U}/acilir` });
