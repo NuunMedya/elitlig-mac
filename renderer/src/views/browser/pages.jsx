@@ -136,3 +136,31 @@ export function ReaderView({ data, onClose }) {
     </div>
   );
 }
+
+/* Google girişi reddedildiğinde ("Bu tarayıcı veya uygulama güvenli olmayabilir") sekmenin üstünde şerit. */
+const IDENTITY_LABEL = { chrome: "Chrome", firefox: "Firefox" };
+export function GoogleBanner({ tab, cmd }) {
+  const g = tab.google;
+  if (!g) return null;
+  if (g.state === "fallback") {
+    return (
+      <div className="br-prompt br-google" role="status">
+        <Icon name="refresh" size={15} />
+        <span>Google bu tarayıcıyı Chrome kimliğiyle reddetti; giriş sayfası <strong>Firefox uyumluluğuyla</strong> yeniden açılıyor (Otomatik mod).</span>
+        <button type="button" className="btn btn--sm btn--ghost" onClick={() => cmd("googleDismiss", { id: tab.id })}>Kapat</button>
+      </div>
+    );
+  }
+  return (
+    <div className="br-prompt br-google br-google--err" role="alert" aria-label="Google girişi reddedildi">
+      <Icon name="shield" size={15} />
+      <span>
+        <strong>Google girişi reddetti</strong>{g.popup ? " (açılır pencerede)" : ""}: “Bu tarayıcı veya uygulama güvenli olmayabilir”.
+        <small> Tarayıcı şu an Google'a <strong>{IDENTITY_LABEL[g.identity] || g.identity}</strong> olarak tanıtıldı. Uyumluluk modunu <strong>{IDENTITY_LABEL[g.next] || g.next}</strong> yapıp yeniden deneyebilirsiniz. Yine olmazsa girişi sistem tarayıcınızda (Safari / Chrome) açabilirsiniz; ancak orada açılan oturum bu profile taşınmaz.</small>
+      </span>
+      <button type="button" className="btn btn--sm btn--primary" onClick={() => cmd("googleRetry", { id: tab.id })}>Uyumluluk modunu değiştir ve tekrar dene</button>
+      <button type="button" className="btn btn--sm" onClick={() => cmd("googleExternal", { id: tab.id })}><Icon name="external" size={12} /> Sistem tarayıcısında aç</button>
+      <button type="button" className="icon-btn icon-btn--xs" aria-label="Kapat" onClick={() => cmd("googleDismiss", { id: tab.id })}><Icon name="x" size={11} /></button>
+    </div>
+  );
+}

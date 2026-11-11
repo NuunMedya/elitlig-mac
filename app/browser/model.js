@@ -58,6 +58,8 @@ const DEFAULT_SETTINGS = Object.freeze({
   popOutOnLeave: true,
   splitRatio: 0.5,
   translateTo: "tr",
+  googleCompat: "auto", // Google girişi uyumluluk modu: auto | chrome | firefox (identity.js)
+  googleFallback: [], // Otomatik kipte Google'ın reddettiği (Firefox'a geçilen) profiller
 });
 
 const NEW_TAB_URL = "elitlig://yeni-sekme";
@@ -299,6 +301,8 @@ function normalizeState(raw) {
     popOutOnLeave: s.popOutOnLeave !== false,
     splitRatio: Number.isFinite(s.splitRatio) ? Math.max(0.2, Math.min(0.8, s.splitRatio)) : 0.5,
     translateTo: /^[a-z]{2}(-[A-Z]{2})?$/.test(s.translateTo || "") ? s.translateTo : "tr",
+    googleCompat: ["auto", "chrome", "firefox"].includes(s.googleCompat) ? s.googleCompat : "auto",
+    googleFallback: [...new Set((Array.isArray(s.googleFallback) ? s.googleFallback : []).map(cleanId).filter((x) => x && x !== PRIVATE_ID && profiles.some((p) => p.id === x)))],
   };
   const bookmarks = (Array.isArray(raw.bookmarks) ? raw.bookmarks : []).map(normalizeBookmark).filter(Boolean).slice(0, MAX_BOOKMARKS);
   const closed = (Array.isArray(raw.closed) ? raw.closed : []).map((t) => normalizeTab(t, ids)).filter(Boolean).slice(-MAX_CLOSED);

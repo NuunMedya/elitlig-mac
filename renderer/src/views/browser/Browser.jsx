@@ -9,7 +9,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Icon, Kbd, MenuButton, keyLabel, useToast } from "../../components/ui";
 import { NEW_TAB_URL, displayUrl, downloadProgress, filterTabs, hostOf, isSecure, isWeb, showProfileDots, suggest, tabTitle, dropIndex } from "./browserState";
-import { NewTabPage, ErrorPage, PinnedPlaceholder, ReaderView } from "./pages";
+import { NewTabPage, ErrorPage, PinnedPlaceholder, ReaderView, GoogleBanner } from "./pages";
 import { Panel } from "./panels";
 import "./browser.css";
 
@@ -81,7 +81,7 @@ export default function Browser() {
     for (const r of [mainRef, sideRef, dockRef]) if (r.current) ro.observe(r.current);
     window.addEventListener("resize", update);
     return () => { ro.disconnect(); window.removeEventListener("resize", update); };
-  }, [rects, Boolean(split), docked, panel, settings.showBookmarks, st?.prompts?.length, Boolean(find), st?.fullscreenId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rects, Boolean(split), docked, panel, settings.showBookmarks, st?.prompts?.length, Boolean(active?.google), active?.google?.state, Boolean(find), st?.fullscreenId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Uygulama katmanları (palet, pencereler, açılır listeler) görünümlerin üstünde kalsın.
   useEffect(() => {
@@ -356,6 +356,9 @@ export default function Browser() {
           <button type="button" className="btn btn--sm btn--ghost" onClick={() => cmd("permission", { reqId: p.reqId, decision: "allow", remember: false })}>Yalnız bu kez</button>
         </div>
       ))}
+
+      {/* --------------------------- Google girişi reddi --------------------------- */}
+      {active?.google && <GoogleBanner tab={active} cmd={cmd} />}
 
       {/* ---------------------------------- gövde ---------------------------------- */}
       <div className="br-body">

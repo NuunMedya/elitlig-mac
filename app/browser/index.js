@@ -7,7 +7,10 @@
 //   • Profiller: her biri ayrı, kalıcı oturum bölmesi (persist:elitlig-browser-<kimlik>):
 //     çerezler, girişler, önbellek yalıtılmış — iki Google hesabı yan yana. Gizli profil
 //     yalnız bellekte. Sekme başına profil ("kapsayıcı") seçilir.
-//   • Kullanıcı aracısı sıradan Chrome (Electron imi yok): Google girişi çalışır.
+//   • Kimlik (compat.js / identity.js): her sekme ve açılır pencere standart Chrome olarak
+//     tanıtılır (UA + Sec-CH-UA + navigator.userAgentData, CDP ile); "Google girişi uyumluluk
+//     modu" (Otomatik / Chrome / Firefox) yalnız accounts.google.com için Firefox kimliği verir.
+//     Google yine reddederse sekmede şerit: kipi değiştirip yeniden dene / sistem tarayıcısı.
 //   • Güvenlik: contextIsolation + sandbox, nodeIntegration yok, web sayfalarına ön yükleme
 //     YOK (medya bulma / okuma kipi / sabitleme betikleri yalıtılmış dünyada çalışır).
 //     window.open yeni sekme olur (boyutlu açılır pencere — ör. "Google ile giriş" — aynı
@@ -26,6 +29,8 @@ const path = require("node:path");
 const model = require("./model");
 const media = require("./media");
 const inject = require("./inject");
+const identity = require("./identity");
+const { createCompat } = require("./compat");
 const { createBlocker, DEFAULT_BLOCKLIST } = require("./blocklist");
 const { createPip, BAR_H } = require("./pip");
 const { createClipboardIo } = require("../clipboardIo");
@@ -61,6 +66,22 @@ function registerBrowser(deps) {
   const prompts = new Map(); // izin istekleri
   const sessions = new Map(); // profileId → Session
   const blocker = createBlocker([...DEFAULT_BLOCKLIST, ...state.settings.customBlock]);
+  const popupOwner = new Map(); // açılır pencere wc.id → sekme kimliği
+
+  // Tarayıcı kimliği ve Google girişi uyumluluk modu.
+  const compat = createCompat({
+    mode: () => state.settings.googleCompat,
+    hasFallback: (pid) => state.settings.googleFallback.includes(pid),
+    addFallback: (pid) => { if (!state.settings.googleFallback.includes(pid)) { state.settings.googleFallback = [...state.settings.googleFallback, pid]; changed(); } },
+    onRejection: ({ wc, url, retry, kind, decision }) => {
+      const tab = tabByWc(wc) || tabById(popupOwner.get(wc.id));
+      if (!tab) return;
+      tab.google = { state: decision.action === "fallback" ? "fallback" : "rejected", identity: kind, next: decision.next || "firefox", url, retry, popup: !tabByWc(wc), wcId: wc.id };
+      sendState();
+    },
+    isolatedWorld: inject.ISOLATED_WORLD,
+    log,
+  });
 
   let host = null;
   let attached = false;
@@ -83,6 +104,7 @@ function registerBrowser(deps) {
     id: t.id, profileId: t.profileId, url: t.url, title: t.title, favicon: t.favicon, pinned: t.pinned, muted: Boolean(t.muted), audible: t.audible,
     loading: t.loading, canGoBack: t.canGoBack, canGoForward: t.canGoForward, zoom: t.zoom || 0, blocked: t.blocked, error: t.error, find: t.find,
     created: Boolean(t.view), dark: isDarkSite(t.url), crashed: Boolean(t.error?.code === "crashed"),
+    google: t.google ? { state: t.google.state, identity: t.google.identity, next: t.google.next, popup: t.google.popup } : null,
   });
   const publicState = () => ({
     tabs: state.tabs.map(publicTab),
@@ -121,7 +143,7 @@ function registerBrowser(deps) {
     if (sessions.has(id)) return sessions.get(id);
     const ses = electronSession.fromPartition(model.partitionFor(id), { cache: id !== PRIVATE_ID });
     sessions.set(id, ses);
-    ses.setUserAgent(model.cleanUserAgent(ses.getUserAgent()), "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7");
+    compat.setupSession(ses, id); // standart Chrome kimliği + başlık uyumu (Firefox kipi: Google girişi)
     try { ses.setSpellCheckerLanguages(["tr", "en-US"]); } catch { /* sözlük yok */ }
 
     // Reklam / izleyici engelleyici (alt kaynaklar; ana çerçeve hiç engellenmez).
@@ -262,6 +284,8 @@ function registerBrowser(deps) {
     view.setBackgroundColor("#ffffffff");
     tab.view = view;
     const wc = view.webContents;
+    // Kimlik: her üst çerçeve gezinmesinin başında CDP ile (compat.js).
+    compat.attach(wc, tab.profileId, { onSignin: () => { if (tab.google?.state === "rejected" && !tab.google.popup) { tab.google = null; sendState(); } } });
     wc.setAudioMuted(Boolean(tab.muted) || isMutedSite(tab.url));
     const sync = () => {
       if (wc.isDestroyed()) return;
@@ -278,6 +302,7 @@ function registerBrowser(deps) {
     wc.on("did-navigate", (_e, url) => {
       tab.error = null;
       tab.blocked = 0;
+      if (tab.google && !tab.google.popup && !identity.isGoogleSignIn(url)) tab.google = null;
       tab.url = url;
       wc.setAudioMuted(Boolean(tab.muted) || isMutedSite(url));
       history = model.addHistory(history, { url, title: wc.getTitle(), profileId: tab.profileId });
@@ -361,13 +386,31 @@ function registerBrowser(deps) {
         return {
           action: "allow",
           overrideBrowserWindowOptions: { width: 520, height: 680, autoHideMenuBar: true, title: "Açılır pencere", webPreferences: guestPrefs(tab.profileId) },
+          // Pencere burada kurulur: kimlik (CDP) ilk gezinmeden ÖNCE uygulanır; aynı bölme, ön yükleme yok.
+          createWindow: (options) => {
+            const child = new BrowserWindow({ ...options, webPreferences: { ...(options.webPreferences || {}), ...guestPrefs(tab.profileId), preload: undefined } });
+            popupOwner.set(child.webContents.id, tab.id);
+            const wcId = child.webContents.id;
+            child.webContents.once("destroyed", () => {
+              popupOwner.delete(wcId);
+              if (tab.google?.popup && tab.google.wcId === wcId) { tab.google = null; sendState(); }
+            });
+            compat.attach(child.webContents, tab.profileId);
+            return child.webContents;
+          },
         };
       }
       if (url && url !== "about:blank") newTab({ url, profileId: tab.profileId, background: disposition === "background-tab", afterId: tab.id });
       return { action: "deny" };
     });
     wc.on("did-create-window", (child) => {
+      if (!popupOwner.has(child.webContents.id)) { popupOwner.set(child.webContents.id, tab.id); compat.attach(child.webContents, tab.profileId); }
       child.webContents.on("will-navigate", guardNav);
+      child.webContents.on("before-input-event", (event, input) => {
+        if (model.shortcutAction(input, isMac) !== "devtools") return;
+        event.preventDefault();
+        child.webContents.openDevTools({ mode: "detach" });
+      });
       child.webContents.setWindowOpenHandler(({ url }) => {
         if (model.navigationVerdict(url) === "allow") newTab({ url, profileId: tab.profileId, afterId: tab.id });
         return { action: "deny" };
@@ -1256,9 +1299,37 @@ function registerBrowser(deps) {
         if (Number.isFinite(a.splitRatio)) s.splitRatio = Math.max(0.2, Math.min(0.8, a.splitRatio));
         if (typeof a.translateTo === "string" && /^[a-z]{2}(-[A-Z]{2})?$/.test(a.translateTo)) s.translateTo = a.translateTo;
         if (a.downloadDir === null) s.downloadDir = null;
+        if (identity.COMPAT_MODES.includes(a.googleCompat) && a.googleCompat !== s.googleCompat) {
+          s.googleCompat = a.googleCompat;
+          if (a.googleCompat === "auto") s.googleFallback = []; // Otomatik yeniden seçilince öğrenilenler sıfırlanır
+          compat.refreshAll();
+        }
         changed();
         return publicState().settings;
       }
+      case "identityInfo": return { ...compat.info(), fallbackProfiles: state.settings.googleFallback };
+      case "googleRetry": {
+        // Şeritteki "Uyumluluk modunu değiştir ve tekrar dene": kip değiştirilir, giriş yeniden açılır.
+        if (!tab) return false;
+        const g = tab.google;
+        const next = identity.COMPAT_MODES.includes(a.mode) ? a.mode : g?.next || "firefox";
+        state.settings.googleCompat = next;
+        if (next !== "auto") state.settings.googleFallback = state.settings.googleFallback.filter((p) => p !== tab.profileId);
+        compat.refreshAll();
+        const target = (g?.popup ? require("electron").webContents.fromId(g.wcId) : null) || wc;
+        const url = g?.retry || identity.DEFAULT_SIGNIN_URL;
+        tab.google = null;
+        changed();
+        if (target && !target.isDestroyed()) compat.retryIn(target, url);
+        return { mode: next };
+      }
+      case "googleExternal": {
+        // Sistem tarayıcısında giriş (oturum bu profile taşınmaz; kullanıcıya açıklanır).
+        const url = tab?.google?.retry && /^https:\/\//.test(tab.google.retry) ? tab.google.retry : identity.DEFAULT_SIGNIN_URL;
+        shell.openExternal(url).catch(() => {});
+        return true;
+      }
+      case "googleDismiss": if (tab) { tab.google = null; sendState(); } return true;
       case "blocklistInfo": return { builtIn: DEFAULT_BLOCKLIST.length, custom: state.settings.customBlock.length };
       case "shortcut": return runShortcut(String(a.action || ""), id);
       default: return null;
