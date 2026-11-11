@@ -38,7 +38,8 @@ function onBlock({ frame, frames, planes }) {
   // Blok, son örneği işlendiğinde gönderilir: ulaşma anı bloğun SONUNA denk gelir.
   lastOffset = clock.push(((frame + frames) * 1000) / sampleRate, arrival);
   st.blocks += 1;
-  if (nextFrame !== null && frame > nextFrame) { st.gaps += 1; st.gapMs += Math.round(((frame - nextFrame) * 1000) / sampleRate); }
+  // İlk ~2 sn (işçi / bağlam açılışı) sayılmaz: Ses sağlığında yalancı "boşluk" uyarısı olmasın.
+  if (nextFrame !== null && frame > nextFrame && st.blocks > 100) { st.gaps += 1; st.gapMs += Math.round(((frame - nextFrame) * 1000) / sampleRate); }
   nextFrame = frame + frames;
   if (enc.encodeQueueSize > st.queueMax) st.queueMax = enc.encodeQueueSize;
   if (enc.encodeQueueSize > 50) { st.dropped += 1; return; }
