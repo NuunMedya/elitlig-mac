@@ -8,6 +8,9 @@
 // kurulur). Hazır ayarlar arasında tek tıkla geçilir; yayın sürerken marka / tema anında değişir.
 import { normalizeAngle, normalizeCard, normalizePanoramaState, normalizePlaylist, pid } from "./model";
 import { normalizeCustomLayout, setCustomLayouts } from "./layouts";
+import { normalizeGfx } from "./gfx";
+import { normalizeMediaState } from "./mediaBin";
+import { normalizeRegi } from "./regi";
 
 const str = (v, d = "", max = 80) => String(v ?? d).slice(0, max);
 export const PRESETS_KEY = "studio.panorama.presets.v1";
@@ -40,9 +43,16 @@ export function normalizePreset(p) {
     title: str(p.title, "", 60),
     sources: (Array.isArray(p.sources) ? p.sources : []).map(portableSource).filter(Boolean).slice(0, 40),
     hotkey: /^[1-9]$/.test(String(p.hotkey || "")) ? String(p.hotkey) : null,
+    // Panorama rejisi (tur 5): yazı bantları (alt yazı / tam ekran / bant öğeleri), medya kutusu,
+    // reji (sahne ayarları, butonlar, kısayollar, güvenli alan). Eski hazır ayarlarda yok → dokunulmaz.
+    ...(p.gfx ? { gfx: stripGfx(normalizeGfx(p.gfx)) } : {}),
+    ...(p.media ? { media: { ...normalizeMediaState(p.media), overlay: null } } : {}),
+    ...(p.regi ? { regi: normalizeRegi(p.regi) } : {}),
     savedAt: Number.isFinite(Number(p.savedAt)) ? Number(p.savedAt) : Date.now(),
   };
 }
+
+const stripGfx = (g) => ({ ...g, lowerOn: null, titleOn: null, auto: { ...g.auto, on: false, nextAt: 0 } });
 
 /** O anki durumdan hazır ayar (id verilirse aynı kimlikle — "üzerine kaydet"). */
 export function presetFromState(name, state, id = null) {
@@ -50,6 +60,7 @@ export function presetFromState(name, state, id = null) {
     id: id || pid("pp"), name, brandId: state.brandId, angles: state.angles, customLayouts: state.customLayouts,
     playlist: state.playlist, ticker: state.ticker, band: state.band, scope: state.scope, title: state.title,
     sources: state.sources, savedAt: Date.now(),
+    ...(state.gfx ? { gfx: state.gfx } : {}), ...(state.media ? { media: state.media } : {}), ...(state.regi ? { regi: state.regi } : {}),
   });
 }
 
@@ -70,6 +81,8 @@ export function applyPreset(state, preset, { now = Date.now(), keepSources = fal
     playlist: { ...p.playlist, index: 0, pinnedId: null, startedAt: now }, ticker: p.ticker, band: p.band,
     scope: p.scope?.cityId ? p.scope : state.scope, title: p.title || state.title, brandId: p.brandId, presetId: p.id,
     programId: angles[0]?.id || null, previewId: angles[1]?.id || angles[0]?.id || null,
+    // Tek tıkla bütün gösteri: yazı bantları, medya kutusu ve reji ayarları da (varsa) gelir.
+    ...(p.gfx ? { gfx: p.gfx } : {}), ...(p.media ? { media: p.media } : {}), ...(p.regi ? { regi: p.regi } : {}),
   });
 }
 /** Bu bilgisayara özgü kaynak ayarları (aygıt seçimi, dosyanın yerel izni) korunur. */
@@ -79,7 +92,9 @@ const pickLocal = (s) => Object.fromEntries(Object.entries(s).filter(([k]) => ["
 export function presetDirty(state, preset) {
   if (!preset) return false;
   const a = presetFromState(preset.name, state, preset.id);
-  const strip = (x) => JSON.stringify({ ...x, savedAt: 0, sources: (x.sources || []).map((s) => s.id), playlist: { items: x.playlist.items.map((c) => [c.kind, c.sec, c.opts, c.off || false, c.style || null]), auto: x.playlist.auto } });
+  // Eski (tur 5 öncesi) hazır ayarda olmayan bölümler karşılaştırılmaz.
+  for (const k of ["gfx", "media", "regi"]) if (!preset[k]) delete a[k];
+  const strip = (x) => JSON.stringify({ ...x, savedAt: 0, gfx: x.gfx ? stripGfx(x.gfx) : null, media: x.media ? { ...x.media, overlay: null } : null, sources: (x.sources || []).map((s) => s.id), playlist: { items: x.playlist.items.map((c) => [c.kind, c.sec, c.opts, c.off || false, c.style || null]), auto: x.playlist.auto } });
   return strip(a) !== strip(preset);
 }
 

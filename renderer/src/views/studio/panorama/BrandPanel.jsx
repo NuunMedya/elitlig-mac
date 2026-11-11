@@ -75,12 +75,12 @@ const Range = ({ label, value, min, max, step = 1, onChange, unit = "" }) => (
 );
 const COLOR_LABELS = [["primary", "Ana renk"], ["secondary", "İkincil"], ["accent", "Vurgu"], ["text", "Metin"], ["background", "Arka plan"], ["panel", "Kart zemini"]];
 
-function Swatch({ b }) {
+export function Swatch({ b }) {
   const c = b.colors;
   return <i className="pn-swatch" style={{ background: `linear-gradient(135deg, ${c.background} 0 40%, ${c.primary} 40% 70%, ${c.accent} 70% 85%, ${c.panel} 85%)` }} />;
 }
 
-function LogoField({ label, value, onChange, onPalette, toast }) {
+export function LogoField({ label, value, onChange, onPalette, toast }) {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const apply = async (src, name, keepUrl) => {

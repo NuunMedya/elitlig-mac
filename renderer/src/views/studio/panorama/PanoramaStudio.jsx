@@ -1,29 +1,25 @@
-// YAYIN STÜDYOSU · PANORAMA KİPİ — maç seçmeden, web sitesinin içerikleriyle stüdyo programı
-// (haber masası / yayın stüdyosu düzeni).
+// YAYIN STÜDYOSU · PANORAMA REJİSİ — maç seçmeden, web sitesinin içerikleriyle stüdyo programı.
+// Maç rejisiyle aynı mantık ve aynı motor; burada maç yerine PANORAMA rejisi:
 //
-//   KAYNAKLAR   kamera, ekran, pencere, görsel, video, renk… (Maç yayınıyla aynı SourceDialog ve
-//               useStudioSources; panorama kendi kaynak listesini tutar: studio.panorama.v1)
-//   AÇILAR      4-5 kamerayı aynı anda gösteren düzenler (ızgara, 2+3, büyük + küçükler, şerit,
-//               sunucu + konuk, sunucu + içerik…). Tık: ÖNİZLEME, çift tık / Shift+sayı: doğrudan
-//               PROGRAM; GEÇİŞ (Boşluk / Enter), KES (C), 1–9 önizlemeye. Açılar stüdyo sahnesidir
-//               (lib/studio/panorama/model.js buildPanoramaScenes) ve Maç yayınının karıştırıcısı
-//               (useCompositor: işçi motoru, geçişler, FTB) çizer — kopya yok.
-//   KARTLAR     web sitesinin verisi (puan durumu, fikstür, sonuçlar, canlı skorlar, krallıklar,
-//               haftanın enleri, haberler, takım kartı, karşılaştırma, sponsorlar, QR, saat…)
-//               oynatma listesiyle döner (kart başına süre, elle sabitleme, ← / → ve P). Kartlar
-//               GRAFİK KATMANINDA program tuvaline çizilir (lib/studio/panorama/draw.js) — yayına,
-//               kayda ve LED'e giden görüntüde görünür.
-//   YAYIN       aynı motor (useEngine → ana süreç ffmpeg → RTMP / RTMPS, YouTube yayın anahtarı,
-//               prova / yalnız kayıt, yerel tam kayıt). Müzik çalar ve LED çıkışı aynı modüller.
-//   ŞABLONLAR   açılar + kart sırası + alt bant + tema; hazır sekiz şablon, kaydedilebilir.
-//   MARKALAR    marka profilleri (BrandPanel.jsx; lib/studio/panorama/brands.js): logo, renk, yazı tipi,
-//               kart / künye / bant / saat stili, animasyon, filigran; 16 hazır tema; dışa / içe aktarma.
-//   HAZIR AYAR  marka + açılar + kartlar + kaynaklar + kapsam (PresetsPanel.jsx; presets.js); son
-//               kullanılan açılışta yüklenir, üst çubuktan ve ⌥1–9 ile tek tıkla geçiş. Web Panorama
-//               yönetimindeki kayıtlı yayınlar içe aktarılır.
-//   WEB SAHNELERİ web Panorama rejisinin 51 sahnesi kart olarak (webScenes.js, drawWeb.js).
+//   YERLEŞİM    Maç rejisinin yerleşim düzeni (dockview; regi/PanoramaWorkspace): önizleme / program
+//               monitörleri, GEÇİŞ paneli, sahneler, çoklu görünüm, kaynaklar, medya kutusu, grafikler,
+//               içerik, kartlar, veri, tema stüdyosu, hazır ayarlar, butonlar, yayın, ses, müzik, LED,
+//               ayarlar. Düzenle: sürükle / böl / sekmele / yüzen pencere; 5 hazır düzen.
+//   SAHNELER    açılar = stüdyo sahneleri (lib/studio/panorama/model.js buildPanoramaScenes): 1/2/3/4/5
+//               kameralı, PiP, bölünmüş, ızgara, büyük + şerit… Tık önizleme, çift tık / ⇧+sayı yayın,
+//               GEÇİŞ (seçili tür + süre; sahneye özel geçiş), KES, FTB, son sahne. Karıştırıcı Maç
+//               rejisinin useCompositor'ı (işçi motoru, geçişler, logo geçişleri tema logosuyla).
+//   TEMA        30 tema (themeCatalog.js; zemin + doku + hareket, çerçeve, alt yazı, bant, saat, rozet,
+//               logo hareketi, yazı tipleri, yumuşatma) — Tema stüdyosunda her ayrıntı (regi/ThemeStudio).
+//   GRAFİKLER   alt yazılar (kısayol, otomatik gizle, oynatma listesi), tam ekran kartlar (başlık / geri
+//               sayım / ara / sosyal), kayan bant kuyruğu, CANLI rozeti (gfx.js → drawTheme.js).
+//   MEDYA       dışarıdan görsel / video: tam ekran (önizleme → geçiş), PiP / üst katman, kamera yuvası;
+//               video denetimi, giriş-çıkış, ses (mediaBin.js, regi/usePanoramaMedia.js).
+//   KARTLAR     sitenin verisi dönen kartlarla (puan, fikstür, sonuçlar, krallıklar, web sahneleri…).
+//   YAYIN       aynı motor (useEngine → ffmpeg → RTMP / RTMPS / YouTube; prova; yerel kayıt).
+//   HAZIR AYAR  bütün gösteri tek tıkla (tema + sahneler + kartlar + grafikler + medya + reji ayarları).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Icon, Kbd, Modal, useConfirm, useToast } from "../../../components/ui";
+import { Icon, MenuButton, useConfirm, useToast } from "../../../components/ui";
 import { setLeaveGuard } from "../../../lib/leaveGuard";
 import { encodingPreset, normalizeEncoding, statusPill } from "../../../lib/studio/broadcast";
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../../lib/studio/transitions";
@@ -31,18 +27,20 @@ import { DEFAULT_BRANDING } from "../../../lib/studio/stinger";
 import { drawGraphics } from "../../../lib/studio/graphics";
 import { uid } from "../../../lib/studio/scenes";
 import {
-  PANORAMA_KEY, applyTemplate, buildPanoramaScenes, buildPanoramaSnapshot, cardLabel, currentCard, currentMedia, defaultPanoramaState, fillSlots, gotoCard, layoutOf,
-  loadPanoramaState, loadTemplates, normalizeAngle, normalizeCard, normalizePanoramaState, pinCard, remainingSec, savePanoramaState, saveTemplates,
+  PANORAMA_KEY, applyTemplate, buildPanoramaScenes, buildPanoramaSnapshot, cardLabel, currentCard, currentMedia, defaultPanoramaState, fillSlots, gotoCard,
+  loadPanoramaState, loadTemplates, makeCard, normalizeAngle, normalizeCard, normalizePanoramaState, pinCard, remainingSec, savePanoramaState, saveTemplates,
   setCustomLayouts, stepCard, templateFromState, tickPlaylist, webCardKey,
 } from "../../../lib/studio/panorama/model";
-import { BUILTIN_BRANDS, findBrand, loadBrands, saveBrands } from "../../../lib/studio/panorama/brands";
+import { BUILTIN_BRANDS, findBrand, loadBrands, saveBrands, brandTokens as brandTokensOf } from "../../../lib/studio/panorama/brands";
 import { applyPreset, bootState, loadPresets, presetDirty, presetFromState, savePresets } from "../../../lib/studio/panorama/presets";
-import { AngleEditor, LayoutEditor, LayoutPic } from "./AngleEditor";
+import { hideLower, hideTitle, nextLower, showLower, tickGfx, toggleLower, toggleTitle } from "../../../lib/studio/panorama/gfx";
+import { addItems, hideOverlay, kindFromUrl, mediaSceneId, mediaSourceId, removeItem, setSlot, showOverlay, tickMedia } from "../../../lib/studio/panorama/mediaBin";
+import { actionForKey, afterTake, keyName, planTake, sceneForKey, setSceneSetting } from "../../../lib/studio/panorama/regi";
+import { AngleEditor, LayoutEditor } from "./AngleEditor";
 import { AddCardSelect, CardOptions } from "./CardEditor";
 import BrandPanel from "./BrandPanel";
 import PresetsPanel from "./PresetsPanel";
 import { usePanoramaExtras } from "./usePanoramaExtras";
-import { brandTokens as brandTokensOf } from "../../../lib/studio/panorama/brands";
 import { useStudioSources } from "../useStudioSources";
 import { useAudioMixer } from "../useAudioMixer";
 import { useCanvasImage, useCompositor } from "../useCompositor";
@@ -50,18 +48,29 @@ import { useEngine } from "../useEngine";
 import { drawScene } from "../draw";
 import { canvasLoop } from "../perf/renderLoad";
 import { useStudioSettings } from "../settings/useStudioSettings";
-import { SourceDialog, SourceThumb } from "../SourcesPanel";
-import Monitor from "../scenes/Monitor";
+import { SourceDialog } from "../SourcesPanel";
 import HealthChip from "../scenes/HealthChip";
 import OutMuteButton from "../audio/OutMuteButton";
-import { MusicPanel, useMusicPlayer } from "../music";
+import { useMusicPlayer } from "../music";
 import { useLed } from "../led/useLed";
 import LedPanel from "../led/LedPanel";
 import { resolveScene } from "../../../lib/studio/scenes";
 import { usePanoramaData } from "./usePanoramaData";
+import PanoramaWorkspace, { LAYOUT_PRESETS } from "./regi/PanoramaWorkspace";
+import { RegiCtx } from "./regi/RegiCtx";
+import { AudioPane, MonitorPanel, MultiviewPanel, MusicPane, ScenesPanel, SourcesPane, TakePanel } from "./regi/panels";
+import GraphicsPanel from "./regi/GraphicsPanel";
+import MediaPanel, { draftFromFile } from "./regi/MediaPanel";
+import ThemeStudio from "./regi/ThemeStudio";
+import ButtonGrid from "./regi/ButtonGrid";
+import RegiSettings from "./regi/RegiSettings";
+import ContentPanel from "./regi/ContentPanel";
+import { usePanoramaMedia } from "./regi/usePanoramaMedia";
+import { backgroundImage } from "./regi/themePreview";
 import logoInline from "../../../assets/elitlig-beyaz.png?inline";
 import "../studio.css";
 import "./panorama.css";
+import "./regi/regi.css";
 
 const store = (() => { try { return window.localStorage; } catch { return null; } })();
 const PREFS_KEY = "studio.panorama.prefs.v1";
@@ -105,23 +114,33 @@ function StatusPill({ state, since }) {
   return <span className={`st-pill is-${pill.tone}`}><i />{pill.label}</span>;
 }
 
-/** Açı küçük resimleri: sahne + panorama katmanı (kart, künye, bant) — program ile aynı çizim. */
+/**
+ * Açı küçük resimleri: sahne + panorama katmanı (kart, künye, bant) — program ile aynı çizim.
+ * registerTile(anahtar, sahne = anahtar): aynı sahne birden çok panelde (Sahneler, Çoklu görünüm).
+ */
 function useAngleTiles(configRef, runtimeRef, snapRef) {
-  const canvases = useRef(new Map());
+  const canvases = useRef(new Map()); // canvas → { key, id }
   useEffect(() => canvasLoop("Panorama açıları (küçük resim)", { fps: 5 }, () => {
     const cfg = configRef.current;
     if (!cfg) return;
     const now = performance.now();
-    for (const [c, id] of canvases.current) {
+    for (const [c, { id }] of canvases.current) {
       if (!c.isConnected || c.offsetParent === null) continue;
       const ctx = c.getContext("2d", { alpha: false });
       drawScene(ctx, resolveScene(cfg, id), cfg.sources, runtimeRef.current, c.width, c.height, { placeholders: true, now, noFx: true });
       try { drawGraphics(ctx, { width: c.width, height: c.height, now: Date.now(), sceneId: id }, snapRef.current); } catch { /* yoksay */ }
     }
   }), [configRef, runtimeRef, snapRef]);
-  return useCallback((id) => (el) => {
-    for (const [c, cid] of canvases.current) if (cid === id && c !== el) canvases.current.delete(c);
-    if (el) canvases.current.set(el, id);
+  const refs = useRef(new Map());
+  return useCallback((key, id = key) => {
+    const k = `${key}|${id}`;
+    if (!refs.current.has(k)) {
+      refs.current.set(k, (el) => {
+        for (const [c, v] of canvases.current) if (v.key === key && c !== el) canvases.current.delete(c);
+        if (el) canvases.current.set(el, { key, id });
+      });
+    }
+    return refs.current.get(k);
   }, []);
 }
 
@@ -212,28 +231,6 @@ function DataPanel({ pano, setScope, pd }) {
   );
 }
 
-function LookPanel({ pano, setPano }) {
-  const tk = pano.ticker;
-  const setTk = (patch) => setPano((p) => ({ ...p, ticker: { ...p.ticker, ...patch } }));
-  const srcs = [["live", "Canlı skorlar"], ["results", "Son sonuçlar"], ["fixtures", "Yaklaşan maçlar"], ["news", "Haber başlıkları"], ["custom", "Serbest metin"]];
-  return (
-    <div className="pn-look">
-      <label className="field pn-mini"><span>Program başlığı</span><input className="input" value={pano.title} maxLength={60} onChange={(e) => setPano((p) => ({ ...p, title: e.target.value }))} /></label>
-      <p className="st-hint">Tema, logo ve renkler: <b>Marka</b> sekmesi. Marka profilinde program başlığı yazılıysa o kullanılır.</p>
-      <label className="pn-check"><input type="checkbox" checked={tk.on} onChange={(e) => setTk({ on: e.target.checked })} /> Alt bant (kayan haber şeridi)</label>
-      <div className="pn-checks pn-checks--col">{srcs.map(([k, l]) => (
-        <label key={k}><input type="checkbox" checked={tk.sources.includes(k)} onChange={(e) => setTk({ sources: e.target.checked ? [...tk.sources, k] : tk.sources.filter((x) => x !== k) })} /> {l}</label>
-      ))}</div>
-      <label className="field pn-mini"><span>Serbest metin (her satır bir öğe)</span><textarea className="input" rows={3} value={tk.text} maxLength={600} onChange={(e) => setTk({ text: e.target.value })} /></label>
-      <div className="pn-row2">
-        <label className="field pn-mini"><span>Bant etiketi</span><input className="input" value={tk.label} maxLength={24} onChange={(e) => setTk({ label: e.target.value })} /></label>
-        <label className="field pn-mini"><span>Hız (px/sn)</span><input className="input" type="number" min={40} max={400} value={tk.speed} onChange={(e) => setTk({ speed: Number(e.target.value) || 120 })} /></label>
-      </div>
-      <label className="pn-check"><input type="checkbox" checked={pano.band.on} onChange={(e) => setPano((p) => ({ ...p, band: { on: e.target.checked } }))} /> Sponsor kutusu (sağ altta dönen logolar)</label>
-    </div>
-  );
-}
-
 function BroadcastBox({ prefs, setPrefs, engine, busy, onStart, onRehearsal, onStop, chooseDir }) {
   const live = engine.active;
   const url = ingestOf(prefs);
@@ -287,6 +284,20 @@ function BroadcastBox({ prefs, setPrefs, engine, busy, onStart, onRehearsal, onS
 
 /* ─────────────────────────────── ana görünüm ─────────────────────────────── */
 
+
+/** Panorama rejisinin panelleri (yerleşimdeki türler). */
+const PANEL_DEFS = [
+  ["pvw", "Önizleme", "eye", "Önizlemedeki sahne"], ["pgm", "Program", "broadcast", "Yayına giden görüntü"], ["gecis", "Geçiş", "swap", "GEÇİŞ / KES / FTB, tür ve süre"],
+  ["sahneler", "Sahneler", "layers", "Kamera açıları: 1/2/3/4/5'li, PiP, bölünmüş, ızgara…; kısayol, sahne ayarı"], ["multiview", "Çoklu görünüm", "grid", "Program, önizleme ve bütün sahneler"],
+  ["kaynaklar", "Kaynaklar", "camera", "Kamera, ekran, pencere, görsel, video…"], ["medya", "Medya kutusu", "image", "Dışarıdan görsel / video: tam ekran, PiP, yuvaya"],
+  ["grafikler", "Grafikler", "type", "Alt yazılar, tam ekran kartlar, kayan bant, CANLI rozeti"], ["icerik", "İçerik", "globe", "Sitenin içeriği: maçlar, puan, krallıklar, haberler → kart / alt yazı / bant"],
+  ["kartlar", "Kartlar", "layers", "Dönen içerik kartları (oynatma listesi)"], ["veri", "Veri", "overview", "Kapsam: il, lig, sezon, grup"],
+  ["tema", "Tema stüdyosu", "palette", "30 tema, canlı önizleme, her ayrıntı, dışa / içe aktar"], ["hazir", "Hazır ayarlar", "grid", "Bütün gösteri tek tıkla; şablonlar; markalar"],
+  ["butonlar", "Butonlar", "zap", "Stream deck benzeri buton ızgarası"], ["yayin", "Yayın", "broadcast", "YouTube / RTMP, prova, yerel kayıt"],
+  ["ses", "Ses", "mic", "Program sesi, mikrofon"], ["muzik", "Müzik çalar", "music", "Müzik listesi"], ["led", "LED", "overview", "LED ekran çıkışı"],
+  ["ayarlar", "Ayarlar", "sliders", "Çıkış, geçiş süreleri, güvenli alan, kısayollar, yerleşim"],
+];
+
 export default function PanoramaStudio({ go, onSwitchMode }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -308,6 +319,9 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
   panoRef.current = pano;
   const setPano = useCallback((fn) => setPanoState((p) => { const n = typeof fn === "function" ? fn(p) : fn; panoRef.current = n; return n; }), []);
   useEffect(() => { const t = setTimeout(() => savePanoramaState(store, pano), 300); return () => clearTimeout(t); }, [pano]);
+  const setGfx = useCallback((fn) => setPano((p) => ({ ...p, gfx: typeof fn === "function" ? fn(p.gfx) : fn })), [setPano]);
+  const setMedia = useCallback((fn) => setPano((p) => ({ ...p, media: typeof fn === "function" ? fn(p.media) : fn })), [setPano]);
+  const setRegi = useCallback((fn) => setPano((p) => ({ ...p, regi: typeof fn === "function" ? fn(p.regi) : fn })), [setPano]);
   const [prefs, setPrefsState] = useState(readPrefs);
   const setPrefs = useCallback((patch) => setPrefsState((p) => ({ ...p, ...(typeof patch === "function" ? patch(p) : patch) })), []);
   useEffect(() => { try { store?.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* yoksay */ } }, [prefs]);
@@ -318,65 +332,82 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
 
   /* ── veri ── */
   const pd = usePanoramaData(pano.scope);
-  // İlk açılışta kapsam eksikse sunucunun seçtiği (öncelikli lig / sezon) yazılır.
   useEffect(() => {
     const s = pd.data.scope;
     if (!s?.city) return;
     setPano((p) => (p.scope.leagueId && p.scope.seasonId ? p : { ...p, scope: { ...p.scope, cityId: s.city.id, leagueId: p.scope.leagueId || s.league?.id || null, seasonId: p.scope.seasonId || s.season?.id || null } }));
   }, [pd.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── marka, ek veri (web sahneleri, hava, iller) ── */
+  /* ── marka / tema, ek veri ── */
   const brand = useMemo(() => findBrand(brands, pano.brandId), [brands, pano.brandId]);
+  const tokens = useMemo(() => brandTokensOf(brand), [brand]);
   const ex = usePanoramaExtras(pano, pd.data);
 
-  /* ── kart döngüsü ── */
+  /* ── zaman: kart döngüsü, yazı bantları, medya katmanı, görsel tutma ── */
+  const animMsRef = useRef(520);
+  animMsRef.current = tokens.anim?.ms || 520;
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => {
       const n = Date.now();
       setNow(n);
-      setPano((p) => { const pl = tickPlaylist(p.playlist, n); return pl === p.playlist ? p : { ...p, playlist: pl }; });
+      setPano((p) => {
+        const pl = tickPlaylist(p.playlist, n);
+        const gfx = tickGfx(p.gfx, n, Math.max(400, animMsRef.current || 520) + 60);
+        const media = tickMedia(p.media, n);
+        return pl === p.playlist && gfx === p.gfx && media === p.media ? p : { ...p, playlist: pl, gfx, media };
+      });
     }, 250);
     return () => clearInterval(t);
   }, [setPano]);
   const setPlaylist = useCallback((fn) => setPano((p) => ({ ...p, playlist: fn(p.playlist) })), [setPano]);
   const card = currentCard(pano.playlist);
-  // Çıkış animasyonu için bir önceki kart.
   const prevRef = useRef({ card: null, since: 0, at: 0, last: null, lastSince: 0 });
   if (prevRef.current.last?.id !== card?.id) prevRef.current = { card: prevRef.current.last, since: prevRef.current.lastSince, at: prevRef.current.last ? Date.now() : 0, last: card, lastSince: pano.playlist.startedAt };
   else prevRef.current.lastSince = pano.playlist.startedAt;
   const prev = prevRef.current.card ? { card: prevRef.current.card, since: prevRef.current.since, at: prevRef.current.at } : null;
-  // Slayt / sponsor kartının videosu: program sahnesinde kart kutusunda katman.
   const media = currentMedia(card, now, pano.playlist.startedAt);
   const mediaKey = media?.kind === "video" ? media.src : "";
   const cardMedia = useMemo(() => (mediaKey ? { kind: "video", src: mediaKey, fit: card?.opts?.fit } : null), [mediaKey, card?.opts?.fit]);
 
-  /* ── sahneler (açılardan) ── */
-  const tokensKey = `${brand.id}|${brand.colors.background}|${brand.colors.primary}|${brand.colors.secondary}|${brand.colors.accent}`;
-  const config = useMemo(() => buildPanoramaScenes({ sources: pano.sources, angles: pano.angles, theme: findBrand(brands, pano.brandId) ? brandTokensOf(findBrand(brands, pano.brandId)) : pano.theme, programId: pano.programId, previewId: pano.previewId, cardMedia }), [pano.sources, pano.angles, tokensKey, pano.programId, pano.previewId, cardMedia, pano.customLayouts]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* ── sahneler (açılar + medya) ── */
+  // Tema zemini (gradyan türü + doku + vinyet) bir kez görsele çizilir; tema değişince yeniden.
+  const bgKey = `${brand.id}|${brand.savedAt || 0}|${JSON.stringify(brand.bg)}|${JSON.stringify(brand.colors)}`;
+  const bgImage = useMemo(() => backgroundImage(tokens, bgKey), [bgKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mediaCfgKey = JSON.stringify([pano.media.items.map((x) => [x.id, x.url, x.fit, x.muted, x.loop, x.kind]), pano.media.overlay, pano.media.slots]);
+  // Son kullanılan 3 medya öğesinin kaynağı açık tutulur (yeniden yayına alınca ilk kare beklenmez).
+  const [mediaWarm, setMediaWarm] = useState([]);
+  const warmUp = useCallback((id) => setMediaWarm((w) => (w[0] === id ? w : [id, ...w.filter((x) => x !== id)].slice(0, 3))), []);
+  const config = useMemo(() => buildPanoramaScenes({ sources: pano.sources, angles: pano.angles, theme: tokens, programId: pano.programId, previewId: pano.previewId, cardMedia, mediaBin: pano.media, mediaWarm, bgImage }),
+    [pano.sources, pano.angles, tokens, pano.programId, pano.previewId, cardMedia, pano.customLayouts, mediaCfgKey, mediaWarm, bgImage]); // eslint-disable-line react-hooks/exhaustive-deps
   const configRef = useRef(config);
   configRef.current = config;
   const onResolve = useCallback((id, patch) => setPano((p) => ({ ...p, sources: p.sources.map((s) => (s.id === id ? { ...s, ...patch } : s)) })), [setPano]);
   const src = useStudioSources(config.sources, { onResolve, replayUrlOf: () => null });
 
-  /* ── ses: mikrofon + müzik (aynı karıştırıcı) ── */
+  /* ── ses ── */
   const mixer = useAudioMixer({ mic: prefs.mic, inputs: [], replayEls: [], replayAudio: false });
   const music = useMusicPlayer({ mixer: mixer?.attachStream ? mixer : null, toast });
+  const mediaCtlRef = useRef(null);
+  const mediaCtl = usePanoramaMedia({ pano, setPano, runtimeRef: src.runtimeRef, mixer, programId: config.programSceneId });
 
-  /* ── grafik anlık görüntüsü (program + önizleme + işçi + LED) ── */
+  mediaCtlRef.current = mediaCtl;
+  /* ── grafik anlık görüntüsü ── */
   const defaultLogo = useCanvasImage(logoInline, { inline: true });
-  const branding = DEFAULT_BRANDING;
+  const themeLogo = useCanvasImage(tokens.logo || null, { inline: /^data:/.test(tokens.logo || "") });
+  const branding = useMemo(() => ({ ...DEFAULT_BRANDING, primary: tokens.primary, secondary: tokens.secondary, accent: tokens.accent, name: brand.title || pano.title || DEFAULT_BRANDING.name }), [tokens, brand.title, pano.title]);
+  const engineRef = useRef({ active: false });
   const snapshot = useMemo(() => buildPanoramaSnapshot({
     branding, theme: pano.theme, brand, angles: pano.angles, sources: pano.sources, card, cardSince: pano.playlist.startedAt, prev,
     data: pd.data, ticker: pano.ticker, title: pano.title, logoUrl: logoInline, siteUrl: "https://elitlig.com", band: { ...pano.band, sponsors: pd.data.sponsors, since: pano.playlist.startedAt },
-    scope: pano.scope, web: ex.web, weather: ex.weather, cities: ex.cities,
-  }), [branding, pano.theme, brand, pano.angles, pano.sources, card, pano.playlist.startedAt, prev?.card?.id, prev?.at, pd.data, pano.ticker, pano.title, pano.band, pano.scope, ex.version]); // eslint-disable-line react-hooks/exhaustive-deps
+    scope: pano.scope, web: ex.web, weather: ex.weather, cities: ex.cities, gfx: pano.gfx, onAir: engineRef.current.active,
+  }), [branding, pano.theme, brand, pano.angles, pano.sources, card, pano.playlist.startedAt, prev?.card?.id, prev?.at, pd.data, pano.ticker, pano.title, pano.band, pano.scope, ex.version, pano.gfx, engineRef.current.active]); // eslint-disable-line react-hooks/exhaustive-deps
   const snapRef = useRef(snapshot);
   snapRef.current = snapshot;
   const overlayRef = useRef(null);
   overlayRef.current = (ctx, info) => drawGraphics(ctx, { width: info.width, height: info.height, now: Date.now(), sceneId: info.sceneId ?? null }, snapRef.current);
   const brandRef = useRef(null);
-  brandRef.current = { logo: defaultLogo, branding };
+  brandRef.current = { logo: themeLogo || defaultLogo, branding };
   const replayRef = useRef({ active: false });
   const varRef = useRef({ active: false });
   const overrideRef = useRef(null);
@@ -387,11 +418,12 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
   const timerRef = useRef(null);
   const comp = useCompositor({ width: preset.width, height: preset.height, fps: preset.fps, configRef, runtimeRef: src.runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef, modesRef, pgmFxRef, engine: settings.stream.compositor, snapshotRef: snapRef, timerRef, workerGraphics: true });
   const registerTile = useAngleTiles(configRef, src.runtimeRef, snapRef);
-  try { globalThis.__elitligPanorama = { draw: comp.getStats, engine: comp.engine, snapshot: () => snapRef.current, config: () => configRef.current, program: () => comp.getCanvas(), overlay: (ctx, info) => overlayRef.current(ctx, info), state: () => panoRef.current, brands: () => brands, presets: () => presetData }; } catch { /* yoksay */ }
+  try { globalThis.__elitligPanorama = { draw: comp.getStats, engine: comp.engine, snapshot: () => snapRef.current, config: () => configRef.current, program: () => comp.getCanvas(), preview: () => comp.preview, overlay: (ctx, info) => overlayRef.current(ctx, info), state: () => panoRef.current, brands: () => brands, presets: () => presetData, setPano: (fn) => setPano(fn), mediaStatus: (id) => mediaCtlRef.current?.status(id) }; } catch { /* yoksay */ }
 
   /* ── yayın motoru ── */
   const onEngineError = useCallback((m) => toast(m, { tone: "error", timeout: 6000 }), [toast]);
   const engine = useEngine({ getVideoTrack: comp.getVideoTrack, getAudioTrack: mixer.audioTrack, getCanvas: comp.getCanvas, subscribeFrames: comp.subscribeFrames, getRemoteEncoder: comp.getRemoteEncoder, getDrawStats: comp.getStats, onError: onEngineError });
+  engineRef.current = engine;
   const [busy, setBusy] = useState(false);
   const activeRef = useRef(false);
   activeRef.current = engine.active;
@@ -419,6 +451,7 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
   const previewIdRef = useRef(config.previewSceneId);
   previewIdRef.current = config.previewSceneId;
   const brandingRef = useRef(branding);
+  brandingRef.current = branding;
   const ledFrameRef = useRef(null);
   ledFrameRef.current = () => {
     const c = ledFrameRef.canvas || (ledFrameRef.canvas = document.createElement("canvas"));
@@ -428,25 +461,36 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
   };
   const led = useLed({ configRef, programIdRef, previewIdRef, graphicsRef: snapRef, brandingRef, matchId: null, ledMode: null, programId: config.programSceneId, previewId: config.previewSceneId, frameRef: ledFrameRef });
 
-  /* ── açılar: önizleme → program ── */
+  /* ── önizleme → program ── */
+  const [lastProgram, setLastProgram] = useState(null);
   const toPreview = useCallback((id) => setPano((p) => ({ ...p, previewId: id })), [setPano]);
-  const take = useCallback((kindKey) => {
+  /** Yayına gelen sahnenin ayarı: otomatik alt yazı. */
+  const onAirScene = useCallback((id) => {
+    const s = panoRef.current.regi.scenes[id];
+    if (s?.lower) setGfx((g) => showLower(g, s.lower, Date.now()));
+  }, [setGfx]);
+  const take = useCallback((force = null) => {
     const cfg = configRef.current;
-    const to = cfg.previewSceneId;
-    const from = cfg.programSceneId;
-    if (!to || to === from) return;
-    const kind = transitionKind(kindKey || prefs.transition);
-    comp.startTransition(from, to, kind.key, transitionMs(kind.key, prefs.transitionMs));
-    configRef.current = { ...cfg, programSceneId: to, previewSceneId: from };
-    setPano((p) => ({ ...p, programId: to, previewId: from }));
-  }, [comp, prefs.transition, prefs.transitionMs, setPano]);
-  const cutTo = useCallback((id) => {
+    const plan = planTake({ programId: cfg.programSceneId, previewId: cfg.previewSceneId }, { kind: transitionKind(prefs.transition).key, msOf: (k) => transitionMs(k, prefs.transitionMs), sceneSettings: panoRef.current.regi.scenes, force });
+    if (!plan) return;
+    comp.startTransition(plan.from, plan.to, plan.kind, plan.ms);
+    configRef.current = { ...cfg, programSceneId: plan.to, previewSceneId: plan.from };
+    setLastProgram(plan.from);
+    setPano((p) => ({ ...p, ...afterTake({ programId: p.programId, previewId: p.previewId }, plan), programId: plan.to, previewId: plan.from }));
+    onAirScene(plan.to);
+  }, [comp, prefs.transition, prefs.transitionMs, setPano, onAirScene]);
+  const cutTo = useCallback((id, kindKey = "cut") => {
     const cfg = configRef.current;
     if (!id || id === cfg.programSceneId) return;
-    comp.startTransition(cfg.programSceneId, id, "cut", 0);
+    const k = transitionKind(kindKey).key;
+    comp.startTransition(cfg.programSceneId, id, k, k === "cut" ? 0 : transitionMs(k, prefs.transitionMs));
     configRef.current = { ...cfg, programSceneId: id };
+    setLastProgram(cfg.programSceneId);
     setPano((p) => ({ ...p, programId: id, previewId: p.programId }));
-  }, [comp, setPano]);
+    onAirScene(id);
+  }, [comp, prefs.transitionMs, setPano, onAirScene]);
+  const ftb = useCallback(() => { comp.setFtb(); setNow(Date.now()); }, [comp]);
+  const lastScene = useCallback(() => { if (lastProgram) cutTo(lastProgram); }, [lastProgram, cutTo]);
   const [editAngle, setEditAngle] = useState(null);
   const saveAngle = (a) => {
     setPano((p) => ({ ...p, angles: p.angles.some((x) => x.id === a.id) ? p.angles.map((x) => (x.id === a.id ? a : x)) : [...p.angles, a] }));
@@ -460,6 +504,71 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
     setEditAngle(null);
   };
   const newAngle = (layout = "grid4") => setEditAngle(normalizeAngle({ id: uid("pa"), layout, slots: fillSlots(layout, pano.sources) }));
+
+  /* ── medya kutusu ── */
+  const holdRef = useRef(null);
+  const srcRuntimeRef = src.runtimeRef;
+  const mediaOps = useMemo(() => ({
+    async addFiles(files) {
+      const out = [];
+      for (const f of files.slice(0, 40)) {
+        try { const r = await window.elitlig?.studio?.media?.allowFile?.(f); const d = r ? draftFromFile({ ...r, type: r.type || f.type }) : null; if (d) out.push(d); } catch { /* yoksay */ }
+      }
+      if (!out.length) { toast("Bu dosyalar eklenemedi (görsel ya da video sürükle).", { tone: "warn" }); return; }
+      setMedia((m) => addItems(m, out));
+      toast(`${out.length} medya eklendi.`, { tone: "success", timeout: 2000 });
+    },
+    async pick() {
+      const r = await window.elitlig?.studio?.media?.pick?.({ multiple: true });
+      if (!r?.files?.length) { if (r?.error) toast(r.error.message, { tone: "error" }); return; }
+      const out = r.files.map((f) => draftFromFile(f)).filter(Boolean);
+      if (!out.length) { toast("Görsel ya da video seç.", { tone: "warn" }); return; }
+      setMedia((m) => addItems(m, out));
+      toast(`${out.length} medya eklendi.`, { tone: "success", timeout: 2000 });
+    },
+    addUrl(u) {
+      const kind = kindFromUrl(u) || (/youtube|vimeo/.test(u) ? null : "image");
+      if (!kind) { toast("Bu adres doğrudan oynatılamaz (görsel ya da video dosyası adresi gir).", { tone: "warn" }); return; }
+      setMedia((m) => addItems(m, [{ kind, url: u }]));
+    },
+    cue: (id) => { warmUp(id); toPreview(mediaSceneId(id)); },
+    air: (id) => {
+      const sid = mediaSceneId(id);
+      const it = panoRef.current.media.items.find((x) => x.id === id);
+      warmUp(id);
+      toPreview(sid);
+      // Önizlemede kaynak açılıp ilk kare hazır olunca (en çok 4 sn) seçili geçişle yayına —
+      // soğuk açılan video yayına siyah kare göndermez.
+      const t0 = Date.now();
+      const go = () => {
+        const cfg = configRef.current;
+        if (cfg.previewSceneId !== sid) { if (Date.now() - t0 < 1000) setTimeout(go, 60); return; }
+        const rt = srcRuntimeRef.current?.get(mediaSourceId(id));
+        if (rt?.status !== "live" && Date.now() - t0 < 4000) { setTimeout(go, 80); return; }
+        take();
+        if (it?.kind === "image" && it.holdSec > 0) { clearTimeout(holdRef.current); holdRef.current = setTimeout(() => { if (configRef.current.programSceneId === sid) take(); }, it.holdSec * 1000); }
+      };
+      setTimeout(go, 60);
+    },
+    overlay: (id, opts) => {
+      // Kaynak açık değilse önce ısıt; ilk kare hazır olunca (en çok 4 sn) katman girer.
+      warmUp(id);
+      const t0 = Date.now();
+      const go = () => {
+        const rt = srcRuntimeRef.current?.get(mediaSourceId(id));
+        if (rt?.status !== "live" && Date.now() - t0 < 4000) { setTimeout(go, 80); return; }
+        setMedia((m) => showOverlay(m, id, opts, Date.now()));
+      };
+      go();
+    },
+    hideOverlay: () => setMedia((m) => hideOverlay(m, Date.now())),
+    slot: (aid, k, id) => setMedia((m) => setSlot(m, aid, k, id)),
+    remove: async (id) => {
+      const sid = mediaSceneId(id);
+      if (configRef.current.programSceneId === sid) { toast("Yayındaki medya kaldırılamaz: önce başka sahneye geç.", { tone: "warn" }); return; }
+      setPano((p) => ({ ...p, media: removeItem(p.media, id), previewId: p.previewId === sid ? p.angles[0]?.id || null : p.previewId }));
+    },
+  }), [setMedia, setPano, take, toPreview, toast, warmUp, srcRuntimeRef]);
 
   /* ── kaynaklar ── */
   const [dialog, setDialog] = useState(null);
@@ -493,22 +602,19 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
     setEditLayout(null);
   };
 
-  /* ── şablon ── */
+  /* ── şablon, marka, hazır ayar ── */
   const applyTpl = async (t) => {
     if (engine.active && !(await ask({ title: "Şablonu uygula", message: "Yayın sürüyor. Açılar ve kartlar değişecek; program ilk açıya geçer. Devam edilsin mi?", confirmLabel: "Uygula" }))) return;
     const r = applyTemplate(t, pano.sources);
-    // Hazır tema kullanılıyorsa şablonun teması seçilir; kendi marka profili korunur.
     setPano((p) => normalizePanoramaState({ ...p, ...r, templateKey: t.key, brandId: /^th_/.test(p.brandId) ? `th_${r.theme}` : p.brandId, programId: r.angles[0]?.id, previewId: r.angles[1]?.id || r.angles[0]?.id, playlist: { ...r.playlist, startedAt: Date.now() } }));
     toast(`“${t.name}” şablonu uygulandı.`, { tone: "success", timeout: 2500 });
   };
-
-  /* ── marka ve hazır ayarlar ── */
   const selectBrand = useCallback((id) => setPano((p) => ({ ...p, brandId: id, theme: BUILTIN_BRANDS.find((b) => b.id === id)?.theme || p.theme })), [setPano]);
   const activePreset = presetData.list.find((p) => p.id === pano.presetId) || null;
   const dirty = useMemo(() => (activePreset ? presetDirty(pano, activePreset) : false), [pano, activePreset]);
   const loadPreset = async (pr) => {
     if (!pr) return;
-    if (engine.active && !(await ask({ title: "Hazır ayarı yükle", message: `Yayın sürüyor. “${pr.name}” yüklenince marka, açılar ve kartlar değişir; program ilk açıya geçer. Devam edilsin mi?`, confirmLabel: "Yükle" }))) return;
+    if (engine.active && !(await ask({ title: "Hazır ayarı yükle", message: `Yayın sürüyor. “${pr.name}” yüklenince tema, açılar, kartlar ve grafikler değişir; program ilk açıya geçer. Devam edilsin mi?`, confirmLabel: "Yükle" }))) return;
     const n = applyPreset(panoRef.current, pr, { now: Date.now() });
     if (n.programId && engine.active) comp.startTransition(configRef.current.programSceneId, n.programId, "cut", 0);
     setPano(n);
@@ -539,45 +645,153 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
     setPresetData((d) => ({ list: [...d.list, pr], lastId: pr.id }));
     setPano((p) => applyPreset({ ...p, sources }, pr, { now: Date.now() }));
   };
+  /** İçerik panelinden: türün kartı listede yoksa eklenir; kart yayına gelir (sabitlenmez). */
+  const showCardKind = useCallback((kind) => {
+    if (!kind) return;
+    setPlaylist((pl) => {
+      let i = pl.items.findIndex((c) => c.kind === kind && !c.off);
+      let items = pl.items;
+      if (i < 0) { const c = normalizeCard(makeCard(kind)); if (!c) return pl; items = [...items, c]; i = items.length - 1; }
+      return gotoCard({ ...pl, items }, i, Date.now());
+    });
+  }, [setPlaylist]);
+
+  /* ── buton ızgarası eylemleri ── */
+  const workspace = useRef(null);
+  const fireButton = useCallback((b) => {
+    const n = Date.now();
+    switch (b.type) {
+      case "take": take(); break;
+      case "cut": take("cut"); break;
+      case "ftb": ftb(); break;
+      case "scene": if (b.ref) toPreview(b.ref); break;
+      case "sceneAir": if (b.ref) cutTo(b.ref, prefs.transition); break;
+      case "lower": setGfx((g) => toggleLower(g, b.ref, n)); break;
+      case "lowerNext": setGfx((g) => nextLower(g, n)); break;
+      case "lowerHide": setGfx((g) => hideLower(g, n)); break;
+      case "title": setGfx((g) => toggleTitle(g, b.ref, n)); break;
+      case "media": mediaOps.cue(b.ref); break;
+      case "mediaAir": mediaOps.air(b.ref); break;
+      case "overlay": { const o = panoRef.current.media.overlay; if (o?.id === b.ref && !o.hideAt) mediaOps.hideOverlay(); else mediaOps.overlay(b.ref, {}); break; }
+      case "mediaStop": mediaOps.hideOverlay(); break;
+      case "ticker": setGfx((g) => ({ ...g, tickerOn: !g.tickerOn })); break;
+      case "live": setGfx((g) => ({ ...g, live: !g.live })); break;
+      case "theme": if (b.ref) selectBrand(b.ref); break;
+      case "preset": loadPreset(presetData.list.find((p) => p.id === b.ref)); break;
+      case "cardNext": setPlaylist((p) => stepCard(p, 1, n)); break;
+      case "transition": if (b.ref) setPrefs({ transition: b.ref }); break;
+      default: break;
+    }
+  }, [take, ftb, toPreview, cutTo, prefs.transition, setGfx, mediaOps, selectBrand, presetData.list, setPlaylist, setPrefs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── klavye ── */
   const keyRef = useRef(null);
   keyRef.current = (e) => {
     if (isTyping(e) || e.metaKey || e.ctrlKey || editAngle || dialog || editLayout) return;
-    // ⌥1–9: hazır ayarlar arasında geçiş (yayın sırasında da).
+    if (document.querySelector(".modal, [role='dialog'][aria-modal='true']")) return;
     if (e.altKey) { const m = /^Digit([1-9])$/.exec(e.code)?.[1]; const pr = m ? presetData.list[Number(m) - 1] : null; if (pr) { e.preventDefault(); loadPreset(pr); } return; }
     const n = /^Digit([1-9])$/.exec(e.code)?.[1];
     if (n) { const a = pano.angles[Number(n) - 1]; if (a) { e.preventDefault(); if (e.shiftKey) cutTo(a.id); else toPreview(a.id); } return; }
-    if (e.key === " " || e.key === "Enter") { e.preventDefault(); take(); return; }
-    if (e.key === "c" || e.key === "C") { e.preventDefault(); cutTo(configRef.current.previewSceneId); return; }
-    if (e.key === "ArrowRight") { e.preventDefault(); setPlaylist((p) => stepCard(p, 1, Date.now())); return; }
-    if (e.key === "ArrowLeft") { e.preventDefault(); setPlaylist((p) => stepCard(p, -1, Date.now())); return; }
-    if ((e.key === "p" || e.key === "P") && card) { e.preventDefault(); setPlaylist((p) => pinCard(p, card.id, Date.now())); }
+    const name = keyName(e);
+    const act = actionForKey(name, pano.regi.hotkeys);
+    const t = Date.now();
+    if (act) {
+      e.preventDefault();
+      switch (act) {
+        case "take": take(); break;
+        case "cut": take("cut"); break;
+        case "ftb": ftb(); break;
+        case "lowerHide": setGfx((g) => hideLower(g, t)); break;
+        case "lowerNext": setGfx((g) => nextLower(g, t)); break;
+        case "titleHide": setGfx((g) => hideTitle(g, t)); break;
+        case "ticker": setGfx((g) => ({ ...g, tickerOn: !g.tickerOn })); break;
+        case "live": setGfx((g) => ({ ...g, live: !g.live })); break;
+        case "mediaStop": mediaOps.hideOverlay(); break;
+        case "cardNext": setPlaylist((p) => stepCard(p, 1, t)); break;
+        case "cardPrev": setPlaylist((p) => stepCard(p, -1, t)); break;
+        case "cardPin": if (card) setPlaylist((p) => pinCard(p, card.id, t)); break;
+        case "safe": setRegi((r) => ({ ...r, safe: { ...r.safe, on: !r.safe.on } })); break;
+        default: break;
+      }
+      return;
+    }
+    // Öğe kısayolları: alt yazı / tam ekran kart (göster-gizle), sahne (önizlemeye).
+    const lw = pano.gfx.lowers.find((l) => l.key && l.key === name);
+    if (lw) { e.preventDefault(); setGfx((g) => toggleLower(g, lw.id, t)); return; }
+    const tc = pano.gfx.titles.find((l) => l.key && l.key === name);
+    if (tc) { e.preventDefault(); setGfx((g) => toggleTitle(g, tc.id, t)); return; }
+    const sc = sceneForKey(pano.regi, name);
+    if (sc) { e.preventDefault(); if (e.shiftKey) cutTo(sc); else toPreview(sc); }
   };
   useEffect(() => { const h = (e) => keyRef.current?.(e); window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, []);
 
-  const tab = prefs.tab;
-  const setTab = (t) => setPrefs({ tab: t });
+  const [wsEdit, setWsEdit] = useState(false);
   const st = engine.status || { state: "idle" };
   const onAir = engine.active;
-  const programName = pano.angles.find((a) => a.id === config.programSceneId)?.name || "—";
-  const previewName = pano.angles.find((a) => a.id === config.previewSceneId)?.name || "—";
   const toggleMic = () => setPrefs((p) => ({ mic: { ...p.mic, muted: !p.mic.muted } }));
+  const setSceneSetting_ = useCallback((id, patch) => setRegi((r) => setSceneSetting(r, id, patch)), [setRegi]);
+  const applyLayout = useCallback((key) => { if (workspace.current?.applyPreset(key)) setRegi((r) => ({ ...r, layout: key })); }, [setRegi]);
 
-  const TABS = [["kartlar", "Kartlar", "layers"], ["marka", "Marka", "palette"], ["sablon", "Hazır ayar", "grid"], ["veri", "Veri", "overview"], ["gorunum", "Bant", "sliders"], ["yayin", "Yayın", "broadcast"], ["ses", "Ses", "music"], ["led", "LED", "overview"]];
+  const R = {
+    pano, setPano, setGfx, setMedia, setRegi, config, configRef, comp, src, engine, prefs, setPrefs, preset, brand, brands, setBrands, selectBrand, tokens,
+    take, cutTo, toPreview, ftb, lastProgram, lastScene, registerTile, newAngle, setEditAngle, setEditLayout, setDialog, removeSource, mediaOps, mediaCtl,
+    pd, ex, now, card, cardLabel: card ? cardLabel(card, ex.catalog.scenes) : "", setPlaylist, music, mixer, led, toast, ask, presetData, importPresets, onAir,
+    fireButton, showCardKind, setSceneSetting: setSceneSetting_, applyLayout,
+  };
+  const panels = {};
+  const BODY = {
+    pvw: () => <MonitorPanel kind="pvw" />,
+    pgm: () => <MonitorPanel kind="pgm" />,
+    gecis: () => <TakePanel />,
+    sahneler: () => <ScenesPanel />,
+    multiview: () => <MultiviewPanel />,
+    kaynaklar: () => <SourcesPane />,
+    medya: () => <MediaPanel />,
+    grafikler: () => <GraphicsPanel />,
+    icerik: () => <ContentPanel />,
+    kartlar: () => <div className="pr-pad"><CardsPanel pano={pano} setPlaylist={setPlaylist} data={pd.data} now={now} ex={ex} /></div>,
+    veri: () => <div className="pr-pad"><DataPanel pano={pano} setScope={(scope) => setPano((p) => ({ ...p, scope }))} pd={pd} /></div>,
+    tema: () => <ThemeStudio />,
+    hazir: () => (
+      <div className="pr-pad">
+        <PresetsPanel presets={presetData.list} activeId={pano.presetId} dirty={dirty} onApply={loadPreset} onSave={savePresetOver} onSaveAs={savePresetAs} onRename={renamePreset} onDelete={deletePreset}
+          brands={brands} templates={templates} templateKey={pano.templateKey} onApplyTemplate={applyTpl}
+          onSaveTemplate={(name) => setTemplates([...templates, templateFromState(name || `Şablon ${templates.length + 1}`, pano)])}
+          onDeleteTemplate={async (t) => { if (await ask({ title: "Şablonu sil", message: `“${t.name}” silinsin mi?`, confirmLabel: "Sil", danger: true })) setTemplates(templates.filter((x) => x.key !== t.key)); }}
+          sources={pano.sources} onWebImport={webImport} />
+        <details className="pr-details"><summary>Marka profilleri (eski görünüm: logo, renk, yazı tipi)</summary>
+          <BrandPanel brands={brands} setBrands={setBrands} activeId={pano.brandId} onSelect={selectBrand} ask={ask} presets={presetData.list} onImportPresets={importPresets} />
+        </details>
+      </div>
+    ),
+    butonlar: () => <ButtonGrid />,
+    yayin: () => <div className="pr-pad"><BroadcastBox prefs={prefs} setPrefs={setPrefs} engine={engine} busy={busy} onStart={() => startWith(ingestOf(prefs))} onRehearsal={() => startWith(null)} onStop={stop} chooseDir={chooseDir} /></div>,
+    ses: () => <AudioPane />,
+    muzik: () => <MusicPane />,
+    led: () => <div className="pr-pad"><LedPanel led={led} scenes={config.scenes} matchId={null} ledMode={null} g={null} live={null} /></div>,
+    ayarlar: () => <RegiSettings />,
+  };
+  for (const [k, title, icon, hint] of PANEL_DEFS) {
+    panels[k] = {
+      title, icon, hint, render: BODY[k], monitor: k === "pvw" || k === "pgm",
+      ...(k === "grafikler" ? { badge: () => (pano.gfx.lowerOn && !pano.gfx.lowerOn.hideAt ? { text: "YAYINDA", tone: "live" } : null) } : {}),
+      ...(k === "medya" ? { badge: () => (pano.media.items.length ? { text: String(pano.media.items.length), tone: mediaCtl.airIds.size ? "live" : "info" } : null) } : {}),
+    };
+  }
 
   return (
-    <div className="studio pn" onPointerDown={() => mixer.resume?.()} data-panorama="">
+    <RegiCtx.Provider value={R}>
+    <div className="studio pn pr" onPointerDown={() => mixer.resume?.()} data-panorama="" data-regi="">
       <header className="st-top pn-top">
         <div className="st-top__title"><Icon name="broadcast" size={17} strokeWidth={2.2} /><strong>Yayın Stüdyosu</strong></div>
         <div className="pn-mode" role="tablist" aria-label="Yayın türü">
-          <button type="button" role="tab" aria-selected="false" disabled={onAir} onClick={onSwitchMode} title={onAir ? "Yayın sürerken tür değiştirilemez" : "Maç yayınına geç"}>Maç yayını</button>
-          <button type="button" role="tab" aria-selected="true" className="is-on">Panorama</button>
+          <button type="button" role="tab" aria-selected="false" disabled={onAir} onClick={onSwitchMode} title={onAir ? "Yayın sürerken tür değiştirilemez" : "Maç rejisine geç"}>Maç rejisi</button>
+          <button type="button" role="tab" aria-selected="true" className="is-on">Panorama rejisi</button>
         </div>
         <span className="pn-scope">{[pd.data.scope.city?.label, pd.data.scope.league?.label, pd.data.scope.season?.label].filter(Boolean).join(" · ") || "Kapsam seçilmedi"}</span>
-        <div className="pn-presetbar" aria-label="Hazır ayarlar">
-          <select className="input pn-brandsel" value={pano.brandId} onChange={(e) => selectBrand(e.target.value)} title="Marka / tema (yayında da anında)" data-field="brand-quick">
-            <optgroup label="Marka profillerim">{brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>
+        <div className="pn-presetbar" aria-label="Tema ve hazır ayarlar">
+          <select className="input pn-brandsel" value={pano.brandId} onChange={(e) => selectBrand(e.target.value)} title="Tema / marka (yayında da anında)" data-field="brand-quick">
+            {brands.length > 0 && <optgroup label="Özel temalar / markalarım">{brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>}
             <optgroup label="Hazır temalar">{BUILTIN_BRANDS.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>
           </select>
           {presetData.list.slice(0, 6).map((pr, i) => (
@@ -590,118 +804,19 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
         <StatusPill state={st.state} since={engine.since} />
         <HealthChip status={st} getStats={comp.getStats} getEncodeStats={engine.getEncodeStats} targetFps={preset.fps} encoding={onAir} />
         <span className="st-top__spacer" />
-        <button type="button" className={`btn btn--sm ${prefs.mic.muted ? "" : "btn--red"}`} onClick={toggleMic} title="Mikrofon"><Icon name={prefs.mic.muted ? "micOff" : "mic"} size={13} /> {prefs.mic.muted ? "Mikrofon kapalı" : "Mikrofon açık"}</button>
+        <button type="button" className={`btn btn--sm ${prefs.mic.muted ? "" : "btn--red"}`} onClick={toggleMic} title={prefs.mic.muted ? "Mikrofon kapalı — aç" : "Mikrofon açık — kapat"} data-act="mic-label"><Icon name={prefs.mic.muted ? "micOff" : "mic"} size={13} /> <span>{prefs.mic.muted ? "Mikrofon kapalı" : "Mikrofon açık"}</span></button>
         <OutMuteButton />
+        <MenuButton text="Hazır düzen" icon="layout" label="Ekran yerleşimi" align="end" className="btn btn--sm" items={LAYOUT_PRESETS.map((p) => ({ label: p.label, icon: pano.regi.layout === p.key ? "check" : "layout", onClick: () => applyLayout(p.key) }))} />
+        <button type="button" className={`btn btn--sm ${wsEdit ? "btn--primary" : ""}`} onClick={() => setWsEdit((v) => !v)} title="Yerleşimi düzenle: panelleri sürükle, böl, sekmele" data-act="ws-edit"><Icon name="pencil" size={13} /> {wsEdit ? "Bitti" : "Düzenle"}</button>
+        <button type="button" className="btn btn--sm" onClick={() => workspace.current?.focus("ayarlar")} title="Panorama rejisi ayarları" data-act="open-settings"><Icon name="sliders" size={13} /></button>
         {!onAir
-          ? <button type="button" className="btn btn--red st-golive" disabled={busy} onClick={() => (ingestOf(prefs) ? startWith(ingestOf(prefs)) : setTab("yayin"))}><Icon name="broadcast" size={14} /> Yayını başlat</button>
+          ? <button type="button" className="btn btn--red st-golive" disabled={busy} onClick={() => (ingestOf(prefs) ? startWith(ingestOf(prefs)) : workspace.current?.focus("yayin"))}><Icon name="broadcast" size={14} /> Yayını başlat</button>
           : <button type="button" className="btn st-golive" onClick={stop}><Icon name="stop" size={14} /> {engine.mode === "rehearsal" ? "Provayı bitir" : "Yayını kapat"}</button>}
         <span className="st-top__sep" />
         <button type="button" className="st-exit" onClick={() => go?.("today")}><Icon name="logout" size={14} /> Programdan çık</button>
       </header>
 
-      <div className="pn-body">
-        <section className="pn-main">
-          <div className="pn-monitors">
-            <figure className="st-monitor is-preview pn-mon">
-              <figcaption><span className="st-tag is-pvw">ÖNİZLEME</span><span className="st-monitor__name">{previewName}</span></figcaption>
-              <Monitor canvas={comp.preview} className="st-monitor__screen" />
-            </figure>
-            <div className="pn-take">
-              <button type="button" className="pn-takebtn" onClick={() => take()} title="Önizlemeyi geçişle yayına al (Boşluk / Enter)"><Icon name="chevronRight" size={20} /><span>GEÇİŞ</span><Kbd>Boşluk</Kbd></button>
-              <button type="button" className="pn-cutbtn" onClick={() => cutTo(config.previewSceneId)} title="Kes (C)"><span>KES</span><Kbd>C</Kbd></button>
-              <select className="input pn-trsel" value={prefs.transition} onChange={(e) => setPrefs({ transition: e.target.value })} title="Geçiş türü">
-                {TRANSITION_KINDS.filter((t) => !/stinger/i.test(t.key)).map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-              </select>
-              <button type="button" className={`btn btn--sm ${comp.programFx().ftb ? "btn--red" : ""}`} onClick={() => { comp.setFtb(); setNow(Date.now()); }} title="Siyaha geç / geri aç">FTB</button>
-            </div>
-            <figure className={`st-monitor is-program pn-mon ${st.state === "live" ? "is-live" : ""}`}>
-              <figcaption><span className={`st-tag ${onAir ? "is-live" : "is-pgm"}`}>{onAir ? "● YAYINDA" : "PROGRAM"}</span><span className="st-monitor__name">{programName}</span>{card && <span className="pn-oncard">Kart: {cardLabel(card, ex.catalog.scenes)}</span>}</figcaption>
-              <Monitor canvas={comp.program} className="st-monitor__screen" />
-            </figure>
-          </div>
-
-          <div className="pn-strip" aria-label="Açılar">
-            <div className="pn-strip__head">
-              <h3>Açılar</h3><small>tık: önizleme · çift tık / Shift+sayı: doğrudan yayın · 1–9</small>
-              <span className="st-top__spacer" />
-              <div className="pn-quick">{["grid4", "twoThree", "bigSmall", "pip", "newsDesk", "interview", "side6040", "diagonal", "host", "content"].map((k) => (
-                <button key={k} type="button" className="pn-quickbtn" onClick={() => newAngle(k)} title={`Yeni açı: ${layoutOf(k).label}`}><LayoutPic layout={k} /></button>
-              ))}</div>
-              <button type="button" className="btn btn--sm" onClick={() => newAngle()}><Icon name="plus" size={12} /> Açı</button>
-              <button type="button" className="btn btn--sm" onClick={() => setEditLayout({})} title="Kendi kamera düzenini kur" data-act="new-layout"><Icon name="layout" size={12} /> Düzen editörü</button>
-            </div>
-            <ol className="pn-angles">
-              {pano.angles.map((a, i) => {
-                const isPgm = a.id === config.programSceneId;
-                const isPvw = a.id === config.previewSceneId;
-                return (
-                  <li key={a.id} className={`pn-angle ${isPgm ? "is-pgm" : ""} ${isPvw ? "is-pvw" : ""}`} data-angle={a.id}>
-                    <button type="button" className="pn-angle__view" onClick={() => toPreview(a.id)} onDoubleClick={() => cutTo(a.id)} title={`${a.name} — tık: önizleme, çift tık: yayına`}>
-                      <canvas ref={registerTile(a.id)} width={320} height={180} />
-                      <span className="pn-angle__num">{i + 1}</span>
-                      {isPgm && <span className="pn-angle__tag is-pgm">YAYINDA</span>}
-                      {isPvw && !isPgm && <span className="pn-angle__tag is-pvw">ÖNİZLEME</span>}
-                    </button>
-                    <div className="pn-angle__foot"><LayoutPic layout={a.layout} /><span>{a.name}</span><button type="button" className="icon-btn" onClick={() => setEditAngle(a)} title="Düzenle"><Icon name="pencil" size={12} /></button></div>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-
-          <div className="pn-sources">
-            <div className="pn-strip__head"><h3>Kaynaklar</h3><small>kamera, ekran, pencere, görsel, video, renk, metin, saat…</small><span className="st-top__spacer" />
-              <button type="button" className="btn btn--sm" onClick={() => setDialog({ initial: {} })}><Icon name="plus" size={12} /> Kaynak ekle</button>
-            </div>
-            <ul className="pn-srclist">
-              {pano.sources.map((s) => {
-                const rt = src.runtimeRef.current.get(s.id);
-                return (
-                  <li key={s.id} data-source={s.id}>
-                    <SourceThumb source={s} runtimeRef={src.runtimeRef} width={128} />
-                    <div><b>{s.name}</b><small>{rt?.status === "live" ? "Canlı" : rt?.status || "—"}</small></div>
-                    <button type="button" className="icon-btn" onClick={() => setDialog({ initial: s })} title="Ayarlar"><Icon name="sliders" size={12} /></button>
-                    <button type="button" className="icon-btn" onClick={() => removeSource(s)} title="Sil"><Icon name="trash" size={12} /></button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </section>
-
-        <aside className="pn-side">
-          <nav className="pn-tabs">{TABS.map(([k, l, ic]) => <button key={k} type="button" className={tab === k ? "is-on" : ""} onClick={() => setTab(k)} data-tab={k}><Icon name={ic} size={13} /> {l}</button>)}</nav>
-          <div className="pn-pane">
-            {tab === "kartlar" && <CardsPanel pano={pano} setPlaylist={setPlaylist} data={pd.data} now={now} ex={ex} />}
-            {tab === "veri" && <DataPanel pano={pano} setScope={(scope) => setPano((p) => ({ ...p, scope }))} pd={pd} />}
-            {tab === "gorunum" && <LookPanel pano={pano} setPano={setPano} />}
-            {tab === "marka" && <BrandPanel brands={brands} setBrands={setBrands} activeId={pano.brandId} onSelect={selectBrand} ask={ask} presets={presetData.list} onImportPresets={importPresets} />}
-            {tab === "sablon" && (
-              <PresetsPanel presets={presetData.list} activeId={pano.presetId} dirty={dirty} onApply={loadPreset} onSave={savePresetOver} onSaveAs={savePresetAs} onRename={renamePreset} onDelete={deletePreset}
-                brands={brands} templates={templates} templateKey={pano.templateKey} onApplyTemplate={applyTpl}
-                onSaveTemplate={(name) => setTemplates([...templates, templateFromState(name || `Şablon ${templates.length + 1}`, pano)])}
-                onDeleteTemplate={async (t) => { if (await ask({ title: "Şablonu sil", message: `“${t.name}” silinsin mi?`, confirmLabel: "Sil", danger: true })) setTemplates(templates.filter((x) => x.key !== t.key)); }}
-                sources={pano.sources} onWebImport={webImport} />
-            )}
-            {tab === "yayin" && <BroadcastBox prefs={prefs} setPrefs={setPrefs} engine={engine} busy={busy} onStart={() => startWith(ingestOf(prefs))} onRehearsal={() => startWith(null)} onStop={stop} chooseDir={chooseDir} />}
-            {tab === "ses" && (
-              <div className="pn-audio">
-                <label className="field pn-mini"><span>Mikrofon</span>
-                  <select className="input" value={prefs.mic.deviceId || ""} onChange={(e) => setPrefs((p) => ({ mic: { ...p.mic, deviceId: e.target.value || null } }))}>
-                    <option value="">Varsayılan</option>
-                    {(src.devices.audio || []).map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || "Mikrofon"}</option>)}
-                  </select>
-                </label>
-                <label className="field pn-mini"><span>Mikrofon seviyesi ({prefs.mic.volume}%)</span><input type="range" min={0} max={150} value={prefs.mic.volume} onChange={(e) => setPrefs((p) => ({ mic: { ...p.mic, volume: Number(e.target.value) } }))} /></label>
-                <button type="button" className={`btn btn--sm ${prefs.mic.muted ? "" : "btn--red"}`} onClick={toggleMic}><Icon name={prefs.mic.muted ? "micOff" : "mic"} size={12} /> {prefs.mic.muted ? "Mikrofonu aç" : "Mikrofonu kapat"}</button>
-                <MusicPanel mp={music} />
-              </div>
-            )}
-            {tab === "led" && <LedPanel led={led} scenes={config.scenes} matchId={null} ledMode={null} g={null} live={null} />}
-          </div>
-          <p className="pn-keys"><Kbd>1–9</Kbd> önizleme · <Kbd>⇧</Kbd>+sayı yayına · <Kbd>Boşluk</Kbd> geçiş · <Kbd>C</Kbd> kes · <Kbd>←</Kbd><Kbd>→</Kbd> kart · <Kbd>P</Kbd> sabitle · <Kbd>⌥</Kbd>+sayı hazır ayar</p>
-        </aside>
-      </div>
+      <PanoramaWorkspace ref={workspace} panels={panels} edit={wsEdit} onPreset={(k) => setRegi((r) => ({ ...r, layout: k }))} />
 
       {editAngle && <AngleEditor angle={editAngle} sources={pano.sources} onSave={saveAngle} onDelete={pano.angles.some((a) => a.id === editAngle.id) ? () => deleteAngle(editAngle) : null} onClose={() => setEditAngle(null)} onSaveLayout={saveLayout} onEditLayout={(l) => setEditLayout(l)} />}
       {editLayout && <LayoutEditor layout={editLayout.key ? editLayout : null} onSave={saveLayout} onDelete={pano.customLayouts.some((x) => x.key === editLayout.key) ? deleteLayout : null} onClose={() => setEditLayout(null)} />}
@@ -711,5 +826,6 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
           config={config} onPatchSource={onResolve} />
       )}
     </div>
+    </RegiCtx.Provider>
   );
 }

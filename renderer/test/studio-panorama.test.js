@@ -211,7 +211,7 @@ function fakeCtx() {
     get(t, p) {
       if (p === "calls") return calls;
       if (p === "measureText") return (s) => ({ width: String(s).length * 10 });
-      if (p === "createLinearGradient") return () => ({ addColorStop() {} });
+      if (p === "createLinearGradient" || p === "createRadialGradient") return () => ({ addColorStop() {} });
       if (p === "fillText") return (s) => calls.fillText.push(String(s));
       if (p === "drawImage") return () => { calls.drawImage += 1; };
       if (p in t) return t[p];

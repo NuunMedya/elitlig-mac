@@ -18,12 +18,23 @@ const LATIN_EXT = "U+0100-02AF,U+0304,U+0308,U+0329,U+1E00-1E9F,U+1EF2-1EFF,U+20
 // Vite: dosya adresleri (paketlenmiş varlık). Test ortamında da yol döner.
 const FILES = import.meta.glob("../../assets/fonts/*.woff2", { eager: true, query: "?url", import: "default" });
 
+/**
+ * Gömülü aileler (dosya adı öneki → aile adı). Inter ve Barlow Condensed stüdyonun tamamında;
+ * diğerleri Panorama temalarının yazı tipleri (assets/fonts/OFL-Panorama.txt; ağ gerekmez).
+ */
+export const BUNDLED_FAMILIES = Object.freeze({
+  inter: "Inter", "barlow-condensed": "Barlow Condensed", oswald: "Oswald", "bebas-neue": "Bebas Neue", anton: "Anton", montserrat: "Montserrat",
+  "playfair-display": "Playfair Display", "space-grotesk": "Space Grotesk", "exo-2": "Exo 2", "archivo-black": "Archivo Black", poppins: "Poppins",
+  righteous: "Righteous", "dm-serif-display": "DM Serif Display", teko: "Teko", rajdhani: "Rajdhani",
+});
 /** Dosya adından yüz tanımı: inter-latin-ext-700-normal.woff2 → { family, subset, weight, style }. */
 export function parseFontFile(path) {
-  const m = /(inter|barlow-condensed)-(latin(?:-ext)?)-(\d{3})-(normal|italic)\.woff2$/.exec(String(path));
-  if (!m) return null;
-  return { family: m[1] === "inter" ? "Inter" : "Barlow Condensed", subset: m[2], weight: m[3], style: m[4] };
+  const m = /([a-z0-9-]+?)-(latin(?:-ext)?)-(\d{3})-(normal|italic)\.woff2$/.exec(String(path).split("/").pop());
+  if (!m || !BUNDLED_FAMILIES[m[1]]) return null;
+  return { family: BUNDLED_FAMILIES[m[1]], subset: m[2], weight: m[3], style: m[4] };
 }
+/** Gömülü aile adları (yazı tipi seçicilerinde "Uygulamayla gelen" grubu). */
+export const BUNDLED_FONT_NAMES = Object.freeze([...new Set(Object.values(BUNDLED_FAMILIES))]);
 
 /** Yüklenecek yüzler: [{ family, weight, style, unicodeRange, url }]. */
 export const STUDIO_FONT_FACES = Object.freeze(Object.entries(FILES).map(([path, url]) => {
