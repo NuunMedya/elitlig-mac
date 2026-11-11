@@ -10,6 +10,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { Empty, Icon, Spinner, keyLabel, useToast } from "../../components/ui";
 import "./admin.css";
 import { markPrintHandled } from "../../lib/export/exportRegistry";
+import { useCommandGate } from "../../workspace/gate";
 
 const COVER_SELECTOR = ".modal-backdrop, .palette-backdrop, .menu__list, .ft-wheel-backdrop, [data-admin-cover]";
 
@@ -102,8 +103,10 @@ export default function AdminPanel({ arg }) {
     if (p) admin.go(p);
   }, [arg, admin]);
 
-  // Menü komutları: ⌘R yenile, ⌘P yazdır, ⌘F bul.
+  // Menü komutları: ⌘R yenile, ⌘P yazdır, ⌘F bul (çalışma alanında yalnız odaktaki bölmedeyken).
+  const paneGate = useCommandGate();
   useEffect(() => window.elitlig.onCommand((cmd) => {
+    if (!paneGate()) return;
     if (cmd === "refresh") admin.command("reload");
     if (cmd === "print") { markPrintHandled(); admin.command("print"); }
     if (cmd === "find") { setFind((f) => f || { text: "" }); setTimeout(() => findRef.current?.focus(), 30); }

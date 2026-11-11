@@ -1,12 +1,14 @@
 // Uygulama kabuğu: giriş kontrolü, kenar çubuğu, görünümler, komut paleti.
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { ConfirmProvider, Icon, Kbd, Modal, Spinner, isMac, keyLabel, useToast } from "./components/ui";
 import Palette from "./components/Palette";
-import { PagePrintHost } from "./lib/export/PagePrint";
+// Çalışma alanı: sekmeler, gruplar, yan yana / yüzen bölmeler, sabit düğme ve bileşenler (workspace/*).
+import { useWorkspace } from "./workspace/useWorkspace";
+import Workspace, { WORKSPACE_SHORTCUTS } from "./workspace/Workspace";
+import { WorkspacePrintHost } from "./workspace/print";
 import Login from "./views/Login";
 import { refreshAll, useResource } from "./api";
 import { formatClock } from "./lib/helpers";
-import { canLeave } from "./lib/leaveGuard";
 import logo from "./assets/logo-white.png";
 // Uygulama geneli müzik çalar (kabuk kökünde yaşar) ve kenar çubuğundaki mini çalar.
 import MusicProvider from "./music/MusicProvider";
@@ -91,12 +93,6 @@ export default function App() {
 
 function Shell({ auth }) {
   const toast = useToast();
-  const [route, setRoute] = useState(readRoute);
-  const routeRef = useRef(route);
-  routeRef.current = route;
-  const [routeArg, setRouteArg] = useState(null);
-  // Aynı araç açıkken aynı hedef yeniden seçilince (palet) görünüm yine tepki versin.
-  const [argSeq, setArgSeq] = useState(0);
   const [palette, setPalette] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
   // Daraltılmış kenar çubuğu: yalnız simgeler (ipucu balonuyla). Tercih hatırlanır.
@@ -105,7 +101,14 @@ function Shell({ auth }) {
   // Yayın Stüdyosu tüm pencereyi kullanır: kenar çubuğu HİÇ çizilmez (yanlışlıkla
   // tıklanıp yayının kopmasını önler). Stüdyodan çıkış üst çubuktaki
   // "Programdan çık" düğmesiyle (yayın / kayıt sürüyorsa onay sorulur).
-  const bare = route === "studio";
+  // Yetki listesi eski oturumda "live" alanını taşımıyorsa yönetim hesaplarına açık (sunucu yine denetler).
+  const access = auth.access || { requests: true };
+  const allowed = (key) => (key === "live" && access.live === undefined ? Boolean(access.requests) : Boolean(access[key]));
+  const routes = useMemo(() => ROUTES.filter((r) => !r.needs || allowed(r.needs)), [auth.access]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Sekmeler ve bölmeler: odaktaki sekmenin bölümü eski "route" yerine geçer; go odaktaki bölmede gezinir.
+  const ws = useWorkspace({ auth, routes, fallbackRoute: readRoute() });
+  const { route, go } = ws;
+  const bare = ws.bare;
   const toggleSidebar = useCallback(() => {
     setCollapsed((v) => {
       const next = !v;
@@ -125,17 +128,6 @@ function Shell({ auth }) {
     const t = setInterval(refresh, 60000);
     return () => { window.removeEventListener("elitlig:todos-changed", refresh); clearInterval(t); };
   }, [summary.reload]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const go = useCallback(async (key, arg = null) => {
-    const [base, sub] = String(key).split(":");
-    if (!ROUTE_KEYS.has(base)) return;
-    // Açık görünüm çıkışı onaya bağlamış olabilir (ör. yayın sürerken stüdyo).
-    if (base !== routeRef.current && !(await canLeave())) return;
-    setRoute(base);
-    setRouteArg(sub || arg || null);
-    setArgSeq((n) => n + 1);
-    try { localStorage.setItem("route", base); } catch { /* yoksay */ }
-  }, []);
 
   // Hedef nesne de olabilir (hızlı geçiş: { route, arg }).
   useEffect(() => window.elitlig.onNavigate((key) => key && (typeof key === "object" ? go(key.route, key.arg || null) : go(key))), [go]);
@@ -182,16 +174,12 @@ function Shell({ auth }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const access = auth.access || { requests: true };
-  // Yetki listesi eski oturumda "live" alanını taşımıyorsa yönetim hesaplarına açık (sunucu yine denetler).
-  const allowed = (key) => (key === "live" && access.live === undefined ? Boolean(access.requests) : Boolean(access[key]));
-  const routes = ROUTES.filter((r) => !r.needs || allowed(r.needs));
   const sideRoutes = routes.filter((r) => !r.hub);
   // Araç Takımı bölümündeyken (eski rotalar dahil) kenar çubuğunda "Araç Takımı" seçili görünür.
   const inHub = route === "toolkit" || Boolean(ROUTES.find((r) => r.key === route)?.hub);
   const sideActive = inHub ? "toolkit" : route;
-  const current = routes.find((r) => r.key === route);
-  const View = route === "account" ? Account : current?.view || Today;
+  const viewFor = (key) => (key === "account" ? Account : routes.find((r) => r.key === key)?.view || Today);
+  const viewKey = (key) => (key === "toolkit" || ROUTES.find((r) => r.key === key)?.hub ? "toolkit" : key);
   const s = summary.data;
   const reqTotal = Number(requestsSummary?.total) || 0;
   const badgeTone = (key, sum) => (key === "messages" ? "is-chat" : key === "requests" ? "is-req" : sum?.overdue ? "is-alert" : "");
@@ -222,7 +210,7 @@ function Shell({ auth }) {
             return (
               <React.Fragment key={r.key}>
                 {(i === 0 || sideRoutes[i - 1].group !== r.group) && <div className="sidebar__section" role="presentation">{r.group}</div>}
-                <button type="button" data-tool={r.key} className={`nav-item ${sideActive === r.key ? "is-active" : ""}`} onClick={() => go(r.key)}
+                <button type="button" data-tool={r.key} className={`nav-item ${sideActive === r.key ? "is-active" : ""}${sideActive !== r.key && ws.openRoutes.has(r.key) && !ws.single ? " is-open-tab" : ""}`} {...ws.navProps(r.key)}
                   aria-current={sideActive === r.key ? "page" : undefined}
                   aria-label={collapsed ? `${r.label}${badge ? ` (${badge})` : ""}` : undefined}
                   title={collapsed ? undefined : `${r.label} (${keyLabel(r.shortcut)})`}
@@ -266,12 +254,10 @@ function Shell({ auth }) {
       )}
       <main className="content" data-tool={route} style={bare ? { borderRadius: 0 } : undefined}>
         <div className="content__drag" />
-        <Suspense fallback={<Spinner />}>
-          <View key={inHub ? "toolkit" : route} route={route} go={go} arg={routeArg} argSeq={argSeq} auth={auth} summary={s} />
-        </Suspense>
+        <Workspace ws={ws} routes={routes} viewFor={viewFor} viewKey={viewKey} auth={auth} summary={s} />
       </main>
       {palette && <Palette onClose={() => setPalette(false)} go={go} routes={routes} />}
-      {!bare && <PagePrintHost subscribe={subscribePrint} />}
+      {!bare && <WorkspacePrintHost subscribe={subscribePrint} />}
       {shortcuts && <ShortcutsHelp onClose={() => setShortcuts(false)} />}
     </div>
     </MusicProvider>
@@ -346,6 +332,7 @@ function ShortcutsHelp({ onClose }) {
     ["Tarayıcı: ⌘L · ⌘D · ⌘Y", "Adres çubuğu · yer imi · geçmiş"],
     ["Tarayıcı: ⇧⌘S · ⇧⌘K · ⇧⌘N", "Videoyu sabitle · sekme ara · gizli sekme"],
     ["Tarayıcı: ⌃Tab · ⌘[ ⌘] · ⌘+ ⌘-", "Sekmeler arası · geri / ileri · yakınlaştır"],
+    ...WORKSPACE_SHORTCUTS,
     ["⇧⌘L", "Yönetim paneli: maç, oyuncu, takım, lig, sezon… elitlig.com yönetiminin tamamı"],
     ["Yönetim: ⌘[ / ⌘] · ⌘R · ⌘F · ⌘P", "Geri / ileri · yenile · sayfada bul · yazdır"],
     ["⌃⌥T / ⌃⌥S", "Raflar: göster/gizle · arama odaklı (her yerden)"],

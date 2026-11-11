@@ -464,8 +464,11 @@ function registerBrowser(deps) {
     }
   }
 
+  // Uygulama içi çalışma alanı: tarayıcı odakta olmayan bir bölmedeyken ana pencerenin
+  // kısayollarını (⌘W, ⌘T, ⌘L…) yakalamaz (renderer/src/workspace — "hostKeys" komutu).
+  let hostKeys = true;
   function onHostInput(event, input) {
-    if (!attached) return;
+    if (!attached || !hostKeys) return;
     const action = model.shortcutAction(input, isMac);
     if (!action) return;
     event.preventDefault();
@@ -1116,6 +1119,7 @@ function registerBrowser(deps) {
       case "duplicate": return duplicate(id);
       case "activate": return activate(id);
       case "move": state.tabs = model.moveTab(state.tabs, a.id, a.index); changed(); return true;
+      case "hostKeys": hostKeys = a.on !== false; return hostKeys;
       case "pinTab": return setPinned(id, a.on ?? !tab?.pinned);
       case "mute": return setMuted(id, a.on);
       case "muteSite": { const on = toggleSiteList("mutedSites", tab?.url); wc?.setAudioMuted(Boolean(tab?.muted) || isMutedSite(tab?.url)); return on; }
