@@ -24,7 +24,7 @@ const st = { blocks: 0, encoded: 0, dropped: 0, gaps: 0, gapMs: 0, errors: 0, qu
 
 function flush() {
   if (!packets.length && (descSent || !desc)) return;
-  const msg = { type: "packets", packets, stats: { ...st, offsetMs: lastOffset } };
+  const msg = { type: "packets", packets, stats: { ...st, ...clock.stats(), offsetMs: lastOffset, sampleRate } };
   if (desc && !descSent) { msg.desc = desc; descSent = true; }
   self.postMessage(msg, transfer);
   packets = [];

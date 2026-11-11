@@ -423,6 +423,7 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
   /* ── yayın motoru ── */
   const onEngineError = useCallback((m) => toast(m, { tone: "error", timeout: 6000 }), [toast]);
   const engine = useEngine({ getVideoTrack: comp.getVideoTrack, getAudioTrack: mixer.audioTrack, getCanvas: comp.getCanvas, subscribeFrames: comp.subscribeFrames, getRemoteEncoder: comp.getRemoteEncoder, getDrawStats: comp.getStats, onError: onEngineError });
+  try { if (globalThis.__elitligPanorama) { globalThis.__elitligPanorama.enc = engine.getEncodeStats; globalThis.__elitligPanorama.audio = mixer.health; } } catch { /* yoksay */ }
   engineRef.current = engine;
   const [busy, setBusy] = useState(false);
   const activeRef = useRef(false);

@@ -20,6 +20,7 @@
 // useEngine eski yola (MediaRecorder + yeniden kodlama) geçer; yayın kesilmez
 // (yalnız ffmpeg yeniden başlar, aktarıcı RTMP bağlantısını korur).
 import { createMkvMuxer, opusHead, sameBytes } from "../../lib/studio/mkvmux";
+import { programTapFor, reportEncoderAudio } from "./audio/programTap";
 import { audioCaptureMs, audioGapMs, createAudioClock, createAudioTimeline, createFrameClock, createKeyframePlanner, encodedColorSpace, opusEncoderConfig, videoEncoderCandidates } from "../../lib/studio/encodepath";
 
 const FLUSH_MS = 50;
@@ -347,15 +348,20 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
     wa = null;
     if (!w) return;
     try { w.node.port.postMessage({ stop: true }); } catch { /* yoksay */ }
-    try { w.src.disconnect(); w.node.disconnect(); w.sink.disconnect(); } catch { /* yoksay */ }
+    // Karıştırıcı bağlamı paylaşılıyorsa (sameContext) yalnız bizim dalımız sökülür; bağlam kapanmaz.
+    try { if (w.shared) w.src.disconnect(w.node); else w.src.disconnect(); } catch { /* yoksay */ }
+    try { w.node.disconnect(); w.sink.disconnect(); } catch { /* yoksay */ }
     try { w.worker.postMessage({ type: "stop" }); } catch { /* yoksay */ }
     setTimeout(() => { try { w.worker.terminate(); } catch { /* yoksay */ } }, 1500);
-    w.ctx.close?.().catch(() => {});
+    if (!w.shared) w.ctx.close?.().catch(() => {});
   }
   function onWorkerPackets(m) {
     if (dead) return;
     if (m.desc && !audioDesc && !muxer) audioDesc = new Uint8Array(m.desc);
-    if (m.stats) workerStats = m.stats;
+    if (m.stats) {
+      workerStats = m.stats;
+      reportEncoderAudio({ path: "worker", sameContext: Boolean(wa?.shared), sampleRate: m.stats.sampleRate ?? null, blocks: m.stats.blocks, gaps: m.stats.gaps, gapMs: m.stats.gapMs, dropped: m.stats.dropped, queueMax: m.stats.queueMax, resyncs: m.stats.resyncs ?? 0, slewMs: m.stats.slewMs ?? 0, errMs: m.stats.errMs ?? 0 });
+    }
     if (!m.packets?.length) return;
     if (!muxer || !clock.started()) { st.audioDropped += m.packets.length; return; }
     const t = now();
@@ -371,18 +377,30 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
     if (!workerAudioSupported()) return false;
     let ctx = null;
     let worker = null;
+    // 2.30.1: program sesi karıştırıcının KENDİ bağlamından alınır (iz → ikinci bağlam FIFO'su yok,
+    // tek ses saati). İz karıştırıcıdan gelmiyorsa (testler / eski yol) ayrı bağlam: "playback"
+    // (büyük tampon; yük altında aç kalmaz) ve iz hangi hızdaysa o hız (yeniden örnekleyici yok).
+    const tap = programTapFor(audioTrack); // iz kopyalanır (track): kayıt asıl izde
+    const shared = Boolean(tap);
+    let wired = null; // { src, node, sink } — hata olursa paylaşılan bağlamdan sökülür
     try {
-      ctx = new window.AudioContext({ latencyHint: "interactive" });
+      if (tap) ctx = tap.ctx;
+      else {
+        const trackRate = track.getSettings?.().sampleRate;
+        try { ctx = new window.AudioContext({ latencyHint: "playback", ...(trackRate ? { sampleRate: trackRate } : {}) }); } catch { ctx = new window.AudioContext({ latencyHint: "playback" }); }
+      }
       // Başlıkta ses parçası olsun (ensureMuxer ilk anahtar karede en çok 1,5 sn bekler; işçi kurulumu sürebilir).
       audioInfo = { sampleRate: ctx.sampleRate, channels: 2 };
-      await ctx.audioWorklet.addModule(new URL("./audioTap.worklet.js", import.meta.url));
+      const moduleUrl = new URL("./audioTap.worklet.js", import.meta.url);
+      await (tap ? tap.addModule(moduleUrl) : ctx.audioWorklet.addModule(moduleUrl));
       if (dead) throw new Error("stopped");
       const sr = ctx.sampleRate;
-      const node = new window.AudioWorkletNode(ctx, "elitlig-audio-tap", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], processorOptions: { blockFrames: Math.round(sr / 50), channels: 2 } });
-      const src = ctx.createMediaStreamSource(new MediaStream([track]));
+      const node = new window.AudioWorkletNode(ctx, "elitlig-audio-tap", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 2, channelCountMode: "explicit", processorOptions: { blockFrames: Math.round(sr / 50), channels: 2 } });
+      const src = tap ? tap.node : ctx.createMediaStreamSource(new MediaStream([track]));
       const sink = ctx.createGain();
       sink.gain.value = 0;
       src.connect(node);
+      wired = { src, node, sink };
       node.connect(sink);
       sink.connect(ctx.destination);
       worker = new Worker(new URL("./audioEncode.worker.js", import.meta.url), { type: "module" });
@@ -401,12 +419,13 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
       if (!(await ready) || dead) throw new Error("worker");
       if (ctx.state !== "running") await Promise.race([ctx.resume(), new Promise((r) => setTimeout(r, 1000))]);
       if (ctx.state !== "running") throw new Error("suspended");
-      wa = { ctx, worker, node, src, sink };
+      wa = { ctx, worker, node, src, sink, shared };
       audioInfo = { sampleRate: sr, channels: 2 };
       return true;
     } catch {
       try { worker?.terminate(); } catch { /* yoksay */ }
-      ctx?.close?.().catch(() => {});
+      if (wired) { try { wired.src.disconnect(wired.node); wired.node.disconnect(); wired.sink.disconnect(); } catch { /* yoksay */ } }
+      if (!shared) ctx?.close?.().catch(() => {});
       return false;
     }
   }
@@ -415,12 +434,13 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
     stopWorkerAudio();
     audioPath = "track";
     st.audioFallback = String(reason || "NO_DATA").slice(0, 40);
+    reportEncoderAudio({ path: "track", reason: st.audioFallback, gaps: 0, gapMs: 0, dropped: 0, resyncs: 0 });
     audioLoop();
   }
   if (track) {
     startWorkerAudio().then((ok) => {
       if (dead) { stopWorkerAudio(); return; }
-      if (!ok) { audioPath = "track"; audioLoop(); return; }
+      if (!ok) { audioPath = "track"; reportEncoderAudio({ path: "track", gaps: 0, gapMs: 0, dropped: 0, resyncs: 0 }); audioLoop(); return; }
       audioPath = "worker";
       // Ses bağlamı çalışmıyorsa (aygıt yok / askıda) paket gelmez: eski yola düş.
       setTimeout(() => { if (audioPath === "worker" && !dead && workerStats === null) fallbackToTrack("NO_DATA"); }, 2500);
@@ -471,7 +491,7 @@ export function createWebCodecsPipeline({ canvas, audioTrack, fps, width, height
         maxLatencyMs: Math.round(st.maxLatencyMs),
         audio: audioClock ? audioClock.stats() : null,
         audioPath,
-        ...(workerStats ? { audioWorker: { blocks: workerStats.blocks, gaps: workerStats.gaps, gapMs: workerStats.gapMs, dropped: workerStats.dropped, queueMax: workerStats.queueMax } } : {}),
+        ...(workerStats ? { audioWorker: { blocks: workerStats.blocks, gaps: workerStats.gaps, gapMs: workerStats.gapMs, dropped: workerStats.dropped, queueMax: workerStats.queueMax, offsetMs: workerStats.offsetMs, resyncs: workerStats.resyncs ?? 0, slewMs: workerStats.slewMs ?? 0, errMs: workerStats.errMs ?? 0, sampleRate: workerStats.sampleRate ?? null } } : {}),
         alive: !dead,
       };
     },

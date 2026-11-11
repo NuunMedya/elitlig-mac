@@ -14,6 +14,7 @@ import React, { useEffect, useMemo, useRef } from "react";
 import { canvasLoop } from "../perf/renderLoad";
 import { Icon } from "../../../components/ui";
 import { meterFraction, programAudioChannels, samplesLevel } from "../../../lib/studio/audio";
+import AudioHealth from "./AudioHealth";
 import "./audio.css";
 
 const HISTORY = 40;
@@ -134,6 +135,7 @@ export default function ProgramAudioStrip({ mixer, config, programIds }) {
         <span className="pas-ch__head"><Icon name={killed ? "micOff" : "broadcast"} size={11} /> <span className="pas-ch__name">{killed ? "TÜMÜ KAPALI" : "PROGRAM"}</span></span>
         <canvas ref={bind("__master", () => mixer.masterAnalyser?.() || null, killed)} width={96} height={18} className="pas-ch__wave" />
       </button>
+      <AudioHealth mixer={mixer} />
     </div>
   );
 }

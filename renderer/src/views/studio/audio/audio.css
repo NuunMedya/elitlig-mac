@@ -22,6 +22,23 @@
 .pas-ch__wave { display: block; width: 84px; height: 18px; }
 .pas-master { margin-left: auto; border-color: rgba(var(--acc-rgb), 0.5); background: rgba(var(--acc-rgb), 0.12); color: var(--text); }
 .pas-master .pas-ch__wave { width: 96px; }
+/* Ses sağlığı */
+.pas { position: relative; overflow: visible; }
+.pas-health { flex: none; display: flex; position: relative; }
+.pas-health__btn { display: flex; align-items: center; gap: 4px; padding: 0 7px; border-radius: 6px; border: 1px solid var(--border); background: rgba(var(--ink-rgb), 0.03); color: var(--muted); cursor: pointer; }
+.pas-health__dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; }
+.pas-health__btn.is-warn .pas-health__dot { background: #f59e0b; }
+.pas-health__btn.is-bad .pas-health__dot { background: #ff2d55; }
+.pas-health__pop { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 50; width: min(380px, 80vw); padding: 10px 12px; border-radius: 10px; background: var(--surface, var(--bg-deep)); border: 1px solid var(--border-strong); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); color: var(--text); font-size: 11.5px; }
+.pas-health__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 12.5px; }
+.pas-health__lvl { padding: 1px 8px; border-radius: 99px; font-weight: 800; font-size: 10.5px; background: rgba(34, 197, 94, 0.16); color: var(--green-text); }
+.pas-health__lvl.is-warn { background: rgba(245, 158, 11, 0.18); color: #b45309; }
+.pas-health__lvl.is-bad { background: rgba(255, 45, 85, 0.16); color: var(--red-text); }
+.pas-health__pop dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0 0 6px; }
+.pas-health__pop dt { color: var(--muted); font-weight: 700; white-space: nowrap; }
+.pas-health__pop dd { margin: 0; font-variant-numeric: tabular-nums; }
+.pas-health__pop ul { margin: 0 0 8px; padding-left: 16px; color: var(--muted); }
+.pas-health__foot { display: flex; gap: 6px; justify-content: flex-end; }
 .pas-master.is-killed { border-color: #ff2d55; background: var(--st-live); color: var(--on-strong); }
 
 /* ── Ses sekmesi: genel düğmeler, yayına giden rozetler ── */

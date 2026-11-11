@@ -325,6 +325,32 @@ describe("ses zaman çizelgesi (2.20.1)", () => {
     expect(off).toBe(1000);
     for (let i = 100; i < 160; i += 1) off = c.push(i * 20, 4000 + i * 20); // bağlam 3 sn durdu
     expect(off).toBe(4000);
+    expect(c.stats().resyncs).toBe(1);
+  });
+  it("ses saati ofseti (2.30.1 cızırtı): en küçük ofset pencereden düşüp basamakla değişse de yayımlanan ofset en çok 1 ms/sn kayar", () => {
+    const c = createCaptureClock({ windowMs: 2000, warmupMs: 1000 });
+    // Gerçekçi ulaşma gecikmesi: 2–40 ms rastgele + 3 sn'de bir 30 ms'lik "şanslı" (en küçük) blok —
+    // eski saat bu blok pencereden çıkınca 20–30 ms basamakla zıplıyordu.
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    let prev = null; let prevAt = null; let maxRate = 0; let first = null;
+    for (let i = 0; i < 3000; i += 1) { // 60 sn, 20 ms'lik bloklar
+      const lucky = i % 150 === 0;
+      const at = 5000 + i * 20 + (lucky ? 2 : 30 + rnd() * 10);
+      const off = c.push(i * 20, at);
+      if (i * 20 > 1200) { if (prev !== null) maxRate = Math.max(maxRate, Math.abs(off - prev) / Math.max(1e-9, at - prevAt)); if (first === null) first = off; }
+      prev = off; prevAt = at;
+    }
+    expect(maxRate).toBeLessThanOrEqual(0.001 + 1e-9); // en çok 1 ms / sn
+    expect(Math.abs(prev - first)).toBeLessThan(60); // kayma yine izlenir ama yavaş
+    expect(c.stats().resyncs).toBe(0);
+  });
+  it("ses saati ofseti: gerçek saat kayması (300 ppm) izlenir", () => {
+    const c = createCaptureClock({ windowMs: 2000 });
+    let off = 0;
+    for (let i = 0; i < 6000; i += 1) off = c.push(i * 20, 1000 + i * 20 * 1.0003 + 3); // 120 sn
+    expect(off - (1000 + 6000 * 20 * 0.0003)).toBeGreaterThan(-5); // ≈ 1036 ms'ye yetişir
+    expect(c.stats().resyncs).toBe(0);
   });
 });
 

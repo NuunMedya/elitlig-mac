@@ -514,17 +514,26 @@ const supportsFpsMode = (version) => {
 
 /**
  * Yayın sesi süzgeci (gerçek ffmpeg ile denendi, app/test/studio-audio-ffmpeg.test.js):
- *   aresample=async=1000  zaman damgası titreşimini / küçük boşlukları örnek esneterek emer
- *                         (±5 ms titreşimde tık yok). async=1 / first_pts=0 denendi: async=1
- *                         boşlukları sessizlik ekleyerek kapatır (daha çok tık); first_pts=0
- *                         sesi uzatıp esnetti — kullanılmaz.
+ *   aresample (yumuşak zaman düzeltmesi)
+ *       min_comp=0.05      zaman damgası ile örnek sayısı arasındaki 50 ms altı fark YOK SAYILIR
+ *                          (IPC / ses iş parçacığı / Matroska ms yuvarlaması titreşimi).
+ *       max_soft_comp=0.002 kalıcı fark en çok %0,2 (≈ 3,5 sent, duyulmaz) esnetilerek kapatılır
+ *                          (gerçek saat kayması ≤ 100 ppm; 1000 ppm'e dek izlenir).
+ *       min_hard_comp=0.25 250 ms üstü gerçek boşluk (bağlam durdu) sessizlikle doldurulur / fazlası kırpılır.
+ *     2.30.1'e dek async=1000 idi: 1 ms'lik farkta bile sesi saniyede 1000 örneğe (±%2, ~35 sent) dek
+ *     esnetiyordu. Ses işçisinin ofset basamakları / MediaRecorder'ın zaman damgası titreşimiyle
+ *     esneme hiç bitmiyordu → sürekli perde kayması ve tık = kullanıcının duyduğu "aşırı cızırdama"
+ *     (ölçüm: 10 ms basamak + 5 ms titreşimli girişte 34 sn'de 253 tık, en çok 17 sent kayma;
+ *     yeni süzgeçte 0 tık, 0,1 sent). async=1 / first_pts=0 de denendi: boşlukları sessizlikle
+ *     kapatır (daha çok tık) — kullanılmaz.
  *   alimiter −1 dBFS      son emniyet: arayüzden 0 dBFS üstü gelen örnekler (eski sürüm,
  *                         Opus taşması) AAC'ye girmeden yumuşakça sınırlanır; level=0: otomatik
  *                         seviye YOK (sessiz sesi yükseltmez). Altındaki seste şeffaf.
  *   afade (50 ms)         kodlayıcı / kaydedici yeniden başlayınca ses sıfırdan sert bir
  *                         basamakla değil, yumuşak açılır (yeniden başlatma "tık"ı olmaz).
  */
-const STREAM_AUDIO_FILTER = "aresample=async=1000,alimiter=limit=0.891:attack=5:release=50:level=0,afade=t=in:st=0:d=0.05";
+const STREAM_AUDIO_RESAMPLE = "aresample=min_comp=0.05:max_soft_comp=0.002:min_hard_comp=0.25";
+const STREAM_AUDIO_FILTER = `${STREAM_AUDIO_RESAMPLE},alimiter=limit=0.891:attack=5:release=50:level=0,afade=t=in:st=0:d=0.05`;
 /** Varsayılan yayın ses bit hızı (kbps): AAC-LC 192 kbps stereo (128 kbps'de 16 kHz üstü belirgin kesilir). */
 const DEFAULT_AUDIO_KBPS = 192;
 /**
@@ -795,7 +804,7 @@ const parseSlaveFailure = (line) => {
 };
 
 module.exports = {
-  STREAM_AUDIO_FILTER, streamAudioArgs, audioCodecArgs, DEFAULT_AUDIO_KBPS,
+  STREAM_AUDIO_FILTER, STREAM_AUDIO_RESAMPLE, streamAudioArgs, audioCodecArgs, DEFAULT_AUDIO_KBPS,
   COLOR_ARGS, H264_COLOR_METADATA, scaleFilter, colorMetadataFor,
   initialSpeedLevel, speedLevelMatters, MIN_SPEED_LEVEL, NVENC_PRESETS,
   ENCODERS,

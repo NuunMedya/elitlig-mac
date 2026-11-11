@@ -234,12 +234,25 @@ export function createAudioTimeline({ maxSegments = 4000 } = {}) {
  * içinde ulaşır; ulaşma anı − blok konumu = ofset. Gecikme titreşimi hep POZİTİF olduğundan
  * son windowMs içindeki EN KÜÇÜK ofset gerçek ofsete en yakın olandır (saat kayması da izlenir).
  * Ses bağlamı durup sürerse (aygıt değişimi) ofset kalıcı büyür: jumpMs'yi aşan yeni ofset
- * holdMs boyunca sürerse pencere sıfırlanır.
+ * holdMs boyunca sürerse pencere sıfırlanır ve ofset BİR KEZ atlar (gerçek boşluk).
+ *
+ * 2.30.1 — YAYINDA CIZIRTI: en küçük ofset, en küçük örnek pencereden düştükçe BASAMAKLA
+ * değişiyordu (yük altında 5–40 ms). Her basamak ses paketlerinin zaman damgasında ani bir
+ * sıçrama demek; ffmpeg'in aresample=async=1000'i her sıçramayı sesi ±%2 esneterek / sıkıştırarak
+ * kapatmaya çalışıyordu → sürekli perde kayması + tık ("aşırı cızırdama"; ölçüm: 10 ms basamak +
+ * 5 ms titreşimde 34 sn'de 253 tık, THD+N −30 dB). Artık çıkış ofseti hedefe en çok slewPerMs
+ * (varsayılan 1 ms/sn = 1000 ppm; gerçek saat kayması ≤ 100 ppm) hızla YAKLAŞIR: zaman damgaları
+ * örnek sayısıyla sürekli kalır, gerçek kayma yine izlenir (ilk warmupMs içinde doğrudan izlenir).
  *   push(frameMs, arrivalMs) → ofset (ms): akış zamanı = frameMs + ofset
+ *   stats() → { resyncs (gerçek atlama), slewMs (toplam düzeltme), errMs (hedeften fark) }
  */
-export function createCaptureClock({ windowMs = 8000, jumpMs = 250, holdMs = 1000 } = {}) {
+export function createCaptureClock({ windowMs = 8000, jumpMs = 250, holdMs = 1000, slewPerMs = 0.001, warmupMs = 2000 } = {}) {
   let win = []; // { at, off }
+  let firstAt = null;
   let jumpSince = null;
+  let cur = null; // yayımlanan (yumuşatılmış) ofset
+  let lastAt = null;
+  const st = { resyncs: 0, slewMs: 0, errMs: 0 };
   return {
     push(frameMs, arrivalMs) {
       const off = arrivalMs - frameMs;
@@ -247,12 +260,25 @@ export function createCaptureClock({ windowMs = 8000, jumpMs = 250, holdMs = 100
       while (win.length && arrivalMs - win[0].at > windowMs) win.shift();
       let min = Infinity;
       for (const x of win) if (x.off < min) min = x.off;
+      let resync = false;
       if (off - min > jumpMs) {
         if (jumpSince === null) jumpSince = arrivalMs;
-        else if (arrivalMs - jumpSince >= holdMs) { win = win.filter((x) => x.at >= jumpSince); jumpSince = null; min = Infinity; for (const x of win) if (x.off < min) min = x.off; }
+        else if (arrivalMs - jumpSince >= holdMs) { win = win.filter((x) => x.at >= jumpSince); jumpSince = null; min = Infinity; for (const x of win) if (x.off < min) min = x.off; resync = true; }
       } else jumpSince = null;
-      return min;
+      if (firstAt === null) firstAt = arrivalMs;
+      if (cur === null || arrivalMs - firstAt < warmupMs) cur = min; // ilk 2 sn: akış henüz ffmpeg'e oturmadı, doğrudan izlenir
+      else if (resync || Math.abs(min - cur) > jumpMs * 4) { cur = min; st.resyncs += 1; } // gerçek boşluk: bir kez atla
+      else {
+        const dt = Math.max(0, arrivalMs - (lastAt ?? arrivalMs));
+        const step = Math.max(-dt * slewPerMs, Math.min(dt * slewPerMs, min - cur));
+        cur += step;
+        st.slewMs += Math.abs(step);
+      }
+      lastAt = arrivalMs;
+      st.errMs = min - cur;
+      return cur;
     },
+    stats: () => ({ resyncs: st.resyncs, slewMs: Math.round(st.slewMs * 10) / 10, errMs: Math.round(st.errMs * 10) / 10 }),
   };
 }
 
