@@ -12,6 +12,9 @@ import { BUILTIN_BRANDS, THEMES, brandTokens, findBrand, logoSrc, normalizeBrand
 import { BUILTIN_LAYOUTS, LAYOUT_GROUPS, MASKS, allLayouts, angleGeometry, customLayouts, layoutOf, normalizeAngleStyle, normalizeCustomLayout, normalizeSlotBoxes, setCustomLayouts } from "./layouts";
 import { pickMatchOfWeek, sceneKeyOf, webSceneOf } from "./webScenes";
 import { webPayloadImages } from "./drawWeb";
+import { gfxSnapshot, manualTickerTexts, normalizeGfx } from "./gfx";
+import { isMediaScene, mediaConfig, mediaSourceId, normalizeMediaState, overlayLayer, slotItem } from "./mediaBin";
+import { normalizeRegi } from "./regi";
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
@@ -237,9 +240,12 @@ export const BG_SOURCE_ID = "pano_bg";
 export const CARD_MEDIA_ID = "pano_cardmedia";
 
 /** Zemin renk kaynağı (temanın / markanın gradyanı). theme: anahtar ya da belirteç. */
-export function bgSource(theme) {
+export function bgSource(theme, image = null) {
   const t = themeOf(theme);
-  return { id: BG_SOURCE_ID, kind: "color", name: "Panorama zemini", color: t.bg[0], color2: t.bg[1], gradient: true, gradientAngle: 135, text: "", textColor: "#ffffff", panorama: true };
+  // Tema zemini (gradyan türü + doku + vinyet) bir kez görsele çizilir (drawTheme.paintBackground);
+  // görsel yoksa (test, ilk kare) renk gradyanı.
+  if (typeof image === "string" && /^(data:image\/|blob:)/.test(image)) return { id: BG_SOURCE_ID, kind: "image", name: "Panorama zemini", url: image, panorama: true };
+  return { id: BG_SOURCE_ID, kind: "color", name: "Panorama zemini", color: t.bg[0], color2: t.bg[1], gradient: true, gradientAngle: t.bgStyle?.angle ?? 135, text: "", textColor: "#ffffff", panorama: true };
 }
 
 const HEAD_PX = 76;
@@ -254,10 +260,14 @@ export function cardBodyBox(c, H = 1080) {
  * işçi altyapısı aynen kullanır). sources: kullanıcının kaynakları (kamera, ekran, medya…).
  * cardMedia: { kind: "video", src } — slayt / sponsor kartının videosu kart kutusunda katman olarak.
  */
-export function buildPanoramaScenes({ sources = [], angles = [], theme = "mor", programId = null, previewId = null, cardMedia = null }) {
+export function buildPanoramaScenes({ sources = [], angles = [], theme = "mor", programId = null, previewId = null, cardMedia = null, mediaBin = null, mediaWarm = null, bgImage = null }) {
   const t = themeOf(theme);
-  const kinds = new Map(sources.map((s) => [s.id, s.kind]));
-  const bg = bgSource(t);
+  const M = mediaBin ? normalizeMediaState(mediaBin) : null;
+  const mc = M ? mediaConfig(M, { programId, previewId, warm: mediaWarm }) : { sources: [], scenes: [] };
+  const kinds = new Map([...sources, ...mc.sources].map((s) => [s.id, s.kind]));
+  const bg = bgSource(t, bgImage);
+  const frame = t.frame || null;
+  const overlay = M ? overlayLayer(M, t) : null;
   const media = cardMedia?.kind === "video" && cardMedia.src ? { id: CARD_MEDIA_ID, kind: "video", name: "Kart videosu", url: cardMedia.src, ...(cardMedia.mediaId ? { mediaId: cardMedia.mediaId } : {}), loop: true, restartOnShow: true, panorama: true } : null;
   // Videonun arkası: siyah zemin (sığdırılan videonun kenarlarında sahne görünmesin).
   const mediaBg = media ? { id: `${CARD_MEDIA_ID}_bg`, kind: "color", name: "Kart videosu zemini", color: "#000000", text: "", panorama: true } : null;
@@ -266,23 +276,28 @@ export function buildPanoramaScenes({ sources = [], angles = [], theme = "mor", 
     const g = angleGeometry(a);
     const st = a.style || {};
     const layers = [];
-    if (!L.full) layers.push(normalizeLayer(makeLayer(BG_SOURCE_ID, { id: `${a.id}_bg`, fit: "stretch" }), "color"));
+    if (!L.full) layers.push(normalizeLayer(makeLayer(BG_SOURCE_ID, { id: `${a.id}_bg`, fit: "stretch" }), bg.kind));
     const order = g.slots.map((b, k) => ({ b, k })).sort((x, y) => (x.b.z || 0) - (y.b.z || 0));
     for (const { b, k } of order) {
-      const sid = a.slots[k];
+      // Medya kutusundan yuvaya konan görsel / video kameranın yerine geçer.
+      const mid = M ? slotItem(M, a.id, k) : null;
+      const sid = mid ? mediaSourceId(mid) : a.slots[k];
       if (!sid || !kinds.has(sid)) continue;
       const fullBox = b.w >= 0.999 && b.h >= 0.999 && b.x <= 0.001 && b.y <= 0.001;
       const framed = !fullBox;
       const mask = b.mask && b.mask !== "rect" ? b.mask : null;
-      const radius = mask ? 0 : b.radius != null ? b.radius : framed ? 0.035 : 0;
-      const border = st.border != null ? st.border : framed ? 3 : 0;
-      const shadow = st.shadow != null ? st.shadow : framed ? 24 : 0;
+      const radius = mask ? 0 : b.radius != null ? b.radius : framed ? (frame ? frame.radius : 0.035) : 0;
+      // Tema çerçevesi: "ince çizgi" katman kenarlığı; diğer biçimler (neon, HUD köşe, çift çizgi…)
+      // grafik katmanında çizilir (drawTheme.drawFrames). Açının kendi kenarlık ayarı önce gelir.
+      const themeBorder = frame ? (frame.style === "line" ? frame.width : 0) : 3;
+      const border = st.border != null ? st.border : framed ? themeBorder : 0;
+      const shadow = st.shadow != null ? st.shadow : framed ? (frame ? frame.shadow : 24) : 0;
       layers.push(normalizeLayer(makeLayer(sid, {
         id: `${a.id}_s${k}`, x: b.x, y: b.y, w: b.w, h: b.h, fit: kinds.get(sid) === "image" ? "contain" : "cover",
         ...(b.crop ? { crop: b.crop } : {}),
         ...(radius ? { radius } : {}),
         ...(mask ? { mask } : {}),
-        ...(border > 0 ? { border: { width: border, color: st.borderColor || t.accent } } : {}),
+        ...(border > 0 ? { border: { width: border, color: st.borderColor || frame?.stroke || t.accent } } : {}),
         ...(shadow > 0 ? { shadow: { blur: shadow, color: "#000000" } } : {}),
       }), kinds.get(sid)));
     }
@@ -291,14 +306,17 @@ export function buildPanoramaScenes({ sources = [], angles = [], theme = "mor", 
       layers.push(normalizeLayer(makeLayer(mediaBg.id, { id: `${a.id}_mediabg`, ...cb, fit: "stretch", radius: 0.03 }), "color"));
       layers.push(normalizeLayer(makeLayer(CARD_MEDIA_ID, { id: `${a.id}_media`, ...cb, fit: cardMedia.fit === "cover" ? "cover" : "contain", radius: 0.03 }), "video"));
     }
+    if (overlay) layers.push(overlay);
     return { id: a.id, name: a.name, layers, panorama: true };
   });
+  // Tam ekran medya sahneleri (önizleme / programdaki) — üst katman PiP bunlara da biner.
+  for (const ms of mc.scenes) scenes.push(overlay ? { ...ms, layers: [...ms.layers, overlay] } : ms);
   const ids = scenes.map((s) => s.id);
   const prog = ids.includes(programId) ? programId : ids[0] || null;
   const pvw = ids.includes(previewId) ? previewId : ids[1] || prog;
   return {
     version: 3,
-    sources: [bg, ...(media ? [media, mediaBg] : []), ...sources.filter((s) => s.id !== BG_SOURCE_ID && !String(s.id).startsWith(CARD_MEDIA_ID))],
+    sources: [bg, ...(media ? [media, mediaBg] : []), ...mc.sources, ...sources.filter((s) => s.id !== BG_SOURCE_ID && !String(s.id).startsWith(CARD_MEDIA_ID) && !String(s.id).startsWith("pano_md_"))],
     scenes,
     overlay: { variant: "off" },
     programSceneId: prog,
@@ -320,6 +338,9 @@ export function sceneBoxes(angles, sources = []) {
       full: g.full,
       band: g.band,
       names: a.names ? g.slots.map((box, k) => (a.slots[k] && names.get(a.slots[k]) ? { x: box.x, y: box.y, w: box.w, h: box.h, mask: box.mask, text: String(names.get(a.slots[k])).slice(0, 40) } : null)).filter(Boolean) : [],
+      // Dolu, tam ekran olmayan yuvalar: tema çerçevesi ve zemin hareketinin delikleri (drawTheme).
+      slots: g.slots.map((box, k) => (a.slots[k] && !(box.w >= 0.999 && box.h >= 0.999) ? { x: box.x, y: box.y, w: box.w, h: box.h, ...(box.mask && box.mask !== "rect" ? { mask: box.mask } : {}), ...(box.radius != null ? { radius: box.radius } : {}) } : null)).filter(Boolean),
+      frame: a.style?.border == null,
     };
   }
   return out;
@@ -480,6 +501,7 @@ export function panoramaImageUrls(p) {
     if (d.preview) out.push(...webPayloadImages(d.preview));
   }
   for (const s of p.band?.sponsors || []) out.push(s.logo);
+  out.push(p.lower?.item?.logo);
   return [...new Set(out.filter((u) => typeof u === "string" && u))].slice(0, 160);
 }
 
@@ -500,11 +522,14 @@ function cardSnap(card, since, data, ctx, brand) {
  * brand: marka profili (brands.js; yoksa theme anahtarının hazır profili). prev: { card, since, at }
  * — çıkış animasyonu için bir önceki kart.
  */
-export function buildPanoramaSnapshot({ branding, theme, brand, angles, sources, card, cardSince, prev = null, data, ticker, title, logoUrl, siteUrl, band, scope, web, weather, cities }) {
+export function buildPanoramaSnapshot({ branding, theme, brand, angles, sources, card, cardSince, prev = null, data, ticker, title, logoUrl, siteUrl, band, scope, web, weather, cities, gfx = null, onAir = false }) {
   const B = brand ? normalizeBrand(brand) : findBrand([], `th_${theme || "mor"}`);
   const T = brandTokens(B);
   const sc = data?.scope || {};
-  const items = ticker?.on === false ? [] : tickerItems(data, ticker || {});
+  const G = gfx ? normalizeGfx(gfx) : null;
+  // Kayan bant: elle yazılan öğeler önce, sonra site içeriği. Reji "bandı kapat" derse boş.
+  const items = ticker?.on === false || G?.tickerOn === false ? [] : [...(G ? manualTickerTexts(G) : []), ...tickerItems(data, ticker || {})];
+  const gs = G ? gfxSnapshot(G) : null;
   const ctx = { siteUrl, scope, web, weather, cities };
   const boxes = sceneBoxes(angles || [], sources || []);
   const needScores = Object.values(boxes).some((b) => b.band === "scores");
@@ -523,6 +548,10 @@ export function buildPanoramaSnapshot({ branding, theme, brand, angles, sources,
       scores: needScores ? scoreboardMatches(data, "live,results,fixtures").slice(0, 16) : null,
       band: band?.on && band.sponsors?.length ? { sponsors: band.sponsors.slice(0, 10), since: band.since || 0 } : null,
       clock: true,
+      lower: gs?.lower || null,
+      titleCard: gs?.title || null,
+      // CANLI rozeti: reji açtıysa ya da tema "yayındayken göster" diyorsa ve yayın sürüyorsa.
+      live: Boolean(gs?.live || (B.live?.on && onAir)),
     },
   };
 }
@@ -633,6 +662,10 @@ export function normalizePanoramaState(s) {
     brandId: typeof s?.brandId === "string" && s.brandId ? s.brandId.slice(0, 40) : `th_${themeOf(s?.theme).key}`,
     customLayouts: (Array.isArray(s?.customLayouts) ? s.customLayouts : []).map(normalizeCustomLayout).filter(Boolean).slice(0, 40),
     presetId: typeof s?.presetId === "string" ? s.presetId.slice(0, 40) : null,
+    // Panorama rejisi: yazı bantları ve grafikler, medya kutusu, reji ayarları (geçiş, butonlar, kısayollar).
+    gfx: normalizeGfx(s?.gfx),
+    media: normalizeMediaState(s?.media),
+    regi: normalizeRegi(s?.regi),
   };
 }
 
@@ -657,7 +690,12 @@ export function savePanoramaState(storage, state) {
   try {
     // blob: adresleri oturumla ölür; kalıcı olmayan dosya kaynağı "dosya seç" ister.
     const sources = state.sources.map((s) => (typeof s.url === "string" && s.url.startsWith("blob:") ? { ...s, url: null, fileMissing: true } : s));
-    storage?.setItem(PANORAMA_KEY, JSON.stringify({ ...state, sources }));
+    // Yayındaki geçici durum (görünen alt yazı / kart, medya katmanı) kalıcı yazılmaz.
+    const gfx = state.gfx ? { ...state.gfx, lowerOn: null, titleOn: null, auto: { ...state.gfx.auto, on: false } } : state.gfx;
+    const media = state.media ? { ...state.media, overlay: null } : state.media;
+    const programId = isMediaScene(state.programId) ? null : state.programId;
+    const previewId = isMediaScene(state.previewId) ? null : state.previewId;
+    storage?.setItem(PANORAMA_KEY, JSON.stringify({ ...state, sources, gfx, media, programId, previewId }));
   } catch { /* yoksay */ }
 }
 export function loadTemplates(storage) {

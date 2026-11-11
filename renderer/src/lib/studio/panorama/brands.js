@@ -16,6 +16,10 @@
 // aktarma ve başka bilgisayar için), url ise seçilen dosyanın kalıcı elitlig-studio://media adresi
 // (izin modeli: yalnız kullanıcının seçtiği dosya) ya da web adresi.
 
+import { THEMES, THEME_GROUPS, themeByKey } from "./themeCatalog";
+import { CARD_HEADS, CLOCK_STYLES, SECTION_NORMALIZERS, STYLE_DEFAULTS, TICKER_STYLES, colorFrom, pickKey } from "./themeSchema";
+import { BUNDLED_FONT_NAMES } from "../fonts";
+
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
 const str = (v, d = "", max = 80) => String(v ?? d).slice(0, max);
@@ -69,15 +73,12 @@ const hueDist = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 36
 
 export const HEADER_STYLES = Object.freeze([["pill", "Hap (vurgu kutusu)"], ["bar", "Tam şerit"], ["boxed", "Cam kutu"], ["minimal", "Yalın yazı"], ["off", "Kapalı"]]);
 export const NAME_STYLES = Object.freeze([["glass", "Cam bant"], ["solid", "Dolu bant"], ["accent", "Vurgu renkli"], ["minimal", "Yalın"], ["off", "Kapalı"]]);
-export const TICKER_STYLES = Object.freeze([["solid", "Dolu"], ["glass", "Cam"], ["split", "İki renkli"], ["minimal", "İnce çizgi"]]);
-export const CLOCK_STYLES = Object.freeze([["box", "Kutu (saat + tarih)"], ["minimal", "Yalın saat"], ["digital", "Dijital (saniyeli)"], ["off", "Kapalı"]]);
+export { TICKER_STYLES, CLOCK_STYLES };
 export const ANIMS = Object.freeze([["slide", "Kaydır"], ["fade", "Belir"], ["zoom", "Yakınlaş"], ["rise", "Aşağıdan yüksel"], ["wipe", "Silme (perde)"], ["flip", "Çevir"], ["none", "Yok"]]);
 export const WATERMARK_POS = Object.freeze([["off", "Kapalı"], ["tl", "Sol üst"], ["tr", "Sağ üst"], ["bl", "Sol alt"], ["br", "Sağ alt"]]);
-const keysOf = (list) => list.map(([k]) => k);
-const pickKey = (v, list, d) => (keysOf(list).includes(v) ? v : d);
 
 /** Panoya gömülü yazı tipleri + sık bulunan sistem yazı tipleri (yüklü olanlar listede kalır). */
-export const BUILTIN_FONTS = Object.freeze(["Inter", "Barlow Condensed"]);
+export const BUILTIN_FONTS = BUNDLED_FONT_NAMES;
 export const COMMON_SYSTEM_FONTS = Object.freeze([
   "Helvetica Neue", "Helvetica", "Arial", "Arial Black", "Arial Narrow", "Avenir", "Avenir Next", "Avenir Next Condensed", "Futura", "Gill Sans", "Optima",
   "Segoe UI", "Segoe UI Black", "Calibri", "Cambria", "Candara", "Consolas", "Franklin Gothic Medium", "Bahnschrift", "Impact", "Tahoma", "Trebuchet MS", "Verdana",
@@ -93,41 +94,15 @@ export const fontStack = (family, fallback) => {
 
 /* ─────────────────────────────── hazır temalar ─────────────────────────────── */
 
-// Renk paleti (p): primary (başlık şeridi / ana renk), secondary (zemin gradyanının ikinci ucu,
-// şerit), accent (vurgu: sıra, puan, çizgi), text (panel metni), background (zemin), panel (kart).
-const TH = (key, label, hint, p, extra = {}) => ({ key, label, hint, palette: p, ...extra });
-export const THEMES = Object.freeze([
-  TH("mor", "Elitlig klasik", "Mor zemin, beyaz kartlar, magenta vurgu", { primary: "#54009c", secondary: "#12002b", accent: "#c026d3", text: "#1b0b33", background: "#12002b", panel: "#ffffff" }),
-  TH("gece", "Gece & altın", "Lacivert zemin, koyu cam kartlar, altın vurgu", { primary: "#08102a", secondary: "#14275a", accent: "#f5c542", text: "#f3f5ff", background: "#050b1f", panel: "#0c1530" }, { card: { glass: true, opacity: 0.94 }, header: { style: "boxed" } }),
-  TH("gunduz", "Gündüz", "Açık gri zemin, beyaz kartlar, mavi vurgu — gün ışığında okunur", { primary: "#1d4ed8", secondary: "#e7edf6", accent: "#f97316", text: "#0f172a", background: "#dfe7f2", panel: "#ffffff" }, { card: { shadow: 18 } }),
-  TH("lacivert", "Lacivert", "Klasik spor yayını: lacivert şerit, buz mavisi vurgu", { primary: "#0a1a3f", secondary: "#164a9a", accent: "#38bdf8", text: "#0a1a3f", background: "#0a1a3f", panel: "#ffffff" }),
-  TH("spor", "Spor kanalı", "Siyah-kırmızı, köşeli kartlar, sert şeritler", { primary: "#b91c1c", secondary: "#111111", accent: "#ef4444", text: "#111111", background: "#0b0b0b", panel: "#ffffff" }, { card: { radius: 4 }, header: { style: "bar" }, names: { style: "accent" }, ticker: { style: "split" }, anim: { in: "wipe" } }),
-  TH("minimal", "Minimal", "Beyaz-gri, ince çizgiler, gösterişsiz", { primary: "#111827", secondary: "#f3f4f6", accent: "#111827", text: "#111827", background: "#e5e7eb", panel: "#ffffff" }, { card: { radius: 10, shadow: 8 }, header: { style: "minimal" }, names: { style: "minimal" }, ticker: { style: "minimal" }, clock: { style: "minimal" }, anim: { in: "fade" } }),
-  TH("neon", "Neon", "Gece siyahı, camgöbeği ve pembe neon", { primary: "#0f0726", secondary: "#05010f", accent: "#22d3ee", text: "#f5f3ff", background: "#05010f", panel: "#130a2e" }, { card: { glass: true, border: 2, opacity: 0.9 }, header: { style: "boxed" }, names: { style: "accent" }, clock: { style: "digital" }, anim: { in: "zoom" } }),
-  TH("retro", "Retro", "Krem kağıt, turuncu ve petrol mavisi, 70'ler", { primary: "#0f5257", secondary: "#f4e9d8", accent: "#e76f2a", text: "#2b2118", background: "#eadbc3", panel: "#fbf4e8" }, { card: { radius: 28 }, header: { style: "pill" }, anim: { in: "rise" } }),
-  TH("kurumsal", "Kurumsal", "Gece mavisi ve çelik gri, sade ve ciddi", { primary: "#1e3a5f", secondary: "#0f2238", accent: "#5b9bd5", text: "#15202b", background: "#0f2238", panel: "#f8fafc" }, { card: { radius: 8 }, header: { style: "bar" }, names: { style: "solid" } }),
-  TH("sampiyon", "Şampiyonlar", "Gece laciverti, gümüş ve yıldız mavisi, büyük gece", { primary: "#0b1f5c", secondary: "#020b2e", accent: "#c0d4ff", text: "#eef2ff", background: "#020b2e", panel: "#0c1a4a" }, { card: { glass: true, opacity: 0.92, border: 1 }, header: { style: "boxed" }, anim: { in: "zoom" } }),
-  TH("sahil", "Sahil", "Turkuaz deniz, kum rengi kartlar, mercan vurgu", { primary: "#0e7490", secondary: "#22d3ee", accent: "#fb7185", text: "#083344", background: "#0e7490", panel: "#fffaf0" }, { card: { radius: 26 }, anim: { in: "rise" } }),
-  TH("kis", "Kış", "Buz mavisi ve kar beyazı, soğuk ve temiz", { primary: "#1e40af", secondary: "#dbeafe", accent: "#60a5fa", text: "#0c1e46", background: "#bfdbfe", panel: "#ffffff" }, { card: { glass: true, opacity: 0.9 }, header: { style: "boxed" } }),
-  TH("orman", "Orman", "Koyu yeşil zemin, krem kartlar, limon vurgu", { primary: "#14532d", secondary: "#052e16", accent: "#a3e635", text: "#052e16", background: "#052e16", panel: "#f7fee7" }),
-  TH("vitrin", "Vitrin", "Kesik köşeler, eğik şeritler, asit yeşili sayılar", { primary: "#111111", secondary: "#262626", accent: "#c6ff00", text: "#111111", background: "#171717", panel: "#fafafa" }, { card: { radius: 2 }, header: { style: "bar" }, names: { style: "accent" }, ticker: { style: "split" }, anim: { in: "wipe" } }),
-  TH("kagit", "Kağıt", "Kemik kağıt, mürekkep siyahı, vermiyon nokta rengi", { primary: "#141210", secondary: "#d9cfb9", accent: "#e4572e", text: "#141210", background: "#ece5d6", panel: "#fbf8f1" }, { card: { radius: 6, shadow: 10 }, header: { style: "minimal" }, names: { style: "solid" } }),
-  TH("gunbatimi", "Gün batımı", "Mor-turuncu gradyan, sıcak ve canlı", { primary: "#7c2d12", secondary: "#581c87", accent: "#fb923c", text: "#1c0b05", background: "#3b0764", panel: "#fff7ed" }, { card: { radius: 24 }, anim: { in: "slide" } }),
-]);
-export const themeByKey = (k) => THEMES.find((t) => t.key === k) || THEMES[0];
+// Hazır temalar themeCatalog.js'te (tur 2-3'ün 16 teması + Panorama rejisi temaları).
+export { THEMES, themeByKey, THEME_GROUPS };
 
 /* ─────────────────────────────── profil ─────────────────────────────── */
 
-const DEFAULT_STYLE = Object.freeze({
-  card: { radius: 22, opacity: 1, shadow: 36, glass: false, border: 0 },
-  header: { style: "pill", tagline: "" },
-  names: { style: "glass" },
-  ticker: { style: "solid", label: "" },
-  clock: { style: "box" },
-  anim: { in: "slide", out: "fade", ms: 520 },
-  watermark: { pos: "off", size: 110, opacity: 0.85, which: "logo" },
-  fonts: { display: "", body: "" },
-});
+const DEFAULT_STYLE = STYLE_DEFAULTS;
+/** Profilde saklanan stil bölümleri (eski kayıtta olmayan bölüm temadan gelir: göç). */
+export const STYLE_SECTIONS = Object.freeze(Object.keys(STYLE_DEFAULTS));
+
 
 function normLogo(l) {
   if (!l || typeof l !== "object") return null;
@@ -146,7 +121,11 @@ export function normalizeBrand(b) {
   for (const k of Object.keys(P)) { const v = normHex(b?.colors?.[k]); if (v) P[k] = v; }
   const base = { ...DEFAULT_STYLE, ...Object.fromEntries(Object.entries(th).filter(([k]) => k in DEFAULT_STYLE).map(([k, v]) => [k, { ...DEFAULT_STYLE[k], ...v }])) };
   const g = (k) => ({ ...base[k], ...(b?.[k] && typeof b[k] === "object" ? b[k] : {}) });
-  const card = g("card"); const header = g("header"); const names = g("names"); const ticker = g("ticker"); const clock = g("clock"); const anim = g("anim"); const wm = g("watermark"); const fonts = g("fonts");
+  const card = g("card"); const header = g("header"); const names = g("names"); const ticker = g("ticker"); const anim = g("anim"); const fonts = g("fonts");
+  // Boş yazı tipi = temanınki (eski profillerde "" kayıtlıydı; tema yazı tipi gelsin).
+  if (!String(fonts.display || "").trim()) fonts.display = base.fonts.display;
+  if (!String(fonts.body || "").trim()) fonts.body = base.fonts.body;
+  const N = SECTION_NORMALIZERS;
   return {
     id: typeof b?.id === "string" && b.id ? b.id.slice(0, 40) : brandId(),
     name: str(b?.name, th.label, 60).trim() || th.label,
@@ -156,14 +135,19 @@ export function normalizeBrand(b) {
     logo: normLogo(b?.logo),
     logo2: normLogo(b?.logo2),
     colors: P,
-    fonts: { display: str(fonts.display, "", 60), body: str(fonts.body, "", 60) },
-    card: { radius: Math.round(clamp(num(card.radius, 22), 0, 60)), opacity: Math.round(clamp(num(card.opacity, 1), 0.3, 1) * 100) / 100, shadow: Math.round(clamp(num(card.shadow, 36), 0, 80)), glass: Boolean(card.glass), border: Math.round(clamp(num(card.border, 0), 0, 8)) },
+    fonts: N.fonts(fonts, base.fonts),
+    card: { radius: Math.round(clamp(num(card.radius, 22), 0, 60)), opacity: Math.round(clamp(num(card.opacity, 1), 0.3, 1) * 100) / 100, shadow: Math.round(clamp(num(card.shadow, 36), 0, 80)), glass: Boolean(card.glass), border: Math.round(clamp(num(card.border, 0), 0, 8)), head: pickKey(card.head, CARD_HEADS, base.card.head || "gradient") },
     header: { style: pickKey(header.style, HEADER_STYLES, "pill"), tagline: str(header.tagline, "", 60) },
     names: { style: pickKey(names.style, NAME_STYLES, "glass") },
-    ticker: { style: pickKey(ticker.style, TICKER_STYLES, "solid"), label: str(ticker.label, "", 24) },
-    clock: { style: pickKey(clock.style, CLOCK_STYLES, "box") },
-    anim: { in: pickKey(anim.in, ANIMS, "slide"), out: pickKey(anim.out, ANIMS, "fade"), ms: Math.round(clamp(num(anim.ms, 520), 150, 2000)) },
-    watermark: { pos: pickKey(wm.pos, WATERMARK_POS, "off"), size: Math.round(clamp(num(wm.size, 110), 40, 400)), opacity: Math.round(clamp(num(wm.opacity, 0.85), 0.1, 1) * 100) / 100, which: wm.which === "logo2" ? "logo2" : "logo" },
+    ticker: N.ticker(ticker, base.ticker),
+    clock: N.clock(g("clock"), base.clock),
+    anim: { ...N.anim(anim, base.anim), in: pickKey(anim.in, ANIMS, "slide"), out: pickKey(anim.out, ANIMS, "fade") },
+    watermark: N.watermark(g("watermark"), base.watermark),
+    bg: N.bg(g("bg"), base.bg),
+    frame: N.frame(g("frame"), base.frame),
+    lower: N.lower(g("lower"), base.lower),
+    live: N.live(g("live"), base.live),
+    titleCard: N.titleCard(g("titleCard"), base.titleCard),
     ...(Number.isFinite(Number(b?.savedAt)) ? { savedAt: Number(b.savedAt) } : {}),
   };
 }
@@ -230,6 +214,18 @@ export function brandTokens(brand, override = null) {
     clock: b.clock,
     anim: b.anim,
     watermark: b.watermark,
+    // Panorama rejisi belirteçleri (themeSchema.js)
+    accent2: P.accent2 || P.accent,
+    accent2Text: readableOn(P.accent2 || P.accent),
+    live: P.live || "#e11d48",
+    liveText: readableOn(P.live || "#e11d48"),
+    bgStyle: b.bg,
+    frame: { ...b.frame, stroke: colorFrom({ accent: P.accent, accent2: P.accent2, primary: P.primary, panel: P.panel, onBg: readableOn(P.background) }, b.frame.color) },
+    lower: b.lower,
+    tickerCfg: b.ticker,
+    liveBug: b.live,
+    titleCard: b.titleCard,
+    type: { weight: b.fonts.weight, upper: b.fonts.upper, tracking: b.fonts.tracking },
     logo: logoSrc(b.logo),
     logo2: logoSrc(b.logo2),
     title: b.title,

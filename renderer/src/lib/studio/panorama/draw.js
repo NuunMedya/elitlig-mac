@@ -18,6 +18,7 @@ import { DAYS, F, FC, FS, MONTHS, STAGE_W, crest, dateText, dayLabel, dots, empt
 export { pageOf, clockText, dateText, istanbulParts } from "./drawKit";
 import { drawWebBody } from "./drawWeb";
 import { DYNAMIC_KINDS, LOCAL_CARD_BODIES } from "./drawCards";
+import { drawAmbient, drawClockThemed, drawFrames, drawLiveBug, drawLogoMark, drawLower, drawTickerThemed, drawTitleCard } from "./drawTheme";
 
 const per = new WeakMap();
 const stateOf = (ctx) => { let m = per.get(ctx); if (!m) { m = { M: createMeasure(ctx), layers: createLayerCache({ max: 6 }) }; per.set(ctx, m); } return m; };
@@ -558,7 +559,7 @@ function clockBox(ctx, T, style, x0) {
 function drawHeader(ctx, P, E, overVideo) {
   const { T, M } = E;
   const style = T.header?.style || "pill";
-  clockBox(ctx, T, T.clock?.style || "box");
+  if (!T.clock?.pos) clockBox(ctx, T, T.clock?.style || "box"); // eski belirteç (saat konumu yok)
   if (style === "off") return;
   const logo = img(P.logoUrl);
   let x = 46;
@@ -706,19 +707,46 @@ export function drawPanorama(ctx, frame, snap) {
   const st = stateOf(ctx);
   const ready = P.card ? panoramaImageUrls({ card: P.card }).reduce((n, u) => n + (getImage(u) ? 1 : 0), 0) : 0;
   const E = { T, M: st.M, layers: st.layers, k, ready, now: frame?.now ?? Date.now(), H: (Number(frame?.height) || 1080) / k, card: P.card || { since: 0, sec: 0 } };
-  const bx = (frame?.sceneId && P.boxes?.[frame.sceneId]) || { card: null, ticker: true, header: true, names: [], full: false };
-  const tickerOn = bx.ticker !== false && P.ticker?.items?.length;
+  // Tam ekran medya sahnesi (md_…): künye, bant ve kart yok; alt yazı / tam ekran kart / rozet çizilir.
+  const mediaScene = typeof frame?.sceneId === "string" && frame.sceneId.startsWith("md_");
+  const bx = (frame?.sceneId && P.boxes?.[frame.sceneId]) || (mediaScene ? { card: null, ticker: false, header: false, names: [], full: true } : { card: null, ticker: true, header: true, names: [], full: false });
+  const tickerOn = Boolean(bx.ticker !== false && P.ticker?.items?.length);
+  const tcfg = T.tickerCfg || null;
+  E.tickerH = tcfg?.height || TICKER_H;
+  E.tickerTop = tickerOn && tcfg?.position === "top";
+  E.tickerBottom = tickerOn && !E.tickerTop;
+  E.headerOn = bx.header !== false && T.header?.style !== "off";
+  E.overVideo = Boolean(bx.full);
   ctx.save();
   ctx.scale(k, k);
   ctx.textBaseline = "middle";
   try {
+    const px = (b) => ({ x: b.x * STAGE_W, y: b.y * E.H, w: b.w * STAGE_W, h: b.h * E.H, mask: b.mask, radius: b.radius });
+    const slots = (bx.slots || []).map(px);
+    if (!bx.full && T.bgStyle) drawAmbient(ctx, T, E, [...slots, ...(bx.card ? [px(bx.card)] : [])]);
+    if (bx.frame !== false && slots.length && T.frame && T.frame.style !== "line") drawFrames(ctx, T, E, slots);
     if (bx.names?.length) drawNames(ctx, bx.names, E);
     if (bx.card && P.card) drawCard(ctx, bx.card, P.card, E, P.prev);
-    if (bx.header !== false) drawHeader(ctx, P, E, bx.full);
+    if (bx.header !== false) {
+      ctx.save();
+      if (E.tickerTop) ctx.translate(0, E.tickerH + 6);
+      drawHeader(ctx, P, E, bx.full);
+      ctx.restore();
+      if (T.clock?.pos) drawClockThemed(ctx, T, E);
+    }
     if (bx.band === "scores" && P.scores?.length) drawScoreBand(ctx, P.scores, E, tickerOn);
     else if (P.band) drawBand(ctx, P.band, E, tickerOn);
-    if (bx.ticker !== false) drawTicker(ctx, P.ticker, E);
-    if (bx.header !== false) drawWatermark(ctx, T, E, tickerOn);
+    if (bx.ticker !== false) {
+      if (tcfg) drawTickerThemed(ctx, P.ticker, E, tickerShift);
+      else drawTicker(ctx, P.ticker, E);
+    }
+    if (bx.header !== false) {
+      if (T.watermark?.anim) drawLogoMark(ctx, T, E);
+      else drawWatermark(ctx, T, E, tickerOn);
+    }
+    if (P.live) drawLiveBug(ctx, T, E, true);
+    if (P.lower) drawLower(ctx, P.lower, E);
+    if (P.titleCard) drawTitleCard(ctx, P.titleCard, E);
   } finally {
     ctx.restore();
     setDrawFonts(null, null);
