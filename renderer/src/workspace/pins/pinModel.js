@@ -10,7 +10,7 @@
 export const PIN_VERSION = 1;
 export const EDGES = ["top", "bottom", "left", "right"];
 export const EDGE_LABELS = { top: "Üst çubuk", bottom: "Alt çubuk", left: "Sol çubuk", right: "Sağ çubuk", float: "Yüzen" };
-export const UNIT = 56; // tek birimlik kenar (düğme: 56 × 56 piksel)
+export const UNIT = 60; // tek birimlik kenar (düğme: 56 × 56 piksel)
 export const UNIT_W = 76; // çok birimli bileşende birim eni / boyu (Bugün panosundaki hücreye yakın)
 export const UNIT_H = 64;
 export const GAP = 6;
