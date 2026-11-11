@@ -17,6 +17,9 @@ export const STORAGE_PREFIX = "today.dashboard.v1";
 export const MAX_PAGES = 12;
 export const MAX_ITEMS = 120;
 export const MAX_H = 16;
+/** Görsel bileşeninin dosyadan gelen (küçültülmüş) veri adresi için üst sınır. */
+export const MAX_IMAGE = 120000;
+const LONG_KEYS = new Set(["buttons", "text", "items", "links"]);
 const COLOR_RE = /^#[0-9a-f]{6}$/i;
 
 const int = (v, d) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? n : d; };
@@ -88,7 +91,7 @@ export function normalizeItem(raw, cols = COLS) {
   if (raw.o && typeof raw.o === "object" && !Array.isArray(raw.o)) {
     const o = {};
     for (const [k, v] of Object.entries(raw.o)) {
-      if (["string", "number", "boolean"].includes(typeof v) || v === null) o[k] = typeof v === "string" ? v.slice(0, 2000) : v;
+      if (["string", "number", "boolean"].includes(typeof v) || v === null) o[k] = typeof v === "string" ? v.slice(0, k === "src" && /^data:image\//.test(v) ? MAX_IMAGE : LONG_KEYS.has(k) ? 6000 : 2000) : v;
       else if (v && typeof v === "object") { try { const s = JSON.stringify(v); if (s.length < 4000) o[k] = JSON.parse(s); } catch { /* yoksay */ } }
     }
     if (Object.keys(o).length) out.o = o;
@@ -186,6 +189,25 @@ export function compactFor(items, cols) {
     placed.push({ i: it.i, x: spot.x, y: spot.y, w: ww, h: it.h });
   }
   return placed;
+}
+/**
+ * Tuval eni ölçümü — salınım koruması. Kaydırma çubuğu belirip kaybolduğunda en iki değer arasında
+ * gidip gelebilir (en → satır yüksekliği → içerik yüksekliği → kaydırma çubuğu → en). Aynı iki değer
+ * kısa sürede (≤ 700 ms) A → B → A diye dönüyorsa küçük olanında sabitlenir; 2 pikselden küçük
+ * değişiklikler yok sayılır. state: önceki çağrının döndürdüğü durum (ilk çağrıda null).
+ */
+export function settleWidth(state, measured, now = 0) {
+  const hist = [...(state?.hist || []), { w: measured, t: now }].filter((x) => now - x.t <= 700).slice(-4);
+  const cur = state?.width ?? measured;
+  if (state?.locked && now - state.locked.t <= 1500 && (measured === state.locked.a || measured === state.locked.b)) return { width: Math.min(state.locked.a, state.locked.b), state: { ...state, hist } };
+  if (Math.abs(measured - cur) < 2) return { width: cur, state: { width: cur, hist, locked: null } };
+  const n = hist.length;
+  if (n >= 3 && hist[n - 1].w === hist[n - 3].w && hist[n - 2].w !== hist[n - 1].w) {
+    const a = hist[n - 1].w, b = hist[n - 2].w;
+    const w = Math.min(a, b);
+    return { width: w, state: { width: w, hist, locked: { a, b, t: now } } };
+  }
+  return { width: measured, state: { width: measured, hist, locked: null } };
 }
 /** Pencere enine göre sütun sayısı. */
 export const colsForWidth = (width) => (width >= 760 ? COLS : width >= 520 ? 6 : 4);
