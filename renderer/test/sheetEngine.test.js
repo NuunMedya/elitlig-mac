@@ -117,3 +117,77 @@ test("CSV ayracını tanır ve tırnaklı alanları okur", () => {
   expect(parseCsv('Ad;Tutar\n"Kaya; Ali";1.250,50\n')).toEqual([["Ad", "Tutar"], ["Kaya; Ali", "1.250,50"]]);
   expect(parseCsv("a,b\n1,2")).toEqual([["a", "b"], ["1", "2"]]);
 });
+
+test("çok koşullu işlevler: ÇOKETOPLA, ÇOKEĞERSAY, ÇOKEĞERORTALAMA, ÇOKEĞERMAK/MİN, TOPLA.ÇARPIM", () => {
+  const cells = { A1: "Ali", A2: "Can", A3: "Ali", A4: "Ali", B1: "Gelir", B2: "Gelir", B3: "Gider", B4: "Gelir", C1: "100", C2: "50", C3: "30", C4: "70" };
+  expect(calc({ ...cells, D1: '=ÇOKETOPLA(C1:C4; A1:A4; "Ali"; B1:B4; "Gelir")' }, "D1")).toBe(170);
+  expect(calc({ ...cells, D1: '=SUMIFS(C1:C4,A1:A4,"Ali",C1:C4,">50")' }, "D1")).toBe(170);
+  expect(calc({ ...cells, D1: '=ÇOKEĞERSAY(A1:A4; "Ali"; C1:C4; ">=70")' }, "D1")).toBe(2);
+  expect(calc({ ...cells, D1: '=ÇOKEĞERORTALAMA(C1:C4; A1:A4; "Ali")' }, "D1")).toBeCloseTo(66.667, 2);
+  expect(calc({ ...cells, D1: '=ÇOKEĞERMAK(C1:C4; B1:B4; "Gelir")' }, "D1")).toBe(100);
+  expect(calc({ ...cells, D1: '=ÇOKEĞERMİN(C1:C4; B1:B4; "Gelir")' }, "D1")).toBe(50);
+  expect(calc({ C1: "2", C2: "3", D1: "4", D2: "5", E1: "=TOPLA.ÇARPIM(C1:C2; D1:D2)" }, "E1")).toBe(23);
+});
+
+test("arama: ÇAPRAZARA, İNDİS/KAÇINCI, YATAYARA, ELEMAN", () => {
+  const t = { A1: "Ali", A2: "Can", A3: "Ece", B1: "10", B2: "20", B3: "30" };
+  expect(calc({ ...t, D1: '=ÇAPRAZARA("Can"; A1:A3; B1:B3)' }, "D1")).toBe(20);
+  expect(calc({ ...t, D1: '=XLOOKUP("Zeki",A1:A3,B1:B3,"yok")' }, "D1")).toBe("yok");
+  expect(calc({ ...t, D1: '=ÇAPRAZARA("Zeki"; A1:A3; B1:B3)' }, "D1").code).toBe("#YOK");
+  expect(calc({ ...t, D1: "=ÇAPRAZARA(25; B1:B3; A1:A3; ; -1)" }, "D1")).toBe("Can");
+  expect(calc({ ...t, D1: '=ÇAPRAZARA("E*"; A1:A3; B1:B3; ; 2)' }, "D1")).toBe(30);
+  expect(calc({ ...t, D1: '=İNDİS(B1:B3; KAÇINCI("Ece"; A1:A3; 0))' }, "D1")).toBe(30);
+  expect(calc({ ...t, D1: "=INDEX(A1:B3,2,2)" }, "D1")).toBe(20);
+  expect(calc({ ...t, D1: "=KAÇINCI(25; B1:B3)" }, "D1")).toBe(2);
+  expect(calc({ ...t, D1: '=KAÇINCI("c*"; A1:A3; 0)' }, "D1")).toBe(2);
+  expect(calc({ A1: "Oca", B1: "Şub", A2: "5", B2: "7", D1: '=YATAYARA("Şub"; A1:B2; 2; YANLIŞ)' }, "D1")).toBe(7);
+  expect(calc({ D1: '=ELEMAN(2; "a"; "b"; "c")' }, "D1")).toBe("b");
+});
+
+test("mantıksal ve metin: ÇOKEĞER, İLKEŞLEŞEN, EĞERYOKSA, PARÇAAL, BUL, YERİNEKOY, YAZIM.DÜZENİ, ESAYIYSA", () => {
+  expect(calc({ A1: "75", B1: '=ÇOKEĞER(A1>=90; "A"; A1>=70; "B"; DOĞRU; "C")' }, "B1")).toBe("B");
+  expect(calc({ A1: "2", B1: '=İLKEŞLEŞEN(A1; 1; "Bir"; 2; "İki"; "Diğer")' }, "B1")).toBe("İki");
+  expect(calc({ A1: "9", B1: '=SWITCH(A1,1,"Bir","Diğer")' }, "B1")).toBe("Diğer");
+  expect(calc({ B1: '=EĞERYOKSA(DÜŞEYARA("x"; A1:A2; 1; YANLIŞ); "Yok")' }, "B1")).toBe("Yok");
+  expect(calc({ A1: "Elitlig Lig", B1: "=PARÇAAL(A1; 3; 5)" }, "B1")).toBe("itlig");
+  expect(calc({ A1: "Elitlig", B1: '=BUL("l"; A1; 3)' }, "B1")).toBe(5);
+  expect(calc({ A1: "Elitlig", B1: '=MBUL("L"; A1)' }, "B1")).toBe(2);
+  expect(calc({ A1: "a-b-c", B1: '=YERİNEKOY(A1; "-"; "/")' }, "B1")).toBe("a/b/c");
+  expect(calc({ A1: "a-b-c", B1: '=YERİNEKOY(A1; "-"; "/"; 2)' }, "B1")).toBe("a-b/c");
+  expect(calc({ A1: "ali can ıŞık", B1: "=YAZIM.DÜZENİ(A1)" }, "B1")).toBe("Ali Can Işık");
+  expect(calc({ A1: "5", B1: "=ESAYIYSA(A1)", B2: "=EBOŞSA(C9)", B3: "=EHATALIYSA(1/0)", B4: "=EMETİNSE(A1)" }, "B1")).toBe(true);
+  expect(calc({ B2: "=EBOŞSA(C9)" }, "B2")).toBe(true);
+  expect(calc({ B3: "=EHATALIYSA(1/0)" }, "B3")).toBe(true);
+  expect(calc({ A1: "  çok   boşluk ", B1: "=UZUNLUK(KIRP(A1))" }, "B1")).toBe(10);
+  expect(calc({ B1: '=SOLDAN("Elitlig"; 3)&SAĞDAN("Elitlig"; 3)' }, "B1")).toBe("Elilig");
+  expect(calc({ B1: '=BİRLEŞTİR("a"; 1; DOĞRU)' }, "B1")).toBe("a1DOĞRU");
+  expect(calc({ B1: '=SAYIYAÇEVİR("1.250,5")' }, "B1")).toBe(1250.5);
+});
+
+test("tarih ve saat: ZAMAN, SAAT, HAFTANINGÜNÜ, SERİTARİH, SERİAY, TAMİŞGÜNÜ, ETARİHLİ, METNEÇEVİR", () => {
+  expect(formatValue(calc({ A1: "=ZAMAN(14; 30; 0)" }, "A1"))).toBe("14:30");
+  expect(calc({ A1: "=SAAT(ZAMAN(14; 30; 0))" }, "A1")).toBe(14);
+  expect(calc({ A1: "=DAKİKA(ZAMAN(14; 30; 0))" }, "A1")).toBe(30);
+  expect(calc({ A1: "=HAFTANINGÜNÜ(TARİH(2026; 11; 16); 2)" }, "A1")).toBe(1); // Pazartesi
+  expect(formatValue(calc({ A1: "=SERİTARİH(TARİH(2026; 1; 31); 1)" }, "A1"))).toBe("28.02.2026");
+  expect(formatValue(calc({ A1: "=SERİAY(TARİH(2026; 2; 10); 0)" }, "A1"))).toBe("28.02.2026");
+  expect(calc({ A1: "=TAMİŞGÜNÜ(TARİH(2026; 11; 16); TARİH(2026; 11; 22))" }, "A1")).toBe(5);
+  expect(formatValue(calc({ A1: "=İŞGÜNÜ(TARİH(2026; 11; 20); 1)" }, "A1"))).toBe("23.11.2026");
+  expect(calc({ A1: '=ETARİHLİ(TARİH(2000; 5; 20); TARİH(2026; 5; 19); "Y")' }, "A1")).toBe(25);
+  expect(calc({ A1: '=METNEÇEVİR(TARİH(2026; 3; 5); "dd.mm.yyyy")' }, "A1")).toBe("05.03.2026");
+  expect(calc({ A1: '=TEXT(1234.5,"#,##0.00")' }, "A1")).toBe("1.234,50");
+  expect(typeof calc({ A1: "=BUGÜN()" }, "A1").date).toBe("number");
+});
+
+test("istatistik ve yuvarlama: BÜYÜK, KÜÇÜK, STDSAPMA, TAVANAYUVARLA, NSAT", () => {
+  const n = { A1: "4", A2: "8", A3: "6", A4: "2" };
+  expect(calc({ ...n, B1: "=BÜYÜK(A1:A4; 2)" }, "B1")).toBe(6);
+  expect(calc({ ...n, B1: "=KÜÇÜK(A1:A4; 1)" }, "B1")).toBe(2);
+  expect(calc({ ...n, B1: "=STDSAPMA(A1:A4)" }, "B1")).toBeCloseTo(2.582, 3);
+  expect(calc({ B1: "=TAVANAYUVARLA(12; 5)" }, "B1")).toBe(15);
+  expect(calc({ B1: "=TABANAYUVARLA(12; 5)" }, "B1")).toBe(10);
+  expect(calc({ B1: "=NSAT(3,789; 1)" }, "B1")).toBeCloseTo(3.7);
+  expect(calc({ B1: "=YUVARLA(2,345; 2)" }, "B1")).toBe(2.35);
+  expect(calc({ B1: "=VE(1>0; YADA(0>1; 2>1))" }, "B1")).toBe(true);
+  expect(calc({ A1: "1", A2: "a", A3: "", B1: "=BAĞ_DEĞ_SAY(A1:A3)+BAĞ_DEĞ_DOLU_SAY(A1:A3)*10" }, "B1")).toBe(21);
+});

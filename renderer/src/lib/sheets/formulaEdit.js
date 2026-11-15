@@ -18,7 +18,7 @@ export const ARG_SEP = ";";
 export const REF_COLORS = ["#2563eb", "#dc2626", "#7c3aed", "#059669", "#d97706", "#db2777", "#0891b2", "#65a30d"];
 
 /** Tam sütun başvurusunun (A:A) satır sınırı; arayüz sayfa boyutuna kırpar. */
-export const FULL_LIMIT = 9999;
+export const FULL_LIMIT = 99999;
 
 export const isFormulaText = (text) => typeof text === "string" && text.startsWith("=");
 
@@ -48,7 +48,7 @@ const SHEET_NAME_RE = /^[A-Za-zÇĞİÖŞÜçğıöşü_][\wÇĞİÖŞÜçğıö
 /** Sayfa adını formül önekine çevirir: Sayfa2 → "Sayfa2!", "Ekim Ayı" → "'Ekim Ayı'!". */
 export function sheetPrefix(name) {
   if (!name) return "";
-  return SHEET_NAME_RE.test(name) && !/^[A-Za-z]{1,2}\d{1,4}$/.test(name) ? `${name}!` : `'${name}'!`;
+  return SHEET_NAME_RE.test(name) && !/^[A-Za-z]{1,2}\d{1,5}$/.test(name) ? `${name}!` : `'${name}'!`;
 }
 
 const order = (a, b) => (a <= b ? [a, b] : [b, a]);
@@ -69,8 +69,8 @@ export function formatRef(anchor, focus = anchor, kind = "cell", sheetName = nul
 }
 
 // 1 'tırnaklı sayfa' · 2 sayfa · 3-4 tam sütun · 5-6 tam satır · 7-8 hücre / aralık
-const SCAN_RE = /(?:'([^']+)'!|([A-Za-zÇĞİÖŞÜçğıöşü_][\wÇĞİÖŞÜçğıöşü]*)!)?(?:(\$?[A-Za-z]{1,2}):(\$?[A-Za-z]{1,2})(?![\w(!])|(\$?\d{1,4}):(\$?\d{1,4})(?![\w(.!])|(\$?[A-Za-z]{1,2}\$?\d{1,4})(?::(\$?[A-Za-z]{1,2}\$?\d{1,4}))?(?![\w(!]))/g;
-const CELL_RE = /^\$?([A-Za-z]{1,2})\$?(\d{1,4})$/;
+const SCAN_RE = /(?:'([^']+)'!|([A-Za-zÇĞİÖŞÜçğıöşü_][\wÇĞİÖŞÜçğıöşü]*)!)?(?:(\$?[A-Za-z]{1,2}):(\$?[A-Za-z]{1,2})(?![\w(!])|(\$?\d{1,5}):(\$?\d{1,5})(?![\w(.!])|(\$?[A-Za-z]{1,2}\$?\d{1,5})(?::(\$?[A-Za-z]{1,2}\$?\d{1,5}))?(?![\w(!]))/g;
+const CELL_RE = /^\$?([A-Za-z]{1,2})\$?(\d{1,5})$/;
 const WORDISH = /[\wÇĞİÖŞÜçğıöşü$.'!]/;
 
 /**
@@ -355,7 +355,7 @@ const DESCRIPTIONS = {
 const describe = (f) => DESCRIPTIONS[f.en] || f.hint.split(" — ")[1] || f.hint;
 
 /** Önerilerde ve ipucunda kullanılan işlev bilgisi. */
-export const FUNCTION_INFO = FUNCTION_LIST.map((f) => ({ ...f, args: ARGS[f.en] || [], desc: describe(f) }));
+export const FUNCTION_INFO = FUNCTION_LIST.map((f) => ({ ...f, args: ARGS[f.en] || f.args || [], desc: describe(f) }));
 const BY_NAME = new Map();
 for (const f of FUNCTION_INFO) {
   BY_NAME.set(fold(f.en), f);

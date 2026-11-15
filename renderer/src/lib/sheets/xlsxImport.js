@@ -6,14 +6,18 @@
 //   • Formüller: Excel söz dizimi uygulamanınkine çevrilir (SUM → TOPLA,
 //     "," → ";", 2.5 → 2,5, TRUE → DOĞRU); paylaşılan formüller açılır,
 //     tam sütun başvuruları (A:A) aralığa dönüştürülür
-//   • Biçimler: kalın/italik/altı çizili, yazı ve dolgu rengi (tema renkleri
-//     dahil), yatay hizalama, sayı/para/yüzde/tarih/metin biçimi ve ondalık
-//   • Sütun genişlikleri ve dondurulmuş ilk satır
-// Birleştirilmiş hücreler, grafikler, koşullu biçim ve kenarlıklar aktarılmaz.
+//   • Biçimler: kalın/italik/altı çizili/üstü çizili, yazı tipi ve boyutu, yazı
+//     ve dolgu rengi (tema renkleri dahil), yatay/dikey hizalama, kaydırma,
+//     döndürme, girinti, kenarlıklar, sayı/para/yüzde/tarih/saat biçimleri
+//   • Birleştirilmiş hücreler, sütun genişlikleri, satır yükseklikleri, gizli
+//     satır/sütunlar, dondurulmuş bölmeler, otomatik süzgeç, koşullu
+//     biçimlendirme (temel kurallar, renk ölçeği, veri çubuğu), açılır liste
+// Grafikler, resimler ve makrolar aktarılmaz.
 import { FUNCTIONS, colName, parseAddr, parseLiteral, shiftFormula, tokenize } from "./sheetEngine";
-import { MAX_COLS, MAX_ROWS } from "./sheetOps";
+import { MAX_COLS, MAX_ROWS, sheetId } from "./sheetOps";
+import { parseRange, rangeText } from "./sheetModel";
 
-export const IMPORT_LIMITS = { sheets: 20, rows: MAX_ROWS, cols: MAX_COLS, cells: 30000, cellText: 4000 };
+export const IMPORT_LIMITS = { sheets: 20, rows: MAX_ROWS, cols: MAX_COLS, cells: 200000, cellText: 4000 };
 
 export class XlsxImportError extends Error {}
 
@@ -188,11 +192,19 @@ export function mapNumFmt(code) {
   const plain = first.replace(/"[^"]*"/g, "").replace(/\\./g, "").replace(/\[[^\]]*\]/g, "");
   const digits = (/\.(0+)/.exec(plain)?.[1] || "").length;
   if (first.trim() === "@") return { f: "text" };
-  if (/₺|TL|TRY|\$|€|£|\[\$/.test(code)) return { f: "money", d: digits };
+  if (/₺|TL|TRY|\$|€|£|\[\$/.test(code)) return /#,##0|#\.##0/.test(plain) || !/0/.test(plain) ? { f: "money", d: digits } : { f: "money", d: digits, ng: true };
   if (/%/.test(plain)) return { f: "percent", d: digits };
-  if (/[dmy]/i.test(plain) && !/[#0]/.test(plain)) return { f: "date" };
-  if (/[hs]/i.test(plain) && !/[#0]/.test(plain)) return { f: "date" };
+  if (/E[+-]0/i.test(plain)) return { f: "sci", d: digits };
+  const hasDate = /[dy]/i.test(plain) || /m{3,}/i.test(plain) || (/m/i.test(plain) && !/[hs]/i.test(plain));
+  const hasTime = /[hs]/i.test(plain);
+  if ((hasDate || hasTime) && !/[#0]/.test(plain.replace(/\.0+/g, ""))) {
+    if (hasDate && hasTime) return { f: "datetime" };
+    if (hasTime) return /s/i.test(plain) ? { f: "time", d: 1 } : { f: "time" };
+    if (/m{4}/i.test(plain)) return { f: "dateLong" };
+    return { f: "date" };
+  }
   if (/#,##0|#\.##0/.test(plain)) return { f: "number", d: digits };
+  if (/^0+(\.0+)?$/.test(plain.trim()) && digits) return { f: "number", d: digits, ng: true };
   if (/0/.test(plain)) return digits ? { d: digits } : {};
   return {};
 }
@@ -205,8 +217,9 @@ const EN_TO_TR = new Map(Object.entries(FUNCTIONS).map(([en, def]) => [en, def.t
 export function fromExcelFormula(formula, { maxRow = MAX_ROWS, unknown = null } = {}) {
   let src = String(formula).trim().replace(/^=/, "");
   src = src.replace(/_xlfn\.|_xlws\.|_xludf\./gi, "");
-  // Tam sütun (A:A, $B:$C) → A1:A1000; dizgeler korunur.
-  src = src.replace(/("(?:[^"]|"")*")|(^|[^A-Za-z0-9_$.])(\$?)([A-Za-z]{1,3})(?::)(\$?)([A-Za-z]{1,3})(?![A-Za-z0-9_(])/g,
+  // Tam sütun (A:A) başvuruları motor tarafından doğrudan desteklenir; yalnız
+  // üç harfli (AAA:AAA gibi) sütunlar sınırlı aralığa çevrilir.
+  src = src.replace(/("(?:[^"]|"")*")|(^|[^A-Za-z0-9_$.])(\$?)([A-Za-z]{3})(?::)(\$?)([A-Za-z]{3})(?![A-Za-z0-9_(])/g,
     (m, str, pre, a1, c1, a2, c2) => (str || `${pre}${a1}${c1}1:${a2}${c2}${maxRow}`));
   // Kesişim / dizi sabitleri gibi desteklenmeyen yapılar olduğu gibi bırakılır.
   if (/[{}]/.test(src.replace(/"(?:[^"]|"")*"/g, ""))) return `=${src}`;
@@ -291,17 +304,35 @@ export async function xlsxToWorkbook(buffer) {
   const stylesDoc = await readXml(zip, stylesRel?.target || "xl/styles.xml");
   const numFmts = { ...BUILTIN_FMT };
   for (const nf of all(stylesDoc, "numFmt")) numFmts[Number(attr(nf, "numFmtId"))] = attr(nf, "formatCode");
-  const fonts = kids(kid(stylesDoc?.documentElement, "fonts"), "font").map((f) => {
+  const fontNodes = kids(kid(stylesDoc?.documentElement, "fonts"), "font");
+  const baseFont = { size: Number(attr(kid(fontNodes[0], "sz"), "val")) || 11, name: attr(kid(fontNodes[0], "name"), "val") || "Calibri" };
+  const on = (n) => n && attr(n, "val") !== "0" && attr(n, "val") !== "false";
+  const fonts = fontNodes.map((f) => {
     const s = {};
-    const b = kid(f, "b");
-    const i = kid(f, "i");
+    if (on(kid(f, "b"))) s.b = true;
+    if (on(kid(f, "i"))) s.i = true;
     const u = kid(f, "u");
-    if (b && attr(b, "val") !== "0" && attr(b, "val") !== "false") s.b = true;
-    if (i && attr(i, "val") !== "0" && attr(i, "val") !== "false") s.i = true;
     if (u && attr(u, "val") !== "none") s.u = true;
+    if (on(kid(f, "strike"))) s.st = true;
     const c = colorOf(kid(f, "color"), theme);
     if (c && c !== "#000000") s.c = c;
+    // Varsayılan yazı boyutu (genelde 11) uygulamanın varsayılanına (10) eşlenir; farklar korunur.
+    const sz = Number(attr(kid(f, "sz"), "val"));
+    if (sz && Math.abs(sz - baseFont.size) > 0.01) s.fs = Math.round((10 * sz / baseFont.size) * 2) / 2;
+    const name = attr(kid(f, "name"), "val");
+    if (name && name !== baseFont.name) s.ff = name;
     return s;
+  });
+  const borderStyle = (st) => (st === "medium" || st === "mediumDashed" || st === "mediumDashDot" ? "medium" : st === "thick" ? "thick" : st === "double" ? "double" : /dash/i.test(st || "") ? "dashed" : st === "dotted" || st === "hair" ? "dotted" : "thin");
+  const borders = kids(kid(stylesDoc?.documentElement, "borders"), "border").map((b) => {
+    const out = {};
+    for (const [tag, k] of [["left", "l"], ["right", "r"], ["top", "t"], ["bottom", "b"]]) {
+      const n = kid(b, tag);
+      const st = attr(n, "style");
+      if (!st || st === "none") continue;
+      out[k] = { s: borderStyle(st), c: colorOf(kid(n, "color"), theme) || "#000000" };
+    }
+    return Object.keys(out).length ? out : null;
   });
   const fills = kids(kid(stylesDoc?.documentElement, "fills"), "fill").map((f) => {
     const p = kid(f, "patternFill");
@@ -312,12 +343,39 @@ export async function xlsxToWorkbook(buffer) {
     const s = { ...(fonts[Number(attr(xf, "fontId")) || 0] || {}) };
     const bg = fills[Number(attr(xf, "fillId")) || 0];
     if (bg && bg !== "#ffffff") s.bg = bg;
-    const al = attr(kid(xf, "alignment"), "horizontal");
+    const alignNode = kid(xf, "alignment");
+    const al = attr(alignNode, "horizontal");
     if (al === "left" || al === "center" || al === "right") s.al = al;
     else if (al === "centerContinuous") s.al = "center";
+    const va = attr(alignNode, "vertical");
+    if (va === "top") s.va = "top";
+    else if (va === "center") s.va = "middle";
+    if (attr(alignNode, "wrapText") === "1" || attr(alignNode, "wrapText") === "true") s.wr = true;
+    const rot = Number(attr(alignNode, "textRotation"));
+    if (rot === 255) s.rot = 90;
+    else if (rot > 0 && rot <= 90) s.rot = rot;
+    else if (rot > 90 && rot <= 180) s.rot = -(rot - 90);
+    const ind = Number(attr(alignNode, "indent"));
+    if (ind > 0) s.ind = Math.min(15, ind);
+    const bd = borders[Number(attr(xf, "borderId")) || 0];
+    if (bd) s.bd = bd;
     const fmt = mapNumFmt(numFmts[Number(attr(xf, "numFmtId")) || 0]);
     if (fmt.f) s.f = fmt.f;
-    if (fmt.d != null && fmt.d !== (fmt.f === "money" || fmt.f === "number" ? 2 : 0)) s.d = fmt.d;
+    if (fmt.d != null && fmt.d !== (fmt.f === "money" || fmt.f === "number" || fmt.f === "sci" ? 2 : 0)) s.d = fmt.d;
+    if (fmt.ng) s.ng = true;
+    return s;
+  });
+
+  const dxfs = kids(kid(stylesDoc?.documentElement, "dxfs"), "dxf").map((d) => {
+    const s = {};
+    const f = kid(d, "font");
+    if (on(kid(f, "b"))) s.b = true;
+    if (on(kid(f, "i"))) s.i = true;
+    const c = colorOf(kid(f, "color"), theme);
+    if (c) s.c = c;
+    const p = kid(kid(d, "fill"), "patternFill");
+    const bg = colorOf(kid(p, "bgColor"), theme) || colorOf(kid(p, "fgColor"), theme);
+    if (bg) s.bg = bg;
     return s;
   });
 
@@ -331,7 +389,6 @@ export async function xlsxToWorkbook(buffer) {
   let truncatedArea = false;
   let unsupported = 0;
   const unknownFns = new Set();
-  let merged = 0;
 
   for (const node of sheetNodes.slice(0, IMPORT_LIMITS.sheets)) {
     const original = attr(node, "name") || "";
@@ -408,26 +465,91 @@ export async function xlsxToWorkbook(buffer) {
     }
 
     const colW = {};
+    const hiddenCols = [];
     for (const col of kids(kid(root, "cols"), "col")) {
       const min = Number(attr(col, "min"));
       const max = Math.min(Number(attr(col, "max")), IMPORT_LIMITS.cols);
-      const width = Number(attr(col, "width"));
-      if (!width || attr(col, "hidden") === "1") continue;
-      const px = Math.round(Math.min(600, Math.max(30, width * 7 + 5)));
       if (max - min > 60) continue; // "tüm sütunlar" tanımları atlanır
+      if (attr(col, "hidden") === "1" || attr(col, "hidden") === "true") { for (let i = min; i <= max; i += 1) hiddenCols.push(i - 1); continue; }
+      const width = Number(attr(col, "width"));
+      if (!width) continue;
+      const px = Math.round(Math.min(1200, Math.max(8, width * 7 + 5)));
       for (let i = min; i <= max; i += 1) if (Math.abs(px - 104) > 6) colW[colName(i - 1)] = px;
     }
+    // Satır yükseklikleri ve gizli satırlar
+    const rowH = {};
+    const hiddenRows = [];
+    for (const row of kids(kid(root, "sheetData"), "row")) {
+      const r = Number(attr(row, "r"));
+      if (!r || r > IMPORT_LIMITS.rows) continue;
+      if (attr(row, "hidden") === "1" || attr(row, "hidden") === "true") hiddenRows.push(r - 1);
+      const ht = Number(attr(row, "ht"));
+      if (ht && (attr(row, "customHeight") === "1" || attr(row, "customHeight") === "true")) {
+        const px = Math.round(Math.min(800, Math.max(4, (ht * 4) / 3)));
+        if (Math.abs(px - 20) > 1) rowH[r] = px;
+      }
+      maxRow = Math.max(maxRow, r - 1);
+    }
     const pane = all(root, "pane")[0];
-    const freeze = Boolean(pane && /frozen/.test(attr(pane, "state") || "") && Number(attr(pane, "ySplit")) >= 1);
-    merged += all(root, "mergeCell").length;
+    const frozenPane = pane && /frozen/.test(attr(pane, "state") || "");
+    const frozen = frozenPane ? { r: Math.max(0, Math.round(Number(attr(pane, "ySplit")) || 0)), c: Math.max(0, Math.round(Number(attr(pane, "xSplit")) || 0)) } : null;
+    const merges = all(root, "mergeCell").map((m) => parseRange(attr(m, "ref"))).filter((m) => m && m.r2 < IMPORT_LIMITS.rows && m.c2 < IMPORT_LIMITS.cols).map(rangeText);
+    for (const m of merges) { const rect = parseRange(m); maxRow = Math.max(maxRow, rect.r2); maxCol = Math.max(maxCol, rect.c2); }
+    const view = all(root, "sheetView")[0];
+    const noGrid = attr(view, "showGridLines") === "0" || attr(view, "showGridLines") === "false";
+    const tab = colorOf(all(root, "tabColor")[0], theme);
+    const af = parseRange(attr(all(root, "autoFilter")[0], "ref"));
+    // Koşullu biçimlendirme
+    const cf = [];
+    const OPS = { greaterThan: "gt", lessThan: "lt", greaterThanOrEqual: "ge", lessThanOrEqual: "le", between: "between", equal: "eq", notEqual: "neq" };
+    const unq = (t) => { const v = String(t ?? "").trim(); return /^".*"$/.test(v) ? v.slice(1, -1).replace(/""/g, '"') : v.replace(".", ","); };
+    for (const node of kids(root, "conditionalFormatting")) {
+      const ref = (attr(node, "sqref") || "").split(/\s+/)[0];
+      if (!parseRange(ref)) continue;
+      for (const rule of kids(node, "cfRule")) {
+        const type = attr(rule, "type");
+        const style = dxfs[Number(attr(rule, "dxfId"))] || {};
+        const formulas = kids(rule, "formula").map(textOf);
+        const id = `x${cf.length + 1}`;
+        if (type === "cellIs" && OPS[attr(rule, "operator")]) cf.push({ id, ref, type: OPS[attr(rule, "operator")], a: unq(formulas[0]), ...(formulas[1] != null ? { b: unq(formulas[1]) } : {}), style });
+        else if (type === "containsText" || type === "notContainsText" || type === "beginsWith" || type === "endsWith") cf.push({ id, ref, type: { containsText: "contains", notContainsText: "notContains", beginsWith: "begins", endsWith: "ends" }[type], a: attr(rule, "text") || "", style });
+        else if (type === "duplicateValues" || type === "uniqueValues") cf.push({ id, ref, type: type === "duplicateValues" ? "dup" : "unique", style });
+        else if (type === "containsBlanks" || type === "notContainsBlanks") cf.push({ id, ref, type: type === "containsBlanks" ? "blank" : "notBlank", style });
+        else if (type === "top10") cf.push({ id, ref, type: attr(rule, "bottom") === "1" ? "bottom" : "top", a: attr(rule, "rank") || "10", style });
+        else if (type === "aboveAverage") cf.push({ id, ref, type: attr(rule, "aboveAverage") === "0" ? "belowAvg" : "aboveAvg", style });
+        else if (type === "colorScale") cf.push({ id, ref, type: "scale", colors: all(rule, "color").map((c) => colorOf(c, theme)).filter(Boolean) });
+        else if (type === "dataBar") cf.push({ id, ref, type: "bar", colors: [colorOf(all(rule, "color")[0], theme) || "#638ec6"] });
+      }
+    }
+    // Açılır liste doğrulaması
+    const dv = [];
+    for (const node of all(root, "dataValidation")) {
+      if (attr(node, "type") !== "list") continue;
+      const ref = (attr(node, "sqref") || "").split(/\s+/)[0];
+      if (!parseRange(ref)) continue;
+      const f1 = textOf(kid(node, "formula1")).trim();
+      const strict = attr(node, "showErrorMessage") === "1" && (attr(node, "errorStyle") || "stop") === "stop";
+      if (/^".*"$/.test(f1)) dv.push({ id: `v${dv.length + 1}`, ref, type: "list", list: f1.slice(1, -1).split(",").map((x) => x.trim()).filter(Boolean), strict });
+      else if (f1) dv.push({ id: `v${dv.length + 1}`, ref, type: "list", source: `=${f1}`, strict });
+    }
 
     sheets.push({
+      id: sheetId(),
       name,
       rows: Math.min(IMPORT_LIMITS.rows, Math.max(100, maxRow + 21)),
       cols: Math.min(IMPORT_LIMITS.cols, Math.max(26, maxCol + 1)),
       cells,
       colW,
-      ...(freeze ? { freeze: true } : {}),
+      ...(Object.keys(rowH).length ? { rowH } : {}),
+      ...(merges.length ? { merges } : {}),
+      ...(frozen && (frozen.r || frozen.c) ? { frozen, ...(frozen.r ? { freeze: true } : {}) } : {}),
+      ...(hiddenRows.length ? { hiddenRows } : {}),
+      ...(hiddenCols.length ? { hiddenCols } : {}),
+      ...(af ? { filter: { ref: rangeText(af), crit: {} } } : {}),
+      ...(cf.length ? { cf } : {}),
+      ...(dv.length ? { dv } : {}),
+      ...(noGrid ? { noGrid: true } : {}),
+      ...(tab ? { tab } : {}),
     });
   }
 
@@ -446,11 +568,10 @@ export async function xlsxToWorkbook(buffer) {
     }
   }
 
-  if (truncatedArea) warnings.push(`${IMPORT_LIMITS.rows} satır / ${IMPORT_LIMITS.cols} sütun (AZ) dışındaki hücreler alınmadı.`);
+  if (truncatedArea) warnings.push(`${IMPORT_LIMITS.rows} satır / ${IMPORT_LIMITS.cols} sütun (${colName(IMPORT_LIMITS.cols - 1)}) dışındaki hücreler alınmadı.`);
   if (truncatedCells) warnings.push(`Dolu hücre sınırı (${IMPORT_LIMITS.cells}) aşıldı; fazlası alınmadı.`);
   if (unknownFns.size) warnings.push(`Desteklenmeyen işlevler: ${[...unknownFns].slice(0, 8).join(", ")}${unknownFns.size > 8 ? "…" : ""}. Bu formüller korunur ama #AD? gösterir.`);
   else if (unsupported) warnings.push(`${unsupported} formül desteklenmeyen bir yapı (ör. dizi sabiti) içeriyor.`);
-  if (merged) warnings.push("Birleştirilmiş hücreler ayrı hücreler olarak aktarıldı.");
   return { book: { sheets }, warnings };
 }
 

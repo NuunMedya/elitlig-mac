@@ -24,7 +24,9 @@ test("formüller Excel söz dizimine çevrilir", () => {
   expect(toExcelFormula("=EĞER(B2>=300; \"Tam\"; \"Eksik\")")).toBe('IF(B2>=300,"Tam","Eksik")');
   expect(toExcelFormula("=ETOPLA(B2:B9;\"Ödendi\";C2:C9)+BAĞ_DEĞ_SAY($A$1:A9)")).toBe('SUMIF(B2:B9,"Ödendi",C2:C9)+COUNT($A$1:A9)');
   expect(toExcelFormula("='Ekim Ayı'!B2*2")).toBe("'Ekim Ayı'!B2*2");
-  expect(toExcelFormula("=BİRLEŞTİR(A1;\" \";B1)&YANLIŞ")).toBe('_xlfn.CONCAT(A1," ",B1)&FALSE');
+  expect(toExcelFormula("=BİRLEŞTİR(A1;\" \";B1)&YANLIŞ")).toBe('CONCATENATE(A1," ",B1)&FALSE');
+  expect(toExcelFormula("=ARALIKBİRLEŞTİR(A1:C1)")).toBe("_xlfn.CONCAT(A1:C1)");
+  expect(toExcelFormula("=ÇAPRAZARA(A1;B:B;C:C)")).toBe("_xlfn.XLOOKUP(A1,B:B,C:C)");
   expect(toExcelFormula("=A1*15%")).toBe("A1*15%");
   expect(toExcelFormula("=#BAŞV!+A1")).toBeNull();
   expect(toExcelFormula("=Sheet_2!A1", names)).toBe("Sheet_2!A1");
