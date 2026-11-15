@@ -14,14 +14,36 @@
 //     yenileme hızı kare aralığını tam bölmüyorsa (75 / 144 Hz, 25 fps) hızı DÜŞÜRÜR
 //     (ör. 144 Hz'de 60 fps → 48 fps, 75 Hz'de 30 fps → 25 fps). Biriken son tarih
 //     (deadline) kullanılır: ortalama hız tam hedefte kalır.
-//  3) İşçi zamanlayıcısı: tek uzun setTimeout (33 ms) Windows'ta düşük çözünürlüklü
-//     zamanlayıcıya (≈15,6 ms adım) düşebilir → 31 / 47 ms'lik düzensiz tikler. Uyku kısa
-//     dilimlerle yapılır (en çok SLEEP_SLICE_MS): tik ±1 ms'de kalır.
+//  3) İşçi zamanlayıcısı: Windows'ta 32 ms ve üstü bekleme düşük çözünürlüklü zamanlayıcıya
+//     (≈15,6 ms adım) düşebilir → 31 / 47 ms'lik düzensiz tikler. 2.25.0'daki 4 ms'lik dilimler
+//     (kare başına ~8 uyanma, saniyede ~250) gereksiz yük getiriyordu; 2.25.2: bekleme 30 ms'den
+//     kısaysa TEK zamanlayıcı (yüksek çözünürlüklü), uzunsa önce kaba bir uyku (son tarihten
+//     ≥ 16 ms önce biter, düşük çözünürlükte de geç kalmaz), sonra tek kısa bekleme: kare başına
+//     1–2 uyanma.
+//  4) Kamera kareleri: Chromium bir kamera izinden aynı anda AÇIK tutulabilecek VideoFrame
+//     sayısını sınırlar (ölçüm: 2 kare açık tutulunca kamera DURUR — kare gelmez). Titreşim
+//     tamponu bu yüzden VideoFrame değil kopya (ImageBitmap) tutar; VideoFrame hemen kapatılır
+//     (lib: çizim işçisi). 2.25.0–2.25.1'de kuyruk 2–3 VideoFrame tutuyordu: kaynaklar 30 yerine
+//     ~12 fps geliyordu (asıl takılma).
+//  5) Ekranlar (önizleme / Program aynası) en çok 30 fps; ana iş parçacığı zorlanırsa
+//     createMonitorGovernor kademeli düşürür (30 → 20 → 15 → 10), rahatlayınca geri çıkar.
+//     Yayın çıkışı (işçi + kodlayıcı) bundan etkilenmez.
 
-/** İşçi uykusunun en uzun dilimi (ms). */
-export const SLEEP_SLICE_MS = 4;
-/** Bir sonraki uyanmaya kadar beklenecek süre (ms): kısa dilimler (düşük çözünürlüklü zamanlayıcıdan kaçınır). */
-export const sleepSlice = (remainingMs) => Math.max(0, Math.min(SLEEP_SLICE_MS, remainingMs));
+/** Tek zamanlayıcıyla beklenebilecek en uzun süre (ms; Windows yüksek çözünürlük sınırı 32 ms'nin altı). */
+export const PRECISE_SLEEP_MS = 30;
+/** Kaba uykunun son tarihe bıraktığı pay (ms; düşük çözünürlüklü zamanlayıcının bir adımı). */
+export const COARSE_MARGIN_MS = 16;
+/**
+ * Bir sonraki uyanmaya kadar beklenecek süre (ms). remaining ≤ 30 ms → tamamı (tek zamanlayıcı);
+ * daha uzunsa remaining − 16 ms (kaba uyku; ardından bir kısa bekleme daha). Kare başına 1–2 uyanma.
+ */
+export const nextSleepMs = (remainingMs) => {
+  const r = Number(remainingMs) || 0;
+  if (r <= 0) return 0;
+  return r <= PRECISE_SLEEP_MS ? r : r - COARSE_MARGIN_MS;
+};
+/** Eski ad (2.25.0–2.25.1 dilimli uyku); artık nextSleepMs. */
+export const sleepSlice = nextSleepMs;
 
 /**
  * Zaman damgası → yerel saat eşlemesi (kaynak başına). observe(tsMs, arrivalMs) her karede;
@@ -127,8 +149,62 @@ export function createFrameGate(fps, { slackMs = 4 } = {}) {
   };
 }
 
-/** Ekranlarda (önizleme, Program aynası) gösterim hızı: proje hızı, en çok 60 fps. */
-export const monitorFps = (fps) => Math.max(1, Math.min(60, Math.round(Number(fps) || 30)));
+/** Ekranlarda (önizleme, Program aynası) en yüksek gösterim hızı (fps). */
+export const MONITOR_MAX_FPS = 30;
+/** Ekranlarda gösterim hızı: proje hızı, en çok 30 fps (60 fps projede 30: yük yarıya iner). */
+export const monitorFps = (fps, cap = MONITOR_MAX_FPS) => Math.max(1, Math.min(cap, Math.round(Number(fps) || 30)));
+
+/** Kademeler (en yüksekten): proje hızı (≤ 30) → 20 → 15 → 10. */
+export function monitorSteps(fps) {
+  const top = monitorFps(fps);
+  return [top, 20, 15, 10].filter((v, i, a) => v <= top && a.indexOf(v) === i);
+}
+
+/**
+ * Ekran hızı yöneticisi (önizleme + Program aynası): saniyede bir ana iş parçacığı yükü
+ * verilir, ekran fps'i kademeli düşer / çıkar. Yayın çıkışı etkilenmez.
+ *   sample({ busyPct, blockingMs, longMaxMs, workerLate, workerFps }) → { fps, changed, reason }
+ * Aşırı yük: busyPct ≥ 80 ya da blockingMs ≥ 150 (saniyede uzun görev engeli) ya da tek uzun
+ * görev ≥ 200 ms ya da yayın çizimi geride (işçi fps hedefin %90'ının altında). 2 ardışık aşırı
+ * saniye → bir kademe aşağı (en az 3 sn arayla). 15 ardışık rahat saniye (busyPct < 55,
+ * blockingMs < 50, işçi yetişiyor) → bir kademe yukarı.
+ */
+export function createMonitorGovernor(fps, { downAfter = 2, upAfter = 15, cooldown = 3 } = {}) {
+  let steps = monitorSteps(fps);
+  let target = Number(fps) || 30;
+  let level = 0;
+  let hot = 0;
+  let calm = 0;
+  let sinceChange = cooldown;
+  let reason = "";
+  let downs = 0;
+  const state = () => ({ fps: steps[level], level, max: steps[0], reason, limited: level > 0, downs });
+  return {
+    sample({ busyPct = null, blockingMs = 0, longMaxMs = 0, workerLate = 0, workerFps = null } = {}) {
+      sinceChange += 1;
+      const why = [];
+      if (Number(busyPct) >= 80) why.push(`ana iş parçacığı %${Math.round(busyPct)}`);
+      if (Number(blockingMs) >= 150) why.push(`uzun görev ${Math.round(blockingMs)} ms/sn`);
+      if (Number(longMaxMs) >= 200) why.push(`tek görev ${Math.round(longMaxMs)} ms`);
+      // Geç tik (late) tek başına ölçüt DEĞİL: Windows'un düşük çözünürlüklü zamanlayıcısında tikler
+      // 15,6 ms adımlarla gecikebilir ama kare atlanmaz (seçim / damga ideal ızgarayla). Ölçüt kare hızı.
+      const wBehind = Number.isFinite(workerFps) && workerFps > 0 && workerFps < target * 0.9;
+      if (wBehind) why.push(`yayın çizimi geride (${workerFps} / ${Math.round(target)} fps${workerLate ? `, ${workerLate} geç tik` : ""})`);
+      const relaxed = !wBehind && (busyPct == null || Number(busyPct) < 55) && Number(blockingMs) < 50;
+      let changed = false;
+      if (why.length) { hot += 1; calm = 0; } else { hot = 0; calm = relaxed ? calm + 1 : 0; }
+      if (hot >= downAfter && level < steps.length - 1 && sinceChange >= cooldown) {
+        level += 1; hot = 0; sinceChange = 0; changed = true; downs += 1; reason = why.join(", ");
+      } else if (calm >= upAfter && level > 0) {
+        level -= 1; calm = 0; sinceChange = 0; changed = true; reason = level > 0 ? reason : "";
+      }
+      return { ...state(), changed };
+    },
+    setFps(f) { target = Number(f) || 30; steps = monitorSteps(f); level = Math.min(level, steps.length - 1); },
+    fps: () => steps[level],
+    state,
+  };
+}
 
 /**
  * Kare dizisi akıcılık ölçüsü (test / tanılama): ardışık kare sıra numaraları → çift (aynı kare

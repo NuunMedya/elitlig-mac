@@ -147,11 +147,14 @@ describe("kare zamanlaması", () => {
     expect(Math.round(run(75, 30))).toBe(30);
     expect(Math.round(run(60, 30))).toBe(30);
   });
-  it("uyku dilimi kısa (düşük çözünürlüklü zamanlayıcıdan kaçınır); ekran hızı proje hızı (≤ 60)", () => {
-    expect(sleepSlice(33)).toBeLessThanOrEqual(4);
+  it("2.25.2: işçi uykusu kare başına 1–2 uyanma (dilim yok); ekran hızı en çok 30", () => {
+    expect(sleepSlice(20)).toBe(20); // tek zamanlayıcı (< 32 ms: Windows'ta yüksek çözünürlük)
     expect(sleepSlice(-1)).toBe(0);
+    expect(sleepSlice(40)).toBe(24); // kaba uyku son tarihten 16 ms önce biter
     expect(monitorFps(30)).toBe(30);
-    expect(monitorFps(120)).toBe(60);
+    expect(monitorFps(60)).toBe(30);
+    expect(monitorFps(120)).toBe(30);
+    expect(monitorFps(25)).toBe(25);
   });
   it("damga geri giderse eşleme sıfırlanır", () => {
     const s = createTimestampSync();

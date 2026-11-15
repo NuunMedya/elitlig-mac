@@ -899,6 +899,14 @@ test("Chromium bayrakları: arka plan / örtülü pencere kısıtlaması kapalı
   assert.equal(switches.get("disable-features"), "Foo,CalculateNativeWinOcclusion");
 });
 
+test("Chromium bayrakları: Windows'ta güçlü ekran kartı istenir, Mac'te istenmez", () => {
+  const mk = () => { const sw = new Map(); return { sw, app: { commandLine: { appendSwitch: (k, v = "") => sw.set(k, v), getSwitchValue: (k) => sw.get(k) || "" } } }; };
+  const w = mk(); applyStudioSwitches(w.app, "win32");
+  assert.equal(w.sw.has("force_high_performance_gpu"), true);
+  const m = mk(); applyStudioSwitches(m.app, "darwin");
+  assert.equal(m.sw.has("force_high_performance_gpu"), false);
+});
+
 test("ayarlar: son kayıt klasörü hatırlanır", () => {
   const file = path.join(tmp("studio-set-"), "studio-settings.json");
   const s = createSettings(file);

@@ -9,7 +9,9 @@
 //    meşgul olursa olsun yayın fps'i düşmez. Program ekranı işçinin küçültülmüş aynasıdır.
 //    Kip tabanı (tekrar / VAR / röportaj / özet; React durumuna bağlı çizimler) ana iş
 //    parçacığında çizilir, VideoFrame olarak işçiye gider; grafik / rozet / geçiş / FTB ve
-//    kodlama yine işçide. Önizleme ana iş parçacığında proje hızında (≤ 60 fps, görünürken).
+//    kodlama yine işçide. Önizleme ana iş parçacığında, Program ekranı (ayna) rAF'ta; ikisi de
+//    en çok 30 fps ve ekran yöneticisiyle (framePacing.createMonitorGovernor) ana iş parçacığı
+//    zorlanınca 20 / 15 / 10 fps'e iner (yayın çıkışı etkilenmez; görünürken).
 //  • ANA İŞ PARÇACIĞI (eski yol / yedek): her şey burada, rAF + yedek setInterval.
 //    İşçi çökerse ya da kare vermezse oturum boyunca buna dönülür.
 //
@@ -25,12 +27,12 @@ import { STINGER_MS } from "../../lib/studio/stinger";
 import { progressAt } from "../../lib/studio/transitions";
 import { resolveScene } from "../../lib/studio/scenes";
 import { chooseCompositorEngine } from "../../lib/studio/renderBudget";
-import { createFrameGate, monitorFps } from "../../lib/studio/framePacing";
+import { createFrameGate, createMonitorGovernor } from "../../lib/studio/framePacing";
 import { drawScene } from "./draw";
 import { drawVar } from "./var/drawVar";
 import { MODE_TARGET, composeBase, composeTop, drawFtb, drawProgramFx, ftbLevel, needsMainBase, transitionTouchesMode } from "./compositor/composeProgram";
 import { createWorkerCompositor, softwareGpu, workerCompositorSupported } from "./compositor/workerHost";
-import { canvasLoop, startRenderLoadMonitor, trackDraw } from "./perf/renderLoad";
+import { canvasLoop, loadSnapshot, startRenderLoadMonitor, trackDraw } from "./perf/renderLoad";
 
 export { MODE_TARGET, ftbLevel, drawSlate } from "./compositor/composeProgram";
 
@@ -89,6 +91,16 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
   }, [program, fps, engine]);
 
   const frame = useRef({ last: 0, count: 0, statAt: 0, previewSkip: 0, drawMax: 0, drawSum: 0, stalls: 0, total: 0 });
+  // Ekran hızı yöneticisi (önizleme + Program aynası): saniyede bir ana iş parçacığı yüküyle beslenir.
+  const govRef = useRef(null);
+  if (!govRef.current) govRef.current = createMonitorGovernor(fps);
+  useEffect(() => { govRef.current.setFps(fps); }, [fps]);
+  /** Tanılama: ekran hızları + sınırlayıcı + ana iş parçacığı yükü (yayın sağlığı günlüğüne gider). */
+  const monitorDiag = (g, snap) => ({
+    pvwFps: g.fps, monitorMaxFps: g.max, limiter: g.limited ? `ekranlar ${g.fps} fps: ${g.reason}` : "yok",
+    mainBusy: snap?.busyPct ?? null, longMs: snap?.long?.blockingMsPerSec ?? null, longMaxMs: snap?.long?.maxMs ?? null,
+    topLoad: (snap?.loops || []).slice(0, 2).map((l) => `${l.name} ${l.msPerSec} ms/sn`).join(" · ") || null,
+  });
 
   /** Kip / VAR / tekrar ortamı (yalnız ana iş parçacığı). */
   const baseEnv = useCallback((now, W, H, tr) => {
@@ -161,15 +173,19 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
     }
     drawFtb(ctx, W, H, ftbRef.current, now);
     const f = frame.current;
-    // Önizleme her karede (≤ 30 fps), 60 fps'te iki karede bir (eskiden 15–20 fps: takılır görünüyordu).
-    f.previewSkip = (f.previewSkip + 1) % (fps > 40 ? 2 : 1);
+    // Önizleme ekran yöneticisinin hızında (≤ 30 fps; ana iş parçacığı zorlanırsa 20 / 15 / 10).
+    f.previewSkip = (f.previewSkip + 1) % Math.max(1, Math.round(fps / govRef.current.fps()));
     if (f.previewSkip === 0) drawPreview(now);
     const dt = performance.now() - t0;
     if (dt > f.drawMax) f.drawMax = dt;
     f.drawSum += dt;
     f.count += 1;
     if (now - f.statAt >= 1000) {
-      statsRef.current = { fps: Math.round((f.count * 1000) / (now - f.statAt || 1)), drawMs: Math.round(f.drawMax * 10) / 10, avgMs: Math.round((f.drawSum / Math.max(1, f.count)) * 10) / 10, stalls: f.stalls, totalStalls: f.total, engine: "main" };
+      const mfps = Math.round((f.count * 1000) / (now - f.statAt || 1));
+      let snap = null;
+      try { snap = loadSnapshot(); } catch { snap = null; }
+      const g = govRef.current.sample({ busyPct: snap?.busyPct, blockingMs: snap?.long?.blockingMsPerSec, longMaxMs: snap?.long?.maxMs, workerFps: mfps });
+      statsRef.current = { fps: mfps, drawMs: Math.round(f.drawMax * 10) / 10, avgMs: Math.round((f.drawSum / Math.max(1, f.count)) * 10) / 10, stalls: f.stalls, totalStalls: f.total, engine: "main", ...monitorDiag(g, snap) };
       f.count = 0; f.statAt = now; f.drawMax = 0; f.drawSum = 0; f.stalls = 0;
     }
   }, [baseEnv, brandRef, configRef, drawPreview, endStinger, fps, overlayRef, pgmFxRef, program]);
@@ -291,11 +307,26 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
     };
     raf = requestAnimationFrame(loop);
     const baseTimer = setInterval(() => { const now = performance.now(); if (fallbackDue(base.last, now, fps)) { baseGate.mark(now); runBase(now); } }, Math.max(8, Math.floor(interval / 2)));
-    // Önizleme ekranı proje hızında (≤ 60 fps; eskiden 20 fps): küçük resim döngüleri kalktı.
-    const stopPreview = canvasLoop("Önizleme ekranı", { fps: monitorFps(fps), el: preview }, drawPreview);
+    // Önizleme ekranı ≤ 30 fps (2.25.0–2.25.1: proje hızında, 60'a dek — ana iş parçacığı yükü
+    // ikiye katlanıyordu); ekran yöneticisi ana iş parçacığı zorlanınca kademeli düşürür.
+    const gov = govRef.current;
+    const stopPreview = canvasLoop("Önizleme ekranı", { fps: gov.fps(), el: preview }, drawPreview);
+    host.setMirrorFps(gov.fps());
+    let lateSum = 0;
     const statTimer = setInterval(() => {
       const s = host.stats();
-      statsRef.current = { fps: s.fps || 0, drawMs: s.drawMs || 0, avgMs: s.avgMs || 0, stalls: s.late || 0, totalStalls: (statsRef.current.totalStalls || 0) + (s.late || 0), engine: "worker", unique: s.unique, mainBase: s.mainBase, basesIn: s.basesIn, baseMs: s.baseMs, gfxMs: s.gfxMs, encSubmitMs: s.encSubmitMs, srcFps: s.srcFps, sources: s.sources, mirrorAgeMs: s.mirrorAgeMs };
+      let snap = null;
+      try { snap = loadSnapshot(); } catch { snap = null; }
+      // İşçi istatistiği gelmediyse (ilk saniye) yük örneği yine de alınır; fps yoksa ölçüt dışı.
+      const g = gov.sample({ busyPct: snap?.busyPct, blockingMs: snap?.long?.blockingMsPerSec, longMaxMs: snap?.long?.maxMs, workerLate: s.late, workerFps: s.ageMs != null && s.ageMs < 2500 ? s.fps : null });
+      if (g.changed) { stopPreview.setFps(g.fps); host.setMirrorFps(g.fps); }
+      lateSum += s.late || 0;
+      statsRef.current = {
+        fps: s.fps || 0, drawMs: s.drawMs || 0, avgMs: s.avgMs || 0, stalls: s.late || 0, totalStalls: lateSum, engine: "worker", unique: s.unique, mainBase: s.mainBase, basesIn: s.basesIn, baseMs: s.baseMs, gfxMs: s.gfxMs, encSubmitMs: s.encSubmitMs, srcFps: s.srcFps, sources: s.sources, mirrorAgeMs: s.mirrorAgeMs,
+        // 2.25.2 tanılama: işçi uyanma / sn, kare kopyası, açık kamera karesi, ayna hızı, ekran sınırlayıcısı.
+        lateMaxMs: s.lateMaxMs, wakes: s.wakes, copyMs: s.copyMs, copyMaxMs: s.copyMaxMs, openFrames: s.openFrames, queueMax: s.queueMax, mirrorFps: s.mirrorFps, copyFrames: s.copyFrames,
+        ...monitorDiag(g, snap),
+      };
     }, 1000);
     return () => {
       alive = false;

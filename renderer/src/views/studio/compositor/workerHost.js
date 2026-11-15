@@ -339,6 +339,8 @@ export function createWorkerCompositor({ width, height, fps, mirrorCanvas, onFai
     stats: () => ({ ...(stats.draw || {}), enc: stats.enc, ageMs: stats.at ? Math.round(performance.now() - stats.at) : null, mirrorAgeMs: lastMirrorAt ? Math.round(performance.now() - lastMirrorAt) : null, mirrors: mirrorN, feeds: feeds.size }),
     alive: () => !dead,
     resize(W, H, f) { post({ type: "size", width: W, height: H, fps: f, mirror: initMirror(W, H) }); },
+    /** Program ekranı (ayna) hızı: ekran yöneticisi düşürür / yükseltir (yayın çıkışı etkilenmez). */
+    setMirrorFps(f) { post({ type: "mirrorFps", fps: Math.max(1, Math.min(monitorFps(fps), Math.round(Number(f) || 30))) }); },
     stop() {
       if (dead) return;
       for (const id of [...feeds.keys()]) { try { feeds.get(id)?.stop?.(); } catch { /* yoksay */ } }

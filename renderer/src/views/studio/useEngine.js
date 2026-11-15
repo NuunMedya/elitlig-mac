@@ -34,6 +34,24 @@ export const STALL_MS = 4000;
 const RESTART_GAP_MS = 10000;
 const STATS_REPORT_MS = 5000;
 
+/**
+ * Tanılama günlüğü ("yayın sağlığı" › client): çizim / ekran yükü — sahadaki takılmanın kaynağı
+ * (kamera karesi gelmiyor mu, işçi geride mi, ana iş parçacığı mı, ekranlar kısıldı mı).
+ */
+export function drawPerf(d) {
+  if (!d) return {};
+  const num = (v) => (Number.isFinite(Number(v)) && v !== null ? Number(v) : null);
+  return {
+    perf: Object.fromEntries(Object.entries({
+      unique: num(d.unique), srcFps: num(d.srcFps), avgMs: num(d.avgMs), lateMaxMs: num(d.lateMaxMs), wakes: num(d.wakes), copyMs: num(d.copyMs),
+      openFrames: num(d.openFrames), mirrorFps: num(d.mirrorFps), pvwFps: num(d.pvwFps), mainBusy: num(d.mainBusy), longMs: num(d.longMs), longMaxMs: num(d.longMaxMs),
+    }).filter(([, v]) => v !== null)),
+    engineKind: d.engine || null,
+    limiter: d.limiter ? String(d.limiter).slice(0, 120) : null,
+    topLoad: d.topLoad ? String(d.topLoad).slice(0, 120) : null,
+  };
+}
+
 export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subscribeFrames = null, getRemoteEncoder = null, getDrawStats = null, onError }) {
   const [status, setStatus] = useState({ state: "idle" });
   const [since, setSince] = useState(null);
@@ -330,7 +348,7 @@ export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subs
     const r = setInterval(() => {
       const st = getEncodeStats();
       const d = getDrawStats?.() || null;
-      if (st) { try { studio()?.reportStats?.({ ...st, ...(d ? { drawFps: d.fps, drawMs: d.drawMs, stalls: d.totalStalls } : {}) }); } catch { /* yoksay */ } }
+      if (st) { try { studio()?.reportStats?.({ ...st, ...(d ? { drawFps: d.fps, drawMs: d.drawMs, stalls: d.totalStalls, ...drawPerf(d) } : {}) }); } catch { /* yoksay */ } }
     }, STATS_REPORT_MS);
     return () => { clearInterval(t); clearInterval(r); };
   }, [encodingNow, requestRestart, getEncodeStats, getDrawStats]);

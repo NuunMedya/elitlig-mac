@@ -92,10 +92,17 @@ function replayAsClip(replay) {
  */
 const STUDIO_SWITCHES = Object.freeze(["disable-renderer-backgrounding", "disable-background-timer-throttling", "disable-backgrounding-occluded-windows"]);
 const STUDIO_DISABLED_FEATURES = Object.freeze(["CalculateNativeWinOcclusion"]);
-function applyStudioSwitches(app) {
+/**
+ * Windows: iki ekran kartlı dizüstülerde (Intel + NVIDIA / AMD) Chromium çoğu zaman tümleşik
+ * kartı seçer — tuval / VideoFrame kopyaları ve kodlama zayıf karta biner. Yayın uygulaması
+ * olduğu için güçlü kart istenir (tek kartlı makinede etkisiz).
+ */
+const STUDIO_WIN_SWITCHES = Object.freeze(["force_high_performance_gpu"]);
+function applyStudioSwitches(app, platform = process.platform) {
   const cl = app?.commandLine;
   if (!cl) return;
   for (const sw of STUDIO_SWITCHES) cl.appendSwitch(sw);
+  if (platform === "win32") for (const sw of STUDIO_WIN_SWITCHES) cl.appendSwitch(sw);
   const existing = typeof cl.getSwitchValue === "function" ? cl.getSwitchValue("disable-features") : "";
   const features = [...new Set([...String(existing || "").split(",").filter(Boolean), ...STUDIO_DISABLED_FEATURES])];
   cl.appendSwitch("disable-features", features.join(","));
@@ -717,4 +724,4 @@ function registerStudio({
   };
 }
 
-module.exports = { registerStudio, applyStudioSwitches, STUDIO_SWITCHES, STUDIO_SCHEME };
+module.exports = { registerStudio, applyStudioSwitches, STUDIO_SWITCHES, STUDIO_WIN_SWITCHES, STUDIO_SCHEME };
