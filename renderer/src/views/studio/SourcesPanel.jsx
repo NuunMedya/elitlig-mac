@@ -1,6 +1,6 @@
 // Yayın Stüdyosu · KAYNAK KİTAPLIĞI ve kaynak penceresi.
 //
-//   SourceLibrary  KAYNAKLAR sekmesi (kartlar): sabit küçük resim (tür + ad), durum, kaç sahnede
+//   SourceLibrary  KAYNAKLAR sekmesi (kartlar): fotoğraf küçük resim (30 sn'de bir tek kare), durum, kaç sahnede
 //                  kullanıldığı, ayarlar, yeniden bağlan, sahneye ekle, "sahne oluştur", sil.
 //                  Bir kaynak birçok sahnede katman olabilir (akış bir kez açılır).
 //                  Kaynak eklemek sahne oluşturmaz.
@@ -22,7 +22,7 @@ import { FONTS, SOURCE_GROUPS, SOURCE_TYPES, persistentUrl, sourceDefaults, sour
 import { AV_KINDS, isLiveKind } from "../../lib/studio/liveSources";
 import { hotkeyOwner } from "../../lib/studio/hotkeys";
 import { ConnectGuide, GUIDE_KIND, HotkeyField, LiveConnect, LiveFields, SyncFields } from "./live/LiveSourceFields";
-import { paintSchematic } from "../../lib/studio/sceneSchematic";
+import { paintSourcePlaceholder, paintSourceStill, useSnapshotCanvas } from "./useSnapshot";
 import { useStable } from "./useStable";
 import { compactFx, fxActive, migrateSourceFx, resolveFx } from "../../lib/studio/videoFx";
 import FxEditor from "./fx/FxEditor";
@@ -38,20 +38,19 @@ const DELAY_KINDS = new Set(["camera", "screen", "window", "region", "phone", "i
 export const CONNECT_KINDS = new Set(["phone", "ingest"]);
 
 /**
- * Kaynağın SABİT küçük resmi: tür rengi + kaynak adı (canlı video çizilmez, döngü yok;
- * kaynak değişince bir kez boyanır). Video yalnız önizleme / program ekranlarında döner.
+ * Kaynağın küçük resmi: TEK KARE FOTOĞRAF (video değil). 30 sn'de bir, yalnız ekranda görünürken
+ * ve sekme açıkken yeniden alınır (ortak kademeli zamanlayıcı; rAF / setInterval yok); kaynak
+ * değişince hemen yenilenir. Kare yoksa tür rengi + ad kutusu kalır.
  */
 export function SourceThumb({ source, runtimeRef, width = 96 }) {
-  void runtimeRef;
-  const ref = useRef(null);
-  const key = `${source?.id}|${source?.name}|${source?.kind}|${source?.color || ""}`;
-  useEffect(() => {
-    const c = ref.current;
-    const ctx = c?.getContext?.("2d");
-    if (!ctx || !source) return;
-    const scene = { layers: [{ visible: true, sourceId: source.id, x: 0, y: 0, w: 1, h: 1 }] };
-    try { paintSchematic(ctx, scene, [source], c.width, c.height); } catch { /* yoksay */ }
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const srcRef = useRef(source);
+  srcRef.current = source;
+  const key = `${source?.id}|${source?.name}|${source?.kind}|${source?.color || ""}|${source?.url || source?.fileName || source?.deviceId || ""}|${runtimeRef?.current?.get?.(source?.id)?.status || ""}`;
+  const ref = useSnapshotCanvas(
+    (c) => paintSourceStill(c, srcRef.current, runtimeRef?.current),
+    key,
+    { placeholder: (c) => paintSourcePlaceholder(c, srcRef.current) },
+  );
   return <canvas ref={ref} className="st-thumb" width={width} height={Math.round((width * 9) / 16)} />;
 }
 

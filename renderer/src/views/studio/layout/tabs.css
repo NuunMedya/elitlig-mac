@@ -91,3 +91,9 @@
 .lw-tsd .st-switch { width: 36px !important; height: 20px !important; min-width: 36px; margin: 0; background: var(--surface-3) !important; box-shadow: inset 0 0 0 1px var(--border-strong) !important; }
 .lw-tsd .st-switch:checked { background: var(--acc) !important; box-shadow: none !important; color: var(--acc-on); }
 .lw-tsd .st-switch::before { display: none; }
+
+/* Etkin sekme okunurluğu (bütün temalar, sol / sağ / üst): yazı ve simge etkin zeminle zıt. */
+.dockview-theme-studio [class*="lw-ts-"] .dv-tab.dv-active-tab .lw-tab { color: var(--lw-tab-active-on, var(--text)); }
+.dockview-theme-studio [class*="lw-ts-"] .dv-tab.dv-active-tab .lw-tab .ic { color: var(--lw-tab-active-on, var(--lw-tab-accent, var(--acc-text))); }
+.lw-tsp__tab.is-on { color: var(--lw-tab-active-on, var(--text)); }
+.lw-tsp__tab.is-on .ic { color: var(--lw-tab-active-on, var(--lw-tab-accent, var(--acc-text))); }

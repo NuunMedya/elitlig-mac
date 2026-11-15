@@ -31,6 +31,9 @@ import { MUZIK_WIDGETS } from "./wMuzik";
 import { MUZIK_PRO_WIDGETS } from "./wMuzikPro";
 import { PANEL_WIDGETS } from "./wPanels";
 import { PAKET_WIDGETS } from "./wPaket";
+import { SceneSnap, sceneDisplayFields, sceneDisplayOf } from "./sceneDisplay";
+import { withOptions } from "./wOptions";
+import { openPop } from "./wkit";
 import "./widgetsOps.css";
 import "./widgetsPro.css";
 
@@ -337,27 +340,38 @@ const ready = {
   },
 };
 
-function SceneTile({ ctx, item, big }) {
+function SceneTile({ ctx, item, big, togglePop }) {
   const S = ctx.sceneTile;
   const id = item.opts?.sceneId;
   const scene = ctx.scenes.find((s) => s.id === id);
-  const ref = useRef(null);
-  const register = S.register;
-  const setRef = useCallback((el) => { register(id, el, ref.current); ref.current = el; }, [register, id]);
-  useEffect(() => () => { if (ref.current) register(id, null, ref.current); }, [register, id]);
-  useEffect(() => { if (ref.current) register(id, ref.current, ref.current); }, [register, id, big]);
+  const { display } = sceneDisplayOf(item.opts);
   if (!scene) return <Tile tone="plain" icon="layers" big={big} label="SAHNE" sub="silinmiş" disabled />;
   const onAir = S.programId === id;
   const inPvw = S.previewId === id && !onAir;
+  const tag = onAir ? <em className="is-air">YAYINDA</em> : inPvw ? <em className="is-pvw">ÖNİZLEME</em> : null;
+  const common = {
+    type: "button", onClick: () => S.onPreview(id), onDoubleClick: () => S.onProgram(id),
+    onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); openPop(item, togglePop, { mode: "options" }); },
+    title: `${scene.name} — tık: önizleme · çift tık: yayın · sağ tık: görünüm (liste / küçük resim)`,
+  };
+  if (display === "list") {
+    return (
+      <button {...common} className={`st-w is-scene is-name ${big ? "is-big" : ""} ${onAir ? "is-air" : ""} ${inPvw ? "is-pvw" : ""}`}>
+        <Icon name="layers" size={12} />
+        <span className="st-w__scenename">{scene.name}</span>
+        {tag}
+      </button>
+    );
+  }
   return (
-    <button type="button" className={`st-w is-scene ${big ? "is-big" : ""} ${onAir ? "is-air" : ""} ${inPvw ? "is-pvw" : ""}`} onClick={() => S.onPreview(id)} onDoubleClick={() => S.onProgram(id)} title={`${scene.name} — tık: önizleme · çift tık: yayın`}>
-      <canvas ref={setRef} width={big ? 320 : 160} height={big ? 180 : 90} />
-      <span className="st-w__scenebar">{onAir ? <em className="is-air">YAYINDA</em> : inPvw ? <em className="is-pvw">ÖNİZLEME</em> : null}<span>{scene.name}</span></span>
+    <button {...common} className={`st-w is-scene ${big ? "is-big" : ""} ${onAir ? "is-air" : ""} ${inPvw ? "is-pvw" : ""}`}>
+      <SceneSnap ctx={ctx} id={id} w={big ? 320 : 160} h={big ? 180 : 90} className="" />
+      <span className="st-w__scenebar">{tag}<span>{scene.name}</span></span>
     </button>
   );
 }
-// Katalog önizlemesinde çizilmez (şema kaydı aynı sahneyi şeritten çalmasın).
-const scene = { noPreview: true, render: (p) => <SceneTile {...p} /> };
+// Katalog önizlemesinde çizilmez. Görünüm: Liste (isim, varsayılan) · Küçük resim (30 sn'de bir kare).
+const scene = withOptions({ noPreview: true, popTitle: "Sahne düğmesi", render: (p) => <SceneTile {...p} /> }, sceneDisplayFields({ layout: false }));
 
 export const WIDGET_IMPL = {
   golive, mic, transition, lastScene, chapter, fullscreen, replay, moment, var: varW, event,

@@ -1,53 +1,48 @@
 // Yayın Stüdyosu · SAHNE düğmeleri: sahne ızgarası çeşitleri (ızgara · liste · şerit · büyük
 // küçük resim + tally), A/B veriyolu (PGM / PVW sıraları, KES / GEÇİŞ), otomatik kamera
 // dönüşü (her N sn), PiP aç / kapat, sahne başına katman aç / kapat, siyah / bekleme kartı,
-// programı dondur. Sahneler ctx.sceneTile (önizleme / yayın, sabit şema kaydı),
+// programı dondur. Sahneler ctx.sceneTile (önizleme / yayın, durağan kare: sceneDisplay),
 // katmanlar ctx.sceneOps (setLayerVisible), program durumu ctx.pgmFx (useCompositor).
-import React, { useCallback, useEffect, useRef } from "react";
+import React from "react";
 import { Icon } from "../../../components/ui";
 import { Head, Pill, Ring, Shell, openPop, useNow, usePress } from "./wkit";
 import { useLocal } from "./localStore";
 import { ROTATE_SECONDS, nextInRotation, pipLayers } from "./opsLogic";
 import { optMenu, withOptions } from "./wOptions";
+import { SceneNameList, SceneSnap, sceneDisplayFields, sceneDisplayOf } from "./sceneDisplay";
 
-/** Sahne şeması (sahne kutusu çizicisine kayıtlı tuval; canlı değil, değişince bir kez boyanır). */
-function Thumb({ ctx, id, w = 160, h = 90, preview }) {
-  const register = ctx.sceneTile?.register;
-  const ref = useRef(null);
-  const setRef = useCallback((el) => { if (preview || !register) return; register(id, el, ref.current); ref.current = el; }, [register, id, preview]);
-  useEffect(() => () => { if (ref.current && register && !preview) register(id, null, ref.current); }, [register, id, preview]);
-  if (preview) return <span className="ws-th is-ph" />;
-  return <canvas ref={setRef} className="ws-th" width={w} height={h} />;
-}
 const tallyOf = (S, id) => (S.programId === id ? "air" : S.previewId === id ? "pvw" : null);
 
 /* ═════════════════════════ SAHNE IZGARASI · ÇEŞİTLER ═════════════════════════ */
 
-const VIEWS = [["grid", "Izgara"], ["list", "Liste"], ["strip", "Şerit"], ["big", "Büyük + tally"]];
+const VIEWS = [["grid", "Izgara"], ["strip", "Şerit"], ["big", "Büyük + tally"]];
 function SceneGridPro({ ctx, item, w, h, togglePop, preview }) {
   const S = ctx.sceneTile;
   const scenes = ctx.scenes || [];
-  const view = item.opts?.view || (w === 1 ? "list" : h === 1 ? "strip" : "grid");
+  const { display, layout } = sceneDisplayOf(item.opts);
+  const view = display === "list" ? "list" : (VIEWS.some(([k]) => k === item.opts?.view) ? item.opts.view : h === 1 ? "strip" : "grid");
   const pick = item.opts?.ids?.length ? scenes.filter((s) => item.opts.ids.includes(s.id)) : scenes;
   const cols = view === "big" ? Math.max(1, Math.min(w, 2)) : view === "grid" ? (w >= 4 ? 4 : w >= 3 ? 3 : 2) : 1;
-  const max = view === "list" ? 12 : view === "strip" ? 12 : view === "big" ? cols * (h >= 2 ? 2 : 1) : cols * (h >= 2 ? 3 : 1);
+  const max = view === "list" ? 24 : view === "strip" ? 12 : view === "big" ? cols * (h >= 2 ? 2 : 1) : cols * (h >= 2 ? 3 : 1);
   const dbl = item.opts?.click === "program";
   const tap = (id) => (dbl ? S.onProgram(id) : S.onPreview(id));
   return (
     <Shell tone="plain" w={w} h={h} className={`ws-sg is-${view}`} {...optMenu(item, togglePop)}>
       {view !== "strip" && h >= 2 && <Head icon="layers" label="SAHNELER" right={<small className="wx-head__r">{dbl ? "tık: yayın" : "tık: önizleme · çift: yayın"}</small>} />}
-      <div className={`ws-sg__g is-c${cols}`}>
-        {pick.slice(0, max).map((s, i) => {
-          const t = tallyOf(S, s.id);
-          return (
-            <button key={s.id} type="button" className={`ws-sg__c ${t ? `is-${t}` : ""}`} onClick={() => tap(s.id)} onDoubleClick={() => S.onProgram(s.id)} title={`${s.name} — ${dbl ? "tık: yayın" : "tık: önizleme · çift tık: yayın"}`}>
-              {view !== "list" && <Thumb ctx={ctx} id={s.id} preview={preview} w={view === "big" ? 320 : 160} h={view === "big" ? 180 : 90} />}
-              <span className="ws-sg__n"><b>{i + 1}</b><span>{s.name}</span>{t && <em className={`is-${t}`}>{t === "air" ? "YAYINDA" : "ÖNİZLEME"}</em>}</span>
-            </button>
-          );
-        })}
-        {!pick.length && <span className="st-w__empty">Sahne yok.</span>}
-      </div>
+      {view === "list" ? <SceneNameList ctx={ctx} scenes={pick.slice(0, max)} layout={layout} onTap={tap} /> : (
+        <div className={`ws-sg__g is-c${cols}`}>
+          {pick.slice(0, max).map((s, i) => {
+            const t = tallyOf(S, s.id);
+            return (
+              <button key={s.id} type="button" className={`ws-sg__c ${t ? `is-${t}` : ""}`} onClick={() => tap(s.id)} onDoubleClick={() => S.onProgram(s.id)} title={`${s.name} — ${dbl ? "tık: yayın" : "tık: önizleme · çift tık: yayın"}`}>
+                {preview ? <span className="ws-th is-ph" /> : <SceneSnap ctx={ctx} id={s.id} w={view === "big" ? 320 : 160} h={view === "big" ? 180 : 90} />}
+                <span className="ws-sg__n"><b>{i + 1}</b><span>{s.name}</span>{t && <em className={`is-${t}`}>{t === "air" ? "YAYINDA" : "ÖNİZLEME"}</em>}</span>
+              </button>
+            );
+          })}
+          {!pick.length && <span className="st-w__empty">Sahne yok.</span>}
+        </div>
+      )}
     </Shell>
   );
 }
@@ -224,7 +219,8 @@ function FreezePgm({ ctx, item, w, h, togglePop }) {
 
 export const SAHNE_WIDGETS = {
   sceneGridPro: withOptions({ noPreview: false, render: (p) => <SceneGridPro {...p} /> }, [
-    { key: "view", label: "Görünüm", type: "select", def: null, choices: [[null, "Boyuta göre"], ...VIEWS] },
+    ...sceneDisplayFields(),
+    { key: "view", label: "Küçük resim düzeni", type: "select", def: null, choices: [[null, "Boyuta göre"], ...VIEWS], when: (v) => sceneDisplayOf(v).display === "thumb" },
     { key: "click", label: "Tek tık", type: "select", def: "preview", choices: [["preview", "Önizlemeye"], ["program", "Doğrudan yayına"]] },
     { key: "ids", label: "Gösterilecek sahneler (boş: hepsi)", type: "scenes", def: [] },
   ]),

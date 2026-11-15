@@ -155,3 +155,27 @@
 .scn-card.is-row.is-preview .scn-card__meta::before { content: "ÖNİZLEME · "; color: var(--scn-pvw); font-weight: 800; }
 .scn-card.is-add.is-row { flex-direction: row; padding: 8px; min-height: 0; }
 .scn-card.is-add.is-row .scn-add__ic { width: 24px; height: 24px; }
+
+/* ── 2.25.1: Sahneler sekmesi = alt alta İSİM listesi (küçük resim / şema yok) ── */
+.st-scenetab.is-v3 .scn-grid.is-names, .pf[data-pf] .st-scenetab.is-v3 .scn-grid.is-names { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; align-content: start; }
+.scn-card.is-name { min-height: 30px; }
+.scn-card.is-name .scn-card__hit { gap: 7px; padding: 3px 4px 3px 6px; min-width: 0; }
+.scn-card.is-name .scn-card__key { position: static; flex: none; min-width: 18px; height: 18px; background: rgba(var(--ink-rgb), 0.08); border-color: rgba(var(--ink-rgb), 0.16); color: var(--muted); }
+.scn-card.is-name .scn-card__key.is-none { visibility: hidden; }
+.scn-card.is-name .scn-card__ic { flex: none; color: var(--faint); }
+.scn-card.is-name .scn-card__name { flex: 1 1 auto; width: auto; min-width: 0; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scn-card.is-name .scn-card__tags { flex: none; display: inline-flex; gap: 3px; }
+.scn-card.is-name .scn-tag { padding: 1px 5px; font-size: 9px; }
+.scn-card.is-name .scn-tag.is-bad { background: rgba(255, 45, 85, 0.85); display: inline-grid; place-items: center; }
+.scn-card.is-name .scn-card__meta { flex: none; font-size: 10.5px; color: var(--faint); }
+.scn-card.is-name .scn-card__meta::before { content: none !important; }
+.scn-card.is-name .scn-card__acts { flex: none; gap: 1px; padding-right: 3px; }
+.scn-card.is-name .scn-act { height: 22px; min-width: 22px; padding: 0 4px; }
+.scn-card.is-name.is-program .scn-card__name { color: var(--red-ink, var(--text)); }
+/* Dar sütunda: katman sayısı gizlenir, eylemler yalnız üzerine gelince yer kaplar. */
+.st-scenetab.is-v3 .st-scenetab__main { container-type: inline-size; container-name: scntab; }
+@container scntab (max-width: 340px) {
+  .scn-card.is-name .scn-card__meta { display: none; }
+  .scn-card.is-name:not(:hover):not(:focus-within):not(.is-selected) .scn-card__acts { display: none; }
+  .scn-card.is-name .scn-card__ic { display: none; }
+}

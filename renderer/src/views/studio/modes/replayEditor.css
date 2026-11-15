@@ -356,3 +356,12 @@
 .rtk.is-compact .rtk__label { width: 84px; flex: none; }
 .rtk.is-compact button { padding: 0 5px; flex: none; }
 .rtk.is-compact .rtk__colors button { width: 14px; height: 14px; }
+/* 2.25.1 · dar sütun: başlık satırı kayar (araçlar alta iner), bilgi kısalır. */
+.rpx-pos { container: rpxpos / inline-size; }
+.rpx-pos__head { flex-wrap: wrap; row-gap: 4px; }
+.rpx-pos__tools { margin-left: auto; }
+.rpx-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+@container rpxpos (max-width: 380px) {
+  .rpx-pos__meta, .rpx-pos__team { display: none; }
+  .rpx-pos__foot .btn { white-space: normal; }
+}

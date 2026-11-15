@@ -99,9 +99,11 @@ function YoutubeConnect({ yt, busy, toast, ask }) {
       <>
         <div className="st-yt-chan">
           {c.channel?.thumbnail ? <img src={c.channel.thumbnail} alt="" /> : <span className="st-yt-chan__ph"><Icon name="video" size={16} /></span>}
-          <span><small>Bağlı kanal</small><strong>{c.channel?.title || "YouTube kanalı"}</strong></span>
+          <span className="st-yt-chan__t"><small>Bağlı kanal</small><strong title={c.channel?.title || ""}>{c.channel?.title || "YouTube kanalı"}</strong></span>
+          <span className="st-yt-chan__acts">
           <button type="button" className="btn btn--xs" disabled={busy || working || Boolean(yt.connecting)} onClick={() => connect(true)} title="Başka bir Google hesabı / kanal bağla (bağlı kanalın yerine geçer)">Kanalı değiştir</button>
           <button type="button" className="btn btn--xs btn--ghost" disabled={busy || working} onClick={disconnect} title="Kanal bağlantısını kes">Bağlantıyı kes</button>
+          </span>
         </div>
         {yt.connecting === "switch" && waiting}
       </>
@@ -161,7 +163,7 @@ function WatchLink({ matchId, match, toast }) {
     <div className="st-stack-sm">
       <Field label="İzleme linki (YouTube)" hint="Maç sayfasında canlı yayın olarak görünür.">
         <div className="st-row">
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=…" spellCheck={false} />
+          <input value={url} title={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=…" spellCheck={false} />
           <button type="button" className="btn btn--xs btn--primary" disabled={!matchId || !valid || saving || url.trim() === saved} onClick={save}>Kaydet</button>
         </div>
       </Field>
@@ -183,14 +185,14 @@ function LocalRecordCard({ value, onChange, engine, recordInfo, onOpenSettings }
       <header className="st-card__head"><Icon name="download" size={15} /><strong>Maçı bilgisayara da kaydet</strong>
         {engine.active && rec?.path && <span className="pill pill--xs pill--red">KAYITTA</span>}
       </header>
-      <label className="toggle"><input type="checkbox" checked={Boolean(value.enabled)} disabled={engine.active || !supported} onChange={(e) => onChange({ ...value, enabled: e.target.checked })} /> Yayınla birlikte tam maçı bu bilgisayara kaydet</label>
+      <label className="toggle st-toggle-wrap"><input type="checkbox" checked={Boolean(value.enabled)} disabled={engine.active || !supported} onChange={(e) => onChange({ ...value, enabled: e.target.checked })} /> Yayınla birlikte tam maçı bu bilgisayara kaydet</label>
       <div className="st-row">
-        <input readOnly value={value.dir || "Varsayılan klasör (Filmler / ElitLig)"} title={value.dir || ""} />
+        <input readOnly value={value.dir || "Varsayılan klasör (Filmler / ElitLig)"} title={value.dir || "Varsayılan klasör (Filmler / ElitLig)"} />
         <button type="button" className="btn btn--xs" disabled={engine.active || !supported} onClick={choose}><Icon name="folder" size={12} /> Klasör</button>
       </div>
       {recordInfo && (
         <button type="button" className="st-recq" onClick={onOpenSettings} title="Kayıt kalitesini Ayarlar › Kayıt'tan değiştir">
-          <span>Kayıt kalitesi: <b>{recordInfo.label}</b></span><em>{recordInfo.estimate}</em><Icon name="sliders" size={12} />
+          <span title={`Kayıt kalitesi: ${recordInfo.label}`}>Kayıt kalitesi: <b>{recordInfo.label}</b></span><em>{recordInfo.estimate}</em><Icon name="sliders" size={12} />
         </button>
       )}
       {!supported && <p className="st-hint">Yerel kayıt bu uygulama sürümünde yok.</p>}
@@ -326,7 +328,7 @@ function BroadcastPanel({ links = null, yt, engine, busy, matchId, matchName, ma
               </p>
               {!openStream && <p className="st-hint">Başlatınca önce <b>YouTube ayarları</b> penceresi açılır (başlık, açıklama, gizlilik, etiketler, ön ayarlar); <b>Hemen başlat</b> ya da Enter ile varsayılanlarla geç.</p>}
               {openStream && (
-                <div className="st-row">
+                <div className="st-row st-row--wrap st-bc-privacy">
                   <span className="st-hint">Gizlilik: <b>{PRIVACY_LABELS[s.privacy || yt.privacy] || yt.privacy}</b>{s.title ? <> · “{s.title}”</> : null}</span>
                   <span className="st-top__spacer" />
                   <button type="button" className="btn btn--xs" disabled={busy || !yt.updateSettings} onClick={() => setEditOpen(true)} title="Yayın sürerken başlık, açıklama, gizlilik ve etiketleri değiştir"><Icon name="pencil" size={11} /> YouTube ayarlarını düzenle</button>
@@ -339,7 +341,7 @@ function BroadcastPanel({ links = null, yt, engine, busy, matchId, matchName, ma
               {openStream && !encodingNow && <button type="button" className="btn btn--danger-ghost btn--block" disabled={busy} onClick={onEndYoutube}><Icon name="stop" size={13} /> YouTube yayınını bitir</button>}
               {watch && (
                 <div className="st-row">
-                  <input readOnly value={watch} onFocus={(e) => e.target.select()} />
+                  <input readOnly value={watch} title={watch} onFocus={(e) => e.target.select()} />
                   <button type="button" className="icon-btn" title="Kopyala" onClick={copy}><Icon name="copy" size={14} /></button>
                   <button type="button" className="icon-btn" title="Tarayıcıda aç" onClick={() => window.elitlig?.app?.openExternal?.(watch)}><Icon name="external" size={14} /></button>
                 </div>
@@ -363,7 +365,7 @@ function BroadcastPanel({ links = null, yt, engine, busy, matchId, matchName, ma
           </button>
           {manualOpen && (
             <>
-              <Field label="Sunucu adresi"><input value={rtmpUrl} onChange={(e) => setRtmpUrl(e.target.value)} placeholder="rtmp://a.rtmp.youtube.com/live2" spellCheck={false} /></Field>
+              <Field label="Sunucu adresi"><input value={rtmpUrl} title={rtmpUrl} onChange={(e) => setRtmpUrl(e.target.value)} placeholder="rtmp://a.rtmp.youtube.com/live2" spellCheck={false} /></Field>
               <Field label="Yayın anahtarı"><input type="password" value={rtmpKey} onChange={(e) => setRtmpKey(e.target.value)} placeholder="xxxx-xxxx-xxxx-xxxx" spellCheck={false} /></Field>
               <button type="button" className="btn btn--block" disabled={busy || encodingNow || !isRtmpUrl(manualUrl) || !engine.available} onClick={() => onStartManual(manualUrl)}><Icon name="play" size={13} /> Bu anahtarla yayına başla</button>
             </>

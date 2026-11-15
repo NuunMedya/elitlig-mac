@@ -85,6 +85,7 @@ import { useHighlights } from "./useHighlights";
 import { useStable } from "./useStable";
 import { errorText } from "./studioApi";
 import { tileWarning, useTileRenderer } from "./Multiview";
+import { paintScenePlaceholder, paintSceneStill } from "./useSnapshot";
 import { clampDock } from "./Dock";
 import { FX_KINDS, SourceDialog } from "./SourcesPanel";
 import ReplayPanel from "./ReplayPanel";
@@ -824,6 +825,9 @@ export default function Studio({ auth, go }) {
   const programScene = resolveScene(config, config.programSceneId);
   const tiles = useMemo(() => multiviewTiles(config), [config]);
   const registerTile = useTileRenderer(configRef, src.runtimeRef, { config });
+  // Kısayol sahne kutularının DURAĞAN küçük resmi: sahne bir kez çizilir (30 sn'de bir, ./useSnapshot).
+  const paintSceneSnap = useCallback((canvas, id) => paintSceneStill(canvas, configRef.current, id, src.runtimeRef.current), [configRef, src.runtimeRef]);
+  const paintSceneHolder = useCallback((canvas, id) => paintScenePlaceholder(canvas, configRef.current, id), [configRef]);
 
   /* ───────── sahne / katman / kaynak işlemleri (kimliği sabit) ───────── */
   const [selectedLayerId, setSelectedLayerId] = useState(null);
@@ -1584,7 +1588,7 @@ export default function Studio({ auth, go }) {
         return { ...l, boards: { ...l.boards, rail: { ...b, items: [...b.items, { i: `i${Date.now().toString(36)}`, t: m.key, x: 0, y: bottom, w: Math.min(b.cols, sz[0] >= 2 ? 2 : 1), h: (sz[1] >= 2 ? 2 : 1) * 2, ...(opts ? { o: opts } : {}) }] } } };
       });
     },
-    sceneTile: { register: registerTile, programId: programIdForTally, previewId: studioMode && !modes.previewOverride ? config.previewSceneId : null, onPreview: toPreview, onProgram: toProgram },
+    sceneTile: { register: registerTile, paintStill: paintSceneSnap, paintPlaceholder: paintSceneHolder, programId: programIdForTally, previewId: studioMode && !modes.previewOverride ? config.previewSceneId : null, onPreview: toPreview, onProgram: toProgram },
     // [işletim] işletim düğmeleri (./shortcuts/wLed, wRoportaj, wOzet, wMac, wSahne, wGenel)
     ops: settings.ops, setOps, markMoment, screenshot,
     matchId, openMatch: setMatchId,

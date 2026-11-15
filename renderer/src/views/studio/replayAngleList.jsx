@@ -1,5 +1,6 @@
-// Yayın Stüdyosu · TEKRAR AÇI LİSTESİ — açılar alt alta, YALNIZ İSİMLE (küçük resim, fotoğraf,
-// video yok). Tekrar paneli, kısayol düğmeleri, tekrar seçici ve pano aynı satırı kullanır.
+// Yayın Stüdyosu · TEKRAR AÇI LİSTESİ — açılar YAN YANA, YALNIZ İSİMLE (küçük resim, fotoğraf,
+// video yok): pozisyon başına tek (sığmazsa kayan) çip satırı, alta daha çok pozisyon sığar.
+// Tekrar paneli, odak sütunu, kısayol düğmeleri, tekrar seçici ve pano aynı çipi kullanır.
 //
 //   <AngleList> … <AngleRow order={1|null} name="Kamera 2" meta="12,4 sn" stage="preview" … /> … </AngleList>
 //
@@ -20,11 +21,11 @@ export function AngleRow({ order = null, name, meta = null, stage = null, onClic
   return (
     <button type="button" className={`ang-row ${on ? "is-on" : ""} ${stage ? `is-${stage}` : ""} ${busy ? "is-busy" : ""}`}
       role={check ? "checkbox" : undefined} aria-checked={check ? on : undefined}
-      onClick={onClick} onDoubleClick={onDoubleClick} title={title || name} disabled={disabled}>
+      onClick={onClick} onDoubleClick={onDoubleClick} title={`${title || name}${stage && STAGE_TEXT[stage] ? ` · ${STAGE_TEXT[stage]}` : ""}`} disabled={disabled}>
       {check && <span className="ang-row__box" aria-hidden="true">{on ? (order === true ? "✓" : order) : ""}</span>}
       <span className="ang-row__name">{name}</span>
       {meta ? <small className="ang-row__meta">{meta}</small> : null}
-      {stage && STAGE_TEXT[stage] ? <em className={`ang-row__stage is-${stage}`}>{STAGE_TEXT[stage]}</em> : null}
+      {stage && STAGE_TEXT[stage] ? <em className={`ang-row__stage is-${stage}`} title={STAGE_TEXT[stage]}><span className="ang-sr">{STAGE_TEXT[stage]}</span></em> : null}
     </button>
   );
 }

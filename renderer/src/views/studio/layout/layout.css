@@ -27,7 +27,7 @@
   --dv-tab-divider-color: transparent;
   --dv-activegroup-visiblepanel-tab-color: var(--text);
   --dv-activegroup-hiddenpanel-tab-color: var(--faint);
-  --dv-inactivegroup-visiblepanel-tab-color: var(--acc-pale);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--text);
   --dv-inactivegroup-hiddenpanel-tab-color: var(--faint);
   --dv-separator-border: transparent;
   --dv-paneview-header-border-color: var(--border);

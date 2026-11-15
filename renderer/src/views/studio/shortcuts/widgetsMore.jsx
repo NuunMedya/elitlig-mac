@@ -8,6 +8,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "../../../components/ui";
 import { AngleList, AngleRow } from "../replayAngleList";
+import { SceneNameList, SceneSnap, sceneDisplayFields, sceneDisplayOf } from "./sceneDisplay";
+import { optMenu, withOptions } from "./wOptions";
 import { SCOREBOARD_VARIANTS } from "../../../lib/studio/graphics/variants";
 import { SCOREBUG_VARIANTS, clockText } from "../../../lib/studio/scorebug";
 import { TRANSITION_KINDS } from "../../../lib/studio/transitions";
@@ -392,26 +394,30 @@ const subtitleQuick = {
 
 function MiniScene({ ctx, scene, index }) {
   const S = ctx.sceneTile;
-  const ref = useRef(null);
-  const register = S.register;
   const id = scene.id;
-  const setRef = useCallback((el) => { register(id, el, ref.current); ref.current = el; }, [register, id]);
-  useEffect(() => () => { if (ref.current) register(id, null, ref.current); }, [register, id]);
   const onAir = S.programId === id;
   const inPvw = S.previewId === id && !onAir;
   return (
     <button type="button" className={`st-wsg__cell ${onAir ? "is-air" : ""} ${inPvw ? "is-pvw" : ""}`} onClick={() => S.onPreview(id)} onDoubleClick={() => S.onProgram(id)} title={`${scene.name} — tık: önizleme · çift tık: yayın`}>
-      <canvas ref={setRef} width={160} height={90} />
+      <SceneSnap ctx={ctx} id={id} className="" />
       <span><b>{index + 1}</b>{scene.name}</span>
     </button>
   );
 }
-const sceneGrid = {
-  render: ({ ctx, w, h, preview }) => {
-    const n = w === 2 && h === 2 ? 4 : 2;
+const sceneGrid = withOptions({
+  render: ({ ctx, item, w, h, preview, togglePop }) => {
+    const { display, layout } = sceneDisplayOf(item?.opts);
+    const n = display === "list" ? 12 : w === 2 && h === 2 ? 4 : 2;
     const list = ctx.scenes.slice(0, n);
+    if (display === "list") {
+      return (
+        <div className={`st-w is-plain is-panel is-big st-wsg is-names is-${shape(w, h)}`} {...optMenu(item, togglePop)}>
+          <SceneNameList ctx={ctx} scenes={list} layout={layout} />
+        </div>
+      );
+    }
     return (
-      <div className={`st-w is-plain is-panel is-big st-wsg is-${shape(w, h)}`}>
+      <div className={`st-w is-plain is-panel is-big st-wsg is-${shape(w, h)}`} {...optMenu(item, togglePop)}>
         <div className="st-wsg__grid">
           {list.map((s, i) => (preview
             ? <span key={s.id} className="st-wsg__cell is-ph"><span><b>{i + 1}</b>{s.name}</span></span>
@@ -421,7 +427,7 @@ const sceneGrid = {
       </div>
     );
   },
-};
+}, sceneDisplayFields());
 
 export const MORE_WIDGETS = {
   replayGo, replayAngles, replayRecent, replaySlow, replayQueue,

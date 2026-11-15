@@ -15,6 +15,8 @@ import { TRANSITION_KINDS } from "../../../lib/studio/transitions";
 import { VAR_DECISIONS, VAR_STATES, VAR_TONES } from "../../../lib/studio/var";
 import { DURATION_CHOICES, ON_AIR_SLOTS, interviewPerson, onAirPatch, sponsorHas } from "../../../lib/studio/manageBroadcast";
 import { READY_MINUTES, SUB_DURATIONS, TRANSITION_MS_STEPS, sceneStep } from "./flowLogic";
+import { SceneNameList, SceneSnap, sceneDisplayFields, sceneDisplayOf } from "./sceneDisplay";
+import { optMenu, withOptions } from "./wOptions";
 import { Chip, FlowNote, Head, Kbd, PlayerGrid, Pill, Ring, Shell, hk, openPop, startTimer, stopTimer, timerOf, useNow, usePress } from "./wkit";
 
 const gOk = (g) => Boolean(g?.matchId);
@@ -286,26 +288,26 @@ function SceneNav({ ctx, w, h }) {
 }
 function BankCell({ ctx, scene, index, preview }) {
   const S = ctx.sceneTile;
-  const ref = useRef(null);
-  const register = S.register;
   const id = scene.id;
-  const setRef = useCallback((el) => { if (preview) return; register(id, el, ref.current); ref.current = el; }, [register, id, preview]);
-  useEffect(() => () => { if (ref.current && !preview) register(id, null, ref.current); }, [register, id, preview]);
   const air = S.programId === id;
   const pvw = S.previewId === id && !air;
   return (
     <button type="button" className={`wx-bank__c ${air ? "is-air" : ""} ${pvw ? "is-pvw" : ""}`} onClick={() => S.onPreview(id)} onDoubleClick={() => S.onProgram(id)} title={`${scene.name} — tık: önizleme · çift tık: yayın`}>
-      {!preview && <canvas ref={setRef} width={160} height={90} />}
+      {!preview && <SceneSnap ctx={ctx} id={id} className="" />}
       <span><b>{index + 1}</b>{scene.name}</span>
       {air && <em>YAYINDA</em>}
     </button>
   );
 }
-function SceneBank({ ctx, w, h, preview }) {
+function SceneBank({ ctx, item, w, h, preview, togglePop }) {
   const n = w >= 4 ? 8 : w >= 3 ? 6 : 4;
-  const list = (ctx.scenes || []).slice(0, n);
+  const { display, layout } = sceneDisplayOf(item?.opts);
+  const list = (ctx.scenes || []).slice(0, display === "list" ? 16 : n);
+  if (display === "list") {
+    return <Shell tone="plain" w={w} h={h} className="wx-bank is-names" {...optMenu(item, togglePop)}><SceneNameList ctx={ctx} scenes={list} layout={layout} /></Shell>;
+  }
   return (
-    <Shell tone="plain" w={w} h={h} className="wx-bank">
+    <Shell tone="plain" w={w} h={h} className="wx-bank" {...optMenu(item, togglePop)}>
       <div className={`wx-bank__g is-c${w >= 4 ? 4 : w >= 3 ? 3 : 2}`}>
         {list.map((s, i) => <BankCell key={s.id} ctx={ctx} scene={s} index={i} preview={preview} />)}
         {!list.length && <span className="st-w__empty">Sahne yok.</span>}
@@ -503,7 +505,7 @@ export const YAYIN_WIDGETS = {
   sponsorPro: { render: (p) => <SponsorTile {...p} /> },
   ledPro: { render: (p) => <LedPro {...p} /> },
   sceneNav: { render: (p) => <SceneNav {...p} /> },
-  sceneBank: { render: (p) => <SceneBank {...p} /> },
+  sceneBank: withOptions({ render: (p) => <SceneBank {...p} /> }, sceneDisplayFields()),
   transitionPro: { render: (p) => <TransitionPro {...p} /> },
   readyPro: { render: (p) => <ReadyPro {...p} /> },
   chapterPro: { render: (p) => <ChapterPro {...p} /> },

@@ -19,6 +19,7 @@
 // onDeactivate (özel kip panelleri), openCatalog(target), railCtx, zoom, rootRef.
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DockviewReact } from "dockview";
+import { textOn } from "../shortcuts/wStyle";
 import "dockview/dist/styles/dockview.css";
 import { Icon, MenuButton } from "../../../components/ui";
 import { PanelScope } from "../dock/parts";
@@ -85,6 +86,11 @@ function applyTabStyle(g, st, side) {
   set("--lw-tab-accent-rgb", st.accent ? hexRgb(st.accent) : "");
   set("--lw-tab-bg", st.bg || "");
   set("--lw-tab-active", st.active || "");
+  // Okunurluk: etkin sekme zemini özel renkse yazı / simge zemine göre (beyaz ya da koyu) seçilir.
+  const on = st.active ? textOn(st.active) : "";
+  set("--lw-tab-active-on", on);
+  set("--dv-activegroup-visiblepanel-tab-color", on);
+  set("--dv-inactivegroup-visiblepanel-tab-color", on);
 }
 /** "Sekmelere ayır" ile oluşacak panel kimlikleri (yoksa []). */
 export function splitTargets(kind) {

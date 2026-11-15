@@ -60,7 +60,7 @@ export const COL_MIN_PX = 64;
  * sections: sütunlara dağıtılan bölümler (id, ad, seçici, varsayılan sütun · 0 tam satır).
  */
 export const PANEL_COLS = {
-  sahne: { label: "Sahne kartları", targets: [{ sel: ".scn-grid:not(.is-list)" }] },
+  sahne: { label: "Sahne listesi", targets: [{ sel: ".scn-grid" }] },
   tekrar: {
     label: "Pozisyonlar ve önizleme",
     targets: [

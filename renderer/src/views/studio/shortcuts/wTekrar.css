@@ -48,6 +48,6 @@
 .wx-split__go.is-on { background: var(--c, var(--acc)); border-color: var(--c, var(--acc)); color: var(--c-on, var(--on-strong)); }
 .wx-split__go:disabled { opacity: 0.45; cursor: default; }
 .wx-split .wx-s, .wx-track .wx-s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Açılar: alt alta isim listesi (küçük resim / video yok). */
-.wx-ap__g.is-list, .lw-ri .wx-ap__g.is-list { display: flex !important; flex-direction: column !important; gap: 3px; overflow-y: auto; grid-template-columns: none !important; }
-.wx-ap__g.is-list .ang-row { min-height: 24px; font-size: 11.5px; }
+/* Açılar: yan yana isim çipleri (küçük resim / video yok). */
+.wx-ap__g.is-list, .lw-ri .wx-ap__g.is-list { display: flex !important; flex-flow: row wrap !important; align-content: flex-start; gap: 4px; overflow-y: auto; grid-template-columns: none !important; }
+.wx-ap__g.is-list .ang-row { min-height: 22px; font-size: 11px; }

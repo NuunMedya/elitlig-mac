@@ -1,6 +1,7 @@
 // Sekme şeridi biçimi: yer (üst / sol / sağ / gizli), boy, yazı kalınlığı, renkler, simgeler.
 // <TabStyleFields value onChange inherit />  (grup menüsündeki pencere ve Ayarlar › Yerleşim ortak)
 import React from "react";
+import { textOn } from "../shortcuts/wStyle";
 import { Icon } from "../../../components/ui";
 import { TAB_POSITIONS, TAB_SIZES, TAB_WEIGHTS } from "./layoutModel";
 
@@ -51,7 +52,7 @@ export function TabStylePreview({ value }) {
   const v = value;
   const side = v.pos === "left" || v.pos === "right";
   return (
-    <div className={`lw-tsp is-${v.pos} lw-ts-${v.size} ${v.icons ? "" : "lw-ts-noicons"}`} style={{ "--lw-tab-weight": v.weight, ...(v.accent ? { "--lw-tab-accent": v.accent } : {}), ...(v.bg ? { "--lw-tab-bg": v.bg } : {}), ...(v.active ? { "--lw-tab-active": v.active } : {}) }} aria-hidden="true">
+    <div className={`lw-tsp is-${v.pos} lw-ts-${v.size} ${v.icons ? "" : "lw-ts-noicons"}`} style={{ "--lw-tab-weight": v.weight, ...(v.accent ? { "--lw-tab-accent": v.accent } : {}), ...(v.bg ? { "--lw-tab-bg": v.bg } : {}), ...(v.active ? { "--lw-tab-active": v.active, "--lw-tab-active-on": textOn(v.active) } : {}) }} aria-hidden="true">
       {v.pos !== "hidden" && (
         <div className="lw-tsp__bar">
           {["Reji", "Tekrar", "Ses"].map((t, i) => <span key={t} className={`lw-tsp__tab ${i === 0 ? "is-on" : ""}`}>{v.icons && <Icon name={["zap", "repeat", "mic"][i]} size={side ? 12 : 11} />}<em>{t}</em></span>)}

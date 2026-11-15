@@ -1204,3 +1204,47 @@ svg.st-wspic rect.is-pvw { fill: var(--green-text); opacity: 1; }
 .st-hl__trim { gap: 4px; align-items: center; }
 .st-hl__trim .input-xs { width: 56px; font-size: 11px; padding: 2px 4px; height: 22px; border-radius: 6px; background: var(--surface-3); color: inherit; border: 1px solid var(--border-strong); }
 .st-hl__segs .st-chip { display: inline-flex; align-items: center; gap: 3px; }
+
+/* ───────── 2.25.1 · DAR SÜTUN ÖLÇEKLEME (260–420 px sütun, Sık / Normal / Geniş) ─────────
+   Kartlar kendi genişliğine göre düzenlenir (container query): düğme satırları kayar,
+   etiket / değer çiftleri alt alta iner, uzun metin üç nokta + title ile kısalır. */
+.st-bcast .st-card, .pf[data-pf] .st-card, .cc__body .st-card, .st-dcol .st-card { container: card / inline-size; min-width: 0; }
+.studio :is(.st-row, .yt-ch__item, .lnk-row, .st-yt-chan) > :is(input, select) { min-width: 0; }
+.studio .st-card > * { min-width: 0; }
+.studio .st-card__head { min-width: 0; flex-wrap: wrap; }
+.studio .st-card__head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.studio .st-card .st-row { min-width: 0; }
+.studio .st-card .st-row > input { flex: 1 1 120px; }
+.studio .st-card .st-row > .field { min-width: 0; }
+.studio .st-seg { flex-wrap: wrap; max-width: 100%; }
+.studio .toggle.st-toggle-wrap { white-space: normal; align-items: flex-start; line-height: 1.35; }
+.studio .toggle.st-toggle-wrap input { flex: none; margin-top: 1px; }
+.st-bc-privacy > .st-hint { flex: 1 1 160px; min-width: 0; }
+.st-bc-privacy > .st-top__spacer { display: none; }
+/* Bağlı kanal: ad ve düğmeler; dar kartta düğmeler alta, ad üç noktayla */
+.st-yt-chan { flex-wrap: wrap; row-gap: 6px; }
+.st-yt-chan > .st-yt-chan__t { flex: 1 1 120px; }
+.yt-ch__item .yt-ch__stamp { flex: 0 0 66px; width: 66px; }
+.st-yt-chan > .st-yt-chan__ph { flex: none; }
+.st-yt-chan > .st-yt-chan__acts { display: flex; flex: 0 1 auto; flex-direction: row; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.st-yt-chan__acts .btn { white-space: nowrap; }
+.st-recq { flex-wrap: wrap; row-gap: 2px; }
+.st-recq > span { min-width: 0; }
+.yt-ch__item { min-width: 0; }
+.lnk-row__main { min-width: 0; }
+@container card (max-width: 420px) {
+  .st-yt-chan > .st-yt-chan__acts { flex: 1 1 100%; margin-left: 0; }
+  .st-yt-chan__acts .btn { flex: 1 1 auto; justify-content: center; }
+  .st-card .st-row:has(> .field + .field) { flex-wrap: wrap; }
+  .st-card .st-row:has(> .field + .field) > .field { flex: 1 1 100%; }
+  .st-card .st-row:not(.st-row--nowrap) { flex-wrap: wrap; }
+  .yt-ch__item { flex-wrap: wrap; row-gap: 3px; }
+  .yt-ch__item .yt-ch__label { order: 9; flex: 1 1 100%; }
+  .yt-ch__item .yt-ch__kind { margin-left: auto; }
+  .st-recq em { margin-left: 0; }
+}
+@container card (max-width: 300px) {
+  .st-card .st-chips { gap: 3px; }
+  .st-card .st-seg button { padding: 4px 8px; }
+  .st-card .btn--block { white-space: normal; text-align: center; }
+}
