@@ -12,13 +12,13 @@
 .wsn__r em { flex: none; font-style: normal; font-size: 8px; font-weight: 900; letter-spacing: 0.04em; padding: 1px 4px; border-radius: 3px; }
 .wsn__r.is-air { border-color: var(--air, #ff2d55); }
 .wsn__r.is-pvw { border-color: var(--pvw, #22c55e); }
-.wsn__r em.is-air { background: #d0103a; color: #fff; }
+.wsn__r em.is-air { background: #d0103a; color: var(--on-strong); }
 .wsn__r em.is-pvw { background: var(--pvw, #22c55e); color: var(--on-bright); }
 /* Tek sahne düğmesi · liste görünümü (isim) */
 .st-w.is-scene.is-name { padding: 6px 8px; justify-content: center; align-items: flex-start; gap: 3px; background: var(--surface-2); }
 .st-w.is-scene.is-name .st-w__scenename { max-width: 100%; font: 850 12px/1.2 var(--font); color: var(--text); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; text-align: left; }
 .st-w.is-scene.is-name.is-big .st-w__scenename { font-size: 15px; -webkit-line-clamp: 3; }
 .st-w.is-scene.is-name em { font: 850 8.5px/13px var(--font); font-style: normal; letter-spacing: 0.08em; padding: 0 4px; border-radius: 3px; }
-.st-w.is-scene.is-name em.is-air { background: #d0103a; color: #fff; }
+.st-w.is-scene.is-name em.is-air { background: #d0103a; color: var(--on-strong); }
 .st-w.is-scene.is-name em.is-pvw { background: var(--green, #22c55e); color: var(--on-bright); }
 .st-w.is-scene.is-name > .ic { color: var(--faint); }
