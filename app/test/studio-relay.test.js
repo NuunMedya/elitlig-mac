@@ -348,7 +348,7 @@ test("aktarıcı komutu: -c copy FLV, no_duration_filesize, rw_timeout (yalnız 
   assert.equal(at(a, "-f"), "mpegts");
   assert.equal(at(a, "-i"), "pipe:0");
   assert.equal(at(a, "-c"), "copy");
-  assert.equal(at(a, "-flvflags"), "no_duration_filesize");
+  assert.equal(at(a, "-flvflags"), "no_duration_filesize+aac_seq_header_detect");
   assert.equal(at(a, "-bsf:a"), "aac_adtstoasc");
   assert.equal(at(a, "-rw_timeout"), "10000000");
   // 2.21.0: Nagle açık (ffmpeg 128 B'lık parçaları ayrı send() ile yazar; nodelay her birini ayrı paket yapıyordu).
@@ -366,7 +366,7 @@ test("aktarıcı komutu: -c copy FLV, no_duration_filesize, rw_timeout (yalnız 
   assert.equal(pipe.includes("-progress"), false);
   assert.equal(pipe.includes("-rw_timeout"), false);
   assert.equal(pipe.join(" ").includes("live2/k"), false); // anahtar komut satırında yok
-  assert.equal(at(pipe, "-flvflags"), "no_duration_filesize");
+  assert.equal(at(pipe, "-flvflags"), "no_duration_filesize+aac_seq_header_detect");
 });
 
 test("yayın komutu (aktarıcı): RTMP yerine yerel TCP'ye MPEG-TS (fifo, taşmada atar); YouTube CBR, 2 sn GOP, CFR, AAC 48 kHz stereo", () => {

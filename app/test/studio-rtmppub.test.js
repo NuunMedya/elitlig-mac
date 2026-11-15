@@ -139,6 +139,58 @@ test("yayıncı ↔ RTMP sunucusu: Set Chunk Size 4096, connect (app, tcUrl), pu
   await sink.close();
 });
 
+/* ---- 2.24.3: canlı yayında ses kalın + cızırtılı (yerel kayıt temiz) — AAC dizi başlığı ---- */
+
+/** Aktarıcı ffmpeg'inin (TS → FLV, -c copy) eski çıktısı gibi: önce BOŞ AAC dizi başlığı (af00), gerçek ASC ilk ses karesinin önünde. */
+function flvWithLateAsc({ frames = 30, midAsc = [] } = {}) {
+  const tag = (type, ts, data) => {
+    const h = Buffer.alloc(11);
+    h[0] = type; h.writeUIntBE(data.length, 1, 3); h.writeUIntBE(ts & 0xffffff, 4, 3); h[7] = (ts >>> 24) & 0xff;
+    const prev = Buffer.alloc(4); prev.writeUInt32BE(11 + data.length);
+    return Buffer.concat([h, data, prev]);
+  };
+  const parts = [Buffer.from([0x46, 0x4c, 0x56, 1, 5, 0, 0, 0, 9, 0, 0, 0, 0])];
+  parts.push(tag(18, 0, Buffer.concat([amfEncode("onMetaData"), amfEncode({ audiosamplerate: 48000 })])));
+  parts.push(tag(9, 0, Buffer.from([0x17, 0, 0, 0, 0, 1, 0x64, 0, 0x2a])));
+  parts.push(tag(8, 0, Buffer.from([0xaf, 0]))); // boş ASC: alıcı FLV bayraklarından "44 kHz" sanar
+  for (let i = 0; i < frames; i += 1) {
+    const v = Buffer.alloc(600, i & 0xff);
+    v[0] = i % 10 === 0 ? 0x17 : 0x27; v[1] = 1;
+    parts.push(tag(9, i * 33, v));
+    if (i === 0) parts.push(tag(8, 26, Buffer.from([0xaf, 0, 0x11, 0x90]))); // gerçek ASC: AAC-LC 48 kHz stereo
+    const asc = midAsc.find((m) => m.at === i);
+    if (asc) parts.push(tag(8, i * 33 + 26, Buffer.from([0xaf, 0, ...asc.bytes])));
+    parts.push(tag(8, i * 33 + 26, Buffer.from([0xaf, 1, 0x21, 2, 3])));
+  }
+  return Buffer.concat(parts);
+}
+
+test("yayıncı: boş AAC dizi başlığı (af00) gönderilmez; ilk ses karesinden önce TEK, dolu (48 kHz) ASC; aynı ASC tekrar gitmez, değişen ASC gider", async () => {
+  const sink = createRtmpSink();
+  const port = await sink.listen();
+  const pub = createRtmpPublisher({ url: `rtmp://127.0.0.1:${port}/live2/k` });
+  try {
+    // Yarısı yayın açılmadan (bekletilen başlık + GOP), yarısı sonra.
+    const flv = flvWithLateAsc({ frames: 30, midAsc: [{ at: 12, bytes: [0x11, 0x90] }, { at: 20, bytes: [0x11, 0x88] }] });
+    pub.writeFlv(flv.subarray(0, 4000));
+    pub.start();
+    await waitFor(() => pub.isPublishing());
+    pub.writeFlv(flv.subarray(4000));
+    const ses = await waitFor(() => (sink.sessions[0]?.messages.filter((m) => m.type === 8 && m.head[1] === 1).length >= 30 ? sink.sessions[0] : null));
+    assert.ok(ses, "ses iletileri ulaşmadı");
+    const audio = ses.messages.filter((m) => m.type === 8);
+    const headers = audio.filter((m) => m.head[1] === 0);
+    // Eski davranış: ilk ses iletisi 2 baytlık "af00" (ASC yok) → YouTube 48 kHz sesi 44,1 kHz çalıyordu.
+    assert.equal(audio[0].head[1], 0, "ilk ses iletisi yapılandırma olmalı");
+    assert.equal(audio[0].head.subarray(0, 4).toString("hex"), "af001190");
+    assert.ok(headers.every((m) => m.length >= 4), `boş ASC gönderildi: ${headers.map((m) => m.head.subarray(0, m.length).toString("hex"))}`);
+    assert.deepEqual(headers.map((m) => m.head.subarray(2, 4).toString("hex")), ["1190", "1188"]);
+  } finally {
+    pub.end();
+    await sink.close();
+  }
+});
+
 test("yayıncı: sunucu yayını reddederse (BadName) AUTH hatası; el sıkışmada kapanırsa HANDSHAKE", async () => {
   const cleanup = [];
   try {
@@ -312,6 +364,45 @@ test("gerçek ffmpeg: sunucu Window Ack bildirip hiç onay göndermezse (veri ul
     assert.equal(sink.sessions.at(-1).clientChunk, 128); // sonraki ffmpeg
   } finally {
     await sink.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("gerçek ffmpeg (2.24.3): aktarıcının İLK AAC dizi başlığı dolu ve 48 kHz — Node ve ffmpeg göndericisi (eskiden boş af00: canlıda ses kalın + cızırtılı)", { timeout: 90000 }, async (t) => {
+  const why = await skipReason();
+  if (why) { t.skip(why); return; }
+  const info = await getInfo();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "studio-rtmppub-asc-"));
+  try {
+    const ts = path.join(root, "in.ts");
+    await makeTs(info.path, ts, { seconds: 4, kbps: 1000, size: "320x180" });
+    const data = fs.readFileSync(ts);
+    for (const publisher of ["node", "ffmpeg"]) {
+      const sink = createRtmpSink();
+      const port = await sink.listen();
+      const relay = createRelay({ ffmpegPath: info.path, primaryUrl: `rtmp://127.0.0.1:${port}/live2/anahtar`, spawnImpl: spawn, publisher, backoffMs: [200] });
+      try {
+        await feedRealtime(relay, data, 4);
+        await waitFor(() => (sink.sessions[0]?.messages.filter((m) => m.type === 8).length || 0) > 50, 8000);
+      } finally {
+        await relay.stop();
+        await sink.close();
+      }
+      const audio = (sink.sessions[0]?.messages || []).filter((m) => m.type === 8);
+      assert.ok(audio.length > 50, `${publisher}: ses ${audio.length}`);
+      const first = audio[0];
+      assert.equal(first.head[1], 0, `${publisher}: ilk ses iletisi AAC dizi başlığı değil`);
+      assert.ok(first.length >= 4, `${publisher}: ilk AAC dizi başlığı boş (${first.head.subarray(0, first.length).toString("hex")})`);
+      const asc = first.head.readUInt16BE(2);
+      assert.equal(asc >> 11, 2, `${publisher}: AAC-LC değil`);
+      assert.equal((asc >> 7) & 0x0f, 3, `${publisher}: örnekleme hızı 48 kHz değil`);
+      assert.equal((asc >> 3) & 0x0f, 2, `${publisher}: stereo değil`);
+      // Ses çerçevelerinin zaman damgası örnek sayısıyla aynı hızda (1024 / 48 kHz ≈ 21,33 ms).
+      const frames = audio.filter((m) => m.head[1] === 1);
+      const span = frames.at(-1).ts - frames[0].ts;
+      assert.ok(Math.abs(span - ((frames.length - 1) * 1024 * 1000) / 48000) < 3, `${publisher}: ${span} ms / ${frames.length} çerçeve`);
+    }
+  } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

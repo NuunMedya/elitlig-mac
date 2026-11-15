@@ -419,11 +419,42 @@ function createRtmpPublisher({ url, connect = null, now = () => Date.now(), chun
   /** Yapılandırma etiketi mi: betik (onMetaData), AVC dizi başlığı, AAC AudioSpecificConfig. */
   const isHeaderTag = (type, data) => type === 18 || (type === 9 && (data[0] & 0x0f) === 7 && data[1] === 0) || (type === 8 && (data[0] >> 4) === 10 && data[1] === 0);
 
+  /*
+   * AAC yapılandırması (AudioSpecificConfig) — NEDEN (2.24.3, ölçüldü: yerel RTMP alıcısı):
+   * aktarıcı ffmpeg'i MPEG-TS'ten (ADTS AAC, genel başlık YOK) FLV yazar; FLV başlığı yazılırken
+   * ASC henüz bilinmediğinden İLK ses dizi başlığı BOŞ gidiyordu ("af00"), gerçek ASC ("af001190",
+   * 48 kHz) ~26 ms sonra akış ortasında "değişiklik" olarak geliyordu. İlk başlıkla kurulan alıcı
+   * (FLV ses bayrakları 0xAF = "44 kHz") 48 kHz AAC'yi 44,1 kHz çalar: ses ~%8 kalın, saniyede
+   * ~3 900 örnek fazlası atılarak senkron tutulur → sürekli cızırtı (yerel kayıt kodlayıcının
+   * ASC'sini taşıdığından temizdi). Artık: boş başlık hiç gönderilmez; başlık ilk ses karesinin
+   * hemen önünde, o ana kadarki EN SON (dolu) ASC ile, bir kez gönderilir; aynı ASC tekrar
+   * gönderilmez (alıcı kod çözücüyü akış ortasında yeniden kurmasın), değişirse gönderilir.
+   */
+  let aacConfig = null; // gönderilmeyi bekleyen son dolu AAC dizi başlığı (etiket)
+  let aacSent = null; // gönderilmiş son ASC
+  const isAacTag = (t) => t.type === 8 && (t.data[0] >> 4) === 10;
+
   /** FLV etiketleri → RTMP iletileri; tek yazma (cork). */
   function sendTags(tags) {
     if (!tags.length || !sock || sock.destroyed) return;
     sock.cork();
     for (const t of tags) {
+      if (isAacTag(t)) {
+        if (t.data[1] === 0) {
+          if (t.data.length > 2) aacConfig = { timestamp: t.timestamp, data: Buffer.from(t.data) }; // boş ASC ("af00") atılır
+          continue;
+        }
+        if (aacConfig) {
+          const asc = aacConfig.data.subarray(2);
+          const header = aacConfig;
+          aacConfig = null;
+          if (!aacSent || !asc.equals(aacSent)) {
+            aacSent = Buffer.from(asc);
+            mediaBytes += header.data.length;
+            write(chunkMessage({ csid: CS_AUDIO, type: 8, streamId, timestamp: Math.min(header.timestamp, t.timestamp), payload: header.data, chunkSize }));
+          }
+        }
+      }
       let payload = t.data;
       let csid = CS_VIDEO;
       if (t.type === 8) csid = CS_AUDIO;

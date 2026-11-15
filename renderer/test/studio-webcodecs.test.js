@@ -270,6 +270,16 @@ describe.skipIf(!canRun)("uçtan uca (gerçek ffmpeg): mkvmux → ffmpeg -c:v co
     const remux = spawnSync(FFMPEG, ff.buildRelayArgs({ url: flv }).map((a) => (a === "pipe:0" ? relayFile : a)), { encoding: "utf8" });
     expect(remux.status, remux.stderr).toBe(0);
     expect(probe(flv, ["-show_entries", "stream=codec_name"]).streams.map((s) => s.codec_name).sort()).toEqual(["aac", "h264"]);
+    // 2.24.3: canlı yayının (aktarıcı FLV'si) İLK AAC dizi başlığı dolu ve 48 kHz olmalı. Eskiden boş
+    // ("af00") yazılıyor, gerçek ASC akış ortasında geliyordu → YouTube sesi 44,1 kHz sanıp kalın ve
+    // cızırtılı çalıyordu (yerel MKV kodlayıcının ASC'sini taşıdığından temizdi).
+    const { createFlvReader } = require("../../app/studio/rtmppub.js");
+    const tags = createFlvReader().feed(fs.readFileSync(flv));
+    const firstAudio = tags.find((t) => t.type === 8);
+    expect(firstAudio.data[1]).toBe(0); // AAC dizi başlığı
+    expect(firstAudio.data.length).toBeGreaterThanOrEqual(4); // ASC var
+    const asc = firstAudio.data.readUInt16BE(2);
+    expect([asc >> 11, (asc >> 7) & 0x0f, (asc >> 3) & 0x0f]).toEqual([2, 3, 2]); // AAC-LC, 48 kHz, stereo
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });

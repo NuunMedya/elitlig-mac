@@ -494,7 +494,12 @@ function buildRelayArgs({ url, rwTimeoutMs = 10000, output = "url" } = {}) {
     // ekler; açıkça yazılır ki eski / farklı ffmpeg sürümünde de ses bozuk gitmesin).
     "-bsf:a", "aac_adtstoasc",
     "-max_muxing_queue_size", "1024",
-    "-f", "flv", "-flvflags", "no_duration_filesize",
+    // aac_seq_header_detect (2.24.3): TS'teki AAC'nin genel başlığı yok; bu bayrak olmadan FLV
+    // başlığındaki İLK AAC dizi başlığı BOŞ yazılıyordu (gerçek ASC akış ortasında geliyordu) →
+    // YouTube 48 kHz sesi 44,1 kHz sanıp kalın ve cızırtılı çalıyordu (yerel kayıt temiz). Bayrakla
+    // ilk başlık yoklanan akıştan (AAC-LC, 48 kHz, 2 kanal) dolu yazılır; Node yayıncısı ayrıca boş
+    // başlığı hiç göndermez (rtmppub.js). Hem Node hem ffmpeg göndericisi, Mac ve Windows aynı yol.
+    "-f", "flv", "-flvflags", "no_duration_filesize+aac_seq_header_detect",
     // -tcp_nodelay YOK (2.21.0): ffmpeg her 128 baytlık parçayı ve 1 baytlık parça başlığını
     // ayrı send() ile yazar; Nagle kapalıyken (macOS'ta Linux'un autocorking'i yok) her biri ayrı
     // TCP paketi oluyordu (12 Mbps → kabloda ~21 Mbps, ~22 000 paket/sn). Nagle açıkken aynı
