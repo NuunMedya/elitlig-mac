@@ -1,8 +1,9 @@
 // YouTube yayın ayarları — saf yardımcılar: ön ayar şablonları, taslak, doğrulama.
 //
 // Şablon yer tutucuları: {home} {away} {date} {time} {league} {season} {round} {stage} {venue} {city} {link}
-// Varsayılan başlık (DEFAULT_TITLE_TEMPLATE): "<LİG / TURNUVA> <SEZON> <TUR / AŞAMA> · ELİTLİG", tamamı
-// Türkçe büyük harf (toLocaleUpperCase("tr-TR"); "Başlığı büyük harf yap", varsayılan açık).
+// Varsayılan başlık (DEFAULT_TITLE_TEMPLATE): "<EV> - <DEPLASMAN> | <LİG> - <SEZON> - <TUR>", yazıldığı
+// gibi ("Roketsan Lalahan - Bilkent Holding | CCL Cup - 2026 Güz Sezonu"); sezon adında "sezon" yoksa
+// " Sezonu" eklenir. "Başlığı büyük harf yap" isteğe bağlı (varsayılan kapalı).
 // Sunucu şablonu kendisi de işler; burada yalnız pencere içinde CANLI ÖNİZLEME için
 // maçın verisiyle doldurulur (bilinmeyen yer tutucu olduğu gibi kalır).
 
@@ -98,7 +99,9 @@ export function renderTemplate(tpl, vars = {}) {
 }
 
 /** Boş kalan parçaların ayraçlarını atar: "A ·  · B" → "A · B", " – B" → "B". */
-function tidyLine(line) {
+function tidyLine(raw) {
+  // Boş parçanın iki yanındaki ayraçlardan biri " - " ise ("A | - B", "A - | B") sarkan tire atılır.
+  const line = raw.replace(/ {2,}/g, " ").replace(/([·|–—])\s*-\s+/g, "$1 ").replace(/\s+-\s*([·|–—])/g, " $1");
   const parts = line.trim().split(/(\s*[·|–—]\s*|\s+-\s+|\s+-$|^-\s+)/);
   if (parts.length === 1) return line.replace(/ {2,}/g, " ").trimEnd();
   const kept = [];
@@ -111,16 +114,27 @@ function tidyLine(line) {
   return kept.join("").replace(/ {2,}/g, " ").trim();
 }
 
-/** Varsayılan YouTube başlığı: "OSTİM FUTBOL TURNUVASI 1. SEZON SON 16 TURU · ELİTLİG". */
-export const DEFAULT_TITLE_TEMPLATE = "{league} {season} {round} · ELİTLİG";
-/** Lig / sezon / tur bilinmiyorsa (sunucu taslağıyla aynı). */
-export const FALLBACK_TITLE_TEMPLATE = "{home} - {away} · ELİTLİG";
-export const TITLE_UPPER_KEY = "studio.ytTitleUpper.v1";
+/** Varsayılan YouTube başlığı: "Roketsan Lalahan - Bilkent Holding | CCL Cup - 2026 Güz Sezonu" (sunucuyla aynı). */
+export const DEFAULT_TITLE_TEMPLATE = "{home} - {away} | {league} - {season} - {round}";
+/** Lig / sezon / tur bilinmiyorsa yalnız takımlar (sunucu taslağıyla aynı). */
+export const FALLBACK_TITLE_TEMPLATE = "{home} - {away}";
+/** Önceki varsayılan şablonlar: bunları taşıyan ön ayar yeni varsayılan başlıkla doldurulur. */
+export const LEGACY_DEFAULT_TITLE_TEMPLATES = ["{league} {season} {round} · ELİTLİG", "{home} - {away} · ELİTLİG"];
+export const isLegacyDefaultTitle = (tpl) => LEGACY_DEFAULT_TITLE_TEMPLATES.includes(String(tpl ?? "").replace(/\s+/g, " ").trim());
+/** Başlıkta sezon: adında "sezon" yoksa " Sezonu" eklenir ("2026 Güz" → "2026 Güz Sezonu"). */
+export function seasonLabel(season) {
+  const s = String(season ?? "").trim();
+  if (!s) return "";
+  return /sezon/.test(s.toLocaleLowerCase("tr-TR")) ? s : `${s} Sezonu`;
+}
+// v2: varsayılan kapalı (eski v1 tercihi — varsayılan açık — yeni biçimi büyütmesin).
+export const TITLE_UPPER_KEY = "studio.ytTitleUpper.v2";
 /** Türkçe büyük harf (i → İ, ı → I). */
 export const upperTr = (s) => String(s ?? "").toLocaleUpperCase("tr-TR");
-/** Maç verisiyle varsayılan başlık; lig / sezon / tur bilinmiyorsa takım adları. */
-export function defaultTitle(vars = {}, { upper = true } = {}) {
-  const t = vars.league || vars.season || vars.round ? renderTemplate(DEFAULT_TITLE_TEMPLATE, vars) : renderTemplate(FALLBACK_TITLE_TEMPLATE, vars);
+/** Maç verisiyle varsayılan başlık: takımlar | lig - sezon - tur; yarışma bilinmiyorsa yalnız takımlar. */
+export function defaultTitle(vars = {}, { upper = false } = {}) {
+  const v = { ...vars, season: seasonLabel(vars.season) };
+  const t = v.league || v.season || v.round ? renderTemplate(DEFAULT_TITLE_TEMPLATE, v) : renderTemplate(FALLBACK_TITLE_TEMPLATE, v);
   return smartTrim(upper ? upperTr(t) : t);
 }
 /**
@@ -139,9 +153,9 @@ export function smartTrim(title, max = TITLE_MAX) {
   if (sp > room * 0.6) cut = cut.slice(0, sp);
   return `${cut.replace(/[\s·|,–-]+$/, "")}…${suffix}`.slice(0, max);
 }
-/** "Başlığı büyük harf yap" tercihi (bu bilgisayarda; varsayılan açık). */
+/** "Başlığı büyük harf yap" tercihi (bu bilgisayarda; varsayılan kapalı). */
 export function readTitleUpper() {
-  try { return localStorage.getItem(TITLE_UPPER_KEY) !== "0"; } catch { return true; }
+  try { return localStorage.getItem(TITLE_UPPER_KEY) === "1"; } catch { return false; }
 }
 export function writeTitleUpper(on) {
   try { localStorage.setItem(TITLE_UPPER_KEY, on ? "1" : "0"); } catch { /* yoksay */ }
@@ -181,8 +195,11 @@ export function normalizeSettings(x = {}) {
 
 /** Ön ayar (şablonlu) → bu maçın formu. */
 export function settingsFromPreset(preset, vars) {
-  const p = preset || {};
-  const title = renderTemplate(p.title_template ?? p.title ?? "", vars);
+  const p0 = preset || {};
+  // Eski varsayılan şablonlu ön ayar (takımsız, büyük harf) → yeni varsayılan başlık, büyük harf kapalı.
+  const legacy = isLegacyDefaultTitle(p0.title_template ?? p0.title);
+  const p = legacy ? { ...p0, uppercase: false } : p0;
+  const title = legacy ? defaultTitle(vars) : renderTemplate(p.title_template ?? p.title ?? "", vars);
   return normalizeSettings({
     uppercase: p.uppercase,
     title: p.uppercase !== false ? upperTr(title) : title,

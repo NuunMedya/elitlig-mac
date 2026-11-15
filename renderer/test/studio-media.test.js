@@ -76,19 +76,23 @@ describe("YouTube ön ayarları: şablonlar", () => {
     expect(renderTemplate("{venue} · {home}\n{link} {nope}", vars)).toBe("Ankara Gücü\nhttps://elitlig.com/maclar/42 {nope}");
     expect(renderTemplate("Sezon {season}", vars)).toBe("Sezon 2026-27");
   });
-  it("varsayılan başlık: <LİG> <SEZON> <TUR> · ELİTLİG, Türkçe büyük harf", () => {
+  it("varsayılan başlık: <EV> - <DEPLASMAN> | <LİG> - <SEZON> - <TUR>, yazıldığı gibi", () => {
     const v = templateVars({ first_team_name: "Kartal", second_team_name: "Şahin", league_name: "Ostim Futbol Turnuvası", match_season: "1. Sezon", round_name: "Son 16 Turu" });
     expect(v.round).toBe("Son 16 Turu");
-    expect(defaultTitle(v)).toBe("OSTİM FUTBOL TURNUVASI 1. SEZON SON 16 TURU · ELİTLİG");
-    expect(defaultTitle(v, { upper: false })).toBe("Ostim Futbol Turnuvası 1. Sezon Son 16 Turu · ELİTLİG");
+    expect(defaultTitle(v)).toBe("Kartal - Şahin | Ostim Futbol Turnuvası - 1. Sezon - Son 16 Turu");
+    expect(defaultTitle(v, { upper: true })).toBe("KARTAL - ŞAHİN | OSTİM FUTBOL TURNUVASI - 1. SEZON - SON 16 TURU");
+    expect(defaultTitle(templateVars({ first_team_name: "Roketsan Lalahan", second_team_name: "Bilkent Holding", league_name: "CCL Cup", match_season: "2026 Güz" })))
+      .toBe("Roketsan Lalahan - Bilkent Holding | CCL Cup - 2026 Güz Sezonu");
     expect(templateVars({ group: { group_name: "Çeyrek final" } }).round).toBe("Çeyrek final");
     expect(templateVars({ stage: "none", group_name: "A Grubu" }).stage).toBe("A Grubu");
-    expect(defaultTitle(templateVars({ first_team_name: "Kartal", second_team_name: "Şahin", league_name: "none" }))).toBe("KARTAL - ŞAHİN · ELİTLİG");
+    expect(defaultTitle(templateVars({ first_team_name: "Kartal", second_team_name: "Şahin", league_name: "none" }))).toBe("Kartal - Şahin");
     // sezon lig / tur adını içeriyorsa tekrar edilmez (sunucuyla aynı)
-    expect(defaultTitle(templateVars({ league_name: "Süper Lig", match_season: "Süper Lig 2026 Güz", round_name: "2026" }))).toBe("SÜPER LİG 2026 GÜZ · ELİTLİG");
+    expect(defaultTitle(templateVars({ first_team_name: "Kartal", second_team_name: "Şahin", league_name: "Süper Lig", match_season: "Süper Lig 2026 Güz", round_name: "2026" }))).toBe("Kartal - Şahin | Süper Lig 2026 Güz Sezonu");
     const long = smartTrim(`${"Çok uzun turnuva adı ".repeat(8)}1. Sezon · ELİTLİG`);
     expect(long.length).toBeLessThanOrEqual(100);
     expect(long.endsWith("… · ELİTLİG")).toBe(true);
+    // eski varsayılan şablonlu ön ayar → yeni biçim, büyük harf kapalı
+    expect(settingsFromPreset({ title_template: "{league} {season} {round} · ELİTLİG", uppercase: true }, v)).toMatchObject({ title: "Kartal - Şahin | Ostim Futbol Turnuvası - 1. Sezon - Son 16 Turu", uppercase: false });
     // ön ayarın uppercase alanı
     expect(settingsFromPreset({ title_template: "{league} {round}", uppercase: true }, v).title).toBe("OSTİM FUTBOL TURNUVASI SON 16 TURU");
     expect(settingsFromPreset({ title_template: "{league}", uppercase: false }, v)).toMatchObject({ title: "Ostim Futbol Turnuvası", uppercase: false });

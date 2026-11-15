@@ -42,10 +42,10 @@ export default function YoutubeStartDialog({ mode = "start", yt, match, homeName
   const edit = mode === "edit";
   const presets = useYoutubePresets();
   const vars = useMemo(() => templateVars(match, { homeName, awayName, matchId: yt?.matchId }), [match, homeName, awayName, yt?.matchId]);
-  // "Başlığı büyük harf yap" (varsayılan açık): gönderilen başlık Türkçe büyük harfe çevrilir.
+  // "Başlığı büyük harf yap" (varsayılan kapalı): gönderilen başlık Türkçe büyük harfe çevrilir.
   const [upper, setUpperState] = useState(() => readTitleUpper());
   const setUpper = (on) => { setUpperState(on); writeTitleUpper(on); };
-  // Varsayılan biçim: "<LİG / TURNUVA> <SEZON> <TUR> · ELİTLİG" (sunucu taslağı / ön ayar yoksa).
+  // Varsayılan biçim: "<EV> - <DEPLASMAN> | <LİG> - <SEZON> - <TUR>" (sunucu taslağı / ön ayar yoksa).
   const fallbackTitle = defaultTitle(vars, { upper });
   const [form, setForm] = useState(() => toForm({ title: fallbackTitle, privacy: yt?.privacy || "public" }));
   const [presetId, setPresetId] = useState("");
@@ -83,7 +83,7 @@ export default function YoutubeStartDialog({ mode = "start", yt, match, homeName
   useEffect(() => {
     if (source !== "fallback" || touched || presets.loading) return;
     const def = presets.items.find((p) => p.is_default);
-    if (def) { setForm(toForm(settingsFromPreset(def, vars))); setPresetId(def.id); setSource("preset"); setUpperState(def.uppercase !== false); }
+    if (def) { const st = settingsFromPreset(def, vars); setForm(toForm(st)); setPresetId(def.id); setSource("preset"); setUpperState(st.uppercase !== false); }
   }, [source, touched, presets.loading, presets.items, vars]);
 
   const resolved = useMemo(() => resolveForm(form, vars, { upper }), [form, vars, upper]);
@@ -95,7 +95,7 @@ export default function YoutubeStartDialog({ mode = "start", yt, match, homeName
   const applyPreset = (id) => {
     setPresetId(id);
     const p = presets.items.find((x) => x.id === id);
-    if (p) { setTouched(true); setForm(toForm(settingsFromPreset(p, vars))); setUpperState(p.uppercase !== false); }
+    if (p) { const st = settingsFromPreset(p, vars); setTouched(true); setForm(toForm(st)); setUpperState(st.uppercase !== false); }
   };
   const insert = (key) => {
     const field = focusRef.current === "description" ? "description" : focusRef.current === "tags" ? "tagsText" : "title";
@@ -175,7 +175,7 @@ export default function YoutubeStartDialog({ mode = "start", yt, match, homeName
         <Field label={`Başlık · ${resolved.title.length || fallbackTitle.length}/${TITLE_MAX}`}>
           <input autoFocus value={form.title} onChange={(e) => set({ title: e.target.value })} onFocus={() => { focusRef.current = "title"; }} placeholder={fallbackTitle} maxLength={300} spellCheck={false} />
         </Field>
-        <label className="toggle yt-upper" title="Gönderilen başlık Türkçe büyük harfe çevrilir (i → İ): “OSTİM FUTBOL TURNUVASI 1. SEZON SON 16 TURU · ELİTLİG”">
+        <label className="toggle yt-upper" title="Gönderilen başlık Türkçe büyük harfe çevrilir (i → İ): “ROKETSAN LALAHAN - BİLKENT HOLDİNG | CCL CUP - 2026 GÜZ SEZONU”">
           <input type="checkbox" checked={upper} onChange={(e) => setUpper(e.target.checked)} data-yt-upper="" /> Başlığı büyük harf yap
         </label>
         <Field label="Açıklama">
