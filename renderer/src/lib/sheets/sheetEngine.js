@@ -30,7 +30,7 @@ export const colIndex = (name) => {
 export const addr = (col, row) => `${colName(col)}${row + 1}`;
 
 export const parseAddr = (text) => {
-  const m = /^\$?([A-Za-z]{1,2})\$?(\d{1,4})$/.exec(String(text).trim());
+  const m = /^\$?([A-Za-z]{1,2})\$?(\d{1,5})$/.exec(String(text).trim());
   if (!m) return null;
   return { col: colIndex(m[1]), row: Number(m[2]) - 1 };
 };
@@ -90,9 +90,9 @@ export const dateToSerial = (date) => Math.round((Date.UTC(date.getFullYear(), d
 
 /* ------------------------------ sözcükleyici ------------------------------ */
 
-const REF_RE = /^(?:(?:'([^']+)'|([A-Za-zÇĞİÖŞÜçğıöşü_][\wÇĞİÖŞÜçğıöşü]*))!)?(\$?[A-Za-z]{1,2}\$?\d{1,4})(?::(\$?[A-Za-z]{1,2}\$?\d{1,4}))?/;
+const REF_RE = /^(?:(?:'([^']+)'|([A-Za-zÇĞİÖŞÜçğıöşü_][\wÇĞİÖŞÜçğıöşü]*))!)?(\$?[A-Za-z]{1,2}\$?\d{1,5})(?::(\$?[A-Za-z]{1,2}\$?\d{1,5}))?/;
 // Tam sütun (A:A, $B:$D) ve tam satır (1:1, $3:$9) aralıkları.
-const FULL_RE = /^(?:(?:'([^']+)'|([A-Za-zÇĞİÖŞÜçğıöşü_][\wÇĞİÖŞÜçğıöşü]*))!)?(?:(\$?[A-Za-z]{1,2}):(\$?[A-Za-z]{1,2})|(\$?\d{1,4}):(\$?\d{1,4}))/;
+const FULL_RE = /^(?:(?:'([^']+)'|([A-Za-zÇĞİÖŞÜçğıöşü_][\wÇĞİÖŞÜçğıöşü]*))!)?(?:(\$?[A-Za-z]{1,2}):(\$?[A-Za-z]{1,2})|(\$?\d{1,5}):(\$?\d{1,5}))/;
 
 export function tokenize(src) {
   // ";" ayraçlı (Türkçe) formüllerde ya da işlevsiz ifadelerde "1,18" ondalıktır.
@@ -427,7 +427,7 @@ export const FUNCTIONS = {
       throw ERR.na();
     },
   },
-  CONCAT: { tr: "BİRLEŞTİR", hint: "BİRLEŞTİR(A1; \" \"; B1)", fn: (a) => flat(a).map(toText).join("") },
+  CONCAT: { tr: "ARALIKBİRLEŞTİR", hint: "ARALIKBİRLEŞTİR(A1:C1) — metinleri birleştirir", fn: (a) => flat(a).map(toText).join("") },
   TEXTJOIN: { tr: "METİNBİRLEŞTİR", hint: "METİNBİRLEŞTİR(\", \"; DOĞRU; A1:A5)", fn: ([sep, skip, ...rest]) => flat(rest).map(toText).filter((t) => !toBool(skip ?? false) || t !== "").join(toText(sep)) },
   TEXT: {
     tr: "METNEÇEVİR", hint: "METNEÇEVİR(A1; \"#.##0,00\") — sayıyı/tarihi biçimli metne çevirir",
@@ -451,7 +451,192 @@ export const FUNCTIONS = {
     fn: ([x, range, order]) => { const n = toNumber(x); const list = numbersOf([range]); const asc = order !== undefined && toNumber(order) !== 0; return list.filter((v) => (asc ? v < n : v > n)).length + 1; },
   },
   MEDIAN: { tr: "ORTANCA", hint: "ORTANCA(A1:A9)", fn: (a) => { const n = numbersOf(a).sort((x, y) => x - y); if (!n.length) throw ERR.num(); const m = Math.floor(n.length / 2); return n.length % 2 ? n[m] : (n[m - 1] + n[m]) / 2; } },
+  // ----- çok koşullu toplama / sayma -----
+  SUMIFS: {
+    tr: "ÇOKETOPLA", hint: "ÇOKETOPLA(C2:C20; A2:A20; \"Ali\"; B2:B20; \">5\") — tüm koşullara uyanları toplar",
+    args: ["toplam_aralığı", "ölçüt_aralığı1", "ölçüt1", "…"],
+    fn: ([sumRange, ...pairs]) => { const sums = vals(sumRange); const ok = multiMatch(pairs, sums.length); return sums.reduce((s, v, i) => (ok(i) && typeof v === "number" ? s + v : s), 0); },
+  },
+  COUNTIFS: {
+    tr: "ÇOKEĞERSAY", hint: "ÇOKEĞERSAY(A2:A20; \"Ali\"; B2:B20; \">5\") — tüm koşullara uyanları sayar",
+    args: ["ölçüt_aralığı1", "ölçüt1", "…"],
+    fn: (pairs) => { const n = vals(pairs[0]).length; const ok = multiMatch(pairs, n); let c = 0; for (let i = 0; i < n; i += 1) if (ok(i)) c += 1; return c; },
+  },
+  AVERAGEIFS: {
+    tr: "ÇOKEĞERORTALAMA", hint: "ÇOKEĞERORTALAMA(C2:C20; A2:A20; \"Ali\")",
+    args: ["ortalama_aralığı", "ölçüt_aralığı1", "ölçüt1", "…"],
+    fn: ([avgRange, ...pairs]) => { const nums = vals(avgRange); const ok = multiMatch(pairs, nums.length); const picked = nums.filter((v, i) => ok(i) && typeof v === "number"); if (!picked.length) throw ERR.div0(); return picked.reduce((s, x) => s + x, 0) / picked.length; },
+  },
+  MAXIFS: { tr: "ÇOKEĞERMAK", hint: "ÇOKEĞERMAK(C2:C20; A2:A20; \"Ali\")", args: ["maks_aralığı", "ölçüt_aralığı1", "ölçüt1", "…"], fn: ([r, ...pairs]) => { const v = vals(r); const ok = multiMatch(pairs, v.length); const n = v.filter((x, i) => ok(i) && typeof x === "number"); return n.length ? Math.max(...n) : 0; } },
+  MINIFS: { tr: "ÇOKEĞERMİN", hint: "ÇOKEĞERMİN(C2:C20; A2:A20; \"Ali\")", args: ["min_aralığı", "ölçüt_aralığı1", "ölçüt1", "…"], fn: ([r, ...pairs]) => { const v = vals(r); const ok = multiMatch(pairs, v.length); const n = v.filter((x, i) => ok(i) && typeof x === "number"); return n.length ? Math.min(...n) : 0; } },
+  SUMPRODUCT: {
+    tr: "TOPLA.ÇARPIM", hint: "TOPLA.ÇARPIM(A2:A9; B2:B9) — karşılıklı çarpımların toplamı", args: ["dizi1", "[dizi2]", "…"],
+    fn: (arrays) => { const lists = arrays.map(vals); const n = lists[0]?.length || 0; if (lists.some((l) => l.length !== n)) throw ERR.value(); let s = 0; for (let i = 0; i < n; i += 1) s += lists.reduce((p, l) => p * (typeof l[i] === "number" ? l[i] : typeof l[i] === "boolean" ? Number(l[i]) : 0), 1); return s; },
+  },
+  // ----- arama -----
+  HLOOKUP: {
+    tr: "YATAYARA", hint: "YATAYARA(\"Ocak\"; A1:M3; 2; YANLIŞ) — ilk satırda arar", args: ["aranan_değer", "tablo_dizisi", "satır_indis_sayısı", "[aralık_bak]"],
+    fn: ([needle, table, row, approx]) => {
+      if (!table?.range) throw ERR.value();
+      const r = Math.floor(toNumber(row)) - 1;
+      if (r < 0 || r >= table.rows) throw ERR.ref();
+      const first = table.values.slice(0, table.cols);
+      const i = lookupIndex(needle, first, approx === undefined ? 1 : toBool(approx) ? 1 : 0);
+      return table.values[r * table.cols + i] ?? "";
+    },
+  },
+  MATCH: {
+    tr: "KAÇINCI", hint: "KAÇINCI(\"Ali\"; A2:A20; 0) — değerin aralıktaki sırası", args: ["aranan_değer", "aranan_dizi", "[eşleştir_tür]"],
+    fn: ([needle, range, type]) => lookupIndex(needle, vals(range), type === undefined ? 1 : toNumber(type)) + 1,
+  },
+  INDEX: {
+    tr: "İNDİS", hint: "İNDİS(A2:C20; 3; 2) — aralıktaki satır/sütundaki değer", args: ["dizi", "satır_sayısı", "[sütun_sayısı]"],
+    fn: ([range, row, col]) => {
+      if (!range?.range) { if ((row === undefined || toNumber(row) <= 1) && (col === undefined || toNumber(col) <= 1)) return range; throw ERR.ref(); }
+      let r = row === undefined ? 1 : Math.floor(toNumber(row));
+      let c = col === undefined ? 1 : Math.floor(toNumber(col));
+      if (range.rows === 1 && col === undefined) { c = r; r = 1; }
+      if (r < 1 || c < 1 || r > range.rows || c > range.cols) throw ERR.ref();
+      return range.values[(r - 1) * range.cols + (c - 1)] ?? "";
+    },
+  },
+  XLOOKUP: {
+    tr: "ÇAPRAZARA", hint: "ÇAPRAZARA(\"Ali\"; A2:A20; C2:C20; \"Yok\") — arar ve karşılığını verir", args: ["aranan_değer", "aranan_dizi", "döndürülen_dizi", "[bulunamıyorsa]", "[eşleştirme_modu]", "[arama_modu]"],
+    lazy: true,
+    fn: (args, ev, evRaw) => {
+      const needle = ev(args[0]);
+      const look = vals(evRaw(args[1]));
+      const ret = evRaw(args[2]);
+      const mode = args[4] && args[4].k !== "empty" ? toNumber(ev(args[4])) : 0;
+      const search = args[5] && args[5].k !== "empty" ? toNumber(ev(args[5])) : 1;
+      let i = -1;
+      try { i = xIndex(needle, look, mode, search); } catch (e) { if (!isError(e)) throw e; }
+      if (i < 0) { if (args[3] && args[3].k !== "empty") return ev(args[3]); throw ERR.na(); }
+      const rv = vals(ret);
+      if (ret?.range && ret.rows === look.length && ret.cols > 1) return rv[i * ret.cols];
+      return rv[i] ?? "";
+    },
+  },
+  CHOOSE: { tr: "ELEMAN", hint: "ELEMAN(2; \"a\"; \"b\"; \"c\")", args: ["indis_sayısı", "değer1", "[değer2]", "…"], lazy: true, fn: (args, ev) => { const i = Math.floor(toNumber(ev(args[0]))); if (i < 1 || i >= args.length) throw ERR.value(); return ev(args[i]); } },
+  ROWS: { tr: "SATIRSAY", hint: "SATIRSAY(A1:B10)", args: ["dizi"], fn: ([r]) => (r?.range ? r.rows : 1) },
+  COLUMNS: { tr: "SÜTUNSAY", hint: "SÜTUNSAY(A1:B10)", args: ["dizi"], fn: ([r]) => (r?.range ? r.cols : 1) },
+  // ----- mantıksal -----
+  IFS: {
+    tr: "ÇOKEĞER", hint: "ÇOKEĞER(A1>=90; \"A\"; A1>=70; \"B\"; DOĞRU; \"C\")", args: ["mantıksal_sınama1", "doğruysa_değer1", "…"], lazy: true,
+    fn: (args, ev) => { for (let i = 0; i + 1 < args.length; i += 2) if (toBool(ev(args[i]))) return ev(args[i + 1]); throw ERR.na(); },
+  },
+  SWITCH: {
+    tr: "İLKEŞLEŞEN", hint: "İLKEŞLEŞEN(A1; 1; \"Bir\"; 2; \"İki\"; \"Diğer\")", args: ["ifade", "değer1", "sonuç1", "…", "[varsayılan]"], lazy: true,
+    fn: (args, ev) => { const x = ev(args[0]); const norm = (v) => (typeof v === "string" ? v.toLocaleLowerCase("tr-TR") : v && typeof v === "object" && "date" in v ? v.date : v); for (let i = 1; i + 1 < args.length; i += 2) if (norm(ev(args[i])) === norm(x)) return ev(args[i + 1]); if (args.length % 2 === 0) return ev(args[args.length - 1]); throw ERR.na(); },
+  },
+  IFNA: { tr: "EĞERYOKSA", hint: "EĞERYOKSA(DÜŞEYARA(…); \"Yok\")", args: ["değer", "değer_eğer_yoksa"], lazy: true, fn: (args, ev) => { try { const v = ev(args[0]); return isError(v) && v.code === "#YOK" ? ev(args[1]) : v; } catch (e) { if (isError(e) && e.code === "#YOK") return ev(args[1]); throw e; } } },
+  XOR: { tr: "ÖZELVEYA", hint: "ÖZELVEYA(A1>0; B1>0)", fn: (a) => flat(a).filter(toBool).length % 2 === 1 },
+  ISBLANK: { tr: "EBOŞSA", hint: "EBOŞSA(A1)", args: ["değer"], fn: ([x]) => x == null || x === "" },
+  ISNUMBER: { tr: "ESAYIYSA", hint: "ESAYIYSA(A1)", args: ["değer"], fn: ([x]) => typeof x === "number" || (x && typeof x === "object" && "date" in x) },
+  ISTEXT: { tr: "EMETİNSE", hint: "EMETİNSE(A1)", args: ["değer"], fn: ([x]) => typeof x === "string" && x !== "" },
+  ISERROR: { tr: "EHATALIYSA", hint: "EHATALIYSA(A1)", args: ["değer"], lazy: true, fn: (args, ev) => { try { return isError(ev(args[0])); } catch (e) { if (isError(e)) return true; throw e; } } },
+  ISNA: { tr: "EYOKSA", hint: "EYOKSA(A1)", args: ["değer"], lazy: true, fn: (args, ev) => { try { const v = ev(args[0]); return isError(v) && v.code === "#YOK"; } catch (e) { if (isError(e)) return e.code === "#YOK"; throw e; } } },
+  NA: { tr: "YOKSAY", hint: "YOKSAY() — #YOK hatası", args: [], fn: () => { throw ERR.na(); } },
+  // ----- metin -----
+  CONCATENATE: { tr: "BİRLEŞTİR", hint: "BİRLEŞTİR(A1; \" \"; B1)", fn: (a) => flat(a).map(toText).join("") },
+  MID: { tr: "PARÇAAL", hint: "PARÇAAL(A1; 2; 3) — metnin ortasından karakter alır", args: ["metin", "başlangıç_sayısı", "sayı_karakterler"], fn: ([x, s, n]) => { const st = Math.floor(toNumber(s)); const k = Math.floor(toNumber(n)); if (st < 1 || k < 0) throw ERR.value(); return toText(x).slice(st - 1, st - 1 + k); } },
+  FIND: { tr: "BUL", hint: "BUL(\"a\"; A1) — büyük/küçük harf duyarlı konum", args: ["bul_metin", "içinde_metin", "[başlangıç_sayısı]"], fn: ([f, t, s]) => { const i = toText(t).indexOf(toText(f), (s === undefined ? 1 : toNumber(s)) - 1); if (i < 0) throw ERR.value(); return i + 1; } },
+  SEARCH: { tr: "MBUL", hint: "MBUL(\"a\"; A1) — harf duyarsız konum", args: ["bul_metin", "içinde_metin", "[başlangıç_sayısı]"], fn: ([f, t, s]) => { const i = toText(t).toLocaleLowerCase("tr-TR").indexOf(toText(f).toLocaleLowerCase("tr-TR"), (s === undefined ? 1 : toNumber(s)) - 1); if (i < 0) throw ERR.value(); return i + 1; } },
+  SUBSTITUTE: { tr: "YERİNEKOY", hint: "YERİNEKOY(A1; \"eski\"; \"yeni\")", args: ["metin", "eski_metin", "yeni_metin", "[yineleme_sayısı]"], fn: ([t, o, n, k]) => { const text = toText(t); const old = toText(o); if (!old) return text; if (k === undefined) return text.split(old).join(toText(n)); const nth = Math.floor(toNumber(k)); let idx = -1; for (let i = 0; i < nth; i += 1) { idx = text.indexOf(old, idx + 1); if (idx < 0) return text; } return text.slice(0, idx) + toText(n) + text.slice(idx + old.length); } },
+  REPLACE: { tr: "DEĞİŞTİR", hint: "DEĞİŞTİR(A1; 1; 3; \"xyz\")", args: ["eski_metin", "başlangıç_sayısı", "sayı_karakterler", "yeni_metin"], fn: ([t, s, n, r]) => { const text = toText(t); const st = Math.floor(toNumber(s)) - 1; return text.slice(0, st) + toText(r) + text.slice(st + Math.floor(toNumber(n))); } },
+  VALUE: { tr: "SAYIYAÇEVİR", hint: "SAYIYAÇEVİR(\"1.250,5\")", args: ["metin"], fn: ([x]) => toNumber(x) },
+  PROPER: { tr: "YAZIM.DÜZENİ", hint: "YAZIM.DÜZENİ(A1) — her sözcüğün ilk harfi büyük", args: ["metin"], fn: ([x]) => toText(x).toLocaleLowerCase("tr-TR").replace(/(^|[^\p{L}])(\p{L})/gu, (m, a, b) => a + b.toLocaleUpperCase("tr-TR")) },
+  REPT: { tr: "YİNELE", hint: "YİNELE(\"*\"; 5)", args: ["metin", "sayı_kere"], fn: ([x, n]) => toText(x).repeat(Math.max(0, Math.min(10000, Math.floor(toNumber(n))))) },
+  EXACT: { tr: "ÖZDEŞ", hint: "ÖZDEŞ(A1; B1) — birebir aynı mı", args: ["metin1", "metin2"], fn: ([a, b]) => toText(a) === toText(b) },
+  // ----- matematik / istatistik -----
+  LARGE: { tr: "BÜYÜK", hint: "BÜYÜK(A1:A20; 2) — k. en büyük", args: ["dizi", "k"], fn: ([r, k]) => { const n = numbersOf([r]).sort((x, y) => y - x); const i = Math.floor(toNumber(k)) - 1; if (i < 0 || i >= n.length) throw ERR.num(); return n[i]; } },
+  SMALL: { tr: "KÜÇÜK", hint: "KÜÇÜK(A1:A20; 2) — k. en küçük", args: ["dizi", "k"], fn: ([r, k]) => { const n = numbersOf([r]).sort((x, y) => x - y); const i = Math.floor(toNumber(k)) - 1; if (i < 0 || i >= n.length) throw ERR.num(); return n[i]; } },
+  STDEV: { tr: "STDSAPMA", hint: "STDSAPMA(A1:A20) — örnek standart sapma", fn: (a) => { const n = numbersOf(a); if (n.length < 2) throw ERR.div0(); const m = n.reduce((s, x) => s + x, 0) / n.length; return Math.sqrt(n.reduce((s, x) => s + (x - m) ** 2, 0) / (n.length - 1)); } },
+  VAR: { tr: "VAR", hint: "VAR(A1:A20) — örnek varyans", fn: (a) => { const n = numbersOf(a); if (n.length < 2) throw ERR.div0(); const m = n.reduce((s, x) => s + x, 0) / n.length; return n.reduce((s, x) => s + (x - m) ** 2, 0) / (n.length - 1); } },
+  MODE: { tr: "ENÇOK_OLAN", hint: "ENÇOK_OLAN(A1:A20) — en sık değer", fn: (a) => { const counts = new Map(); let best = null; let top = 1; for (const x of numbersOf(a)) { const c = (counts.get(x) || 0) + 1; counts.set(x, c); if (c > top) { top = c; best = x; } } if (best == null) throw ERR.na(); return best; } },
+  CEILING: { tr: "TAVANAYUVARLA", hint: "TAVANAYUVARLA(A1; 5)", args: ["sayı", "[anlam]"], fn: ([x, s]) => { const m = s === undefined ? 1 : toNumber(s); if (!m) return 0; return Math.ceil(toNumber(x) / m - 1e-12) * m; } },
+  FLOOR: { tr: "TABANAYUVARLA", hint: "TABANAYUVARLA(A1; 5)", args: ["sayı", "[anlam]"], fn: ([x, s]) => { const m = s === undefined ? 1 : toNumber(s); if (!m) throw ERR.div0(); return Math.floor(toNumber(x) / m + 1e-12) * m; } },
+  TRUNC: { tr: "NSAT", hint: "NSAT(A1; 2) — ondalığı keser", args: ["sayı", "[sayı_rakamlar]"], fn: ([x, d]) => { const f = 10 ** (d === undefined ? 0 : toNumber(d)); return Math.trunc(toNumber(x) * f) / f; } },
+  SIGN: { tr: "İŞARET", hint: "İŞARET(A1)", args: ["sayı"], fn: ([x]) => Math.sign(toNumber(x)) },
+  PI: { tr: "Pİ", hint: "Pİ()", args: [], fn: () => Math.PI },
+  RAND: { tr: "S_SAYI_ÜRET", hint: "S_SAYI_ÜRET() — 0-1 arası rastgele", args: [], fn: () => Math.random() },
+  RANDBETWEEN: { tr: "RASTGELEARADA", hint: "RASTGELEARADA(1; 100)", args: ["alt", "üst"], fn: ([a, b]) => { const lo = Math.ceil(toNumber(a)); const hi = Math.floor(toNumber(b)); return lo + Math.floor(Math.random() * (hi - lo + 1)); } },
+  // ----- tarih / saat -----
+  TIME: { tr: "ZAMAN", hint: "ZAMAN(14; 30; 0)", args: ["saat", "dakika", "saniye"], fn: ([h, m, s]) => ({ date: ((toNumber(h) * 3600 + toNumber(m) * 60 + toNumber(s ?? 0)) / 86400) % 1 || 0, time: true }) },
+  HOUR: { tr: "SAAT", hint: "SAAT(A1)", args: ["seri_no"], fn: ([x]) => Math.floor(frac(toNumber(x)) * 24 + 1e-9) },
+  MINUTE: { tr: "DAKİKA", hint: "DAKİKA(A1)", args: ["seri_no"], fn: ([x]) => Math.floor((frac(toNumber(x)) * 1440 + 1e-7) % 60) },
+  SECOND: { tr: "SANİYE", hint: "SANİYE(A1)", args: ["seri_no"], fn: ([x]) => Math.round(frac(toNumber(x)) * 86400) % 60 },
+  WEEKDAY: { tr: "HAFTANINGÜNÜ", hint: "HAFTANINGÜNÜ(A1; 2) — 2: Pazartesi=1", args: ["seri_no", "[döndür_tür]"], fn: ([x, t]) => { const d = serialToDate(Math.floor(toNumber(x))).getUTCDay(); const type = t === undefined ? 1 : toNumber(t); if (type === 2) return d === 0 ? 7 : d; if (type === 3) return d === 0 ? 6 : d - 1; return d + 1; } },
+  EDATE: { tr: "SERİTARİH", hint: "SERİTARİH(A1; 3) — 3 ay sonrası", args: ["başlangıç_tarihi", "ay_sayısı"], fn: ([x, n]) => ({ date: addMonths(toNumber(x), Math.trunc(toNumber(n)), false) }) },
+  EOMONTH: { tr: "SERİAY", hint: "SERİAY(A1; 0) — ayın son günü", args: ["başlangıç_tarihi", "ay_sayısı"], fn: ([x, n]) => ({ date: addMonths(toNumber(x), Math.trunc(toNumber(n)), true) }) },
+  NETWORKDAYS: { tr: "TAMİŞGÜNÜ", hint: "TAMİŞGÜNÜ(A1; B1) — iş günü sayısı", args: ["başlangıç_tarihi", "bitiş_tarihi", "[tatiller]"], fn: ([a, b, hol]) => { let s = Math.floor(toNumber(a)); let e = Math.floor(toNumber(b)); const sign = e < s ? -1 : 1; if (sign < 0) [s, e] = [e, s]; const off = new Set(numbersOf(hol === undefined ? [] : [hol]).map(Math.floor)); let n = 0; for (let d = s; d <= e; d += 1) { const w = serialToDate(d).getUTCDay(); if (w !== 0 && w !== 6 && !off.has(d)) n += 1; } return n * sign; } },
+  WORKDAY: { tr: "İŞGÜNÜ", hint: "İŞGÜNÜ(A1; 10) — n iş günü sonrası", args: ["başlangıç_tarihi", "gün_sayısı", "[tatiller]"], fn: ([a, k, hol]) => { let d = Math.floor(toNumber(a)); let n = Math.trunc(toNumber(k)); const step = n < 0 ? -1 : 1; const off = new Set(numbersOf(hol === undefined ? [] : [hol]).map(Math.floor)); while (n !== 0) { d += step; const w = serialToDate(d).getUTCDay(); if (w !== 0 && w !== 6 && !off.has(d)) n -= step; } return { date: d }; } },
+  DATEDIF: { tr: "ETARİHLİ", hint: "ETARİHLİ(A1; B1; \"Y\") — Y/M/D farkı", args: ["başlangıç_tarihi", "bitiş_tarihi", "birim"], fn: ([a, b, u]) => { const s = serialToDate(Math.floor(toNumber(a))); const e = serialToDate(Math.floor(toNumber(b))); if (e < s) throw ERR.num(); const unit = toText(u).toUpperCase(); const months = (e.getUTCFullYear() - s.getUTCFullYear()) * 12 + e.getUTCMonth() - s.getUTCMonth() - (e.getUTCDate() < s.getUTCDate() ? 1 : 0); if (unit === "Y") return Math.floor(months / 12); if (unit === "M") return months; if (unit === "D") return Math.round((e - s) / 86400000); if (unit === "YM") return months % 12; if (unit === "MD") { const d = e.getUTCDate() - s.getUTCDate(); return d >= 0 ? d : new Date(Date.UTC(e.getUTCFullYear(), e.getUTCMonth(), 0)).getUTCDate() + d; } throw ERR.num(); } },
 };
+
+/* ----------------------- çok koşul ve arama yardımcıları ----------------------- */
+
+function vals(a) { return a && a.range ? a.values : [a]; }
+function frac(n) { return n - Math.floor(n); }
+function addMonths(serial, n, endOfMonth) {
+  const d = serialToDate(Math.floor(serial));
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth() + n;
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const day = endOfMonth ? last : Math.min(d.getUTCDate(), last);
+  return Math.round((Date.UTC(y, m, day) - EPOCH) / 86400000);
+}
+/** ÇOKETOPLA/ÇOKEĞERSAY: (aralık; ölçüt) çiftlerinin hepsine uyan indeksler. */
+function multiMatch(pairs, length) {
+  const tests = [];
+  for (let i = 0; i + 1 < pairs.length; i += 2) {
+    const list = vals(pairs[i]);
+    if (list.length !== length) throw ERR.value();
+    tests.push([list, criterion(pairs[i + 1])]);
+  }
+  if (pairs.length % 2) throw ERR.value();
+  return (idx) => tests.every(([list, test]) => test(list[idx]));
+}
+const lookupKey = (v) => (v == null ? "" : typeof v === "number" ? v : v && typeof v === "object" && "date" in v ? v.date : typeof v === "boolean" ? v : toText(v).toLocaleLowerCase("tr-TR"));
+const cmpKeys = (a, b) => (typeof a === typeof b ? (a < b ? -1 : a > b ? 1 : 0) : typeof a === "number" ? -1 : 1);
+const wildcard = (pattern) => new RegExp(`^${String(pattern).replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".")}$`, "i");
+/** KAÇINCI kuralları: 0 tam (joker), 1 küçük ya da eşit (sıralı), −1 büyük ya da eşit (azalan). */
+function lookupIndex(needle, list, type) {
+  const key = lookupKey(needle);
+  if (type === 0 || type === false) {
+    const re = typeof key === "string" && /[*?]/.test(key) ? wildcard(key) : null;
+    const i = list.findIndex((v) => (re ? re.test(toText(v ?? "")) : lookupKey(v) === key));
+    if (i < 0) throw ERR.na();
+    return i;
+  }
+  let best = -1;
+  for (let i = 0; i < list.length; i += 1) {
+    const k = lookupKey(list[i]);
+    if (k === "" || typeof k !== typeof key) continue;
+    const c = cmpKeys(k, key);
+    if (c === 0) return i;
+    if (type > 0 ? c < 0 : c > 0) best = i;
+    else break;
+  }
+  if (best < 0) throw ERR.na();
+  return best;
+}
+/** ÇAPRAZARA: eşleştirme 0 tam, −1 tam ya da küçük, 1 tam ya da büyük, 2 joker; arama 1 baştan, −1 sondan. */
+function xIndex(needle, list, mode, search) {
+  const key = lookupKey(needle);
+  const order = search < 0 ? [...list.keys()].reverse() : [...list.keys()];
+  if (mode === 2) { const re = wildcard(key); const i = order.find((j) => re.test(toText(list[j] ?? ""))); return i ?? -1; }
+  const exact = order.find((j) => lookupKey(list[j]) === key);
+  if (exact !== undefined) return exact;
+  if (!mode) return -1;
+  let best = -1;
+  for (const j of order) {
+    const k = lookupKey(list[j]);
+    if (typeof k !== typeof key || k === "") continue;
+    if (mode < 0 ? k < key && (best < 0 || k > lookupKey(list[best])) : k > key && (best < 0 || k < lookupKey(list[best]))) best = j;
+  }
+  return best;
+}
 
 const NAME_INDEX = (() => {
   const map = new Map();
@@ -464,7 +649,7 @@ const NAME_INDEX = (() => {
   return map;
 })();
 
-export const FUNCTION_LIST = Object.entries(FUNCTIONS).map(([en, def]) => ({ en, tr: def.tr, hint: def.hint }));
+export const FUNCTION_LIST = Object.entries(FUNCTIONS).map(([en, def]) => ({ en, tr: def.tr, hint: def.hint, ...(def.args ? { args: def.args } : {}) }));
 
 /* -------------------------------- hesaplama -------------------------------- */
 
@@ -546,8 +731,8 @@ export function createEvaluator(workbook) {
     const c1 = Math.min(p.col, q.col);
     const c2 = Math.max(p.col, q.col);
     const r1 = Math.min(p.row, q.row);
-    const r2 = Math.min(Math.max(p.row, q.row), 9999);
-    if ((c2 - c1 + 1) * (r2 - r1 + 1) > 60000) throw ERR.ref();
+    const r2 = Math.min(Math.max(p.row, q.row), 99998);
+    if ((c2 - c1 + 1) * (r2 - r1 + 1) > 2000000) throw ERR.ref();
     const values = [];
     for (let r = r1; r <= r2; r += 1) for (let c = c1; c <= c2; c += 1) values.push(value(si, addr(c, r)));
     return { range: true, values, rows: r2 - r1 + 1, cols: c2 - c1 + 1 };
@@ -585,7 +770,7 @@ export function createEvaluator(workbook) {
       case "call": {
         const def = NAME_INDEX.get(node.name) || NAME_INDEX.get(node.name.replace(/\./g, "_"));
         if (!def) throw ERR.name();
-        if (def.lazy) return def.fn(node.args, (n) => single(evalNode(n, si)));
+        if (def.lazy) return def.fn(node.args, (n) => single(evalNode(n, si)), (n) => evalNode(n, si));
         const args = node.args.map((n) => evalNode(n, si));
         return def.fn(args);
       }
@@ -628,7 +813,7 @@ export function createEvaluator(workbook) {
 /* ---------------------------- referans kaydırma ---------------------------- */
 
 // Gruplar: 1 dizge · 2 sayfa öneki · 3-6 tam sütun ($A:$B) · 7-10 tam satır ($1:$5) · 11-14 hücre ($A$1).
-const REF_IN_FORMULA = /("(?:[^"]|"")*")|((?:'[^']+'|[A-Za-zÇĞİÖŞÜçğıöşü_][\wÇĞİÖŞÜçğıöşü]*)!)?(?:(\$?)([A-Za-z]{1,2}):(\$?)([A-Za-z]{1,2})(?![\w(!])|(\$?)(\d{1,4}):(\$?)(\d{1,4})(?![\w(.!])|(\$?)([A-Za-z]{1,2})(\$?)(\d{1,4})(?![\w(]))/g;
+const REF_IN_FORMULA = /("(?:[^"]|"")*")|((?:'[^']+'|[A-Za-zÇĞİÖŞÜçğıöşü_][\wÇĞİÖŞÜçğıöşü]*)!)?(?:(\$?)([A-Za-z]{1,2}):(\$?)([A-Za-z]{1,2})(?![\w(!])|(\$?)(\d{1,5}):(\$?)(\d{1,5})(?![\w(.!])|(\$?)([A-Za-z]{1,2})(\$?)(\d{1,5})(?![\w(]))/g;
 
 /** Formüldeki her başvuruyu fn ile dönüştürür; dizgeler olduğu gibi kalır. */
 function mapRefs(formula, fn) {
@@ -716,27 +901,65 @@ const nf = (digits, opts = {}) => {
   return fmtCache.get(key);
 };
 
-/** Hücrede gösterilecek metin. style.f: general | number | money | percent | date | text */
+const generalFmts = new Map();
+const generalFormat = (grouping) => {
+  if (!generalFmts.has(grouping)) generalFmts.set(grouping, new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 10, useGrouping: grouping }));
+  return generalFmts.get(grouping);
+};
+const pad2 = (n) => String(n).padStart(2, "0");
+const timeText = (serial, seconds = false) => {
+  const total = Math.round(frac(serial) * 86400);
+  const h = Math.floor(total / 3600) % 24;
+  const m = Math.floor((total % 3600) / 60);
+  return `${pad2(h)}:${pad2(m)}${seconds ? `:${pad2(total % 60)}` : ""}`;
+};
+const dateText = (serial, long = false) => {
+  const d = serialToDate(Math.floor(serial + 1e-9));
+  return long
+    ? d.toLocaleDateString("tr-TR", { timeZone: "UTC", day: "numeric", month: "long", year: "numeric" })
+    : d.toLocaleDateString("tr-TR", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" });
+};
+
+/** Sayı biçimleri (araç çubuğu ve Hücreleri Biçimlendir). */
+export const NUMBER_FORMATS = [
+  ["general", "Genel"], ["number", "Sayı"], ["money", "Para birimi (₺)"], ["percent", "Yüzde"],
+  ["date", "Kısa tarih"], ["dateLong", "Uzun tarih"], ["time", "Saat"], ["datetime", "Tarih ve saat"],
+  ["sci", "Bilimsel"], ["text", "Metin"],
+];
+
+/**
+ * Hücrede gösterilecek metin. style.f: general | number | money | percent |
+ * date | dateLong | time | datetime | sci | text; style.d ondalık basamak,
+ * style.ng binlik ayracı kapalı.
+ */
 export function formatValue(value, style = {}) {
   if (value == null) return "";
   if (isError(value)) return value.code;
   if (typeof value === "boolean") return value ? "DOĞRU" : "YANLIŞ";
   const f = style.f || "general";
   const isDate = value && typeof value === "object" && "date" in value;
-  if (isDate || (f === "date" && typeof value === "number")) {
+  const dateFormats = f === "date" || f === "dateLong" || f === "time" || f === "datetime";
+  if (isDate || (dateFormats && typeof value === "number")) {
     const serial = isDate ? value.date : value;
-    const d = serialToDate(serial);
-    return d.toLocaleDateString("tr-TR", { timeZone: "UTC" }) + (serial % 1 ? ` ${String(Math.floor((serial % 1) * 24)).padStart(2, "0")}:${String(Math.round(((serial % 1) * 1440) % 60)).padStart(2, "0")}` : "");
+    if (f === "time" || (isDate && value.time && !dateFormats)) return timeText(serial, style.d > 0);
+    if (f === "datetime") return `${dateText(serial)} ${timeText(serial)}`;
+    if (f === "dateLong") return dateText(serial, true);
+    if (isDate && !dateFormats && typeof value.date === "number" && f !== "general" && f !== "text") {
+      // Tarih değerine sayı biçimi verilmişse seri gün sayısı gösterilir.
+    } else return dateText(serial) + (f !== "date" && frac(serial) > 1e-9 ? ` ${timeText(serial)}` : "");
   }
-  if (typeof value === "number") {
+  const num = isDate ? value.date : value;
+  if (typeof num === "number") {
     const d = style.d;
-    if (f === "money") return `${nf(d ?? 2).format(value)} ₺`;
-    if (f === "percent") return `%${nf(d ?? 0).format(value * 100)}`;
-    if (f === "number") return nf(d ?? 2, { useGrouping: true }).format(value);
-    if (d != null) return nf(d).format(value);
-    const abs = Math.abs(value);
-    if (abs !== 0 && (abs >= 1e15 || abs < 1e-6)) return value.toExponential(4).replace(".", ",");
-    return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 10, useGrouping: abs >= 10000 }).format(value);
+    const group = !style.ng;
+    if (f === "money") return `${nf(d ?? 2, { useGrouping: group }).format(num)} ₺`;
+    if (f === "percent") return `%${nf(d ?? 0, { useGrouping: group }).format(num * 100)}`;
+    if (f === "number") return nf(d ?? 2, { useGrouping: group }).format(num);
+    if (f === "sci") return num.toExponential(d ?? 2).replace(".", ",").replace(/e([+-])(\d)$/, "E$10$2").replace("e", "E");
+    if (d != null) return nf(d, { useGrouping: group && Math.abs(num) >= 10000 }).format(num);
+    const abs = Math.abs(num);
+    if (abs !== 0 && (abs >= 1e15 || abs < 1e-6)) return num.toExponential(4).replace(".", ",");
+    return generalFormat(abs >= 10000).format(num);
   }
   return String(value);
 }

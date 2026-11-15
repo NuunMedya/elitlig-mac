@@ -5,10 +5,14 @@
 //   • Formüller Excel söz dizimine çevrilir: Türkçe işlev adları İngilizceye,
 //     ";" ayracı ",", ondalık virgül noktaya, DOĞRU/YANLIŞ → TRUE/FALSE.
 //     Son hesaplanan değer de yazılır; Excel açılışta yeniden hesaplar.
-//   • Biçimler: kalın/italik/altı çizili, yazı ve dolgu rengi, hizalama,
-//     sayı/para/yüzde/tarih/metin biçimleri ve ondalık basamak.
-//   • Sütun genişlikleri ve dondurulmuş ilk satır korunur.
-import { FUNCTIONS, addr, isError, parseAddr, parseLiteral, tokenize } from "./sheetEngine";
+//   • Biçimler: kalın/italik/altı çizili/üstü çizili, yazı tipi ve boyutu,
+//     yazı ve dolgu rengi, yatay/dikey hizalama, kaydırma, döndürme, girinti,
+//     kenarlıklar, sayı/para/yüzde/tarih/saat/bilimsel/metin biçimleri.
+//   • Birleştirilmiş hücreler, sütun genişlikleri, satır yükseklikleri,
+//     gizli satır/sütunlar, dondurulmuş bölmeler, otomatik süzgeç, koşullu
+//     biçimlendirme, açılır liste doğrulaması, kılavuz çizgisi ve sekme rengi.
+import { FUNCTIONS, addr, colIndex, isError, parseAddr, parseLiteral, tokenize } from "./sheetEngine";
+import { DEF_H, getFrozen, parseRange, rangeText, styleAt } from "./sheetModel";
 
 /* ---------------------------------- ZIP ---------------------------------- */
 
@@ -87,7 +91,7 @@ export function zipStore(files, date = new Date()) {
 /* ------------------------------ formül çevirisi ------------------------------ */
 
 // Excel 2010 sonrası işlevler dosyada _xlfn. önekiyle saklanır.
-const XLFN = new Set(["CONCAT", "TEXTJOIN", "DAYS"]);
+const XLFN = new Set(["CONCAT", "TEXTJOIN", "DAYS", "XLOOKUP", "IFS", "SWITCH", "IFNA", "MAXIFS", "MINIFS", "XOR"]);
 const ERROR_CODES = { "#BÖL/0!": "#DIV/0!", "#DEĞER!": "#VALUE!", "#AD?": "#NAME?", "#BAŞV!": "#REF!", "#YOK": "#N/A", "#SAYI!": "#NUM!", "#DÖNGÜ!": "#VALUE!" };
 
 const fold = (s) => s.toLocaleUpperCase("tr-TR").replace(/İ/g, "I").replace(/Ğ/g, "G").replace(/Ü/g, "U").replace(/Ş/g, "S").replace(/Ö/g, "O").replace(/Ç/g, "C");
@@ -161,34 +165,45 @@ const argb = (hex) => `FF${hex.replace("#", "").toUpperCase()}`;
 const numFmtCode = (s) => {
   const d = s.d;
   const dec = (n) => (n > 0 ? `.${"0".repeat(n)}` : "");
+  const grp = s.ng ? "0" : "#,##0";
   switch (s.f) {
-    case "money": return `#,##0${dec(d ?? 2)} "₺"`;
+    case "money": return `${grp}${dec(d ?? 2)} "₺"`;
     case "percent": return `0${dec(d ?? 0)}%`;
-    case "number": return `#,##0${dec(d ?? 2)}`;
+    case "number": return `${grp}${dec(d ?? 2)}`;
     case "date": return "dd.mm.yyyy";
+    case "dateLong": return "d mmmm yyyy";
+    case "time": return d > 0 ? "hh:mm:ss" : "hh:mm";
+    case "datetime": return "dd.mm.yyyy hh:mm";
+    case "sci": return `0${dec(d ?? 2)}E+00`;
     case "text": return "@";
     default: return d != null ? `0${dec(d)}` : null;
   }
 };
 
+const BORDER_XML = { thin: "thin", medium: "medium", thick: "thick", dashed: "dashed", dotted: "dotted", double: "double" };
+const rotationXml = (rot) => (!rot ? 0 : rot > 0 ? Math.min(90, rot) : 90 + Math.min(90, -rot));
+
 class StyleBook {
   constructor() {
-    this.fonts = ["<font><sz val=\"11\"/><name val=\"Calibri\"/><family val=\"2\"/></font>"];
+    this.fonts = ["<font><sz val=\"10\"/><name val=\"Calibri\"/><family val=\"2\"/></font>"];
     this.fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>'];
+    this.borders = ["<border><left/><right/><top/><bottom/><diagonal/></border>"];
     this.numFmts = [];
     this.xfs = ['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'];
+    this.dxfs = [];
     this.cache = new Map([["", 0]]);
     this.fontIdx = new Map();
     this.fillIdx = new Map();
+    this.borderIdx = new Map();
     this.fmtIdx = new Map();
   }
 
   font(s) {
-    const key = `${s.b ? 1 : 0}${s.i ? 1 : 0}${s.u ? 1 : 0}${s.c || ""}`;
-    if (key === "000") return 0;
+    const key = `${s.b ? 1 : 0}${s.i ? 1 : 0}${s.u ? 1 : 0}${s.st ? 1 : 0}|${s.c || ""}|${s.fs || ""}|${s.ff || ""}`;
+    if (key === "0000|||") return 0;
     if (!this.fontIdx.has(key)) {
       this.fontIdx.set(key, this.fonts.length);
-      this.fonts.push(`<font>${s.b ? "<b/>" : ""}${s.i ? "<i/>" : ""}${s.u ? "<u/>" : ""}<sz val="11"/>${s.c ? `<color rgb="${argb(s.c)}"/>` : ""}<name val="Calibri"/><family val="2"/></font>`);
+      this.fonts.push(`<font>${s.b ? "<b/>" : ""}${s.i ? "<i/>" : ""}${s.st ? "<strike/>" : ""}${s.u ? "<u/>" : ""}<sz val="${s.fs || 10}"/>${s.c ? `<color rgb="${argb(s.c)}"/>` : ""}<name val="${esc(s.ff || "Calibri")}"/><family val="2"/></font>`);
     }
     return this.fontIdx.get(key);
   }
@@ -200,6 +215,17 @@ class StyleBook {
       this.fills.push(`<fill><patternFill patternType="solid"><fgColor rgb="${argb(bg)}"/><bgColor indexed="64"/></patternFill></fill>`);
     }
     return this.fillIdx.get(bg);
+  }
+
+  border(bd) {
+    if (!bd || !Object.keys(bd).length) return 0;
+    const key = JSON.stringify(["l", "r", "t", "b"].map((k) => bd[k] ? [bd[k].s, bd[k].c] : null));
+    if (!this.borderIdx.has(key)) {
+      const side = (tag, b) => (b ? `<${tag} style="${BORDER_XML[b.s] || "thin"}"><color rgb="${argb(b.c || "#000000")}"/></${tag}>` : `<${tag}/>`);
+      this.borderIdx.set(key, this.borders.length);
+      this.borders.push(`<border>${side("left", bd.l)}${side("right", bd.r)}${side("top", bd.t)}${side("bottom", bd.b)}<diagonal/></border>`);
+    }
+    return this.borderIdx.get(key);
   }
 
   numFmt(s, isDate) {
@@ -216,16 +242,24 @@ class StyleBook {
 
   /** Hücre biçiminin xf dizini. isDate: değer tarih ama biçim verilmemiş. */
   xf(s = {}, isDate = false) {
-    const key = JSON.stringify([s.b, s.i, s.u, s.c, s.bg, s.al, s.f, s.d, isDate]);
+    const key = JSON.stringify([s.b, s.i, s.u, s.st, s.c, s.bg, s.al, s.va, s.wr, s.rot, s.ind, s.fs, s.ff, s.f, s.d, s.ng, s.bd, isDate]);
     if (this.cache.has(key)) return this.cache.get(key);
     const fontId = this.font(s);
     const fillId = this.fill(s.bg);
+    const borderId = this.border(s.bd);
     const numFmtId = this.numFmt(s, isDate);
-    const align = s.al ? `<alignment horizontal="${s.al}"/>` : "";
-    const attrs = [`numFmtId="${numFmtId}"`, `fontId="${fontId}"`, `fillId="${fillId}"`, 'borderId="0"', 'xfId="0"'];
+    const al = [];
+    if (s.al) al.push(`horizontal="${s.al}"`);
+    if (s.va) al.push(`vertical="${s.va === "middle" ? "center" : s.va}"`);
+    if (s.wr) al.push('wrapText="1"');
+    if (s.rot) al.push(`textRotation="${rotationXml(s.rot)}"`);
+    if (s.ind) al.push(`indent="${s.ind}"`);
+    const align = al.length ? `<alignment ${al.join(" ")}/>` : "";
+    const attrs = [`numFmtId="${numFmtId}"`, `fontId="${fontId}"`, `fillId="${fillId}"`, `borderId="${borderId}"`, 'xfId="0"'];
     if (numFmtId) attrs.push('applyNumberFormat="1"');
     if (fontId) attrs.push('applyFont="1"');
     if (fillId) attrs.push('applyFill="1"');
+    if (borderId) attrs.push('applyBorder="1"');
     if (align) attrs.push('applyAlignment="1"');
     const index = this.xfs.length;
     this.xfs.push(align ? `<xf ${attrs.join(" ")}>${align}</xf>` : `<xf ${attrs.join(" ")}/>`);
@@ -233,9 +267,17 @@ class StyleBook {
     return index;
   }
 
+  /** Koşullu biçim stili (dxf). */
+  dxf(s = {}) {
+    const font = s.b || s.i || s.c ? `<font>${s.b ? "<b/>" : ""}${s.i ? "<i/>" : ""}${s.c ? `<color rgb="${argb(s.c)}"/>` : ""}</font>` : "";
+    const fill = s.bg ? `<fill><patternFill patternType="solid"><fgColor rgb="${argb(s.bg)}"/><bgColor rgb="${argb(s.bg)}"/></patternFill></fill>` : "";
+    this.dxfs.push(`<dxf>${font}${fill}</dxf>`);
+    return this.dxfs.length - 1;
+  }
+
   xml() {
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${this.numFmts.length ? `<numFmts count="${this.numFmts.length}">${this.numFmts.join("")}</numFmts>` : ""}<fonts count="${this.fonts.length}">${this.fonts.join("")}</fonts><fills count="${this.fills.length}">${this.fills.join("")}</fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${this.xfs.length}">${this.xfs.join("")}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${this.numFmts.length ? `<numFmts count="${this.numFmts.length}">${this.numFmts.join("")}</numFmts>` : ""}<fonts count="${this.fonts.length}">${this.fonts.join("")}</fonts><fills count="${this.fills.length}">${this.fills.join("")}</fills><borders count="${this.borders.length}">${this.borders.join("")}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${this.xfs.length}">${this.xfs.join("")}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>${this.dxfs.length ? `<dxfs count="${this.dxfs.length}">${this.dxfs.join("")}</dxfs>` : '<dxfs count="0"/>'}</styleSheet>`;
   }
 }
 
@@ -254,8 +296,8 @@ export function excelSheetNames(sheets) {
   });
 }
 
-function cellXml(ref, cell, value, styles, sheetNames) {
-  const s = cell.s || {};
+function cellXml(ref, cell, value, styles, sheetNames, style = cell.s || {}) {
+  const s = style;
   const raw = cell.v ?? "";
   const isDate = value && typeof value === "object" && "date" in value;
   const xf = styles.xf(s, isDate);
@@ -291,6 +333,58 @@ function cellXml(ref, cell, value, styles, sheetNames) {
   return `<c r="${ref}"${sAttr} t="inlineStr"><is><t xml:space="preserve">${esc(raw)}</t></is></c>`;
 }
 
+const CF_OPS = { gt: "greaterThan", lt: "lessThan", ge: "greaterThanOrEqual", le: "lessThanOrEqual", between: "between", eq: "equal", neq: "notEqual" };
+const cfValue = (v) => {
+  const n = Number(String(v ?? "").replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(n) && String(v ?? "").trim() !== "" ? String(n) : `"${String(v ?? "").replace(/"/g, '""')}"`;
+};
+
+function cfXml(rules, styles) {
+  let priority = 1;
+  return rules.map((rule) => {
+    const rect = parseRange(rule.ref);
+    if (!rect) return "";
+    const first = addr(rect.c1, rect.r1);
+    const body = (() => {
+      if (rule.type === "scale") {
+        const cols = rule.colors?.length >= 2 ? rule.colors : ["#f8696b", "#ffeb84", "#63be7b"];
+        const three = cols.length >= 3;
+        return `<cfRule type="colorScale" priority="${priority}"><colorScale><cfvo type="min"/>${three ? '<cfvo type="percentile" val="50"/>' : ""}<cfvo type="max"/>${cols.slice(0, three ? 3 : 2).map((c) => `<color rgb="${argb(c)}"/>`).join("")}</colorScale></cfRule>`;
+      }
+      if (rule.type === "bar") return `<cfRule type="dataBar" priority="${priority}"><dataBar><cfvo type="min"/><cfvo type="max"/><color rgb="${argb(rule.colors?.[0] || "#638ec6")}"/></dataBar></cfRule>`;
+      const dxf = styles.dxf(rule.style || {});
+      const head = (type, extra = "") => `<cfRule type="${type}" dxfId="${dxf}" priority="${priority}"${extra}>`;
+      if (CF_OPS[rule.type]) return `${head("cellIs", ` operator="${CF_OPS[rule.type]}"`)}<formula>${esc(cfValue(rule.a))}</formula>${rule.type === "between" ? `<formula>${esc(cfValue(rule.b))}</formula>` : ""}</cfRule>`;
+      const text = String(rule.a ?? "").replace(/"/g, '""');
+      if (rule.type === "contains") return `${head("containsText", ` operator="containsText" text="${esc(rule.a ?? "")}"`)}<formula>${esc(`NOT(ISERROR(SEARCH("${text}",${first})))`)}</formula></cfRule>`;
+      if (rule.type === "notContains") return `${head("notContainsText", ` operator="notContains" text="${esc(rule.a ?? "")}"`)}<formula>${esc(`ISERROR(SEARCH("${text}",${first}))`)}</formula></cfRule>`;
+      if (rule.type === "begins") return `${head("beginsWith", ` operator="beginsWith" text="${esc(rule.a ?? "")}"`)}<formula>${esc(`LEFT(${first},LEN("${text}"))="${text}"`)}</formula></cfRule>`;
+      if (rule.type === "ends") return `${head("endsWith", ` operator="endsWith" text="${esc(rule.a ?? "")}"`)}<formula>${esc(`RIGHT(${first},LEN("${text}"))="${text}"`)}</formula></cfRule>`;
+      if (rule.type === "blank") return `${head("containsBlanks")}<formula>${esc(`LEN(TRIM(${first}))=0`)}</formula></cfRule>`;
+      if (rule.type === "notBlank") return `${head("notContainsBlanks")}<formula>${esc(`LEN(TRIM(${first}))>0`)}</formula></cfRule>`;
+      if (rule.type === "dup") return `${head("duplicateValues")}</cfRule>`;
+      if (rule.type === "unique") return `${head("uniqueValues")}</cfRule>`;
+      if (rule.type === "top" || rule.type === "bottom") return `${head("top10", ` rank="${Math.max(1, Math.floor(Number(rule.a) || 10))}"${rule.type === "bottom" ? ' bottom="1"' : ""}`)}</cfRule>`;
+      if (rule.type === "aboveAvg" || rule.type === "belowAvg") return `${head("aboveAverage", rule.type === "belowAvg" ? ' aboveAverage="0"' : "")}</cfRule>`;
+      return "";
+    })();
+    if (!body) return "";
+    priority += 1;
+    return `<conditionalFormatting sqref="${rule.ref}">${body}</conditionalFormatting>`;
+  }).join("");
+}
+
+function dvXml(rules) {
+  const items = rules.map((rule) => {
+    const formula = rule.source ? String(rule.source).replace(/^=/, "") : `"${(rule.list || []).join(",").replace(/"/g, '""').slice(0, 250)}"`;
+    return `<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="${rule.strict ? 1 : 0}"${rule.strict ? "" : ' errorStyle="information"'} sqref="${rule.ref}"><formula1>${esc(formula)}</formula1></dataValidation>`;
+  });
+  return items.length ? `<dataValidations count="${items.length}">${items.join("")}</dataValidations>` : "";
+}
+
+const colLetters = (i) => addr(i, 0).replace(/\d+$/, "");
+const absRef = (c, r) => `$${colLetters(c)}$${r + 1}`;
+
 function sheetXml(sheet, si, evaluator, styles, sheetNames) {
   const rows = new Map();
   let maxRow = 0;
@@ -303,22 +397,60 @@ function sheetXml(sheet, si, evaluator, styles, sheetNames) {
     maxRow = Math.max(maxRow, p.row);
     maxCol = Math.max(maxCol, p.col);
   }
-  const body = [...rows.keys()].sort((a, b) => a - b).map((r) => {
-    const cells = rows.get(r).sort((a, b) => a.col - b.col)
-      .map(({ key, cell }) => cellXml(key, cell, evaluator ? evaluator.value(si, key) : null, styles, sheetNames))
+  const hiddenRows = new Set(sheet.hiddenRows || []);
+  const hiddenCols = new Set(sheet.hiddenCols || []);
+  const rowH = sheet.rowH || {};
+  const rowStyle = sheet.rowStyle || {};
+  // Yalnız boyu/gizliliği/biçimi olan boş satırlar da yazılır.
+  const rowKeys = new Set(rows.keys());
+  for (const k of Object.keys(rowH)) rowKeys.add(Number(k) - 1);
+  for (const k of Object.keys(rowStyle)) rowKeys.add(Number(k) - 1);
+  for (const r of hiddenRows) rowKeys.add(r);
+  const body = [...rowKeys].filter((r) => r >= 0).sort((a, b) => a - b).map((r) => {
+    const cells = (rows.get(r) || []).sort((a, b) => a.col - b.col)
+      .map(({ key, cell, col }) => cellXml(key, cell, evaluator ? evaluator.value(si, key) : null, styles, sheetNames, styleAt(sheet, r, col)))
       .join("");
-    return cells ? `<row r="${r + 1}">${cells}</row>` : "";
+    const attrs = [`r="${r + 1}"`];
+    const h = rowH[r + 1];
+    if (h) attrs.push(`ht="${Math.round(h * 0.75 * 100) / 100}"`, 'customHeight="1"');
+    if (hiddenRows.has(r)) attrs.push('hidden="1"');
+    if (rowStyle[r + 1]) attrs.push(`s="${styles.xf(rowStyle[r + 1])}"`, 'customFormat="1"');
+    return `<row ${attrs.join(" ")}>${cells}</row>`;
   }).join("");
 
-  const cols = Object.entries(sheet.colW || {})
-    .map(([name, px]) => ({ i: [...name].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0), px }))
-    .sort((a, b) => a.i - b.i)
-    .map(({ i, px }) => `<col min="${i}" max="${i}" width="${Math.max(1, Math.round(((px - 5) / 7) * 100) / 100)}" customWidth="1"/>`)
-    .join("");
+  // Sütunlar: genişlik, gizlilik ve sütun biçimi.
+  const colKeys = new Set([...Object.keys(sheet.colW || {}).map(colIndex), ...Object.keys(sheet.colStyle || {}).map(colIndex), ...hiddenCols]);
+  const cols = [...colKeys].filter((i) => i >= 0).sort((a, b) => a - b).map((i) => {
+    const name = colLetters(i);
+    const px = sheet.colW?.[name] || 100;
+    const st = sheet.colStyle?.[name];
+    return `<col min="${i + 1}" max="${i + 1}" width="${Math.max(1, Math.round(((px - 5) / 7) * 100) / 100)}" customWidth="1"${hiddenCols.has(i) ? ' hidden="1"' : ""}${st ? ` style="${styles.xf(st)}"` : ""}/>`;
+  }).join("");
   const dim = rows.size ? `A1:${addr(maxCol, maxRow)}` : "A1";
-  const pane = sheet.freeze ? '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/>' : "";
+
+  const fz = getFrozen(sheet);
+  let pane = "";
+  if (fz.r || fz.c) {
+    const top = addr(fz.c, fz.r);
+    const active = fz.r && fz.c ? "bottomRight" : fz.r ? "bottomLeft" : "topRight";
+    pane = `<pane${fz.c ? ` xSplit="${fz.c}"` : ""}${fz.r ? ` ySplit="${fz.r}"` : ""} topLeftCell="${top}" activePane="${active}" state="frozen"/><selection pane="${active}" activeCell="${top}" sqref="${top}"/>`;
+  }
+  const merges = (sheet.merges || []).filter((m) => parseRange(m));
+  const filter = sheet.filter && parseRange(sheet.filter.ref) ? `<autoFilter ref="${rangeText(parseRange(sheet.filter.ref))}"/>` : "";
+  const sheetPr = sheet.tab ? `<sheetPr><tabColor rgb="${argb(sheet.tab)}"/></sheetPr>` : "";
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><dimension ref="${dim}"/><sheetViews><sheetView workbookViewId="0"${si === 0 ? ' tabSelected="1"' : ""}>${pane}</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>${cols ? `<cols>${cols}</cols>` : ""}<sheetData>${body}</sheetData><pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/></worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${sheetPr}<dimension ref="${dim}"/><sheetViews><sheetView workbookViewId="0"${sheet.noGrid ? ' showGridLines="0"' : ""}${si === 0 ? ' tabSelected="1"' : ""}>${pane}</sheetView></sheetViews><sheetFormatPr defaultRowHeight="${DEF_H * 0.75}" customHeight="1"/>${cols ? `<cols>${cols}</cols>` : ""}<sheetData>${body}</sheetData>${filter}${merges.length ? `<mergeCells count="${merges.length}">${merges.map((m) => `<mergeCell ref="${m}"/>`).join("")}</mergeCells>` : ""}${cfXml(sheet.cf || [], styles)}${dvXml(sheet.dv || [])}<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/></worksheet>`;
+}
+
+/** Süzgeç aralıkları Excel'in gizli _FilterDatabase adlarıyla tanımlanır. */
+function definedNames(book, names) {
+  const out = [];
+  book.sheets.forEach((sheet, i) => {
+    const rect = sheet.filter && parseRange(sheet.filter.ref);
+    if (!rect) return;
+    out.push(`<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">${esc(sheetRef(names[i]))}!${absRef(rect.c1, rect.r1)}:${absRef(rect.c2, rect.r2)}</definedName>`);
+  });
+  return out.length ? `<definedNames>${out.join("")}</definedNames>` : "";
 }
 
 /** Çalışma kitabını .xlsx baytlarına çevirir. */
@@ -353,7 +485,7 @@ export function workbookToXlsx(book, evaluator, { title = "Tablo", author = "Eli
     {
       name: "xl/workbook.xml",
       data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets>${names.map((n, i) => `<sheet name="${esc(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`,
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets>${names.map((n, i) => `<sheet name="${esc(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets>${definedNames(book, names)}<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`,
     },
     {
       name: "xl/_rels/workbook.xml.rels",

@@ -18,10 +18,10 @@ const shown = (book, si, key) => formatValue(createEvaluator(book).value(si, key
 test("Excel formülleri Türkçe söz dizimine çevrilir", () => {
   expect(fromExcelFormula("SUM(A1:A5,2.5)")).toBe("=TOPLA(A1:A5;2.5)");
   expect(fromExcelFormula('IF(B2>=300,"Tam","Eksik")')).toBe('=EĞER(B2>=300;"Tam";"Eksik")');
-  expect(fromExcelFormula("_xlfn.CONCAT(A1,\" \",B1)&TRUE")).toBe('=BİRLEŞTİR(A1;" ";B1)&DOĞRU');
-  expect(fromExcelFormula("SUM(C:C)")).toBe("=TOPLA(C1:C1000)");
-  expect(fromExcelFormula("SUM('Özet'!$B:$B)")).toBe("=TOPLA(Özet!$B1:$B1000)");
-  expect(fromExcelFormula("XLOOKUP(A1,B:B,C:C)")).toBe("=XLOOKUP(A1;B1:B1000;C1:C1000)");
+  expect(fromExcelFormula("_xlfn.CONCAT(A1,\" \",B1)&TRUE")).toBe('=ARALIKBİRLEŞTİR(A1;" ";B1)&DOĞRU');
+  expect(fromExcelFormula("SUM(C:C)")).toBe("=TOPLA(C:C)");
+  expect(fromExcelFormula("SUM('Özet'!$B:$B)")).toBe("=TOPLA(Özet!$B:$B)");
+  expect(fromExcelFormula("XLOOKUP(A1,B:B,C:C)")).toBe("=ÇAPRAZARA(A1;B:B;C:C)");
 });
 
 test("sayı biçimi kodları eşlenir", () => {
@@ -55,7 +55,7 @@ test("gerçek Excel dosyası: sıkıştırma, ortak metin, paylaşılan formül,
   expect(shown(book, 0, "G2")).toBe("00123");
   expect(shown(book, 0, "G3")).toBe("DOĞRU");
   expect(shown(book, 0, "G4")).toBe("#BÖL/0!");
-  expect(s1.cells.C7.v).toBe("=TOPLA(C1:C1000)");
+  expect(s1.cells.C7.v).toBe("=TOPLA(C:C)");
   expect(createEvaluator(book).value(0, "B7")).toBe(1350.5);
   // C sütununun içindeki =SUM(C:C) kendine başvurur; Excel de döngü uyarısı verir.
   expect(createEvaluator(book).value(0, "C7").code).toBe("#DÖNGÜ!");
@@ -84,8 +84,8 @@ test("kendi dışa aktarımımızla gidiş-dönüş: değerler aynı kalır", as
 
 test("desteklenmeyen işlevler uyarıda adıyla listelenir", () => {
   const unknown = new Set();
-  fromExcelFormula("XLOOKUP(A1,B:B,C:C)+SUM(A1)", { unknown });
-  expect([...unknown]).toEqual(["XLOOKUP"]);
+  fromExcelFormula("LAMBDA(x,x)(A1)+SUM(A1)", { unknown });
+  expect([...unknown]).toEqual(["LAMBDA"]);
 });
 
 test("Excel olmayan dosya anlaşılır hatayla reddedilir", async () => {
