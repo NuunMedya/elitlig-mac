@@ -278,7 +278,8 @@ export default function SheetEditor({ id, onClose }) {
   };
 
   /* ------------------------------ hücre bilgisi ------------------------------ */
-  const infoCache = useMemo(() => new Map(), [sheet, evaluator, showFormulas, cfEval]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dark = useDarkMode();
+  const infoCache = useMemo(() => new Map(), [sheet, evaluator, showFormulas, cfEval, dark]); // eslint-disable-line react-hooks/exhaustive-deps
   const cellInfo = (r, c) => {
     const k = r * 1024 + c;
     if (infoCache.has(k)) return infoCache.get(k);
@@ -297,7 +298,7 @@ export default function SheetEditor({ id, onClose }) {
     const numeric = !formulaShown && isNumeric(value) && s.f !== "text";
     const error = isError(value);
     const align = s.al || (formulaShown ? "left" : numeric ? "right" : typeof value === "boolean" || error ? "center" : "left");
-    const info = { text, s, bg: s.bg, color: s.c, align, numeric, error, bar: cf?.bar, border: Boolean(s.bd) };
+    const info = { text, s, bg: s.bg, color: readableColor(s.c, s.bg, dark), align, numeric, error, bar: cf?.bar, border: Boolean(s.bd) };
     infoCache.set(k, info);
     return info;
   };
@@ -624,7 +625,13 @@ export default function SheetEditor({ id, onClose }) {
   };
   const moveTo = (pos, extend = false) => setSel((s) => (extend ? { a: s.a, b: pos, extra: [] } : { a: pos, b: pos, extra: [] }));
   // Seçim değişince görünür kalsın.
-  useEffect(() => { if (sheet && !editRef.current) reveal(sel.b.row, sel.b.col); }, [sel.b.row, sel.b.col, si]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Tüm sütun/satır seçilince o eksende kaydırılmaz (Excel gibi).
+  useEffect(() => {
+    if (!sheet || editRef.current) return;
+    const allRows = Math.min(sel.a.row, sel.b.row) === 0 && Math.max(sel.a.row, sel.b.row) >= sheet.rows - 1;
+    const allCols = Math.min(sel.a.col, sel.b.col) === 0 && Math.max(sel.a.col, sel.b.col) >= sheet.cols - 1;
+    reveal(allRows ? null : sel.b.row, allCols ? null : sel.b.col);
+  }, [sel.b.row, sel.b.col, si]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ------------------------------ pano ------------------------------ */
   const blockText = (block) => blockToText({ rows: block.rows.map((row, i) => row.map((c, j) => ({ v: displayOf(range.r1 + i, range.c1 + j) }))) });
@@ -1081,8 +1088,14 @@ export default function SheetEditor({ id, onClose }) {
   };
   const hiddenAt = (r, c) => !layout.rows.size(r) || !layout.cols.size(c);
   const onKeyDown = (e) => {
-    if (!sheet || editRef.current) return;
+    if (!sheet) return;
     const mod = e.metaKey || e.ctrlKey;
+    if (editRef.current) {
+      // Düzenleyici odağı almadan gelen tuşlar kaybolmasın (hızlı yazım).
+      const ed = editRef.current;
+      if (e.key.length === 1 && !mod && !e.altKey && !ed.fromBar) { e.preventDefault(); updateEdit({ value: ed.value + e.key }, ed.value.length + 1); }
+      return;
+    }
     const k = e.key;
     const lower = k.length === 1 ? k.toLocaleLowerCase("tr-TR") : k;
     const code = e.code;
@@ -1327,6 +1340,12 @@ export default function SheetEditor({ id, onClose }) {
   const onDvButton = (row, col, rect) => setPopup({ kind: "list", row, col, anchor: rect });
   const onView = () => { if (editRef.current || popup) setViewTick((n) => n + 1); };
 
+  /** Şerit ve menü komutlarından sonra klavye odağı ızgaraya döner (yazmaya devam edilebilsin). */
+  const refocus = () => setTimeout(() => {
+    const a = document.activeElement;
+    if (!a || a === document.body || a.tagName === "BUTTON") gridRef.current?.focus();
+  }, 0);
+
   /* ------------------------------ ad kutusu ------------------------------ */
   const [nameBox, setNameBox] = useState(null);
   const goTo = (text) => {
@@ -1388,6 +1407,7 @@ export default function SheetEditor({ id, onClose }) {
       setTimeout(() => reveal(range.r1, range.c1), 30);
     },
     focusGrid: () => gridRef.current?.focus(),
+    refocus,
   };
 
   return (
@@ -1504,7 +1524,7 @@ export default function SheetEditor({ id, onClose }) {
         </div>
       )}
 
-      {popup?.kind === "menu" && <Popover anchor={popup.anchor} onClose={() => setPopup(null)} className="sx-ctx"><MenuList items={popup.items} onClose={() => { setPopup(null); }} /></Popover>}
+      {popup?.kind === "menu" && <Popover anchor={popup.anchor} onClose={() => setPopup(null)} className="sx-ctx"><MenuList items={popup.items} onClose={() => { setPopup(null); refocus(); }} /></Popover>}
       {popup?.kind === "tabColor" && <Popover anchor={popup.anchor} onClose={() => setPopup(null)}><ColorGrid value={book.sheets[popup.index]?.tab} noneLabel="Renk yok" onPick={(c) => apply((b) => setSheetProps(b, popup.index, { tab: c }))} onClose={() => setPopup(null)} /></Popover>}
       {popup?.kind === "filter" && filterRect && (
         <FilterMenu anchor={popup.anchor} title={`${String(displayOf(filterRect.r1, popup.col)) || colName(popup.col)} süzgeci`}
@@ -1544,6 +1564,28 @@ export default function SheetEditor({ id, onClose }) {
   );
 }
 
+/** Koyu temada okunabilirlik: dolgulu hücrede renksiz metin dolguya göre koyu/açık; dolgusuz koyu renkler açılır. */
+const luminance = (hex) => { const n = parseInt(String(hex).slice(1), 16); const ch = (v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }; return 0.2126 * ch((n >> 16) & 255) + 0.7152 * ch((n >> 8) & 255) + 0.0722 * ch(n & 255); };
+const lighten = (hex, t) => { const n = parseInt(String(hex).slice(1), 16); return `#${[16, 8, 0].map((sh) => { const v = (n >> sh) & 255; return Math.round(v + (255 - v) * t).toString(16).padStart(2, "0"); }).join("")}`; };
+function readableColor(c, bg, dark) {
+  if (bg && /^#[0-9a-f]{6}$/i.test(bg)) {
+    if (!c) return luminance(bg) > 0.35 ? "#1a1530" : "#ffffff";
+    return c;
+  }
+  if (dark && c && /^#[0-9a-f]{6}$/i.test(c) && luminance(c) < 0.18) return lighten(c, 0.55);
+  return c;
+}
+function useDarkMode() {
+  const query = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  const [dark, setDark] = useState(Boolean(query?.matches));
+  useEffect(() => {
+    if (!query) return undefined;
+    const on = () => setDark(query.matches);
+    query.addEventListener?.("change", on);
+    return () => query.removeEventListener?.("change", on);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return dark;
+}
 const colIndexOf = (name) => { let n = 0; for (const ch of name) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; };
 const hexRgb = (hex) => { const n = parseInt(String(hex).slice(1), 16); return `rgb(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255})`; };
 // Ctrl+Enter ile çoklu hücreye yazılan formül her hücreye göre kaydırılır.

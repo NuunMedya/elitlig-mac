@@ -56,7 +56,7 @@ export default function SheetRibbon({ api }) {
   ];
 
   return (
-    <div className="sx-ribbon">
+    <div className="sx-ribbon" onClick={(e) => { const b = e.target.closest?.("button"); if (b && !b.hasAttribute("aria-haspopup")) api.refocus?.(); }}>
       <div className="sx-tabs" role="tablist">
         {TABS.map(([k, label]) => <button key={k} type="button" role="tab" aria-selected={tab === k} className={`sx-tab ${tab === k ? "is-active" : ""}`} onClick={() => setTab(k)}>{label}</button>)}
         <span className="sx-tabs__spacer" />

@@ -7,7 +7,7 @@ import { TextDecoder, TextEncoder } from "util";
 import { createEvaluator, formatValue } from "../src/lib/sheets/sheetEngine";
 import {
   addCfRule, applyBorders, blockFromText, blockToText, clearRange, copyBlock, currentRegion, duplicateSheet, fillSeries, findCells, jumpEdge,
-  mergeCells, mergeWorkbooks, moveSheet, normRange, pasteBlock, removeDuplicateRows, replaceCells, setColWidths, setFilter, setFilterCrit,
+  mergeCells, mergeWorkbooks, moveSheet, pasteBlock, removeDuplicateRows, replaceCells, setColWidths, setFilter, setFilterCrit,
   setFrozen, setHidden, setRowHeights, setValidation, shiftAxis, sortRange, styleRange, unmergeCells, usedBounds,
 } from "../src/lib/sheets/sheetOps";
 import {

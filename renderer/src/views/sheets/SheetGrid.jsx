@@ -502,9 +502,9 @@ const SheetGrid = forwardRef(function SheetGrid(props, ref) {
       const el = scrollerRef.current;
       if (!el) return;
       const p = propsRef.current;
-      const next = scrollToReveal(p.layout, view(), row, col, el.clientWidth, el.clientHeight);
-      if (Math.abs(next.top - el.scrollTop) > 0.5) el.scrollTop = next.top;
-      if (Math.abs(next.left - el.scrollLeft) > 0.5) el.scrollLeft = next.left;
+      const next = scrollToReveal(p.layout, view(), row ?? 0, col ?? 0, el.clientWidth, el.clientHeight);
+      if (row != null && Math.abs(next.top - el.scrollTop) > 0.5) el.scrollTop = next.top;
+      if (col != null && Math.abs(next.left - el.scrollLeft) > 0.5) el.scrollLeft = next.left;
     },
     scrollBy(dx, dy) { const el = scrollerRef.current; if (el) { el.scrollLeft += dx; el.scrollTop += dy; } },
     pageRows() {

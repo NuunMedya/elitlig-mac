@@ -103,7 +103,7 @@ export function SIcon({ name, size = 16, className = "", strokeWidth = 1.8 }) {
  * { left, top, right, bottom } (istemci koordinatları). Dışarı tıklanınca ya
  * da Esc ile kapanır.
  */
-export function Popover({ anchor, onClose, children, className = "", align = "start", width }) {
+export function Popover({ anchor, onClose, children, className = "", align = "start", width, owner = null }) {
   const ref = useRef(null);
   const [pos, setPos] = useState(null);
   useLayoutEffect(() => {
@@ -119,7 +119,7 @@ export function Popover({ anchor, onClose, children, className = "", align = "st
     setPos({ left, top });
   }, [anchor?.left, anchor?.top, anchor?.right, anchor?.bottom, align]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target) && !owner?.current?.contains(e.target)) onClose(); };
     const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
     const t = setTimeout(() => window.addEventListener("pointerdown", onDown, true), 0);
     window.addEventListener("keydown", onKey, true);
@@ -176,7 +176,7 @@ export function Drop({ label, icon, title, children, className = "", buttonClass
         {!split && icon && <SIcon name={icon} />}{!split && label && <span>{label}</span>}{caret && <SIcon name="chevronDown" size={11} className="sx-caret" />}
       </button>
       {anchor && (
-        <Popover anchor={anchor} onClose={close} className={wide ? "sx-pop--wide" : ""}>
+        <Popover anchor={anchor} onClose={close} className={wide ? "sx-pop--wide" : ""} owner={btn}>
           {menu ? <MenuList items={menu} onClose={close} /> : typeof children === "function" ? children(close) : children}
         </Popover>
       )}
@@ -189,6 +189,9 @@ export function Drop({ label, icon, title, children, className = "", buttonClass
 // Excel'in tema renkleri (üst satır) ve açık/koyu tonları, ardından standart renkler.
 const THEME = ["#ffffff", "#000000", "#e7e6e6", "#44546a", "#4472c4", "#ed7d31", "#a5a5a5", "#ffc000", "#5b9bd5", "#70ad47"];
 const TINTS = [0.8, 0.6, 0.4, -0.25, -0.5];
+// Çok koyu renklerin (siyah, lacivert) tonları açılarak üretilir (Excel gibi).
+const DARK_TINTS = [0.5, 0.35, 0.25, 0.15, 0.05];
+const isDark = (hex) => { const n = parseInt(hex.slice(1), 16); return ((n >> 16) & 255) * 0.3 + ((n >> 8) & 255) * 0.59 + (n & 255) * 0.11 < 40; };
 const STANDARD = ["#c00000", "#ff0000", "#ffc000", "#ffff00", "#92d050", "#00b050", "#00b0f0", "#0070c0", "#002060", "#7030a0"];
 const tint = (hex, t) => {
   const n = parseInt(hex.slice(1), 16);
@@ -214,7 +217,7 @@ export function ColorGrid({ value, onPick, noneLabel = "Otomatik", onClose }) {
       <button type="button" className="sx-colors__none" onClick={() => pick(null)}><span className="sx-sw sx-sw--none" />{noneLabel}</button>
       <div className="sx-colors__label">Tema renkleri</div>
       <div className="sx-colors__row">{THEME.map((c) => sw(c))}</div>
-      {TINTS.map((t) => <div key={t} className="sx-colors__row sx-colors__row--tight">{THEME.map((c) => sw(tint(c, t), `${c}${t}`))}</div>)}
+      {TINTS.map((t, i) => <div key={t} className="sx-colors__row sx-colors__row--tight">{THEME.map((c) => sw(tint(c, isDark(c) ? DARK_TINTS[i] : t), `${c}${t}`))}</div>)}
       <div className="sx-colors__label">Standart renkler</div>
       <div className="sx-colors__row">{STANDARD.map((c) => sw(c))}</div>
       {recent.length > 0 && <><div className="sx-colors__label">Son kullanılanlar</div><div className="sx-colors__row">{recent.map((c) => sw(c, `r${c}`))}</div></>}

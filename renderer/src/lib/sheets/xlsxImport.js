@@ -14,7 +14,7 @@
 //     biçimlendirme (temel kurallar, renk ölçeği, veri çubuğu), açılır liste
 // Grafikler, resimler ve makrolar aktarılmaz.
 import { FUNCTIONS, colName, parseAddr, parseLiteral, shiftFormula, tokenize } from "./sheetEngine";
-import { MAX_COLS, MAX_ROWS } from "./sheetOps";
+import { MAX_COLS, MAX_ROWS, sheetId } from "./sheetOps";
 import { parseRange, rangeText } from "./sheetModel";
 
 export const IMPORT_LIMITS = { sheets: 20, rows: MAX_ROWS, cols: MAX_COLS, cells: 200000, cellText: 4000 };
@@ -534,6 +534,7 @@ export async function xlsxToWorkbook(buffer) {
     }
 
     sheets.push({
+      id: sheetId(),
       name,
       rows: Math.min(IMPORT_LIMITS.rows, Math.max(100, maxRow + 21)),
       cols: Math.min(IMPORT_LIMITS.cols, Math.max(26, maxCol + 1)),
