@@ -5,6 +5,8 @@
 //                      Yayına al · düzenle (./SceneEditorModal) · çoğalt · sil · menü. Arama,
 //                      kart / liste görünümü; panel biçimine göre (dar / uzun / geniş) düzen.
 //                      Şablonlar YALNIZ "Yeni sahne ekle" ile açılan pencerede (TemplateGallery).
+//   Katman listesi     [2.33] sahneye tık → yanda DAR (≈ 220 px) katman listesi: ad, tür simgesi,
+//                      görünürlük, sıra (↑ ↓ / sürükle); önizleme tuvali yok.
 //   Yandaki panel      SceneInlineEditor — İSTEĞE BAĞLI ("Sahne katmanlarını yanda göster" ayarı):
 //                      seçili sahnenin katmanları kartların yanında, küçük tuvalde taşı / boyutla.
 //   Sahne düzenleyici  ./SceneEditorModal: büyük tuval, katmanlar, özellikler, sahne ayarları,
@@ -48,24 +50,25 @@ function useDragSort(onDrop) {
   return { over, props };
 }
 
-export const LayersList = memo(function LayersList({ config, scene, selectedId, actions, compact = false }) {
+export const LayersList = memo(function LayersList({ config, scene, selectedId, actions, compact = false, narrow = false, onClose = null }) {
   const { onSelectLayer, onUpdateLayer, onRemoveLayer, onMoveLayer, onAddLayer, onNewSource } = actions;
   const list = layersTopFirst(scene);
   const byId = new Map(config.sources.map((s) => [s.id, s]));
   const { over, props } = useDragSort((from, to) => onMoveLayer(scene.id, list[from].id, uiIndexToArray(list.length, to)));
   return (
-    <section className={`st-col ${compact ? "is-compact" : ""}`}>
+    <section className={`st-col ${compact ? "is-compact" : ""} ${narrow ? "is-narrow" : ""}`}>
       <header className="st-col__head">
         <h4>Katmanlar</h4>
         {scene && <span className="st-col__sub" title={scene.name}>{scene.name}</span>}
         <span className="st-top__spacer" />
         {scene && (
-          <MenuButton label="Katman ekle" icon="plus" text="Kaynak" size={12} className="st-menu-sm" items={[
+          <MenuButton label="Katman ekle" icon="plus" text={narrow ? undefined : "Kaynak"} size={12} className="st-menu-sm" items={[
             ...config.sources.map((s) => ({ label: s.name, icon: sourceKindIcon(s.kind), onClick: () => onAddLayer(scene.id, s.id) })),
             ...(config.sources.length ? ["-"] : []),
             { label: "Yeni kaynak…", icon: "plus", onClick: () => onNewSource({ toScene: scene.id }) },
           ]} />
         )}
+        {onClose && <button type="button" className="icon-btn icon-btn--xs" onClick={onClose} title="Katman listesini kapat"><Icon name="x" size={12} /></button>}
       </header>
       {!scene ? <p className="st-hint">Sahne yok.</p> : (
         <ul className="st-lyr">
@@ -77,11 +80,19 @@ export const LayersList = memo(function LayersList({ config, scene, selectedId, 
                 <button type="button" className={`st-lyr__btn ${l.visible ? "is-on" : ""}`} onClick={(e) => { e.stopPropagation(); onUpdateLayer(scene.id, l.id, { visible: !l.visible }); }} title={l.visible ? "Gizle" : "Göster"} aria-pressed={l.visible}>
                   <Icon name="eye" size={13} />
                 </button>
-                <button type="button" className={`st-lyr__btn ${l.locked ? "is-locked" : ""}`} onClick={(e) => { e.stopPropagation(); onUpdateLayer(scene.id, l.id, { locked: !l.locked }); }} title={l.locked ? "Kilidi aç" : "Kilitle (taşınmaz)"} aria-pressed={l.locked}>
-                  <Icon name="lock" size={12} />
-                </button>
+                {!narrow && (
+                  <button type="button" className={`st-lyr__btn ${l.locked ? "is-locked" : ""}`} onClick={(e) => { e.stopPropagation(); onUpdateLayer(scene.id, l.id, { locked: !l.locked }); }} title={l.locked ? "Kilidi aç" : "Kilitle (taşınmaz)"} aria-pressed={l.locked}>
+                    <Icon name="lock" size={12} />
+                  </button>
+                )}
                 <Icon name={sourceKindIcon(src?.kind)} size={12} />
-                <span className="st-lyr__name" title={src?.name}>{src?.name || "?"}</span>
+                <span className="st-lyr__name" title={`${src?.name || "?"} · ${sourceKindLabel(src?.kind)}`}>{src?.name || "?"}</span>
+                {narrow && (
+                  <span className="st-lyr__ord">
+                    <button type="button" className="icon-btn icon-btn--xs" disabled={i === 0} onClick={(e) => { e.stopPropagation(); onMoveLayer(scene.id, l.id, uiIndexToArray(list.length, i - 1)); }} title="Öne al (üste)"><Icon name="chevronUp" size={11} /></button>
+                    <button type="button" className="icon-btn icon-btn--xs" disabled={i === list.length - 1} onClick={(e) => { e.stopPropagation(); onMoveLayer(scene.id, l.id, uiIndexToArray(list.length, i + 1)); }} title="Arkaya al (alta)"><Icon name="chevronDown" size={11} /></button>
+                  </span>
+                )}
                 <button type="button" className="icon-btn icon-btn--xs" onClick={(e) => { e.stopPropagation(); onRemoveLayer(scene.id, l.id); }} title="Sahneden çıkar (kaynak kitaplıkta kalır)"><Icon name="x" size={12} /></button>
               </li>
             );
@@ -472,6 +483,8 @@ function ScenesTabInner({ config, configRef, runtimeRef, register, version, stud
   const byId = new Map(config.sources.map((s) => [s.id, s]));
   const scene = config.scenes.find((s) => s.id === selectedSceneId) || null;
   const showInline = Boolean(inline && scene);
+  // [2.33] Sahneye tık → yanda DAR katman listesi (ad, tür simgesi, görünürlük, sıra; önizleme tuvali yok).
+  const showLayers = Boolean(scene) && !showInline;
   const edit = useCallback((id) => { onSelectScene(id); actions.onEdit?.(id); }, [actions, onSelectScene]);
   const pick = useCallback((id) => { onSelectScene(id); onPreview(id); }, [onPreview, onSelectScene]);
   const q = query.trim().toLocaleLowerCase("tr-TR");
@@ -479,10 +492,10 @@ function ScenesTabInner({ config, configRef, runtimeRef, register, version, stud
   // Panel biçimi: dar → tek sütun, kaynaklar altta; uzun ve dar → kaynaklar altta; geniş → yanda.
   const narrow = shape.w > 0 && shape.w < 560;
   const tall = shape.h > 0 && shape.h > shape.w * 0.9;
-  const sideLib = Boolean(libActions) && !narrow && !tall && !showInline && shape.w >= 820;
+  const sideLib = Boolean(libActions) && !narrow && !tall && !showInline && !showLayers && shape.w >= 820;
   const programId = config.programSceneId;
   return (
-    <div ref={rootRef} className={`st-scenetab is-v3 ${showInline ? "has-edit" : ""} ${sideLib ? "has-side" : ""} ${narrow ? "is-narrow" : ""} ${tall ? "is-tall" : ""}`}>
+    <div ref={rootRef} className={`st-scenetab is-v3 ${showInline ? "has-edit" : ""} ${showLayers ? "has-layers" : ""} ${sideLib ? "has-side" : ""} ${narrow ? "is-narrow" : ""} ${tall ? "is-tall" : ""}`}>
       <div className="st-scenetab__main">
         <header className="st-scenetab__bar scn-bar">
           <h4>Sahneler</h4><span className="st-col__count">{config.scenes.length}</span>
@@ -522,6 +535,12 @@ function ScenesTabInner({ config, configRef, runtimeRef, register, version, stud
         </section>
         {config.scenes.length > 0 && <p className="scn-help">Tık: önizleme · çift tık: yayına al · 1–9: kısayol · sağ tık: menü</p>}
       </div>
+      {showLayers && (
+        <aside className="scn-layers" aria-label={`${scene.name} katmanları`}>
+          <LayersList config={config} scene={scene} selectedId={selectedLayerId} narrow onClose={() => onSelectScene(null)}
+            actions={{ ...actions, onSelectLayer: (id) => onSelectLayer?.(id) }} />
+        </aside>
+      )}
       {showInline && !narrow && <Splitter id="sahne:edit" side="after" label="Sahneler ↔ katman düzenleyici" />}
       {showInline && (
         <SceneInlineEditor config={config} configRef={configRef} runtimeRef={runtimeRef} scene={scene} selectedLayerId={selectedLayerId} onSelectLayer={onSelectLayer}

@@ -15,7 +15,7 @@ import YoutubeStartDialog from "./youtube/YoutubeStartDialog";
 import { CoverButton } from "./youtube/cover/CoverDialog"; // [kapak]
 import { parseStamp } from "./youtube/chapters";
 import "./youtube/youtube.css";
-import { Part } from "./dock/parts";
+import { Part, usePanelParts } from "./dock/parts";
 import {
   BITRATE_MAX_KBPS, BITRATE_MIN_KBPS, BITRATE_PRESETS, FPS_CHOICES, PRIVACY_LABELS, RESOLUTION_CHOICES,
   bitrateAdvice, isRtmpUrl, joinRtmp, recommendedBitrate, streamStatusLabel, uploadNeedMbps, validateBitrate,
@@ -310,94 +310,125 @@ function BroadcastPanel({ links = null, yt, engine, busy, matchId, matchName, ma
     try { await navigator.clipboard.writeText(watch); toast("İzleme bağlantısı kopyalandı.", { tone: "success" }); } catch { toast("Kopyalanamadı.", { tone: "error" }); }
   };
 
+  // [2.33] SADE: ana işlevler (YouTube'da başlat / durdur, durum, bağlı kanal, izleme linki) üstte;
+  // seyrek kartlar (kapak ve bağlantılar, Elle RTMP, prova, yerel kayıt, bölümler, kalite) "Diğer"
+  // altında katlanır. Panoya tek parça olarak konan kart (part:yayin:<parça>) katlanmadan çizilir.
+  const parts = usePanelParts("yayin");
+  const solo = !parts.visible("youtube");
+  const fold = (id, icon, title, sub, body, defOpen = false) => (solo ? body : <Fold id={id} icon={icon} title={title} sub={sub} defaultOpen={defOpen}>{body}</Fold>);
+  const live = String(s?.status || "").toLowerCase() === "live";
+  const chapterCount = chapters ? (chapters.normalized ? chapters.normalized.length : (chapters.chapters || []).length) : 0;
   return (
-    <div className="st-bcast">
-      <div className="st-stack">
-        {!engine.available && <div className="st-note is-warn"><Icon name="alert" size={14} /> Yayın motoru bu uygulama sürümünde yok. Reji kontrolleri yine çalışır.</div>}
-        {engine.available && ff && !ff.available && <div className="st-note is-warn"><Icon name="alert" size={14} /> ffmpeg bulunamadı: yayın ve tekrar için gerekli.</div>}
-        <Part id="youtube" label="YouTube kartı">
-        <section className="st-card">
+    <div className={`st-bcast ${solo ? "" : "is-simple"}`}>
+      {!engine.available && <div className="st-note is-warn"><Icon name="alert" size={14} /> Yayın motoru bu uygulama sürümünde yok. Reji kontrolleri yine çalışır.</div>}
+      {engine.available && ff && !ff.available && <div className="st-note is-warn"><Icon name="alert" size={14} /> ffmpeg bulunamadı: yayın ve tekrar için gerekli.</div>}
+      <Part id="youtube" label="YouTube kartı">
+        <section className="st-card bc-main">
           <header className="st-card__head"><Icon name="video" size={15} /><strong>YouTube</strong>
-            {s && <span className={`pill pill--xs ${String(s.status).toLowerCase() === "live" ? "pill--red" : ""}`}>{streamStatusLabel(s.status)}</span>}
+            {s && <span className={`pill pill--xs ${live ? "pill--red" : ""}`}>{streamStatusLabel(s.status)}</span>}
+            {encodingNow && <span className="pill pill--xs pill--red" title={engine.mode === "rehearsal" ? "Prova (yayınsız kayıt)" : "Görüntü gönderiliyor"}>{engine.mode === "rehearsal" ? "PROVA" : "● GÖNDERİLİYOR"}</span>}
+            <span className="st-top__spacer" />
+            {openStream && connected && <button type="button" className="icon-btn icon-btn--sm" disabled={busy || !yt.updateSettings} onClick={() => setEditOpen(true)} title="YouTube ayarlarını düzenle: başlık, açıklama, gizlilik, etiketler"><Icon name="pencil" size={13} /></button>}
           </header>
           {yt.config.loading ? <p className="st-hint">Kanal bağlantısı denetleniyor…</p> : <YoutubeConnect yt={yt} busy={busy || encodingNow} toast={toast} ask={ask} />}
           {connected && (
             <>
-              <p className="st-hint">
-                <strong>“YouTube'da canlı yayını başlat”</strong> kanalda yayını <strong>maç adıyla kendiliğinden açar</strong>{matchName ? <> (“{matchName}”)</> : null} ve görüntüyü gönderir.
-              </p>
-              {!openStream && <p className="st-hint">Başlatınca önce <b>YouTube ayarları</b> penceresi açılır (başlık, açıklama, gizlilik, etiketler, ön ayarlar); <b>Hemen başlat</b> ya da Enter ile varsayılanlarla geç.</p>}
-              {openStream && (
-                <div className="st-row st-row--wrap st-bc-privacy">
-                  <span className="st-hint">Gizlilik: <b>{PRIVACY_LABELS[s.privacy || yt.privacy] || yt.privacy}</b>{s.title ? <> · “{s.title}”</> : null}</span>
-                  <span className="st-top__spacer" />
-                  <button type="button" className="btn btn--xs" disabled={busy || !yt.updateSettings} onClick={() => setEditOpen(true)} title="Yayın sürerken başlık, açıklama, gizlilik ve etiketleri değiştir"><Icon name="pencil" size={11} /> YouTube ayarlarını düzenle</button>
+              {!encodingNow
+                ? <button type="button" className="btn btn--red btn--block bc-go" disabled={busy || !matchId || !engine.available} onClick={onStartYoutube}
+                    title={`Kanalda yayını maç adıyla açar${matchName ? ` (“${matchName}”)` : ""} ve görüntüyü gönderir. Önce YouTube ayarları penceresi açılır (Enter: varsayılanlarla geç).`}>
+                    <Icon name="play" size={14} /> {openStream ? "Yayına devam et" : "YouTube'da canlı yayını başlat"}
+                  </button>
+                : <button type="button" className="btn btn--red btn--block bc-go" disabled={busy} onClick={onEndYoutube} title="Kodlayıcı durur ve YouTube yayını bitirilir (onay sorulur)"><Icon name="stop" size={14} /> Yayını kapat</button>}
+              {(encodingNow || openStream) && (
+                <div className="st-row st-row--wrap bc-sub">
+                  {encodingNow && <button type="button" className="btn btn--xs" disabled={busy} onClick={onStop} title="Yalnız görüntü kesilir; YouTube yayını açık kalır, “Yayına devam et” ile sürer"><Icon name="pause" size={11} /> Görüntüyü durdur</button>}
+                  {openStream && !encodingNow && <button type="button" className="btn btn--xs btn--danger-ghost" disabled={busy} onClick={onEndYoutube}><Icon name="stop" size={11} /> YouTube yayınını bitir</button>}
+                  {openStream && <small className="muted bc-privacy" title={s.title || ""}>{PRIVACY_LABELS[s.privacy || yt.privacy] || yt.privacy}{s.title ? ` · ${s.title}` : ""}</small>}
                 </div>
               )}
-              {!encodingNow
-                ? <button type="button" className="btn btn--red btn--block" disabled={busy || !matchId || !engine.available} onClick={onStartYoutube}><Icon name="play" size={13} /> {openStream ? "Yayına devam et" : "YouTube'da canlı yayını başlat"}</button>
-                : <button type="button" className="btn btn--red btn--block" disabled={busy} onClick={onEndYoutube} title="Kodlayıcı durur ve YouTube yayını bitirilir (onay sorulur)"><Icon name="stop" size={13} /> Yayını kapat</button>}
-              {encodingNow && <button type="button" className="btn btn--xs btn--block" disabled={busy} onClick={onStop} title="Yalnız görüntü kesilir; YouTube yayını açık kalır, “Yayına devam et” ile sürer"><Icon name="pause" size={11} /> Görüntüyü durdur (YouTube açık kalır)</button>}
-              {openStream && !encodingNow && <button type="button" className="btn btn--danger-ghost btn--block" disabled={busy} onClick={onEndYoutube}><Icon name="stop" size={13} /> YouTube yayınını bitir</button>}
               {watch && (
-                <div className="st-row">
-                  <input readOnly value={watch} title={watch} onFocus={(e) => e.target.select()} />
-                  <button type="button" className="icon-btn" title="Kopyala" onClick={copy}><Icon name="copy" size={14} /></button>
+                <div className="st-row bc-watch">
+                  <input readOnly value={watch} title={watch} onFocus={(e) => e.target.select()} aria-label="İzleme bağlantısı" />
+                  <button type="button" className="btn btn--xs" title="İzleme bağlantısını kopyala" onClick={copy}><Icon name="copy" size={12} /> Kopyala</button>
                   <button type="button" className="icon-btn" title="Tarayıcıda aç" onClick={() => window.elitlig?.app?.openExternal?.(watch)}><Icon name="external" size={14} /></button>
                 </div>
               )}
-              {matchId && <CoverButton yt={yt} matchId={matchId} match={match} homeName={match?.first_team_name} awayName={match?.second_team_name} toast={toast} disabled={busy} />}{/* [kapak] */}
               {openStream && watchLinkOf(match) && <span className="st-okchip"><Icon name="check" size={12} /> Maç sayfasına canlı yayın linki eklendi</span>}
               {s?.sync_error?.message && <p className="st-hint text-red">{s.sync_error.message}</p>}
               {!matchId && <p className="st-hint">Önce Maç yönetimi sekmesinden maç aç.</p>}
             </>
           )}
-          {links && <LinksInline links={links} />}{/* [bağlantılar] YouTube / YouTube Studio / maç sayfası · kopyala · QR */}
+          {!connected && !yt.config.loading && <p className="st-hint">Kanal bağlı değilse “Diğer › Elle RTMP” ile yayın anahtarıyla da yayına çıkılabilir.</p>}
         </section>
-        </Part>
-      </div>
+      </Part>
 
-      <div className="st-stack">
-        <Part id="rtmp" label="Elle RTMP">
-        <section className="st-card">
-          <button type="button" className="st-card__head st-card__toggle" onClick={() => setManualOpen((v) => !v)} aria-expanded={manualOpen}>
-            <Icon name="link" size={15} /><strong>Elle RTMP (yayın anahtarıyla)</strong><Icon name={manualOpen ? "chevronUp" : "chevronDown"} size={14} />
-          </button>
-          {manualOpen && (
-            <>
-              <Field label="Sunucu adresi"><input value={rtmpUrl} title={rtmpUrl} onChange={(e) => setRtmpUrl(e.target.value)} placeholder="rtmp://a.rtmp.youtube.com/live2" spellCheck={false} /></Field>
-              <Field label="Yayın anahtarı"><input type="password" value={rtmpKey} onChange={(e) => setRtmpKey(e.target.value)} placeholder="xxxx-xxxx-xxxx-xxxx" spellCheck={false} /></Field>
-              <button type="button" className="btn btn--block" disabled={busy || encodingNow || !isRtmpUrl(manualUrl) || !engine.available} onClick={() => onStartManual(manualUrl)}><Icon name="play" size={13} /> Bu anahtarla yayına başla</button>
-            </>
-          )}
-          {(startedVia === "manual" || (manualOpen && watchLinkOf(match))) && matchId && <WatchLink matchId={matchId} match={match} toast={toast} />}
-        </section>
+      {!solo && <h6 className="bc-more">Diğer</h6>}
+      {!solo && (matchId || links) && (
+        <Fold id="links" icon="link" title="Kapak ve bağlantılar" sub="YouTube kapağı · YouTube Studio · maç sayfası · QR">
+          <section className="st-card">
+            {matchId && connected && <CoverButton yt={yt} matchId={matchId} match={match} homeName={match?.first_team_name} awayName={match?.second_team_name} toast={toast} disabled={busy} />}{/* [kapak] */}
+            {links && <LinksInline links={links} />}{/* [bağlantılar] YouTube / YouTube Studio / maç sayfası · kopyala · QR */}
+          </section>
+        </Fold>
+      )}
+      <Part id="rtmp" label="Elle RTMP">
+        {fold("rtmp", "link", "Elle RTMP", "yayın anahtarıyla", (
+          <section className="st-card">
+            <Field label="Sunucu adresi"><input value={rtmpUrl} title={rtmpUrl} onChange={(e) => setRtmpUrl(e.target.value)} placeholder="rtmp://a.rtmp.youtube.com/live2" spellCheck={false} /></Field>
+            <Field label="Yayın anahtarı"><input type="password" value={rtmpKey} onChange={(e) => setRtmpKey(e.target.value)} placeholder="xxxx-xxxx-xxxx-xxxx" spellCheck={false} /></Field>
+            <button type="button" className="btn btn--block" disabled={busy || encodingNow || !isRtmpUrl(manualUrl) || !engine.available} onClick={() => onStartManual(manualUrl)}><Icon name="play" size={13} /> Bu anahtarla yayına başla</button>
+            {matchId && <WatchLink matchId={matchId} match={match} toast={toast} />}
+          </section>
+        ), manualOpen)}
+      </Part>
+      <Part id="rehearsal" label="Prova">
+        {fold("rehearsal", "target", "Prova", engine.mode === "rehearsal" ? "sürüyor" : "yayınsız kayıt", (
+          <section className="st-card">
+            <p className="st-hint">Görüntü hiçbir yere gönderilmez; yalnız bu bilgisayarda kaydedilir. Tekrar ve özet denemek için.</p>
+            {engine.mode === "rehearsal"
+              ? <button type="button" className="btn btn--block" disabled={busy} onClick={onStop}><Icon name="stop" size={13} /> Provayı bitir</button>
+              : <button type="button" className="btn btn--block" disabled={busy || encodingNow || !engine.available} onClick={onRehearsal}><Icon name="play" size={13} /> Provayı başlat</button>}
+          </section>
+        ))}
+      </Part>
+      <Part id="localrec" label="Maçı bilgisayara kaydet">
+        {fold("localrec", "download", "Maçı bilgisayara kaydet", localRec?.enabled ? "açık" : "kapalı", <LocalRecordCard value={localRec} onChange={onLocalRec} engine={engine} recordInfo={recordInfo} onOpenSettings={onOpenSettings} />)}
+      </Part>
+      {chapters && (
+        <Part id="chapters" label="YouTube bölümleri">
+          {fold("chapters", "flag", "YouTube bölümleri", chapterCount ? `${chapterCount} bölüm` : "henüz yok", <ChaptersCard chapters={chapters} onAir={engine.active} toast={toast} hasBroadcast={Boolean(openStream)} />)}
         </Part>
-        <Part id="rehearsal" label="Prova">
-        <section className="st-card">
-          <header className="st-card__head"><Icon name="target" size={15} /><strong>Prova (yayınsız kayıt)</strong></header>
-          <p className="st-hint">Görüntü hiçbir yere gönderilmez; yalnız bu bilgisayarda kaydedilir. Tekrar ve özet denemek için.</p>
-          {engine.mode === "rehearsal"
-            ? <button type="button" className="btn btn--block" disabled={busy} onClick={onStop}><Icon name="stop" size={13} /> Provayı bitir</button>
-            : <button type="button" className="btn btn--block" disabled={busy || encodingNow || !engine.available} onClick={onRehearsal}><Icon name="play" size={13} /> Provayı başlat</button>}
-        </section>
-        </Part>
-      </div>
-
-      <div className="st-stack">
-        <Part id="localrec" label="Maçı bilgisayara kaydet"><LocalRecordCard value={localRec} onChange={onLocalRec} engine={engine} recordInfo={recordInfo} onOpenSettings={onOpenSettings} /></Part>
-        {chapters && <Part id="chapters" label="YouTube bölümleri"><ChaptersCard chapters={chapters} onAir={engine.active} toast={toast} hasBroadcast={Boolean(openStream)} /></Part>}
-        <Part id="encoding" label="Görüntü kalitesi"><EncodingCard encoding={encoding} onEncoding={onEncoding} locked={encodingNow} network={engine.status?.network || null} /></Part>
-        <Part id="encoder" label="Kodlayıcı bilgisi">
-        <p className="st-hint">
+      )}
+      <Part id="encoding" label="Görüntü kalitesi">
+        {fold("encoding", "sliders", "Görüntü kalitesi", `${encoding?.resolution || ""} · ${encoding?.fps || ""} fps`, <EncodingCard encoding={encoding} onEncoding={onEncoding} locked={encodingNow} network={engine.status?.network || null} />)}
+      </Part>
+      <Part id="encoder" label="Kodlayıcı bilgisi">
+        <p className="st-hint bc-enc">
           Kodlayıcı: {ff ? (ff.available ? `ffmpeg ${ff.version || ""} · ${encoderText(ff)}` : "ffmpeg yok") : "bilgi yok"}
         </p>
-        </Part>
-      </div>
+      </Part>
       {editOpen && (
         <YoutubeStartDialog mode="edit" yt={yt} match={match} homeName={match?.first_team_name} awayName={match?.second_team_name} toast={toast} onClose={() => setEditOpen(false)} />
       )}
     </div>
+  );
+}
+
+const FOLD_KEY = "studio.bcastFold.v1";
+const readFold = () => { try { return JSON.parse(localStorage.getItem(FOLD_KEY) || "{}") || {}; } catch { return {}; } };
+/** Katlanır "Diğer" kartı (açık / kapalı bilgisi bu bilgisayarda hatırlanır). */
+function Fold({ id, icon, title, sub, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(() => { const v = readFold()[id]; return typeof v === "boolean" ? v : Boolean(defaultOpen); });
+  const toggle = (e) => {
+    const v = e.currentTarget.open;
+    setOpen(v);
+    try { localStorage.setItem(FOLD_KEY, JSON.stringify({ ...readFold(), [id]: v })); } catch { /* yoksay */ }
+  };
+  return (
+    <details className="bc-fold" open={open} onToggle={toggle} data-fold={id}>
+      <summary><Icon name={icon} size={13} /><strong>{title}</strong>{sub ? <small className="muted">{sub}</small> : null}<Icon name="chevronDown" size={12} className="bc-fold__chev" /></summary>
+      {open ? children : null}
+    </details>
   );
 }
 

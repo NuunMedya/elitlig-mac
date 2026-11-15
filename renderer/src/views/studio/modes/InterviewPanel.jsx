@@ -76,7 +76,7 @@ function BandCard({ g, live, api }) {
         </p>
       )}
       {layerOff && (
-        <p className="mg-note iv-warn">Röportaj sahnesi yayında ve “Röportaj bandı” katmanı kapalı: bant görünmez. Soldaki Katmanlar'dan aç.</p>
+        <p className="mg-note iv-warn">Röportaj sahnesi yayında ve “Röportaj bandı” katmanı kapalı: bant görünmez. Kontrol › Katmanlar'dan aç.</p>
       )}
       <h6 className="iv-sub">Şablon</h6>
       <div className="iv-styles" role="radiogroup" aria-label="Bant şablonu">
@@ -143,7 +143,7 @@ function SceneCard({ n, set, sources }) {
   return (
     <details className="st-card iv-scene">
       <summary className="st-card__head"><Icon name="layers" size={14} /><strong>İsteğe bağlı: ayrı röportaj sahnesi</strong><small className="muted">Gerekmez — bant her sahnede çalışır</small></summary>
-      <p className="st-hint">Kamera seçersen bu sahne soldaki “Yayına al” ile mod olarak yayına verilebilir. Seçmezsen önizleme yayındaki programı ve bandı gösterir.</p>
+      <p className="st-hint">Kamera seçersen bu sahne panelin üstündeki “Önizlemeye gönder” / GEÇİŞ (ya da Kontrol › “Yayına al”) ile mod olarak yayına verilebilir. Seçmezsen önizleme yayındaki programı ve bandı gösterir.</p>
       <div className="md-pick">
         {INTERVIEW_LAYOUTS.map((l) => (
           <button key={l.key} type="button" className={`md-pick__item ${n.layout === l.key ? "is-on" : ""}`} onClick={() => set({ layout: l.key })} title={l.hint}>

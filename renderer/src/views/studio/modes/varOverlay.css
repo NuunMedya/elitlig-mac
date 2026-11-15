@@ -1,0 +1,45 @@
+/* [2.33] VAR kipi kaplaması (önizleme / program monitörünün üstünde; yalnız operatör görür).
+   Monitör görüntüsü her temada koyu: yazılar video üstü renklerle (var(--on-strong)). */
+.vo { position: absolute; inset: 0; z-index: 3; pointer-events: none; font-family: var(--font); }
+.vo__top { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 6px; padding: 6px; min-width: 0; pointer-events: none; }
+.vo__tag { flex: none; padding: 2px 8px; border-radius: 5px; background: rgba(0, 0, 0, 0.72); color: #fca5a5; font: 800 10.5px/18px var(--font); letter-spacing: 0.08em; white-space: nowrap; box-shadow: inset 0 0 0 1px rgba(255, 45, 85, 0.6); }
+.vo__tag.is-air { background: var(--st-live); color: var(--on-strong); box-shadow: none; }
+.vo__layouts { display: inline-flex; flex-wrap: wrap; gap: 3px; pointer-events: auto; min-width: 0; }
+.vo__layouts button, .vo__states button, .vo__btn, .vo__var {
+  flex: none; height: 24px; min-width: 24px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 7px; background: rgba(20, 12, 28, 0.9); color: var(--on-strong); font: 700 11px var(--font); white-space: nowrap; cursor: pointer;
+}
+.vo__layouts button:hover, .vo__states button:hover, .vo__btn:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.5); }
+.vo__layouts button.is-on { background: #ff2d55; border-color: #ff2d55; }
+.vo-frame { position: absolute; padding: 0; margin: 0; border: 2px dashed rgba(255, 255, 255, 0.0); border-radius: 4px; background: transparent; cursor: pointer; pointer-events: auto; }
+.vo-frame:hover, .vo-frame.is-open { border-color: rgba(255, 255, 255, 0.75); background: rgba(255, 45, 85, 0.08); }
+.vo-frame.is-empty { border-color: rgba(255, 255, 255, 0.35); }
+.vo-frame__lbl { position: absolute; left: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 4px; max-width: calc(100% - 12px); padding: 2px 7px; border-radius: 6px; background: rgba(0, 0, 0, 0.78); color: var(--on-strong); font: 800 10.5px/16px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vo-frame.is-inset .vo-frame__lbl { bottom: auto; top: 4px; left: 4px; }
+.vo-live { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #ff2d55; box-shadow: 0 0 0 2px rgba(255, 45, 85, 0.35); }
+.vo-pickwrap { position: absolute; z-index: 5; pointer-events: auto; }
+.vo-pick { width: max-content; max-width: 300px; max-height: 260px; overflow: auto; padding: 8px; border-radius: 10px; background: rgba(16, 10, 24, 0.97); border: 1px solid rgba(255, 255, 255, 0.2); box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55); color: var(--on-strong); }
+.vo-pick h6 { margin: 4px 0 4px; font: 800 9.5px var(--font); letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255, 255, 255, 0.6); } /* sabit-renk: video üstü */
+.vo-pick__g { display: flex; flex-wrap: wrap; gap: 4px; }
+.vo-pick__g button { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.06); color: var(--on-strong); font: 700 11.5px var(--font); cursor: pointer; }
+.vo-pick__g button:hover { border-color: rgba(255, 255, 255, 0.5); }
+.vo-pick__g button.is-on { background: #ff2d55; border-color: #ff2d55; }
+.vo-pick small { color: rgba(255, 255, 255, 0.6); font-size: 11px; } /* sabit-renk: video üstü */
+.vo__bot { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 6px 8px 7px; background: linear-gradient(transparent, rgba(6, 3, 10, 0.88) 30%); pointer-events: auto; }
+.vo__states { display: inline-flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+.vo__states button.is-on.is-amber { background: #f5a524; border-color: #f5a524; color: var(--on-bright); }
+.vo__states button.is-on.is-blue { background: #3b82f6; border-color: #3b82f6; }
+.vo__states button.is-on.is-green { background: #16c784; border-color: #16c784; color: var(--on-bright); }
+.vo__states .select-xs { height: 24px; }
+.vo__btn.is-take { background: var(--st-live); border-color: #ff2d55; font-weight: 800; letter-spacing: 0.04em; }
+.vo__btn.is-live { background: var(--on-strong); color: var(--on-bright); border-color: var(--on-strong); font-weight: 800; }
+.vo__var { background: rgba(20, 12, 28, 0.9); font-weight: 900; letter-spacing: 0.08em; border-color: rgba(255, 45, 85, 0.7); color: #fda4af; }
+.vo__var.is-on { background: #ff2d55; border-color: #ff2d55; color: var(--on-strong); }
+.vo.is-compact .vo__layouts button, .vo.is-compact .vo__states button, .vo.is-compact .vo__btn { height: 22px; padding: 0 5px; font-size: 10px; }
+/* program: fare üstünde değilken denetimler soluklaşır (görüntü örtülmesin) */
+.st-monitor.is-program:not(:hover) .vo.is-pgm:not(:focus-within) :is(.vo__layouts, .vo__bot, .vo-frame__lbl) { opacity: 0; }
+/* tekrar kaplamasındaki VAR düğmesi (sağ alt) */
+.rpo__row > .rpo__var { border-color: rgba(255, 45, 85, 0.75); color: #fda4af; font-weight: 900; letter-spacing: 0.08em; }
+.rpo__row > .rpo__var:hover:not(:disabled) { background: #ff2d55; color: var(--on-strong); border-color: #ff2d55; }
+.st-monitor.is-varedit .st-screen-wrap { outline: 2px solid rgba(255, 45, 85, 0.75); }
+.rpo__row > .rpo__var { margin-left: auto; }

@@ -54,6 +54,14 @@ const MINW0 = 44;
 let UIZ = 1;
 const HEAD = () => Math.round(HEAD0 * UIZ);
 const MINW = () => Math.round(MINW0 * UIZ);
+/**
+ * [2.33] Bölmelerin en küçük boyu: dockview varsayılanı 100 × 100 px idi (panel daha fazla
+ * küçülmüyor, altta boşluk kalıyordu). Artık bir başlık boyu + biraz (yükseklik) ve dar bir sütun.
+ */
+const PANE_MIN_H0 = 36;
+const PANE_MIN_W0 = 72;
+const PANE_MIN_H = () => Math.round(PANE_MIN_H0 * UIZ);
+const PANE_MIN_W = () => Math.round(PANE_MIN_W0 * UIZ);
 /** "Parçalara ayır": panel → pano bileşenleri. */
 const DECOMPOSE = {
   ses: ["ses.master", "ses.killall", "ses.mutemic", "part:ses:routing", "part:ses:scenes", "part:ses:mic", "part:ses:music"],
@@ -66,7 +74,6 @@ const DECOMPOSE = {
   yonetimKadro: ["mg.kadro.home", "mg.kadro.away"],
   yonetimMacsonu: ["mg.macsonu.summary", "mg.macsonu.ratings", "mg.macsonu.awards", "mg.macsonu.goal", "mg.macsonu.save", "mg.macsonu.content", "mg.macsonu.stats"],
   golMuzigi: ["golmuzik.buttons", "golmuzik.panel"],
-  var: ["part:var:air", "part:var:main"],
   roportaj: ["part:roportaj:air", "part:roportaj:main"],
   ozet: ["part:ozet:air", "part:ozet:main"],
 };
@@ -298,6 +305,13 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
       const hide = !editRef.current && !floating && !min && (st.pos === "hidden" || (auto && !side && g.panels.length === 1));
       if (g.header && g.header.hidden !== hide) g.header.hidden = hide;
       applyTabStyle(g, st, side);
+      // [2.33] küçültülmemiş bölmeler daha da küçültülebilir (ölçek değişince yeniden).
+      if (!min && !floating) {
+        const want = `${PANE_MIN_H()}x${PANE_MIN_W()}`;
+        if (g.element?.dataset && g.element.dataset.lwMin !== want) {
+          try { g.api.setConstraints({ minimumHeight: PANE_MIN_H(), minimumWidth: PANE_MIN_W() }); g.element.dataset.lwMin = want; } catch { /* yoksay */ }
+        }
+      } else if (g.element?.dataset) delete g.element.dataset.lwMin;
     }
   }, []);
 
@@ -433,7 +447,7 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
         if (!g) return;
         const cur = layoutRef.current.mins?.[gid];
         if (cur) {
-          g.api.setConstraints({ minimumHeight: 100, maximumHeight: BIG, minimumWidth: 100, maximumWidth: BIG });
+          g.api.setConstraints({ minimumHeight: PANE_MIN_H(), maximumHeight: BIG, minimumWidth: PANE_MIN_W(), maximumWidth: BIG });
           const prev = sizes.current[gid];
           if (prev) g.api.setSize(cur === "h" ? { height: prev } : { width: prev });
           g.element?.classList?.remove("lw-min", "is-h", "is-w");
@@ -448,7 +462,7 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
         g.api.setSize({ height: HEAD() });
         let axis = "h";
         if (g.height > HEAD() + 6) {
-          g.api.setConstraints({ minimumHeight: 100, maximumHeight: BIG });
+          g.api.setConstraints({ minimumHeight: PANE_MIN_H(), maximumHeight: BIG });
           sizes.current[gid] = g.width;
           g.api.setConstraints({ minimumWidth: MINW(), maximumWidth: MINW() });
           g.api.setSize({ width: MINW() });
@@ -594,6 +608,13 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
     const l = layoutRef.current;
     let ok = l.dock ? load(l.dock, { reuse: false }) : false;
     if (!ok) ok = load(specToDock(presetOf("klasik").spec, { titleOf }), { reuse: false });
+    // [2.33] Artık olmayan paneller (ör. kaldırılan VAR paneli) kayıtlı düzenden atılır.
+    const stale = e.api.panels.filter((p) => !isKnownPanelId(p.id));
+    if (stale.length) {
+      for (const p of stale) { try { e.api.removePanel(p); } catch { /* yoksay */ } }
+      if (!e.api.panels.length) load(specToDock(presetOf("klasik").spec, { titleOf }), { reuse: false });
+      save();
+    }
     applyMins(l.mins);
     syncHeaders();
     e.api.onDidLayoutChange(() => { if (!applying.current) { syncHeaders(); save(); } });
@@ -603,7 +624,7 @@ export default function Workspace({ layout, setLayout, edit, ctrlRef, value }) {
 
   useEffect(() => { syncHeaders(); }, [edit, layout.autoHide, layout.tabs, layout.tabDefault, syncHeaders]);
   // Ölçek değişince küçültülmüş grupların başlık boyu yeniden (ölçekli) uygulanır.
-  useEffect(() => { applyMins(layoutRef.current.mins); }, [uiz, applyMins]);
+  useEffect(() => { applyMins(layoutRef.current.mins); syncHeaders(); }, [uiz, applyMins, syncHeaders]);
   useEffect(() => () => clearTimeout(saveT.current), []);
 
   const ctx = useMemo(() => {

@@ -93,7 +93,7 @@ describe("yayın modları: ek katmanlar", () => {
 
 describe("VAR v2", () => {
   it("düzenler: tek / ikili / üçlü pencereler kesişmez, sahne içinde, 16:9", () => {
-    expect(VAR_LAYOUTS.map((l) => l.key)).toEqual(["single", "two", "three"]);
+    expect(VAR_LAYOUTS.map((l) => l.key)).toEqual(["single", "two", "three", "ustalt", "pip", "grid"]);
     for (const l of VAR_LAYOUTS) {
       const L = varLayoutV2(l.key, 1920, 1080);
       expect(L.panes).toHaveLength(l.count);
@@ -106,6 +106,7 @@ describe("VAR v2", () => {
       }
       for (let i = 0; i < L.panes.length; i += 1) {
         for (let j = i + 1; j < L.panes.length; j += 1) {
+          if (L.panes[j].inset) continue; // PiP: küçük pencere büyüğün içinde (bilerek)
           const a = L.panes[i].rect; const b = L.panes[j].rect;
           const overlap = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
           expect(overlap).toBe(false);
@@ -121,7 +122,7 @@ describe("VAR v2", () => {
     expect(old.layout).toBe("two");
     expect(old.slots.slice(0, 2)).toEqual([{ kind: "source", replayId: null, angle: "program", sourceId: "cam" }, { kind: "replay", replayId: "r1", angle: "program", sourceId: null }]);
     expect(activeSlots(old)).toHaveLength(2);
-    expect(normalizeVarV2({}).slots).toHaveLength(3);
+    expect(normalizeVarV2({}).slots).toHaveLength(4);
     expect(varStatus({ state: "review" })).toMatchObject({ label: "İNCELEME", tone: "amber" });
     expect(varStatus({ state: "check" })).toMatchObject({ label: "KONTROL", tone: "blue" });
     expect(varStatus({ state: "decision", decision: "goalOff" })).toMatchObject({ label: "KARAR", text: "GOL İPTAL", tone: "red" });

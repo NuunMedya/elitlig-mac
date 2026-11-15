@@ -188,9 +188,15 @@ describe("Yayın sekmesi: bölümler kartı ve YouTube ayarlarını düzenle", (
     const engine = { available: true, info: null, active: false, mode: null, localRecord: null };
     const toasts = [];
     const { host, unmount } = mount(h(BroadcastPanel, { yt, engine, busy: false, matchId: 3, matchName: "A – B", match: { id: 3, first_team_name: "A", second_team_name: "B" }, encoding: { resolution: "720p", fps: 30, bitrateKbps: 2500 }, onEncoding: () => {}, toast: (m) => toasts.push(m), ask: async () => true, localRec: { enabled: false, dir: null }, onLocalRec: () => {}, chapters }));
+    // [2.33] sade Yayın paneli: bölümler "Diğer" altında katlı; açınca kart çizilir.
+    expect(host.textContent).not.toMatch(/Gönderilecek/);
+    const fold = host.querySelector('[data-fold="chapters"]');
+    expect(fold).not.toBeNull();
+    expect(fold.textContent).toMatch(/1 bölüm|2 bölüm/);
+    act(() => { fold.open = true; fold.dispatchEvent(new Event("toggle")); });
     expect(host.textContent).toMatch(/Gönderilecek/);
     expect(host.textContent).toMatch(/En az 3 bölüm/);
-    const btn = (text) => [...host.querySelectorAll("button")].find((b) => b.textContent.includes(text));
+    const btn = (text) => [...host.querySelectorAll("button")].find((b) => b.textContent.includes(text) || (b.title || "").includes(text));
     await act(async () => { btn("YouTube'a gönder").click(); });
     expect(sent).toHaveLength(1);
     expect(toasts[0]).toMatch(/YouTube açıklamasına yazıldı/);

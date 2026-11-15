@@ -211,3 +211,8 @@
 .pf.has-cols [data-pf-cols] { column-gap: var(--dens-gap); }
 .pf.has-cols [data-pf-cols] > .mx-strip { width: auto; }
 @container pfr (max-width: 519px) { .pf-cols__btn span { display: none; } }
+
+/* [2.33] Araç satırı (Sütun · Sık / Normal / Geniş · kart boyu · sıfırla) yalnız Düzenle kipinde
+   (ya da Ayarlar › Görünüm › "Panel araç satırını hep göster"): işletimde yer kaplamaz. */
+.studio:not(.is-ptools) .pf-tools { display: none; }
+.studio:not(.is-ptools) .pf-ab :is(.pf-cols, .pf-dens) { display: none; }

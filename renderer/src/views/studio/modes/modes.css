@@ -219,3 +219,33 @@
 .iv-review__video { width: 100%; max-height: 56vh; border-radius: 10px; background: #000; display: block; }
 .iv-review__meta { margin: 6px 0 0; }
 .iv-review .modal__foot { gap: 8px; }
+
+/* ───────── [2.33] Ses kartları dar sütunda kırpılmaz: kap sorgusu, kaydırma yok, sarma + üç nokta ───────── */
+.mx-cards > *, .mx-cards > .st-card { min-width: 0; max-width: 100%; container-type: inline-size; container-name: mxcard; }
+.mx-cards .st-card__head { flex-wrap: wrap; row-gap: 2px; min-width: 0; }
+.mx-cards .st-card__head > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx-cards .st-card__head > small { flex-basis: 100%; min-width: 0; }
+.mx-cards select { width: 100%; max-width: 100%; min-width: 0; text-overflow: ellipsis; }
+.mx-cards .st-row { flex-wrap: wrap; min-width: 0; row-gap: 4px; }
+.mx-cards .toggle.mx-wrap { align-items: flex-start; white-space: normal; min-width: 0; }
+.mx-cards .toggle.mx-wrap > span { min-width: 0; }
+.mx-matrix table { table-layout: fixed; }
+.mx-matrix th { overflow: hidden; text-overflow: ellipsis; }
+.mx-matrix thead th { white-space: nowrap; }
+.mx-matrix tbody th { width: 36%; }
+.mx-matrix .mx-cell { width: 100%; min-width: 0; padding-left: 2px; padding-right: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-scenes__wrap { overflow-x: auto; scrollbar-width: thin; }
+.au-scenes th { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx-mic .mx-sub { flex-wrap: wrap; gap: 4px; }
+.mx-music__name { min-width: 0; flex: 1 1 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@container mxcard (max-width: 300px) {
+  .mx-matrix thead .mx-th__t { display: none; }
+  .mx-matrix table { font-size: 10.5px; border-spacing: 2px; }
+  .mx-matrix tbody th { width: 42%; }
+  .mx-matrix .md-live-dot { display: block; width: max-content; }
+  .mx-cards .st-hint { font-size: 11px; }
+  .mx-music .st-row > small { flex-basis: 100%; }
+}
+/* Ses panelinde --card-w kanal ŞERİDİ genişliğidir (≈ 84 px): kartlar ondan değil, kendi en küçük
+   okunur eninden (250 px) dizilir; dar panelde tek sütun. */
+.pf[data-pf="ses"] .mx-cards, .lw-solo .mx-cards { grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr)); }

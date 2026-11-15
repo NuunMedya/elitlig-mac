@@ -1,94 +1,100 @@
-// Yayın Stüdyosu · LED EKRAN sekmesi: ekran seçimi, ne gösterileceği
-// (stüdyo görüntüsü — Yayın / Önizleme / belirli sahne / kapalı — ya da sitenin
-// LED sayfası), ikinci monitörde tam ekran aç / kapat, durum ve LED grafikleri
-// (grafik modülünün LedGraphicsPanel'i varsa).
+// Yayın Stüdyosu · LED EKRAN paneli [2.33: sade]. Yalnız sık kullanılan birkaç LED durumu,
+// büyük ve açık düğmelerle:
+//
+//   ┌ ● LED AÇIK · Ekran 2 · gösterilen: Yayın                         [Kapat] [⚙ Ayarlar] ┐
+//   │ [ ▶  YAYINI LED'E VER  ]  (açıkken: "LED yayını gösteriyor" · [↩ Önceki içeriğe dön])  │
+//   │ LED SAHNESİ   [Geniş açı] [Sponsor] [Devre arası] …   (dokun: LED o sahneyi gösterir)  │
+//   │ [Logo / skor] [Sitenin LED sayfası] [Siyah]                                            │
+//   └ ▸ LED grafikleri (açılır)                                                              ┘
+//
+// "Yayını LED'e ver" çıkışı açıp kapatmayı gerektirmez: LED kapalıysa açılır, site sayfasındaysa
+// stüdyo görünümüne geçer; önceki içerik saklanır ve tek dokunuşla geri gelir (led/useLed › goLive /
+// goBack). Ekran seçimi, yönlendirme ayrıntıları ve çıkış penceresi ayarları Ayarlar › LED'de.
 import React, { memo } from "react";
-import { Field, Icon } from "../../../components/ui";
+import { Icon } from "../../../components/ui";
 import { LedGraphicsPanel } from "../scenes/graphicsBridge";
 import { Part } from "../dock/parts";
 
-const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent || "");
-const CLOSE_KEYS = isMac ? "⌘⇧L" : "Ctrl+Shift+L";
-const dispText = (d) => `${d.label || `Ekran ${d.id}`}${d.primary ? " (ana ekran)" : ""}${d.hostsStudio ? " · stüdyo bu ekranda" : ""} · ${d.bounds?.width || "?"}×${d.bounds?.height || "?"}${d.scaleFactor > 1 ? ` @${d.scaleFactor}x` : ""}`;
+const CONTENT_LABEL = { scene: null, mirror: "Program aynası", scoreboard: "Logo / skor", sponsor: "Sponsor döngüsü", text: "Metin", clock: "Saat", countdown: "Geri sayım" };
 
-const ROUTES = [
-  { key: "program", title: "Yayın (Program)", text: "Yayındaki sahneyi izler; program değişince LED de değişir (önerilen)" },
-  { key: "preview", title: "Önizleme", text: "Önizlemedeki sahne (seyirciye yayından önce göstermek için)" },
-  { key: "scene", title: "Belirli sahne", text: "Seçtiğin sahne sabit kalır (ör. sponsor, skor ekranı)" },
-  { key: "off", title: "Kapalı", text: "LED siyah (pencere açık kalır)" },
-];
-
-function LedPanel({ led, scenes, matchId, ledMode, g, live }) {
-  const p = led.prefs;
+/** LED'de şu an ne var (kısa metin). */
+export function ledNowText(led, scenes) {
+  const p = led.prefs || {};
   const st = led.status || {};
-  const openDisplay = led.displays.find((d) => String(d.id) === String(st.displayId));
-  const sceneName = (id) => scenes.find((s) => s.id === id)?.name;
+  if (!st.open) return "LED kapalı";
+  if (p.web || st.mode === "web") return "Sitenin LED sayfası";
+  if (led.live) return "Yayın (Program)";
+  const fx = led.fx || {};
+  if (fx.black) return "Siyah";
+  if (CONTENT_LABEL[fx.content]) return CONTENT_LABEL[fx.content];
+  if (p.route === "off") return "Siyah";
+  if (p.route === "preview") return "Önizleme";
+  if (p.route === "scene") return scenes.find((s) => s.id === p.sceneId)?.name || "Sahne";
+  return "Yayındaki sahne";
+}
+
+function LedPanel({ led, scenes, matchId, g, live, onSettings }) {
+  const p = led.prefs || {};
+  const st = led.status || {};
+  const fx = led.fx || {};
+  const isLive = Boolean(led.live);
+  const display = led.displays.find((d) => String(d.id) === String(st.open ? st.displayId : p.displayId));
+  const sceneOn = (id) => st.open && !isLive && !p.web && fx.content === "scene" && p.route === "scene" && p.sceneId === id;
+  const quick = [
+    { key: "scoreboard", icon: "trophy", label: "Logo / skor", on: st.open && !p.web && !isLive && fx.content === "scoreboard", run: () => led.show({ content: "scoreboard" }) },
+    { key: "web", icon: "globe", label: "Sitenin LED sayfası", on: st.open && Boolean(p.web), run: () => led.show({ web: true }), disabled: !matchId, title: matchId ? `elitlig.com/led/${matchId}` : "Önce maç seç" },
+    { key: "off", icon: "stop", label: "Siyah", on: st.open && !p.web && !isLive && p.route === "off", run: () => led.show({ route: "off" }) },
+  ];
   return (
-    <div className="st-led">
-      <Part id="output" label="LED ekran çıkışı">
-      <section className="st-card">
-        <header className="st-card__head"><Icon name="overview" size={15} /><strong>LED ekran çıkışı</strong>
-          <span className={`pill pill--xs ${st.open ? "pill--red" : ""}`}>{st.open ? "AÇIK" : "KAPALI"}</span>
-        </header>
-        {!led.available && <div className="st-note is-warn"><Icon name="alert" size={14} /> LED çıkışı bu uygulama sürümünde yok (güncelleme gerekir).</div>}
-        <Field label="Ekran" hint="LED ekranı / projektörü ikinci monitör olarak bağla; pencere o ekranda tam ekran açılır.">
-          <div className="st-row">
-            <select value={p.displayId ?? ""} onChange={(e) => led.setPref({ displayId: e.target.value === "" ? null : (Number.isNaN(Number(e.target.value)) ? e.target.value : Number(e.target.value)) })}>
-              {!led.displays.length && <option value="">Ekran bulunamadı</option>}
-              {led.displays.map((d) => <option key={d.id} value={d.id}>{dispText(d)}</option>)}
-            </select>
-            <button type="button" className="icon-btn" onClick={led.refreshDisplays} title="Ekranları yenile"><Icon name="refresh" size={14} /></button>
-          </div>
-        </Field>
-        {(() => {
-          const sel = led.displays.find((d) => String(d.id) === String(p.displayId));
-          if (led.displays.length === 1) return <p className="st-hint is-armed">Yalnız bir ekran var: LED çıkışı tam ekran açılmaz, normal pencere olarak açılır (Esc ya da {CLOSE_KEYS} ile kapanır).</p>;
-          if (sel?.hostsStudio) return <p className="st-hint is-armed">Seçilen ekranda stüdyo da açık: LED bu ekranda normal pencere olarak açılır. Tam ekran için LED'i ikinci ekrana (LED / projektör) ver.</p>;
-          return null;
-        })()}
-        <div className="st-row">
-          {st.open
-            ? <button type="button" className="btn btn--block" onClick={led.close}><Icon name="stop" size={13} /> LED çıkışını kapat</button>
-            : <button type="button" className="btn btn--primary btn--block" disabled={!led.available || p.displayId == null} onClick={() => led.open()}><Icon name="play" size={13} /> LED çıkışını aç</button>}
+    <div className="st-led is-simple">
+      <Part id="output" label="LED durumu (aç / kapat)">
+        <div className={`led-status ${st.open ? "is-open" : ""}`}>
+          <span className="led-status__dot" aria-hidden="true" />
+          <span className="led-status__t">
+            <strong>{st.open ? "LED AÇIK" : "LED KAPALI"}</strong>
+            <small title={display?.label || ""}>{st.open ? `${display?.label || `Ekran ${st.displayId ?? "?"}`} · ${ledNowText(led, scenes)}` : display ? `Ekran: ${display.label || display.id}` : "Ekran seçilmedi"}</small>
+          </span>
+          {led.available && (st.open
+            ? <button type="button" className="btn btn--sm btn--ghost" onClick={led.close} title="LED penceresini kapat">Kapat</button>
+            : <button type="button" className="btn btn--sm" onClick={() => led.open()} disabled={p.displayId == null} title={p.displayId == null ? "Ayarlar › LED'den ekran seç" : "LED çıkışını aç"}><Icon name="play" size={12} /> Aç</button>)}
+          {onSettings && <button type="button" className="icon-btn" onClick={onSettings} title="LED ayarları: ekran, çıkış penceresi, yönlendirme, görüntü"><Icon name="sliders" size={14} /></button>}
         </div>
-        {st.open && <p className="st-hint">Açık: {openDisplay ? dispText(openDisplay) : `ekran ${st.displayId ?? "?"}`} · {st.mode === "web" ? "web LED sayfası" : `stüdyo · ${led.targetId ? sceneName(led.targetId) || "sahne" : "siyah"}`}{st.windowed ? " · pencere" : ""}</p>}
-        {st.open && <p className="st-hint">Kapatmak için: buradaki düğme, {CLOSE_KEYS} (her yerden), LED penceresinde {st.windowed ? "Esc" : "iki kez Esc"} ya da “Kapat” düğmesi.</p>}
+        {!led.available && <p className="st-hint is-armed">LED çıkışı bu uygulama sürümünde yok.</p>}
         {led.error && <p className="st-hint text-red">{led.error}</p>}
-        <div className="st-seg">
-          <button type="button" className={!p.web ? "is-on" : ""} onClick={() => led.setPref({ web: false })}><Icon name="layers" size={12} /> Stüdyo görüntüsü</button>
-          <button type="button" className={p.web ? "is-on" : ""} onClick={() => led.setPref({ web: true })}><Icon name="globe" size={12} /> Sitenin LED sayfası</button>
-        </div>
-        {p.web && <p className="st-hint">{matchId ? `elitlig.com/led/${matchId}` : "Maç seçilmedi"} · içerik: {ledMode ? String(ledMode) : "varsayılan"} (üst çubuktaki LED seçicisi)</p>}
-        {st.open && st.mode && ((st.mode === "web") !== Boolean(p.web)) && <p className="st-hint is-armed">Kaynak değişti: uygulamak için LED çıkışını kapatıp yeniden aç.</p>}
-      </section>
       </Part>
 
-      <Part id="route" label="LED'e ver">
-      <section className={`st-card ${p.web ? "is-dim" : ""}`}>
-        <header className="st-card__head"><Icon name="arrows" size={15} /><strong>LED'e ver</strong><small className="muted">sahne kutularındaki “LED” düğmesiyle de</small></header>
-        <div className="st-var__modes">
-          {ROUTES.map((r) => (
-            <button key={r.key} type="button" disabled={p.web} className={`st-var__mode ${!p.web && p.route === r.key ? "is-on" : ""}`}
-              onClick={() => led.setRoute({ route: r.key, sceneId: r.key === "scene" ? p.sceneId || scenes[0]?.id || null : p.sceneId })}>
-              <span><strong>{r.title}</strong><small>{r.text}</small></span>
+      <Part id="route" label="Yayını LED'e ver · LED sahnesi">
+        <button type="button" className={`led-live ${isLive && st.open ? "is-on" : ""}`} onClick={() => led.toggleLive()} disabled={!led.available} aria-pressed={isLive && st.open}
+          title={isLive ? "LED yayını gösteriyor · dokun: önceki LED içeriğine dön" : "Tek dokunuş: LED yayını göstersin (kapalıysa açılır; tekrar / VAR dahil). Önceki içerik saklanır."}>
+          <Icon name={isLive && st.open ? "undo" : "broadcast"} size={20} />
+          <span><b>{isLive && st.open ? "LED YAYINI GÖSTERİYOR" : "YAYINI LED'E VER"}</b><small>{isLive && st.open ? "dokun: önceki içeriğe dön" : "tek dokunuş · çıkış kendiliğinden açılır"}</small></span>
+        </button>
+        <h6 className="led-h">LED sahnesi</h6>
+        <div className="led-scenes" role="group" aria-label="LED sahnesi">
+          {scenes.map((s) => (
+            <button key={s.id} type="button" className={`led-chip ${sceneOn(s.id) ? "is-on" : ""}`} onClick={() => led.show({ route: "scene", sceneId: s.id })} title={`LED'de “${s.name}” sahnesi (yayından bağımsız)`}>
+              <Icon name="layers" size={12} /><span>{s.name}</span>
+            </button>
+          ))}
+          {!scenes.length && <p className="st-hint">Sahne yok.</p>}
+        </div>
+        <div className="led-quick" role="group" aria-label="Diğer LED içerikleri">
+          {quick.map((q) => (
+            <button key={q.key} type="button" className={`led-chip is-q ${q.on ? "is-on" : ""}`} disabled={q.disabled} onClick={q.run} title={q.title || q.label}>
+              <Icon name={q.icon} size={13} /><span>{q.label}</span>
             </button>
           ))}
         </div>
-        {!p.web && p.route === "scene" && (
-          <Field label="Sahne">
-            <select value={p.sceneId || ""} onChange={(e) => led.setRoute({ route: "scene", sceneId: e.target.value })}>
-              {scenes.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </Field>
-        )}
-      </section>
       </Part>
 
       {LedGraphicsPanel && g && (
         <Part id="graphics" label="LED grafikleri">
-        <section className="st-card st-led__gfx">
-          <LedGraphicsPanel g={g} live={live} matchId={matchId} embedded scenes={scenes.map((s) => ({ id: s.id, name: s.name }))} />
-        </section>
+          <details className="led-more">
+            <summary><Icon name="palette" size={12} /> LED grafikleri</summary>
+            <section className="st-card st-led__gfx">
+              <LedGraphicsPanel g={g} live={live} matchId={matchId} embedded scenes={scenes.map((s) => ({ id: s.id, name: s.name }))} />
+            </section>
+          </details>
         </Part>
       )}
     </div>

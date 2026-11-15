@@ -27,7 +27,7 @@ export default function VarThemeSection({ prefs, setPref }) {
   return (
     <>
       <section className="st-set__card">
-        <header><h3>Seçili tema · {t.label}</h3><p>Canlı önizleme: VAR yayına alındığında programda bu görünüm çizilir. VAR sekmesinden de hızlıca değiştirilebilir.</p></header>
+        <header><h3>Seçili tema · {t.label}</h3><p>Canlı önizleme: VAR yayına alındığında programda bu görünüm çizilir. VAR, tekrar önizlemedeyken önizleme ekranının sağ altındaki “VAR” düğmesiyle açılır; çerçeveler önizlemeden yönetilir.</p></header>
         <div className="st-set__card-body">
           <div className="vth-stage">
             <div className="vth-stage__view">

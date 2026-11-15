@@ -18,7 +18,7 @@
 // Stüdyonun ekranı seçilirse ana süreç önce sorar (pencere olarak aç / vazgeç).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveScene } from "../../../lib/studio/scenes";
-import { ledTargetScene, normalizeLedRoute, routeSceneToLed } from "./ledRouting";
+import { ledBackPatch, ledLiveOn, ledLivePatch, ledTargetScene, normalizeLedRoute, routeSceneToLed } from "./ledRouting";
 import { normalizeLedFx, patchLedFx } from "./ledFx";
 
 const PREFS_KEY = "studio.led.v2";
@@ -27,7 +27,7 @@ function readPrefs(defaults) {
   try {
     const v2 = JSON.parse(localStorage.getItem(PREFS_KEY) || "null");
     // Anlık durumlar (dondur / karart) yeniden açılışta taşınmaz.
-    if (v2) return { ...base, displayId: v2.displayId ?? null, web: Boolean(v2.web), ...normalizeLedRoute(v2), fx: normalizeLedFx({ ...base.fx, ...(v2.fx || {}), freeze: false, black: false }) };
+    if (v2) return { ...base, displayId: v2.displayId ?? null, web: Boolean(v2.web), ...normalizeLedRoute(v2), fx: normalizeLedFx({ ...base.fx, ...(v2.fx || {}), freeze: false, black: false }), live: Boolean(v2.live) && !v2.web, back: v2.back && typeof v2.back === "object" ? v2.back : null };
     // 2.11 kaydı: yalnız ekran seçimi taşınır; içerik varsayılanı artık Program.
     const v1 = JSON.parse(localStorage.getItem("studio.led.v1") || "null");
     if (v1) return { ...base, displayId: v1.displayId ?? null, ...(v1.content === "scene" && v1.sceneId ? { route: "scene", sceneId: v1.sceneId } : {}) };
@@ -179,15 +179,51 @@ export function useLed({ configRef, programIdRef, previewIdRef, graphicsRef, bra
     return open({ displayId });
   }, [open, status.open]);
   /** Yönlendirme: { route, sceneId? }. Stüdyo kipinde açık değilse açılmaz (seçim hatırlanır). */
-  const setRoute = useCallback((r) => setPrefs((p) => ({ ...p, ...normalizeLedRoute({ ...p, ...r }) })), []);
+  // Elle yönlendirme "yayını LED'e ver" kipinden çıkarır (önceki içerik unutulur).
+  const setRoute = useCallback((r) => setPrefs((p) => { const next = { ...p, ...normalizeLedRoute({ ...p, ...r }), live: false, back: null }; prefsRef.current = next; return next; }), []);
   /** Kutudaki "LED'e ver": sahneye sabitle (zaten oradaysa Program'a döner); kapalıysa aç. */
   const toScene = useCallback(async (sceneId) => {
     const next = routeSceneToLed(prefsRef.current, sceneId, { programId: programIdRef.current });
-    prefsRef.current = { ...prefsRef.current, ...next, web: false };
-    setPrefs((p) => ({ ...p, ...next, web: false }));
+    prefsRef.current = { ...prefsRef.current, ...next, web: false, live: false, back: null };
+    setPrefs((p) => ({ ...p, ...next, web: false, live: false, back: null }));
     if (!status.open && ledAvailable() && prefsRef.current.displayId != null) return open();
     return true;
   }, [open, programIdRef, status.open]);
 
-  return { available: ledAvailable(), displays, status, prefs, fx: normalizeLedFx(prefs.fx), setPref, setFx, setRoute, toScene, openOn, targetId: studioMode || !status.open ? targetId : null, studioMode, refreshDisplays, open, close, error };
+  /** Tercihleri eşzamanlı uygula (ref hemen güncel: ardından gelen open() yeni durumu okur). */
+  const applyNow = useCallback((next) => { prefsRef.current = next; setPrefs(next); }, []);
+  /**
+   * [2.33] TEK DOKUNUŞ: yayını LED'e ver. LED kapalıysa açılır; site sayfasındaysa stüdyo
+   * görünümüne geçer (pencere yeniden açılır). Önceki içerik saklanır (back()).
+   */
+  const goLive = useCallback(async () => {
+    const p = prefsRef.current;
+    const patch = ledLivePatch(p, normalizeLedFx(p.fx));
+    applyNow({ ...p, ...patch, fx: normalizeLedFx(patch.fx) });
+    if (!ledAvailable()) return false;
+    if (status.open && status.mode === "web") { try { await led()?.close?.(); } catch { /* yoksay */ } return open({ web: false }); }
+    if (!status.open) return open({ web: false });
+    return true;
+  }, [applyNow, open, status.mode, status.open]);
+  /** Önceki LED içeriğine dön (site sayfasıysa pencere o kipte yeniden açılır). */
+  const goBack = useCallback(async () => {
+    const p = prefsRef.current;
+    const patch = ledBackPatch(p, normalizeLedFx(p.fx));
+    applyNow({ ...p, ...patch, fx: normalizeLedFx(patch.fx) });
+    if (status.open && patch.web && status.mode !== "web") { try { await led()?.close?.(); } catch { /* yoksay */ } return open({ web: true }); }
+    return true;
+  }, [applyNow, open, status.mode, status.open]);
+  /** LED'de belirli içerik: { route, sceneId, content, web } — "yayını ver" kipinden çıkar. */
+  const show = useCallback(async ({ route = "program", sceneId = null, content = "scene", web = false } = {}) => {
+    const p = prefsRef.current;
+    const fx = normalizeLedFx({ ...normalizeLedFx(p.fx), content, freeze: false, black: false });
+    applyNow({ ...p, ...normalizeLedRoute({ route, sceneId: sceneId || p.sceneId }), web: Boolean(web), live: false, back: null, fx });
+    if (!ledAvailable()) return false;
+    const wantWeb = Boolean(web);
+    if (status.open && (status.mode === "web") !== wantWeb) { try { await led()?.close?.(); } catch { /* yoksay */ } return open({ web: wantWeb }); }
+    if (!status.open) return open({ web: wantWeb });
+    return true;
+  }, [applyNow, open, status.mode, status.open]);
+
+  return { available: ledAvailable(), displays, status, prefs, live: ledLiveOn(prefs), goLive, goBack, toggleLive: () => (ledLiveOn(prefsRef.current) ? goBack() : goLive()), show, fx: normalizeLedFx(prefs.fx), setPref, setFx, setRoute, toScene, openOn, targetId: studioMode || !status.open ? targetId : null, studioMode, refreshDisplays, open, close, error };
 }

@@ -200,3 +200,45 @@ test("LED durumu: hızlı akış birleştirilir, son durum kaybolmaz (ana süre�
   assert.deepEqual(after.at(-1).payload, { i: 99 });
   led.close();
 });
+
+test("[2.33] LED penceresinde kaydırma çubuğu gizlenir (web LED sayfası ve stüdyo görünümü; her yüklemede)", () => {
+  const { LED_NO_SCROLLBAR_CSS } = require("../studio/led");
+  for (const mode of ["web", "studio"]) {
+    const { led, windows } = setup({ hostOn: 1 });
+    const res = led.open({ displayId: 2, mode, ...(mode === "web" ? { url: "https://elitlig.com/led/7" } : {}) });
+    assert.equal(res.ok, true, mode);
+    const w = windows[windows.length - 1];
+    const css = [];
+    w.webContents.insertCSS = (c) => { css.push(c); return Promise.resolve("k"); };
+    w.webContents.emit("dom-ready");
+    w.webContents.emit("dom-ready");
+    assert.equal(css.length, 2, `${mode}: her yüklemede eklenir`);
+    assert.match(css[0], /::-webkit-scrollbar\s*\{\s*display:\s*none/);
+    assert.match(css[0], /overflow:\s*hidden/);
+    assert.equal(css[0], LED_NO_SCROLLBAR_CSS);
+  }
+});
+
+test("[2.33] web sayfası kaynağı: kaydırma çubuğu CSS'i her yüklemede eklenir", () => {
+  const { createWebSources, NO_SCROLLBAR_CSS } = require("../studio/live/web");
+  const wins = [];
+  class W extends EventEmitter {
+    constructor() {
+      super();
+      const wc = new EventEmitter();
+      wc.css = [];
+      wc.insertCSS = (c) => { wc.css.push(c); return Promise.resolve(); };
+      wc.setAudioMuted = () => {}; wc.setFrameRate = () => {}; wc.setWindowOpenHandler = () => {}; wc.setZoomFactor = () => {};
+      wc.loadURL = () => Promise.resolve();
+      this.webContents = wc;
+      wins.push(this);
+    }
+    isDestroyed() { return false; }
+    destroy() {}
+  }
+  const ws = createWebSources({ BrowserWindow: W });
+  assert.equal(ws.open("a", { url: "https://elitlig.com/skor", transparent: false }).ok, true);
+  wins[0].webContents.emit("dom-ready");
+  assert.ok(wins[0].webContents.css.includes(NO_SCROLLBAR_CSS));
+  assert.match(NO_SCROLLBAR_CSS, /::-webkit-scrollbar/);
+});

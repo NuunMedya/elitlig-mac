@@ -264,7 +264,6 @@ export const RAIL_WIDGETS = [
   { type: "openSes", family: "openPanel", label: "SES aç", icon: "sliders", group: "panel", size: "1x1", sizes: ALL, hint: "Ses karıştırıcı panelini aç / öne getir" },
   { type: "openYayin", family: "openPanel", label: "YAYIN aç", icon: "broadcast", group: "panel", size: "1x1", sizes: ALL, hint: "Yayın panelini aç / öne getir" },
   { type: "openLed", family: "openPanel", label: "LED aç", icon: "overview", group: "panel", size: "1x1", sizes: ALL, hint: "LED ekran panelini aç / öne getir" },
-  { type: "openVar", family: "openPanel", label: "VAR aç", icon: "target", group: "panel", size: "1x1", sizes: ALL, hint: "VAR panelini aç / öne getir" },
   { type: "openRoportaj", family: "openPanel", label: "RÖPORTAJ aç", icon: "users", group: "panel", size: "1x1", sizes: ALL, hint: "Röportaj panelini aç / öne getir" },
   { type: "openOzet", family: "openPanel", label: "ÖZET aç", icon: "sparkles", group: "panel", size: "1x1", sizes: ALL, hint: "Özet panelini aç / öne getir" },
   { type: "openOlay", family: "openPanel", label: "OLAY GİR paneli aç", icon: "pencil", group: "panel", size: "1x1", sizes: ALL, hint: "Olay gir panelini aç / öne getir" },

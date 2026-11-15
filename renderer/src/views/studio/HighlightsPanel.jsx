@@ -24,6 +24,7 @@ function HighlightsPanel(props) {
     replays: a.replays?.replays || [], meta: a.replays?.meta || {}, sources: a.sources?.list || [], matchId: a.matchId, live: a.live,
     recordAngles: a.replays?.recordAngles || [PROGRAM_ANGLE], hl: a.hm.hl, imagesRef: a.imagesRef, ask: a.ask, toast: a.toast,
     stingerKind: a.cfg.between.kind === "cut" ? "stinger" : a.cfg.between.kind, onAir: a.airMode === "ozet", inModes: true,
+    view: props.view || null, onControl: a.openControl ? () => a.openControl("ozetKontrol") : null,
   } : props;
   return <HighlightsInner {...p} />;
 }
@@ -31,7 +32,9 @@ function HighlightsPanel(props) {
 const sec1 = (v) => (v == null || v === "" ? "" : String(Math.round(Number(v) * 10) / 10));
 const numOrNull = (v) => (v === "" || v == null || !Number.isFinite(Number(v)) ? null : Math.max(0, Number(v)));
 
-function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, hl, imagesRef, ask, toast, stingerKind = "stinger", onAir = false, inModes = false }) {
+// view: "order" (panel: yalnız özetin sırası, kompakt; başlıkta "Özeti oluştur" + Kontrol) ·
+// "build" (Kontrol merkezi: plan, müzik, kartlar, oluştur, sonuç) · null (hepsi, eski düzen).
+function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, hl, imagesRef, ask, toast, stingerKind = "stinger", onAir = false, inModes = false, view = null, onControl = null }) {
   const mine = useMemo(() => mineOf(replays, meta, matchId), [replays, meta, matchId]);
   // Seçim, kartlar ve müzik özet düğmeleriyle ortak (./shortcuts/hlStore).
   const { items, edited, edit, reset } = useHlSelection(matchId, mine, meta);
@@ -77,8 +80,12 @@ function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, 
 
   if (!matchId) return <p className="st-hint st-pad">Özet için üstten maç seç.</p>;
 
+  const showOrder = view !== "build";
+  const showBuild = view !== "order";
+  const pct = Math.round((job.phase === "preparing" ? (job.total ? job.loaded / job.total : 0) : job.progress) * 100);
   return (
-    <div className="st-hl">
+    <div className={`st-hl ${view ? `is-${view}` : ""}`}>
+      {showOrder && (
       <section className="st-hl__order">
         <header className="st-dock-head">
           <h4>Özetin sırası <span className="muted">({items.length})</span></h4>
@@ -86,7 +93,12 @@ function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, 
           {edited && <button type="button" className="btn btn--xs" onClick={reset} title="Goller + özete eklenen anlar + yayına verilen konumlar">Varsayılana dön</button>}
           <MenuButton label="Tekrar ekle" icon="plus" text="Ekle" size={12} className="st-menu-sm"
             items={notIn.length ? notIn.map((r) => ({ label: replayTitle(r, metaFor(r, meta)), icon: r.kind === "goal" ? "ball" : "star", onClick: () => edit((l) => [...l, { replayId: r.id, angles: defaultAngles(r, recordAngles) }]) })) : [{ label: "Eklenecek tekrar yok", disabled: true, onClick: () => {} }]} />
+          {view === "order" && onControl && <button type="button" className="btn btn--xs btn--soft" onClick={onControl} title="Özet kontrolü (Kontrol merkezi): plan, arka plan müziği, giriş / kapanış kartı, sonuç, yayına al, ses, katmanlar"><Icon name="sliders" size={11} /> Kontrol</button>}
+          {view === "order" && (busy
+            ? <button type="button" className="btn btn--xs st-hl__mini" onClick={job.phase !== "uploading" ? hl.cancel : undefined} title={`${PHASE[job.phase] || ""} · tık: vazgeç`}><span className="st-hl__minibar"><i style={{ width: `${pct}%` }} /></span>%{pct}</button>
+            : <button type="button" className="btn btn--xs btn--primary" disabled={!plan.clipCount || !hl.available} onClick={build} title={`Özeti oluştur: ${plan.clipCount} klip · ≈ ${mmss(plan.durationMs)}`}><Icon name="sparkles" size={11} /> {job.file ? "Yeniden oluştur" : "Özeti oluştur"}</button>)}
         </header>
+        {view === "order" && job.error && <p className="st-hint text-red">{job.error}</p>}
         <ol className="st-hl__list">
           {items.map((it, i) => {
             const r = byId.get(it.replayId);
@@ -137,7 +149,9 @@ function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, 
           {!items.length && <li className="st-hint">Özete girecek tekrar yok. Goller kendiliğinden girer; önemli anları ★ ile ekle.</li>}
         </ol>
       </section>
+      )}
 
+      {showBuild && (<>
       <section className="st-hl__build">
         <h5 className="st-group">Plan</h5>
         <p className="st-hint">Sinematik giriş kartı (logo, armalar, son skor {finalScore.home}–{finalScore.away}, lig · saha · tarih) · {plan.clipCount} klip (kendi sesiyle) · kapanış kartı · aralarda logo geçişi. Klipte orta-alt büyük skorbord o anın skorunu gösterir.{inModes ? " Giriş kartı şu an önizlemede." : ""}</p>
@@ -188,7 +202,7 @@ function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, 
           <>
             <video className="st-hl__video" src={job.file.url} controls preload="metadata" />
             <small className="muted">{mmss(job.file.durationMs)} · {job.file.sizeBytes ? `${(job.file.sizeBytes / 1048576).toFixed(1)} MB` : ""}</small>
-            {inModes && <p className="st-hint">{onAir ? <><span className="md-chip is-live"><i /> YAYINDA</span> Özet programda kendi sesiyle oynuyor.</> : "Özet önizlemedeyse GEÇİŞ (Boşluk) ya da soldaki “Yayına al” onu yayına verir; değilse önce “Önizlemeye al”."}</p>}
+            {inModes && <p className="st-hint">{onAir ? <><span className="md-chip is-live"><i /> YAYINDA</span> Özet programda kendi sesiyle oynuyor.</> : "Özet önizlemedeyse GEÇİŞ (Boşluk) ya da “Yayına al” onu yayına verir; değilse önce “Önizlemeye al”."}</p>}
             {job.phase === "uploaded"
               ? <p className="st-hint"><Icon name="check" size={12} /> Maç sayfasına yüklendi.</p>
               : <button type="button" className="btn btn--red btn--block" disabled={busy} onClick={upload}><Icon name="upload" size={13} /> Maç sayfasına yükle</button>}
@@ -206,6 +220,7 @@ function HighlightsInner({ replays, meta, sources, matchId, live, recordAngles, 
         )}
         <UploadLog />
       </section>
+      </>)}
     </div>
   );
 }

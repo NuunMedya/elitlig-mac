@@ -46,6 +46,8 @@ const STATE_MIN_INTERVAL_MS = 33; // ~30 Hz üst sınır
 const DISPLAY_GRACE_MS = 120000;
 const VIEWS = new Set(["program", "preview", "scene"]);
 const MATCH_ID = /^\d{1,12}$/;
+/** LED penceresinde kaydırma çubukları gizli (sayfa kaymaz; çubuk seyirciye görünmez). */
+const LED_NO_SCROLLBAR_CSS = "html, body { overflow: hidden !important; scrollbar-width: none !important; } ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }";
 
 /** Adres izinli kökenlerden birinde ve https mi? */
 function isAllowedLedUrl(url, origins = []) {
@@ -271,6 +273,9 @@ function createLedManager({
     w.on?.("focus", () => { if (win === w) registerShortcut("Escape", onEsc); });
     w.on?.("blur", () => unregisterShortcut("Escape"));
     registerShortcut(closeAccelerator, () => close("SHORTCUT"));
+    // [2.33] LED'de kaydırma çubuğu yok: sitenin LED sayfasının kenarındaki beyaz yukarı-aşağı
+    // çubuk (ve stüdyo görünümünde olası çubuklar) her yüklemede gizlenir.
+    wc.on("dom-ready", () => { try { Promise.resolve(wc.insertCSS?.(LED_NO_SCROLLBAR_CSS)).catch(() => {}); } catch { /* yoksay */ } });
     wc.on("did-finish-load", () => {
       if (mode === "studio" && lastState !== null && win === w && !w.isDestroyed()) wc.send("studio:led:state", lastState);
     });
@@ -425,4 +430,4 @@ function createLedManager({
   };
 }
 
-module.exports = { createLedManager, isAllowedLedUrl, describeDisplay, windowedBounds, ESC_WINDOW_MS, STATE_MIN_INTERVAL_MS, DISPLAY_GRACE_MS, CLOSE_ACCELERATOR };
+module.exports = { createLedManager, LED_NO_SCROLLBAR_CSS, isAllowedLedUrl, describeDisplay, windowedBounds, ESC_WINDOW_MS, STATE_MIN_INTERVAL_MS, DISPLAY_GRACE_MS, CLOSE_ACCELERATOR };

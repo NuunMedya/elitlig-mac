@@ -136,8 +136,8 @@ export function OptionsForm({ ctx, item, fields, onClose, note, noStyle = false 
       {fields.filter((f) => !f.when || f.when(vals, ctx)).map((f) => <Field key={f.key} f={f} value={vals[f.key]} ctx={ctx} onChange={(v) => save(f.key, v)} />)}
       {!noStyle && (
         <div className="wo-row is-style">
-          <span className="wo-row__l"><strong>Renk ve biçim</strong><small>Bu düğmenin rengi · boş: grubun rengi (Kutu ekle › grup başlığı)</small></span>
-          <WStyleEditor value={{ c: vals.wc, s: vals.ws }} noneLabel="Grup rengi" onChange={(p) => { if ("c" in p) save("wc", p.c); if ("s" in p) save("ws", p.s); }} />
+          <span className="wo-row__l"><strong>Renk ve biçim</strong><small>Yalnız bu düğmenin rengi (öbür düğmeler değişmez)</small></span>
+          <WStyleEditor value={{ c: vals.wc, s: vals.ws }} noneLabel="Kendi rengi" onChange={(p) => { if ("c" in p) save("wc", p.c); if ("s" in p) save("ws", p.s); }} />
         </div>
       )}
       <div className="wo-foot">

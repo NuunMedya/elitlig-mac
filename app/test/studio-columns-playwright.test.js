@@ -68,6 +68,8 @@ const state = (page, kind) => page.evaluate((k) => {
 async function open(browser, url, kind, density = null) {
   const ctx = await browser.newContext({ viewport: { width: 1500, height: 940 }, deviceScaleFactor: 1 });
   await ctx.addInitScript(studioMock, { layout: layoutOf(kind) });
+  // [2.33] panel araç satırı yalnız Düzenle kipinde; bu sınama için "hep göster" açık.
+  await ctx.addInitScript(() => { const k = "studio.settings.v1"; let s = {}; try { s = JSON.parse(localStorage.getItem(k) || "{}") || {}; } catch { s = {}; } s.view = { ...(s.view || {}), panelTools: true }; localStorage.setItem(k, JSON.stringify(s)); });
   if (density) await ctx.addInitScript((d) => localStorage.setItem("studio.density.v1", d), density);
   const page = await ctx.newPage();
   const errors = [];

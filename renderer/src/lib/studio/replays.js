@@ -74,11 +74,62 @@ export const recordableSources = (sources) => (sources || []).filter((s) => RECO
  * Kaydedilecek açılar: ["program", ...kaynaklar]. pref: { program, all, sources: [id] }.
  * all → tüm kayıt yapılabilir kaynaklar; olmayan kaynak kimlikleri atılır.
  */
-export function anglesToRecord(pref, sources) {
+export function anglesToRecord(pref, sources, scenes = null) {
   const p = pref || {};
   const rec = recordableSources(sources);
-  const ids = p.all ? rec.map((s) => s.id) : (p.sources || []).filter((id) => rec.some((s) => s.id === id));
+  let ids = p.all ? rec.map((s) => s.id) : (p.sources || []).filter((id) => rec.some((s) => s.id === id));
+  // [2.33] Sahne seçimi: yalnız seçili sahnelerde bulunan kaynakların açısı kaydedilir.
+  const allowed = sceneSourceFilter(p, scenes);
+  if (allowed) ids = ids.filter((id) => allowed.has(id));
   return [...(p.program !== false ? [PROGRAM_ANGLE] : []), ...ids];
+}
+
+/* ───────── [2.33] HANGİ SAHNELERİN TEKRARI KAYDEDİLSİN ─────────
+   pref.scenes: null / yok → tüm sahneler (eski davranış) · [sahneKimliği…] → yalnız bunlar.
+   - Kaynak açıları: yalnız seçili sahnelerde bulunan kaynaklar kaydedilir (anglesToRecord).
+   - Program açısı: seçilmemiş bir sahne yayındayken ÖNEMLİ AN'da program yazılmaz; GOL'de yine
+     yazılır (gol klibi oyuncunun profiline program açısından yüklenir). */
+
+/** Sahne seçimi var mı: Set(seçili sahne kimlikleri) ya da null (hepsi). */
+export const replaySceneSet = (pref) => (Array.isArray(pref?.scenes) ? new Set(pref.scenes.map(String)) : null);
+
+/** Seçili sahnelerde geçen kaynak kimlikleri (Set) ya da null (süzgeç yok). */
+export function sceneSourceFilter(pref, scenes) {
+  const set = replaySceneSet(pref);
+  if (!set || !Array.isArray(scenes)) return null;
+  const ids = new Set();
+  for (const sc of scenes) {
+    if (!set.has(String(sc?.id))) continue;
+    for (const l of sc.layers || []) if (l?.sourceId) ids.add(l.sourceId);
+  }
+  for (const id of set) if (id.startsWith("src:")) ids.add(id.slice(4));
+  return ids;
+}
+
+/** Bu sahne yayındayken tekrar (program açısı) kaydedilir mi. "src:<kaynak>" sanal sahnesi: kaynağı seçili bir sahnedeyse. */
+export function sceneRecordsReplay(pref, sceneId, scenes = null) {
+  const set = replaySceneSet(pref);
+  if (!set || !sceneId) return true;
+  if (set.has(String(sceneId))) return true;
+  if (String(sceneId).startsWith("src:")) return Boolean(sceneSourceFilter(pref, scenes)?.has(String(sceneId).slice(4)));
+  return false;
+}
+
+/** Yakalamanın açıları: program sahnesi seçili değilse program açısı düşer (gollerde kalır). */
+export function captureAngles(angles, pref, programSceneId, scenes = null, kind = "moment") {
+  const list = Array.isArray(angles) ? angles : [PROGRAM_ANGLE];
+  if (kind === "goal" || sceneRecordsReplay(pref, programSceneId, scenes)) return list;
+  return list.filter((a) => a !== PROGRAM_ANGLE);
+}
+
+/** Sahne seçimini değiştir (hepsi seçiliyse null'a döner). */
+export function toggleReplayScene(pref, sceneId, allIds) {
+  const all = (allIds || []).map(String);
+  const cur = replaySceneSet(pref) || new Set(all);
+  const id = String(sceneId);
+  if (cur.has(id)) cur.delete(id); else cur.add(id);
+  const list = all.filter((x) => cur.has(x));
+  return { ...(pref || {}), scenes: list.length === all.length ? null : list };
 }
 
 export const toggleIn = (list, id) => ((list || []).includes(id) ? list.filter((x) => x !== id) : [...(list || []), id]);

@@ -1,7 +1,10 @@
 // Yayın Stüdyosu · TAM EKRAN gösterim (monitöre sağ tık › "Tam ekran göster"):
 // pencereyi kaplayan katman; program / önizleme tuvali kare kare kopyalanır
-// (asıl tuval yerinde kalır, karıştırıcı etkilenmez). Esc ya da çift tık kapatır.
-import React, { useEffect, useMemo, useRef } from "react";
+// (asıl tuval yerinde kalır, karıştırıcı etkilenmez). Esc ya da başlıkta çift tık kapatır.
+// [2.33] overlay(box): monitördeki kaplamanın aynısı (tekrar düzenleyicisi: yakınlaştır, hız, geri
+// sar, giriş / çıkış, yayına al / canlıya dön; VAR çerçeveleri) tam ekranda da çalışır; tekrar
+// tuşları (J K L, ←/→, 1–6 …) da geçerlidir.
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { canvasLoop } from "../perf/renderLoad";
 import { Icon } from "../../../components/ui";
 import Monitor from "./Monitor";
@@ -21,8 +24,9 @@ export function useMirror(source) {
   return canvas;
 }
 
-export default function FullscreenView({ source, label, tone = "pgm", onClose }) {
+export default function FullscreenView({ source, label, tone = "pgm", onClose, overlay = null }) {
   const canvas = useMirror(source);
+  const [box, setBox] = useState({ w: 0, h: 0 });
   const ref = useRef(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -36,14 +40,16 @@ export default function FullscreenView({ source, label, tone = "pgm", onClose })
     else ref.current?.requestFullscreen?.().catch(() => {});
   };
   return (
-    <div ref={ref} className={`st-fs is-${tone}`} role="dialog" aria-label={`${label} tam ekran`} onDoubleClick={onClose}>
+    <div ref={ref} className={`st-fs is-${tone} ${overlay ? "has-overlay" : ""}`} role="dialog" aria-label={`${label} tam ekran`} onDoubleClick={(e) => { if (!overlay || !e.target.closest?.(".st-screen-box")) onClose?.(); }}>
       <header className="st-fs__head">
         <span className={`st-tag ${tone === "pvw" ? "is-pvw" : "is-live"}`}>{label}</span>
         <span className="st-top__spacer" />
         <button type="button" className="st-fs__btn" onClick={toggleOs} title="Tüm ekranı kapla (işletim sistemi tam ekranı)"><Icon name="overview" size={13} /> Ekranı kapla</button>
         <button type="button" className="st-fs__btn" onClick={onClose} title="Kapat (Esc)"><Icon name="x" size={13} /> Kapat <kbd className="kbd">Esc</kbd></button>
       </header>
-      <Monitor canvas={canvas} className="st-fs__screen" />
+      <Monitor canvas={canvas} className="st-fs__screen" onBox={setBox}>
+        {overlay ? overlay(box) : null}
+      </Monitor>
     </div>
   );
 }

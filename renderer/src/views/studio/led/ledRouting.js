@@ -44,3 +44,28 @@ export function ledRouteLabel(routing, sceneName = () => null) {
   if (r.route === "scene") return `Sahne: ${sceneName(r.sceneId) || "?"}`;
   return { program: "Yayın (Program)", preview: "Önizleme", off: "Kapalı" }[r.route];
 }
+
+/* ───────── [2.33] TEK DOKUNUŞLA "YAYINI LED'E VER" ─────────
+   LED çıkışını açıp kapatmakla uğraşmadan: LED yayını (Program) izler — tekrar / VAR / özel
+   kipler yayındayken program aynasına geçer — ve önceki LED içeriği (sahne, site sayfası,
+   skor / metin…) saklanır; ikinci dokunuş onu geri getirir. prefs: useLed tercihleri. */
+
+/** LED şu an "yayını veriyor" mu. */
+export const ledLiveOn = (prefs) => Boolean(prefs?.live) && !prefs?.web;
+
+/** Yayını LED'e ver: { web, route, sceneId, live, back, fx } yaması (önceki içerik back'te). */
+export function ledLivePatch(prefs, fx) {
+  const p = prefs || {};
+  const f = fx || {};
+  const back = p.live && p.back ? p.back : { web: Boolean(p.web), route: p.route || "program", sceneId: p.sceneId || null, content: f.content || "scene" };
+  return { web: false, route: "program", sceneId: p.sceneId || null, live: true, back, fx: { ...f, content: "scene", freeze: false, black: false } };
+}
+
+/** Önceki LED içeriğine dön (yoksa: Program sahnesi). */
+export function ledBackPatch(prefs, fx) {
+  const p = prefs || {};
+  const f = fx || {};
+  const b = p.back && typeof p.back === "object" ? p.back : { web: false, route: "program", sceneId: null, content: "scene" };
+  const r = normalizeLedRoute(b);
+  return { web: Boolean(b.web), route: r.route, sceneId: r.sceneId, live: false, back: null, fx: { ...f, content: typeof b.content === "string" ? b.content : "scene", freeze: false, black: false } };
+}

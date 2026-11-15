@@ -83,10 +83,15 @@ export const micWarning = ({ varActive, micMuted }) => Boolean(varActive && !mic
  */
 
 export const VAR_LAYOUTS = [
-  { key: "single", label: "Tek", count: 1, hint: "Tek açı, büyük" },
-  { key: "two", label: "İkili", count: 2, hint: "İki açı yan yana" },
-  { key: "three", label: "Üçlü", count: 3, hint: "Büyük açı + iki küçük" },
+  { key: "single", label: "Tek", short: "Tek", count: 1, hint: "Tek açı, büyük" },
+  { key: "two", label: "İkili", short: "50/50", count: 2, hint: "İki açı yan yana" },
+  { key: "three", label: "Üçlü", short: "1+2", count: 3, hint: "Büyük açı + iki küçük" },
+  // [2.33] önizleme üzerindeki VAR kipinin çerçeve düzenleri (yan yana tekrarla aynı seçenekler)
+  { key: "ustalt", label: "Üst–alt", short: "Üst–alt", count: 2, hint: "İki açı üst üste" },
+  { key: "pip", label: "Büyük + küçük", short: "PiP", count: 2, hint: "Büyük açı, köşede küçük pencere" },
+  { key: "grid", label: "2 × 2", short: "2×2", count: 4, hint: "Dört açı" },
 ];
+export const VAR_MAX_SLOTS = 4;
 export const varLayoutOf = (key) => VAR_LAYOUTS.find((l) => l.key === key) || VAR_LAYOUTS[0];
 
 export const VAR_STATES = [
@@ -130,12 +135,12 @@ export function normalizeVarV2(v) {
     slots = base.mode === "both" ? [s, r] : base.mode === "source" ? [s] : base.mode === "replay" ? [r] : [];
     slots = slots.map(normalizeSlot);
   }
-  while (slots.length < 3) slots.push(normalizeSlot(null));
+  while (slots.length < VAR_MAX_SLOTS) slots.push(normalizeSlot(null));
   const legacyLayout = base.mode === "both" ? "two" : "single";
   return {
     ...base,
     layout: varLayoutOf(x.layout || legacyLayout).key,
-    slots: slots.slice(0, 3),
+    slots: slots.slice(0, VAR_MAX_SLOTS),
     state: VAR_STATES.some((s) => s.key === x.state) ? x.state : "review",
     decision: VAR_DECISIONS.some((d) => d.key === x.decision) ? x.decision : "goalOff",
     topic: String(x.topic ?? "OLASI PENALTI").slice(0, 40),
@@ -217,6 +222,25 @@ export function varLayoutV2(layout, W, H, opts = {}) {
       { rect: { x: x0 + bigW + gap, y: yS, w: smallW, h: sh }, index: 1, big: false },
       { rect: { x: x0 + bigW + gap, y: yS + sh + gap, w: smallW, h: sh }, index: 2, big: false },
     ];
+  } else if (L.key === "ustalt") {
+    const half = (stage.h - gap) / 2;
+    panes = [
+      { rect: fit169({ x: stage.x, y: stage.y, w: stage.w, h: half }), index: 0, big: false },
+      { rect: fit169({ x: stage.x, y: stage.y + half + gap, w: stage.w, h: half }), index: 1, big: false },
+    ];
+  } else if (L.key === "pip") {
+    const big = fit169(stage);
+    const w = big.w * 0.34;
+    const h = (w * 9) / 16;
+    const m = Math.max(gap, big.w * 0.025);
+    panes = [
+      { rect: big, index: 0, big: true },
+      { rect: { x: big.x + big.w - w - m, y: big.y + big.h - h - m, w, h }, index: 1, big: false, inset: true },
+    ];
+  } else if (L.key === "grid") {
+    const cw = (stage.w - gap) / 2;
+    const ch = (stage.h - gap) / 2;
+    panes = [0, 1, 2, 3].map((i) => ({ rect: fit169({ x: stage.x + (i % 2) * (cw + gap), y: stage.y + Math.floor(i / 2) * (ch + gap), w: cw, h: ch }), index: i, big: false }));
   } else {
     panes = [{ rect: fit169(stage), index: 0, big: true }];
   }

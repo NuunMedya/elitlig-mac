@@ -24,7 +24,6 @@ export const DOCK_PANELS = [
   { key: "sahne", label: "Sahneler", short: "Sahneler", icon: "layers", hint: "Sahne kutuları, şablonlar, kaynaklar" },
   { key: "tekrar", label: "Tekrar", short: "Tekrar", icon: "repeat", mode: "tekrar", accent: true, hint: "Tekrar listesi, açılar, kuyruk, ağır çekim" },
   { key: "ses", label: "Ses", short: "Ses", icon: "mic", hint: "Karıştırıcı: kanallar, ölçerler, yayına giden ses" },
-  { key: "var", label: "VAR", short: "VAR", icon: "target", mode: "var", hint: "VAR incelemesi" },
   { key: "roportaj", label: "Röportaj", short: "Röportaj", icon: "users", mode: "roportaj", hint: "Röportaj sahnesi, bant ve kayıt" },
   { key: "ozet", label: "Özet", short: "Özet", icon: "sparkles", mode: "ozet", hint: "Maç özeti: oluştur, önizle, yayına ver" },
   { key: "yayin", label: "Yayın", short: "Yayın", icon: "broadcast", hint: "YouTube / RTMP, prova, yerel kayıt, bölümler" },
@@ -59,7 +58,6 @@ export const PANEL_PARTS = {
     { id: "between", label: "Aradaki geçiş seçimi" },
     { id: "uploads", label: "Yükleme günlüğü" },
   ]),
-  var: modeParts(),
   roportaj: modeParts(),
   ozet: modeParts(),
   ses: [

@@ -34,6 +34,8 @@ function normalizeWebSpec(s = {}) {
 }
 
 const TRANSPARENT_CSS = "html, body { background: transparent !important; background-color: transparent !important; }";
+/** [2.33] Web sayfası kaynağında kaydırma çubuğu çizilmez (yayında / LED'de kenarda beyaz çubuk olmasın). */
+const NO_SCROLLBAR_CSS = "html, body { scrollbar-width: none !important; } ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }";
 
 /**
  * createWebSources({ BrowserWindow, session, send(id, frame), onStatus(id, st), log })
@@ -121,6 +123,7 @@ function createWebSources({ BrowserWindow, session = null, send = () => {}, onSt
     });
     wc.on("did-start-loading", () => onStatus(page.id, { state: "loading", message: "Yükleniyor…", url: page.spec.url }));
     wc.on("dom-ready", () => {
+      wc.insertCSS(NO_SCROLLBAR_CSS).catch(() => {});
       if (page.spec.transparent) wc.insertCSS(TRANSPARENT_CSS).catch(() => {});
       if (page.spec.css) wc.insertCSS(page.spec.css).catch(() => {});
       try { wc.setZoomFactor(page.spec.zoom); } catch { /* yoksay */ }
@@ -169,4 +172,4 @@ function createWebSources({ BrowserWindow, session = null, send = () => {}, onSt
   return { open, close, reload, refresh, list, dispose };
 }
 
-module.exports = { createWebSources, normalizeWebSpec };
+module.exports = { createWebSources, normalizeWebSpec, NO_SCROLLBAR_CSS };

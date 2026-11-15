@@ -62,7 +62,6 @@ export const LAYOUT_PANELS = [
   { key: "sahne", label: "Sahneler", icon: "layers", group: "islem", hint: "Sahne kutuları, şablonlar, kaynaklar" },
   { key: "tekrar", label: "Tekrar", icon: "repeat", group: "islem", mode: "tekrar", hint: "Tekrar listesi, açılar, kuyruk, ağır çekim" },
   { key: "ses", label: "Ses", icon: "mic", group: "islem", hint: "Karıştırıcı: kanallar, ölçerler, yayına giden ses" },
-  { key: "var", label: "VAR", icon: "target", group: "islem", mode: "var", hint: "VAR incelemesi" },
   { key: "roportaj", label: "Röportaj", icon: "users", group: "islem", mode: "roportaj", hint: "Röportaj sahnesi, bant ve kayıt" },
   { key: "ozet", label: "Özet", icon: "sparkles", group: "islem", mode: "ozet", hint: "Maç özeti: oluştur, önizle, yayına ver" },
   { key: "yayin", label: "Yayın", icon: "broadcast", group: "islem", hint: "YouTube / RTMP, prova, yerel kayıt, bölümler" },
@@ -190,8 +189,6 @@ export const LAYOUT_COMPONENTS = [
   { ...P("led", "route", "LED · LED'e ver", [6, 4], [3, 2]), group: "led", icon: "swap" },
   { ...P("led", "graphics", "LED · grafikler", [6, 6], [3, 3]), group: "led", icon: "palette" },
   // ── özel kipler ──
-  { ...P("var", "air", "VAR · yayın kartı", [4, 4], [2, 2]), group: "kip", icon: "target" },
-  { ...P("var", "main", "VAR · inceleme", [8, 9], [3, 3]), group: "kip", icon: "target" },
   { ...P("roportaj", "air", "Röportaj · yayın kartı", [4, 4], [2, 2]), group: "kip", icon: "users" },
   { ...P("roportaj", "main", "Röportaj · kayıt ve bant", [8, 9], [3, 3]), group: "kip", icon: "users" },
   { ...P("ozet", "air", "Özet · yayın kartı", [4, 4], [2, 2]), group: "kip", icon: "sparkles" },
@@ -250,7 +247,7 @@ export const CONTROL_SECTIONS = [
   ["yonetim", "Maç yönetimi (tümü)", "board"], ["yonetimMaclar", "Maçlar", "calendar"], ["yonetimReji", "Reji", "zap"], ["yonetimKadro", "Kadro", "shirt"], ["yonetimMacsonu", "Maç sonu", "award"], ["yonetimTakimlar", "Takımlar & oyuncular", "users"], ["olaylar", "Olay gir", "pencil"], ["ayar:mac", "Reji / Maç ayarları", "board"],
   ["ses", "Ses", "mic"], ["golMuzigi", "Gol müziği", "music"],
   ["ayar:skorbord", "Skorbord", "trophy"], ["ayar:altyazi", "Altyazı", "list"], ["ayar:marka", "Marka & ön ayarlar", "palette"], ["ayar:sponsor", "Sponsor & linkler", "handshake"], ["ayar:paketler", "Grafik paketleri", "palette"], ["ayar:var", "VAR teması", "palette"],
-  ["var", "VAR", "target"], ["roportaj", "Röportaj", "users"], ["ayar:roportaj", "Röportaj ayarları", "users"], ["ozet", "Özet", "sparkles"], ["ayar:ozet", "Özet ayarları", "sparkles"],
+  ["roportaj", "Röportaj", "users"], ["ayar:roportaj", "Röportaj ayarları", "users"], ["ozet", "Özet", "sparkles"], ["ayar:ozet", "Özet ayarları", "sparkles"],
   ["led", "LED ekran", "overview"], ["ayar:led", "LED ayarları", "overview"],
   ["yukleme", "Yükleme günlüğü", "upload"], ["ayar:makro", "Makrolar", "zap"], ["ayar:serit", "Kısayollar panosu", "zap"], ["ayar:kisayol", "Klavye kısayolları", "command"],
 ].map(([key, label, icon]) => ({ key, label, icon }));
@@ -500,14 +497,62 @@ export function setTabStyle(layout, gid, patch) {
   return { ...layout, tabs };
 }
 
+/** Pano öğesinin düğme grubu (railModel grubu) — parçacık değilse null. */
+const itemGroupOf = (it) => { const m = componentOf(it?.t); return m?.widget ? widgetOf(m.widget)?.group || null : null; };
+
+/**
+ * [2.33] Düğme rengi DÜĞME BAŞINA: eski "grup rengi" (layout.wstyle[grup]) o grubun kendi rengi
+ * olmayan her düğmesine öğe rengi (o.wc / o.ws) olarak yazılır, grup varsayılanı silinir. Böylece
+ * ekrandaki renkler aynen kalır, sonra bir düğmenin rengini değiştirmek yalnız o düğmeyi etkiler.
+ */
+export function bakeGroupStyles(layout) {
+  const ws = layout?.wstyle || {};
+  if (!layout || !Object.keys(ws).length) return layout;
+  const boards = {};
+  for (const [id, b] of Object.entries(layout.boards || {})) {
+    boards[id] = { ...b, items: b.items.map((it) => {
+      const st = ws[itemGroupOf(it)];
+      if (!st) return it;
+      const o = { ...(it.o || {}) };
+      if (st.c && !o.wc) o.wc = st.c;
+      if (st.s && !o.ws) o.ws = st.s;
+      return { ...it, o };
+    }) };
+  }
+  return { ...layout, boards, wstyle: {} };
+}
+
+/**
+ * Bir gruptaki TÜM düğmelere (tüm panolarda) bir kez renk / biçim uygula (öğe başına yazılır;
+ * sonradan tek düğme ayrıca değiştirilebilir). patch: { c?, s? } — null: o alanı öğelerden sil.
+ */
+export function applyGroupWStyle(layout, group, patch) {
+  const boards = {};
+  for (const [id, b] of Object.entries(layout.boards || {})) {
+    boards[id] = { ...b, items: b.items.map((it) => {
+      if (itemGroupOf(it) !== group) return it;
+      const o = { ...(it.o || {}) };
+      if ("c" in patch) { if (patch.c == null) delete o.wc; else o.wc = patch.c; }
+      if ("s" in patch) { if (patch.s == null) delete o.ws; else o.ws = patch.s; }
+      return { ...it, o };
+    }) };
+  }
+  return { ...layout, boards };
+}
+
 export const EMPTY_LAYOUT = Object.freeze({ v: 1, rev: 2, dock: null, boards: {}, removed: [], mins: {}, preset: null, autoHide: true, tabs: {}, tabDefault: {}, wstyle: {} });
 
 export function normalizeLayout(raw) {
   const r = raw && typeof raw === "object" ? raw : {};
   const boards = {};
+  // Öğe kimlikleri TÜM panolarda tekil (seçenek / renk kaydı kimlikle bulunur: aynı kimlikli iki
+  // düğme birlikte değişiyordu).
+  const seen = new Set();
   for (const [id, b] of Object.entries(r.boards && typeof r.boards === "object" ? r.boards : {})) {
     if (!/^[\w-]{1,40}$/.test(id)) continue;
-    boards[id] = normalizeBoard(b, id === "rail" ? { title: "Kısayollar", cols: RAIL_COLS } : {});
+    const nb = normalizeBoard(b, id === "rail" ? { title: "Kısayollar", cols: RAIL_COLS } : {});
+    for (const it of nb.items) { if (seen.has(it.i)) it.i = newId("i"); seen.add(it.i); }
+    boards[id] = nb;
   }
   const dock = r.dock && typeof r.dock === "object" && r.dock.grid && r.dock.panels ? r.dock : null;
   const removed = (Array.isArray(r.removed) ? r.removed : []).filter((x) => x && (x.kind === "panel" || x.kind === "item") && typeof x.id === "string").slice(0, MAX_REMOVED);
@@ -739,7 +784,7 @@ export function missingPanels(layout) {
 /* ───────────────────────── hazır düzenler ───────────────────────── */
 
 const RAIL = { tabs: ["board~rail"], size: 12 };
-const OPS = (active = "yonetim") => ({ tabs: ["yonetim", "sahne", "tekrar", "ses", "yayin", "var", "led", "roportaj", "ozet", "olaylar"], active });
+const OPS = (active = "yonetim") => ({ tabs: ["yonetim", "sahne", "tekrar", "ses", "yayin", "led", "roportaj", "ozet", "olaylar"], active });
 // Monitörler yan yana 16:9 (bölme boyu ≈ en × 9/16 + başlık): boş alan kalmaz. Geçiş sahne şeridinin
 // solunda yatay düzende (dar sütunda boş kalan dikey alan yok).
 const MONITORS = (size) => ({ size, row: [{ tabs: ["pvw"], size: 1 }, { tabs: ["pgm"], size: 1 }] });
@@ -753,7 +798,7 @@ export const LAYOUT_PRESETS = [
     spec: { row: [RAIL, { size: 88, col: [
       MONITORS(46),
       TAKE_STRIP(15),
-      { size: 39, row: [{ tabs: ["yonetim", "olaylar"], size: 1.25 }, { tabs: ["sahne", "yayin", "led"], size: 1 }, { tabs: ["tekrar", "var", "roportaj", "ozet"], size: 1.35 }, { tabs: ["ses"], size: 0.9 }] },
+      { size: 39, row: [{ tabs: ["yonetim", "olaylar"], size: 1.25 }, { tabs: ["sahne", "yayin", "led"], size: 1 }, { tabs: ["tekrar", "roportaj", "ozet"], size: 1.35 }, { tabs: ["ses"], size: 0.9 }] },
     ] }] },
   },
   {
@@ -769,14 +814,14 @@ export const LAYOUT_PRESETS = [
     spec: { row: [RAIL, { size: 88, col: [
       { size: 44, row: [{ tabs: ["ledPvw"], size: 1 }, { tabs: ["pgm"], size: 1 }] },
       { size: 27, row: [{ tabs: ["pvw"], size: 2.4 }, { tabs: ["gecis"], size: 1.2 }, { tabs: ["sahneSerit"], size: 4.6 }] },
-      { size: 29, row: [{ tabs: ["led", "yayin"], size: 1 }, { tabs: ["yonetim", "sahne", "olaylar"], size: 1.2 }, { tabs: ["tekrar", "var"], size: 1.2 }, { tabs: ["ses"], size: 0.9 }] },
+      { size: 29, row: [{ tabs: ["led", "yayin"], size: 1 }, { tabs: ["yonetim", "sahne", "olaylar"], size: 1.2 }, { tabs: ["tekrar"], size: 1.2 }, { tabs: ["ses"], size: 0.9 }] },
     ] }] },
   },
   {
     key: "tekrar", label: "Tekrar operatörü", icon: "repeat", hint: "Büyük önizleme (tekrar düzenleyici), açılar, program; altta geniş Tekrar paneli",
     spec: { row: [RAIL, { size: 88, col: [
       { size: 56, row: [{ tabs: ["pvw"], size: 6 }, { size: 4, col: [{ tabs: ["pgm"], size: 3 }, { size: 2, row: [{ tabs: ["gecis"], size: 1 }, { tabs: ["acilar"], size: 2 }] }] }] },
-      { size: 44, row: [{ tabs: ["tekrar", "ozet", "var"], size: 3 }, { tabs: ["sahneSerit", "sahne", "yonetim"], size: 1.4 }, { tabs: ["ses", "olcer"], size: 1 }] },
+      { size: 44, row: [{ tabs: ["tekrar", "ozet"], size: 3 }, { tabs: ["sahneSerit", "sahne", "yonetim"], size: 1.4 }, { tabs: ["ses", "olcer"], size: 1 }] },
     ] }] },
   },
   {

@@ -21,7 +21,7 @@ import { useReplayMode } from "./useReplayMode";
 import { clampRate, deckKeyAction } from "../../../lib/studio/replayDeck";
 import { useInterviewMode } from "./useInterviewMode";
 import { useHighlightMode } from "./useHighlightMode";
-import ModeTab from "./ModeTab";
+import ModeTab, { ModeControl } from "./ModeTab";
 import logoInline from "../../../assets/elitlig-beyaz.png?inline";
 import "./modes.css";
 
@@ -31,7 +31,7 @@ const asSources = (s) => (Array.isArray(s) ? { list: s, runtimeRef: null } : { l
 
 // [önizleme-geçiş] takeRef: Studio'nun tek GEÇİŞ işlevi (önizleme → program). Sekmelerdeki
 // "Yayına al" da onu çağırır; yoksa (Studio dışı kullanım) kip doğrudan yayına alınır.
-export function useBroadcastModes({ engine, live, g, sources, scenes, settings, audio, replays, toast, ask, matchId: matchIdProp, imagesRef: imagesRefProp, takeRef = null } = {}) {
+export function useBroadcastModes({ engine, live, g, sources, scenes, settings, audio, replays, toast, ask, matchId: matchIdProp, imagesRef: imagesRefProp, takeRef = null, nav = null } = {}) {
   const matchId = matchIdProp ?? live?.match?.id ?? null;
   const src = asSources(sources);
   const cfg = useMemo(() => normalizeModeSettings(settings?.value), [settings?.value]);
@@ -286,6 +286,8 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
       if (!R.keysOn || !inReplay || (e.repeat && !/^Arrow/.test(e.key))) return;
       if (prev.key === "g" && performance.now() - prev.at < 2500) return;
       if (document.querySelector(".modal-backdrop, .st-pop, .st-set")) return;
+      // [2.33] Tam ekran gösterimde Esc yalnız tam ekranı kapatır (canlıya dönmez).
+      if (e.key === "Escape" && document.querySelector(".st-fs")) return;
       const host = e.target?.closest?.("[data-deck]");
       const act = deckKeyAction(e, { focused: Boolean(host) });
       if (!act) return;
@@ -313,6 +315,7 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
   const api = {
     state, cfg, setCfg, setReplayRate, takeToAir, takeMode, endOnAir, setPreview, clearPreview, airMode, previewMode,
     rm: rmApi, vr, im, hm, replays, sources: src, scenes, live, g, audio, engine, toast, ask, matchId, imagesRef, brandRef,
+    openSettings: nav?.openSettings || null, openControl: nav?.openControl || null,
   };
   const apiRef = useRef(api);
   apiRef.current = api;
@@ -326,8 +329,15 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
     render: (opts) => <ModeTab key={m.key} mode={m.key} api={opts?.passive ? passiveApi(apiRef.current) : apiRef.current} />,
   }));
 
+  // [2.33] Özet / Röportaj'ın yan sütunları Kontrol merkezinde (ModeControl).
+  const controls = {
+    ozet: () => <ModeControl api={apiRef.current} mode="ozet" />,
+    roportaj: () => <ModeControl api={apiRef.current} mode="roportaj" />,
+  };
+
   return {
     tabs,
+    controls,
     previewOverride,
     programOverride,
     takeToAir,
@@ -349,7 +359,8 @@ export function useBroadcastModes({ engine, live, g, sources, scenes, settings, 
       rm: rmApi, rate: cfg.rate, setRate: setReplayRate, sources: src.list, previewing: previewMode === "tekrar", onAir: airMode === "tekrar",
       decks: rm.decks, focus: rm.focus, setFocus: rm.setFocus, live: () => endOnAir(), keysOn: rm.keysOn, setKeysOn: rm.setKeysOn,
     },
-    var: { toggle: toggleVar, preview: () => setPreview("var"), active: airMode === "var", previewing: previewMode === "var" },
+    // [2.33] vr: VAR çerçeveleri (ayarlar, setSlot) — önizleme kaplaması (VarOverlay) bunu kullanır.
+    var: { toggle: toggleVar, preview: () => setPreview("var"), active: airMode === "var", previewing: previewMode === "var", vr },
     interview: im.iv,
     highlights: hm.hl,
     micWarning: airMode === "var" && audio ? !audio.micMuted && !audio.killAll : false,

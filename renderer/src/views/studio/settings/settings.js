@@ -108,7 +108,7 @@ export const DEFAULT_SETTINGS = {
   // tekrar klibi 15 sn: önizlemede giriş–çıkışla istenen bölüm seçilir. directTake: R kısayolu
   // son tekrarı önizlemeye yükleyip AYNI GEÇİŞ yoluyla hemen yayına alır [önizleme-geçiş]
   replay: { seconds: 15, directTake: false, postSeconds: 4, uploadDelaySec: 60 },
-  view: { hints: true, tooltips: true, scale: 100, theme: "gece" },
+  view: { hints: true, tooltips: true, scale: 100, theme: "gece", panelTools: false },
   hotkeys: DEFAULT_HOTKEYS,
   notify: { micOpen: true, lowBitrate: true, silence: true, silenceSec: 30 },
   // İşletim varsayılanları (LED, röportaj, özet, reji / maç, makrolar): ./opsDefaults
@@ -195,6 +195,8 @@ export function normalizeSettings(raw) {
       tooltips: bool(r.view?.tooltips, d.view.tooltips),
       scale: pick(Number(r.view?.scale), UI_SCALES, d.view.scale),
       theme: pick(String(r.view?.theme || ""), UI_THEMES.map((t) => t.key), d.view.theme),
+      // [2.33] panel araç satırı (Sütun · Sık / Normal / Geniş · kart boyu): yalnız Düzenle kipinde; açıksa hep
+      panelTools: bool(r.view?.panelTools, d.view.panelTools),
     },
     hotkeys: normHotkeys(r.hotkeys),
     notify: {

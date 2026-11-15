@@ -24,7 +24,6 @@ export const PANEL_BUTTONS = {
   openSes: { panel: "ses", label: "SES", icon: "sliders", sub: "karıştırıcı · yönlendirme" },
   openYayin: { panel: "yayin", label: "YAYIN", icon: "broadcast", sub: "YouTube · RTMP · kayıt" },
   openLed: { panel: "led", label: "LED", icon: "overview", sub: "LED çıkışı · içerik" },
-  openVar: { panel: "var", label: "VAR", icon: "target", sub: "inceleme · karar" },
   openRoportaj: { panel: "roportaj", label: "RÖPORTAJ", icon: "users", sub: "konuk · bant · kayıt" },
   openOzet: { panel: "ozet", label: "ÖZET", icon: "sparkles", sub: "oluştur · önizle · yükle" },
   openOlay: { panel: "olaylar", label: "OLAY GİR", icon: "pencil", sub: "olay paneli" },

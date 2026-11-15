@@ -226,14 +226,14 @@ function RoutingMatrix({ audio }) {
     <section className="st-card mx-matrix">
       <header className="st-card__head"><Icon name="sliders" size={15} /><strong>Yayına giden ses</strong><small className="muted">o an oynayan içeriğe göre — anında uygulanır</small></header>
       <table>
-        <thead><tr><th />{ROUTE_GROUPS.map((g) => <th key={g.key} title={g.hint}><Icon name={g.icon} size={12} /> {g.label}</th>)}</tr></thead>
+        <thead><tr><th />{ROUTE_GROUPS.map((g) => <th key={g.key} title={`${g.label} — ${g.hint || ""}`}><Icon name={g.icon} size={12} /> <span className="mx-th__t">{g.label}</span></th>)}</tr></thead>
         <tbody>
           {PLAYBACK_CONTEXTS.map((c) => {
             const r = routingFor(c.key, audio.routing);
             const active = audio.playback === c.key;
             return (
               <tr key={c.key} className={active ? "is-active" : ""}>
-                <th title={c.hint}>{active && <span className="md-live-dot">ŞU AN</span>} {c.label}</th>
+                <th title={`${c.label}${c.hint ? ` — ${c.hint}` : ""}`}>{active && <span className="md-live-dot">ŞU AN</span>} <span className="mx-th__t">{c.label}</span></th>
                 {ROUTE_GROUPS.map((g) => (
                   <td key={g.key}>
                     <button type="button" className={`mx-cell ${r[g.key] ? "is-on" : ""}`} onClick={() => audio.setRoute(c.key, g.key, !r[g.key])} aria-pressed={r[g.key]}>{r[g.key] ? "AÇIK" : "—"}</button>
@@ -467,7 +467,7 @@ export default function AudioPanel({ audio: audioProp, mixer, devices = { audio:
       <div className="mx-cards">
         <Part id="routing" label="Yayına giden ses matrisi"><RoutingMatrix audio={audio} /></Part>
         <Part id="scenes" label="Sahne başına ses"><SceneRouting audio={audio} /></Part>
-        {parts.visible("mic") && <section className="st-card">
+        {parts.visible("mic") && <section className="st-card mx-mic">
           <header className="st-card__head"><Icon name="mic" size={15} /><strong>Mikrofon</strong></header>
           <Field label="Aygıt">
             <select value={mic.deviceId || ""} onChange={(e) => setMicCfg({ deviceId: e.target.value || null })}>
@@ -475,12 +475,12 @@ export default function AudioPanel({ audio: audioProp, mixer, devices = { audio:
               {devices.audio.filter((d) => d.deviceId && d.deviceId !== "default").map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `Mikrofon ${i + 1}`}</option>)}
             </select>
           </Field>
-          <label className="toggle"><input type="checkbox" checked={mic.noiseSuppression} onChange={(e) => setMicCfg({ noiseSuppression: e.target.checked })} /> Gürültü azaltma (rüzgâr, uğultu)</label>
+          <label className="toggle mx-wrap" title="Gürültü azaltma (rüzgâr, uğultu)"><input type="checkbox" checked={mic.noiseSuppression} onChange={(e) => setMicCfg({ noiseSuppression: e.target.checked })} /> <span>Gürültü azaltma (rüzgâr, uğultu)</span></label>
           {MIC_STATUS[status] && <p className={`st-hint ${status === "denied" || status === "error" || status === "ended" ? "text-red" : ""}`}>{MIC_STATUS[status]}</p>}
           {(status === "denied" || status === "error" || status === "ended" || status === "missing") && onRequestMic && (
             <button type="button" className="btn btn--sm" onClick={onRequestMic}><Icon name="refresh" size={12} /> {status === "denied" ? "Mikrofon izni iste" : "Yeniden bağlan"}</button>
           )}
-          <header className="st-card__head mx-sub"><Icon name="plus" size={13} /><strong>Ek ses kaynakları</strong>
+          <header className="st-card__head mx-sub"><Icon name="plus" size={13} /><strong title="Ek ses kaynakları">Ek ses kaynakları</strong>
             <button type="button" className="btn btn--xs" onClick={addInput} disabled={!devices.audio.length} title="Kamera sesi, yakalama kartı, ikinci mikrofon"><Icon name="mic" size={11} /> Aygıt</button>
             <button type="button" className="btn btn--xs" onClick={pickAndAdd} title="Ses ya da video dosyasının sesi (yeri hatırlanır)"><Icon name="play2" size={11} /> Dosya</button>
           </header>

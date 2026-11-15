@@ -62,7 +62,7 @@ function paneAt(S, x, y) {
   return { i, lx: (x - r.x) / r.w, ly: (y - r.y) / r.h, k: S.scaleOf?.(i) || { x: 1, y: 1 } };
 }
 
-function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "preview", sources, meta, onTake, onLive, canTake = true, box, onFocus, keysOn, onKeys }) {
+function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "preview", sources, meta, onTake, onLive, canTake = true, box, onFocus, keysOn, onKeys, onVar = null }) {
   const deck = deckProp || deckFromRm(rm, rate, onRate);
   const deckRef = useRef(deck);
   deckRef.current = deck;
@@ -304,6 +304,7 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
               <button type="button" className={`rpo__mark ${deck.outPoint > 0 ? "is-on" : ""}`} disabled={!deck.active} onClick={setOut} title="Çıkış: klip burada biter (O)">{compact ? "" : "Çıkış "}{outTxt} ]</button>
               {(deck.inPoint > 0 || deck.outPoint > 0) && <button type="button" className="rpo__clear" onClick={() => { deck.setIn(0); deck.setOut(0); }} title="Giriş / çıkışı temizle (tüm klip)">✕</button>}
               {onTake && <button type="button" className="rpo__take" onClick={onTake} disabled={!canTake} title="Önizlemedekini yayına al (Enter): hız, yakınlaştırma, giriş / çıkış aynen gider"><Icon name="broadcast" size={12} /> {compact ? "YAYINA" : "YAYINA AL"}</button>}
+              {onVar && <button type="button" className="rpo__var" onClick={onVar} disabled={!deck.active} data-var-toggle="" title="VAR: pozisyonun seçili açıları VAR çerçevelerine (çerçeveye tık: açı ya da canlı kamera seç)">VAR</button>}
             </>
           )}
           {isPgm && (

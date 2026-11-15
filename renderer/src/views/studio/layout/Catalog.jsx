@@ -15,7 +15,7 @@ import { WIDGET_IMPL } from "../shortcuts/widgets";
 import { WStyleEditor } from "../shortcuts/wOptions";
 import { resolveWStyle, wStyleAttrs } from "../shortcuts/wStyle";
 import {
-  COMPONENT_GROUPS, LAYOUT_COMPONENTS, addItem, setGroupWStyle, LAYOUT_PANELS, PANEL_GROUPS, boardPanelId, componentOf, dockPanelIds, panelMeta, parseId, widgetSize,
+  COMPONENT_GROUPS, LAYOUT_COMPONENTS, addItem, applyGroupWStyle, LAYOUT_PANELS, PANEL_GROUPS, boardPanelId, componentOf, dockPanelIds, panelMeta, parseId, widgetSize,
 } from "./layoutModel";
 import { dynamicEntries } from "./components";
 import { endDrag, startDrag } from "./Board";
@@ -40,8 +40,7 @@ function WidgetThumb({ comp, ctx }) {
   // Gerçek hücre boyunda çizilir, karta sığacak kadar küçültülür (canlı önizleme).
   const W = 84 * sz.w + 6 * (sz.w - 1), H = 86 * sz.h + 6 * (sz.h - 1);
   const pv = Math.min(1, 124 / W, 84 / H);
-  // Grubun rengi (Kutu ekle › grup başlığındaki "Grup rengi") önizlemede de görünür.
-  const ws = wStyleAttrs(resolveWStyle(null, ctx?.layout?.wstyle?.[comp.group.replace(/^w-/, "")]));
+  const ws = wStyleAttrs(null);
   return (
     <div className={`lw-thumb is-w is-s${sk}`} aria-hidden="true" inert="">
       <div className={`st-ri lw-ri is-s${sk} is-preview ${ws.className}`} style={{ "--w": sz.w, "--h": sz.h, width: W, height: H, transform: `translate(-50%, -50%) scale(${pv})`, ...ws.style }}>{body}</div>
@@ -61,20 +60,23 @@ function Card({ icon, title, hint, state, onAdd, addLabel = "Ekle", drag, thumb,
   );
 }
 
-/** Düğme grubunun varsayılan rengi / biçimi (grubun tüm düğmeleri; öğe kendi rengini seçebilir). */
+/**
+ * [2.33] Grubun TÜM düğmelerine bir kez renk / biçim uygula. Renk düğme başına saklanır (öğe
+ * seçeneği o.wc / o.ws): sonradan tek düğmenin rengini değiştirmek yalnız o düğmeyi etkiler.
+ */
 function GroupColor({ ctx, group, label }) {
   const [open, setOpen] = useState(false);
-  const v = ctx.layout.wstyle?.[group] || {};
+  const [v, setV] = useState({});
   const ws = wStyleAttrs(resolveWStyle(null, v));
   return (
     <>
-      <button type="button" className={`lw-gcol ${open ? "is-open" : ""}`} style={ws.style} onClick={() => setOpen((x) => !x)} aria-expanded={open} title={`${label} düğmelerinin rengi ve biçimi`}>
-        <i /> Grup rengi{v.c || v.s ? "" : ": yok"}
+      <button type="button" className={`lw-gcol ${open ? "is-open" : ""}`} style={ws.style} onClick={() => setOpen((x) => !x)} aria-expanded={open} title={`${label}: ekrandaki tüm düğmelere bir kez renk uygula (her düğme sonra ayrıca değiştirilebilir)`}>
+        <i /> Hepsini boya
       </button>
       {open && (
         <div className="lw-gcol__pop" onClick={(e) => e.stopPropagation()}>
-          <WStyleEditor value={v} noneLabel="Düğmenin kendi rengi" onChange={(p) => ctx.setLayout((l) => setGroupWStyle(l, group, p))}
-            hint="Bu gruptaki tüm düğmeler (panodakiler dahil) bu renkle çizilir; tek düğmeyi sağ tık › Renk ve biçim ile ayrıca boyayabilirsin." />
+          <WStyleEditor value={v} noneLabel="Düğmelerin kendi rengi" onChange={(p) => { setV((x) => ({ ...x, ...p })); ctx.setLayout((l) => applyGroupWStyle(l, group, p)); }}
+            hint="Bu gruptaki ekrandaki tüm düğmelere şimdi uygulanır. Renk her düğmede ayrı saklanır: tek düğmeyi sağ tık › Renk ve biçim ile değiştirmek yalnız onu etkiler." />
         </div>
       )}
     </>

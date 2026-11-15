@@ -25,7 +25,7 @@ export const CONTROL_GROUPS = [
   { key: "mac", label: "Reji / Maç yönetimi" },
   { key: "ses", label: "Ses ve müzik" },
   { key: "grafik", label: "Grafik" },
-  { key: "kip", label: "VAR · Röportaj · Özet" },
+  { key: "kip", label: "Röportaj · Özet" },
   { key: "led", label: "LED ekran" },
   { key: "arac", label: "Araçlar" },
 ];

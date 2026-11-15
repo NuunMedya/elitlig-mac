@@ -27,6 +27,9 @@ import { TRANSITIONS } from "../../../lib/studio/transitions";
 import DockSettings from "./DockSettings";
 import { opsSection } from "./OpsSettings";
 import ProfilesSection from "./ProfilesSection";
+import { RecordAngles } from "../ReplayPanel";
+import { LayersPanel } from "../modes/ModeTab";
+import UploadLog from "../modes/UploadLog";
 import "./settings.css";
 import "../dock/dock.css";
 import VarThemeSection, { VAR_THEME_SECTION } from "./VarThemeSection"; // [var-tema]
@@ -148,7 +151,7 @@ function RailManager({ rail, scenes, ctx = null }) {
 function SettingsPage({
   section, onSection, settings, set, onReset, prefs, setPref, led, scenes, engine, onClose, toast, rail = null, hasModes = false, brandRef = null,
   railCtx = null, extraSections = [], dock = null, setDock = null, resetDock = null, dockDefs = {}, onProfileApplied = null, canReload = true, RoutePicker = null, audio = null,
-  renderRail = null, embedded = false,
+  renderRail = null, embedded = false, replayTools = null,
 }) {
   const allSections = [...SETTINGS_SECTIONS, ...extraSections.map((x) => ({ group: "panel", ...x }))];
   const enc = prefs.encoding;
@@ -288,18 +291,39 @@ function SettingsPage({
             </Field>
           )}
         </Section>
-        <Section title="Kaydedilecek açılar" sub="Tekrar panelindeki “Kaydedilecek açılar” ile aynı.">
-          <Toggle checked={prefs.angles?.program !== false} onChange={(v) => setPref("angles", (a) => ({ ...a, program: v }))} title="Program açısını kaydet" text="Yayına giden görüntü" />
-          <Toggle checked={prefs.angles?.all !== false} onChange={(v) => setPref("angles", (a) => ({ ...a, all: v }))} title="Tüm kameraları ayrı açı olarak kaydet" text="Her kamera / ekran kaynağı kendi tekrar açısı olur" />
+        <Section title="Kaydedilecek açılar ve sahneler" sub="Hangi kaynakların ayrı açı olarak kaydedileceği ve hangi sahnelerin tekrarının tutulacağı.">
+          {replayTools
+            ? <RecordAngles R={{ ...replayTools.R, anglePref: prefs.angles, onAnglePref: (v) => setPref("angles", v) }} sources={replayTools.sources} scenes={replayTools.scenes} encoding={replayTools.encoding} />
+            : (
+              <>
+                <Toggle checked={prefs.angles?.program !== false} onChange={(v) => setPref("angles", (a) => ({ ...a, program: v }))} title="Program açısını kaydet" text="Yayına giden görüntü" />
+                <Toggle checked={prefs.angles?.all !== false} onChange={(v) => setPref("angles", (a) => ({ ...a, all: v }))} title="Tüm kameraları ayrı açı olarak kaydet" text="Her kamera / ekran kaynağı kendi tekrar açısı olur" />
+              </>
+            )}
           {!hasModes && <Toggle checked={Boolean(prefs.replayAudio)} onChange={(v) => setPref("replayAudio", v)} title="Tekrarın sesi yayına gitsin" />}
         </Section>
+        {replayTools?.rm && (
+          <Section title="Tekrar oynatma" sub="Tekrar panelinden taşınan seyrek ayarlar.">
+            <Toggle checked={Boolean(replayTools.rm.blend)} onChange={(v) => replayTools.rm.setBlend?.(v)} title="Ağır çekimde kare harmanlama" text="0,5×'ten yavaşta kareler yumuşak geçer" />
+            <Toggle checked={Boolean(replayTools.rm.keysOn)} onChange={(v) => replayTools.rm.setKeysOn?.(v)} title="Tekrar tuşları" text="J K L, ←/→ kare, 1–6 hız, A / S açı, Enter yayına al, Esc canlıya dön" />
+          </Section>
+        )}
+        {mcfg && replayTools && (
+          <Section title="Tekrar katmanları" sub="Tekrar yayındayken üstte görünenler (skorbord, altyazı, ek kamera / bant).">
+            <LayersPanel mode="tekrar" api={{ cfg: mcfg, setCfg: (fn) => setPref("modes", (m) => { const cur = normalizeModeSettings(m); return typeof fn === "function" ? fn(cur) : { ...cur, ...fn }; }), sources: { list: replayTools.sources || [] } }} />
+          </Section>
+        )}
+        {UploadLog && (
+          <Section title="Gol klibi yükleme günlüğü" sub="Profile yüklenen gol klipleri ve bağlantı denemesi.">
+            <UploadLog />
+          </Section>
+        )}
         {RoutePicker && audio?.setRoute && (
           <Section title="Yayına giden ses" sub="Tekrar / VAR ve özet oynarken yayına hangi sesler gitsin (alt paneldeki seçiciyle aynı).">
             <RoutePicker audio={audio} context="replay" />
             <RoutePicker audio={audio} context="highlight" />
           </Section>
         )}
-        <p className="st-hint st-set__wide">Panelin her ayrıntısı (katmanlar, kuyruk, düzenleyici…) için: Ayarlar › Alt panel › Tekrar › Parçalar › “Paneli burada aç”.</p>
       </>
     );
   } else if (section === COVER_SECTION.key) { // [kapak]
@@ -313,13 +337,25 @@ function SettingsPage({
   } else if (section === "led") {
     body = (
       <>
-      <Section title="LED ekran varsayılanları" sub="LED ekran sekmesiyle aynı ayarlar.">
+      <Section title="LED çıkış penceresi" sub="LED ekranı / projektörü ikinci monitör olarak bağla: pencere o ekranda tam ekran açılır. Stüdyonun ekranında (tek ekran) normal pencere olarak açılır. Kapatmak: LED panelindeki “Kapat”, ⌘⇧L / Ctrl+Shift+L ya da LED penceresinde Esc.">
         <Field label="Ekran">
-          <select value={led.prefs.displayId ?? ""} onChange={(e) => led.setPref({ displayId: e.target.value === "" ? null : (Number.isNaN(Number(e.target.value)) ? e.target.value : Number(e.target.value)) })}>
-            {!led.displays.length && <option value="">Ekran bulunamadı</option>}
-            {led.displays.map((d) => <option key={d.id} value={d.id}>{d.label || `Ekran ${d.id}`}{d.primary ? " (ana ekran)" : ""}</option>)}
-          </select>
+          <div className="st-row">
+            <select value={led.prefs.displayId ?? ""} onChange={(e) => led.setPref({ displayId: e.target.value === "" ? null : (Number.isNaN(Number(e.target.value)) ? e.target.value : Number(e.target.value)) })}>
+              {!led.displays.length && <option value="">Ekran bulunamadı</option>}
+              {led.displays.map((d) => <option key={d.id} value={d.id}>{d.label || `Ekran ${d.id}`}{d.primary ? " (ana ekran)" : ""}{d.hostsStudio ? " · stüdyo bu ekranda" : ""} · {d.bounds?.width || "?"}×{d.bounds?.height || "?"}</option>)}
+            </select>
+            {led.refreshDisplays && <button type="button" className="icon-btn" onClick={led.refreshDisplays} title="Ekranları yenile"><Icon name="refresh" size={14} /></button>}
+          </div>
         </Field>
+        {led.available && (
+          <div className="st-row">
+            {led.status?.open
+              ? <button type="button" className="btn btn--sm" onClick={led.close}><Icon name="stop" size={12} /> LED çıkışını kapat</button>
+              : <button type="button" className="btn btn--sm btn--primary" onClick={() => led.open()} disabled={led.prefs.displayId == null}><Icon name="play" size={12} /> LED çıkışını aç</button>}
+          </div>
+        )}
+      </Section>
+      <Section title="LED içeriği (yönlendirme)" sub="LED panelindeki büyük düğmelerin ayrıntılı hâli.">
         <div className="st-choices">
           <Choice on={!led.prefs.web && led.prefs.route === "program"} title="Yayın (Program)" text="Varsayılan: LED yayındaki sahneyi izler" onClick={() => { led.setPref({ web: false }); led.setRoute({ route: "program" }); }} />
           <Choice on={!led.prefs.web && led.prefs.route === "preview"} title="Önizleme" onClick={() => { led.setPref({ web: false }); led.setRoute({ route: "preview" }); }} />
@@ -367,6 +403,7 @@ function SettingsPage({
           <p className="st-hint">Küçük ekranda (13–14″ laptop) %75–85 tüm panelleri sığdırır; düzen ve panolar ölçekle birlikte küçülür.</p>
           <Toggle checked={settings.view.hints} onChange={(v) => set("view", { hints: v })} title="Kısayol rozetlerini göster" text="Düğmelerdeki tuş ipuçları (B, R, V …)" />
           <Toggle checked={settings.view.tooltips} onChange={(v) => set("view", { tooltips: v })} title="Açıklama balonlarını göster" />
+          <Toggle checked={Boolean(settings.view.panelTools)} onChange={(v) => set("view", { panelTools: v })} title="Panel araç satırını hep göster" text="Sütun · Sık / Normal / Geniş · kart boyu. Kapalıyken yalnız üstteki “Düzenle” açıkken görünür (yer kaplamaz)." />
           <Toggle checked={Boolean(prefs.previewGraphics)} onChange={(v) => setPref("previewGraphics", v)} title="Önizlemede grafikleri göster" text="Skorbord ve bantlar önizlemede soluk görünür" />
           <Toggle checked={Boolean(prefs.sceneInline)} onChange={(v) => setPref("sceneInline", v)} title="Sahne katmanlarını yanda göster" text="Kalem büyük düzenleyici penceresi yerine Sahneler panelinde seçili sahnenin katmanlarını yanda açar" />
         </Section>

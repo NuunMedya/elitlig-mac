@@ -1248,3 +1248,82 @@ svg.st-wspic rect.is-pvw { fill: var(--green-text); opacity: 1; }
   .st-card .st-seg button { padding: 4px 8px; }
   .st-card .btn--block { white-space: normal; text-align: center; }
 }
+
+/* ───────── [2.33] LED paneli (sade): durum · YAYINI LED'E VER · LED sahnesi · hızlı içerikler ───────── */
+.studio .st-led.is-simple, .pf[data-pf] .st-led.is-simple { display: flex; flex-direction: column; gap: 10px; padding: 10px; }
+.led-status { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); min-width: 0; }
+.led-status__dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--faint); }
+.led-status.is-open .led-status__dot { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+.led-status__t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.led-status__t strong { font-size: 12px; letter-spacing: 0.06em; }
+.led-status__t small { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.led-live { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 10px 14px; border-radius: 12px; border: 2px solid rgba(var(--acc-rgb), 0.55); background: linear-gradient(160deg, rgba(var(--acc-rgb), 0.24), rgba(var(--acc-rgb), 0.08)), var(--surface); color: var(--text); text-align: left; cursor: pointer; }
+.led-live:hover:not(:disabled) { border-color: var(--acc); }
+.led-live > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.led-live b { font-size: 15px; letter-spacing: 0.05em; }
+.led-live small { color: var(--muted); font-size: 11.5px; }
+.led-live.is-on { border-color: var(--red); background: linear-gradient(160deg, var(--red), color-mix(in srgb, var(--red) 78%, #000)); color: #fff; } /* sabit-renk: kırmızı dolgu üstü yazı */
+.led-live.is-on small { color: rgba(255, 255, 255, 0.86); } /* sabit-renk: kırmızı dolgu üstü yazı */
+.led-h { margin: 2px 0 -2px; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.led-scenes, .led-quick { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
+.led-chip { display: flex; align-items: center; gap: 7px; min-height: 40px; min-width: 0; padding: 6px 10px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-weight: 700; font-size: 12.5px; cursor: pointer; text-align: left; }
+.led-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.led-chip:hover:not(:disabled) { border-color: var(--border-strong); }
+.led-chip.is-on { border-color: var(--acc); background: rgba(var(--acc-rgb), 0.22); box-shadow: inset 0 0 0 1px var(--acc); }
+.led-chip:disabled { opacity: 0.5; cursor: default; }
+.led-more > summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 700; padding: 4px 2px; }
+
+/* ───────── [2.33] Özet paneli: yalnız "Özetin sırası", tek satırlık kompakt öğeler ───────── */
+.st-hl.is-order, .pf[data-pf] .st-hl.is-order { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.st-hl.is-order .st-dock-head { gap: 6px; flex-wrap: wrap; row-gap: 4px; }
+.st-hl.is-order .st-hl__list { gap: 2px; }
+.st-hl.is-order .st-hl__list li { padding: 2px 4px; gap: 4px; min-height: 30px; border-radius: 7px; }
+.st-hl.is-order .st-hl__no { width: 18px; height: 18px; font-size: 10px; }
+.st-hl.is-order .st-hl__text { flex-direction: row; align-items: center; gap: 6px; }
+.st-hl.is-order .st-hl__text strong { flex: 0 1 auto; max-width: 42%; font-size: 12px; }
+.st-hl.is-order .st-hl__text .st-row--wrap { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 3px; }
+.st-hl.is-order .st-hl__text .st-row--wrap::-webkit-scrollbar { display: none; }
+.st-hl.is-order .st-chip { flex: none; padding: 1px 7px; min-height: 20px; font-size: 11px; }
+.st-hl.is-order .st-hl__trim { flex: none; }
+.st-hl.is-order .st-hl__trim .input-xs { width: 42px; height: 20px; }
+.st-hl.is-order .icon-btn--xs { width: 20px; height: 20px; }
+@container dcol (max-width: 420px) {
+  .st-hl.is-order .st-hl__trim small, .st-hl.is-order .st-hl__grip { display: none; }
+  .st-hl.is-order .st-hl__text strong { max-width: 34%; }
+}
+.st-hl__mini { gap: 6px; }
+.st-hl__minibar { width: 48px; height: 5px; border-radius: 3px; background: var(--surface-3); overflow: hidden; display: inline-block; }
+.st-hl__minibar i { display: block; height: 100%; background: var(--acc); }
+/* Kontrol merkezindeki kip kontrolü: yayın kartı + ses + katmanlar | (Özet) plan ve sonuç */
+.md-ctl { display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); gap: 14px; align-items: start; padding: 4px; }
+.md-ctl.is-roportaj { grid-template-columns: minmax(240px, 420px); }
+.md-ctl__side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.md-ctl__main .st-hl { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+@container (max-width: 640px) { .md-ctl { grid-template-columns: minmax(0, 1fr); } }
+.md-tab.is-bare { display: flex; flex-direction: column; }
+.md-tab.is-bare > .md-main { flex: 1 1 auto; min-width: 0; }
+.md-ctlbar { display: flex; align-items: center; gap: 6px; padding: 4px 6px 0; }
+
+/* ───────── [2.33] Yayın paneli (sade): ana kart + katlanır "Diğer" kartları ───────── */
+.st-bcast.is-simple, .pf[data-pf] .st-bcast.is-simple { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 8px; }
+.bc-main { display: flex; flex-direction: column; gap: 8px; }
+.bc-main .bc-go { min-height: 40px; font-size: 13.5px; font-weight: 800; }
+.bc-sub { gap: 6px; align-items: center; }
+.bc-privacy { min-width: 0; flex: 1 1 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bc-watch input { flex: 1 1 auto; min-width: 0; }
+.bc-more { margin: 6px 2px 0; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.bc-fold { border: 1px solid var(--border); border-radius: 9px; background: var(--surface); min-width: 0; }
+.bc-fold > summary { display: flex; align-items: center; gap: 7px; min-height: 32px; padding: 4px 10px; cursor: pointer; list-style: none; font-size: 12.5px; min-width: 0; }
+.bc-fold > summary::-webkit-details-marker { display: none; }
+.bc-fold > summary small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bc-fold__chev { margin-left: auto; flex: none; transition: transform 0.15s; color: var(--muted); }
+.bc-fold[open] > .bc-fold__chev, .bc-fold[open] > summary .bc-fold__chev { transform: rotate(180deg); }
+.bc-fold > .st-card { border: 0; border-top: 1px solid var(--border); border-radius: 0 0 9px 9px; margin: 0; }
+.bc-enc { margin: 2px 4px; font-size: 11px; }
+.st-hl.is-order .st-hl__trim input.input-xs[type] { flex: none; width: 46px; min-width: 0; padding: 1px 4px; }
+.st-hl.is-order .st-hl__text strong { min-width: 60px; }
+.st-led.is-simple { align-items: stretch; }
+.bc-fold > summary strong { flex: none; white-space: nowrap; }
+.bc-fold > summary small { flex: 1 1 auto; }
+.st-hl.is-order > *, .st-hl.is-order .st-hl__list li { min-width: 0; }
+.st-hl.is-order .st-dock-head > h4 { white-space: nowrap; }

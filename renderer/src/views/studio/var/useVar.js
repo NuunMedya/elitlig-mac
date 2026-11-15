@@ -7,7 +7,7 @@
 // varsayılanı (Tekrar & VAR): yalnız canlı mikrofon — klip sesi istenirse açılır.
 // Durum (İNCELEME / KONTROL / KARAR + karar) yayında anında değişir.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { normalizeVarV2, varLayoutOf } from "../../../lib/studio/var";
+import { VAR_MAX_SLOTS, normalizeVarV2, varLayoutOf } from "../../../lib/studio/var";
 import { angleLabel } from "../../../lib/studio/replays";
 import { drawSource, drawVideoIn, sourcesById } from "../draw";
 import { prepare } from "../useReplayPlayer";
@@ -27,14 +27,14 @@ export function useVar({ settings, onSettings, replays, sources, runtimeRef, aud
   const v = useMemo(() => normalizeVarV2(settings), [settings]);
   const vRef = useRef(v);
   vRef.current = v;
-  const els = useMemo(() => [0, 1, 2].map(() => {
+  const els = useMemo(() => Array.from({ length: VAR_MAX_SLOTS }, () => {
     const el = document.createElement("video");
     el.muted = true;
     el.playsInline = true;
     el.preload = "auto";
     return el;
   }), []);
-  const readyRef = useRef([false, false, false]);
+  const readyRef = useRef(Array.from({ length: VAR_MAX_SLOTS }, () => false));
   const errRef = useRef(onError);
   errRef.current = onError;
   const count = varLayoutOf(v.layout).count;

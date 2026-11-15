@@ -16,11 +16,11 @@ const mem = (init = {}) => {
 
 describe("alt panel düzeni", () => {
   it("varsayılan: Reji | Sahneler | Tekrar | Ses, Tekrar ve Ses sabit; eski sekme taşınır", () => {
-    const d = normalizeDock(null, { legacyTab: "mode:var" });
+    const d = normalizeDock(null, { legacyTab: "mode:roportaj" });
     expect(d.mode).toBe("columns");
     expect(d.columns.map((c) => c.panel)).toEqual(["yonetim", "sahne", "tekrar", "ses"]);
     expect(d.columns.filter((c) => c.pinned).map((c) => c.panel)).toEqual(["tekrar", "ses"]);
-    expect(d.tab).toBe("var");
+    expect(d.tab).toBe("roportaj"); // [2.33] VAR paneli yok (VAR önizleme ekranında)
   });
   it("bozuk kayıt ayıklanır; kaydet / yükle", () => {
     const d = normalizeDock({ mode: "tabs", columns: [{ id: "x", panel: "yok" }, { id: "y", panel: "led", w: 99 }], order: ["ses", "yok"], parts: { tekrar: ["angles", "angles", 3], yok: ["a"] } });
@@ -34,8 +34,8 @@ describe("alt panel düzeni", () => {
   });
   it("sütun ekle (sabitlerin soluna), kaldır, sabit sütun değişmez", () => {
     let d = normalizeDock(null);
-    d = addColumn(d, "var");
-    expect(d.columns.map((c) => c.panel)).toEqual(["yonetim", "sahne", "var", "tekrar", "ses"]);
+    d = addColumn(d, "roportaj");
+    expect(d.columns.map((c) => c.panel)).toEqual(["yonetim", "sahne", "roportaj", "tekrar", "ses"]);
     expect(addColumn(d, "led")).toBe(d); // en çok 5
     expect(d.columns.length).toBe(MAX_COLS);
     const ses = d.columns.find((c) => c.panel === "ses");

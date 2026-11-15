@@ -11,7 +11,7 @@ import ReplayPanel from "../ReplayPanel";
 import VarPanel from "../var/VarPanel";
 import HighlightsPanel from "../HighlightsPanel";
 import InterviewPanel from "./InterviewPanel";
-import { Splitter } from "../dock/PanelFrame";
+import { usePanelParts } from "../dock/parts";
 
 const ROUTE_CONTEXT = { tekrar: "replay", var: "replay", ozet: "highlight", roportaj: "live" };
 
@@ -75,7 +75,7 @@ function AirBar({ api, mode }) {
   );
 }
 
-function LayersPanel({ api, mode }) {
+export function LayersPanel({ api, mode }) {
   const { cfg, setCfg, sources } = api;
   const l = normalizeLayers(cfg.layers[mode], mode);
   const set = (fn) => setCfg((c) => ({ ...c, layers: { ...c.layers, [mode]: fn(normalizeLayers(c.layers[mode], mode)) } }));
@@ -117,29 +117,67 @@ function LayersPanel({ api, mode }) {
   );
 }
 
-function ModeBody({ api, mode }) {
+function ModeBody({ api, mode, view = null }) {
   if (mode === "tekrar") return <ReplayPanel api={api} />;
   if (mode === "var") return <VarPanel vr={api.vr} sources={api.sources.list} replays={api.replays?.replays || []} meta={api.replays?.meta || {}} micMuted={api.audio?.micMuted} onToggleMic={api.audio?.toggleMic} onAir={api.airMode === "var"} />;
   if (mode === "roportaj") return <InterviewPanel api={api} />;
-  if (mode === "ozet") return <HighlightsPanel api={api} />;
+  if (mode === "ozet") return <HighlightsPanel api={api} view={view} />;
   return null;
+}
+
+/** Kontrol merkezi bölümünün anahtarı (Özet / Röportaj yan sütunları oraya taşındı). */
+export const MODE_CONTROL_KEY = { ozet: "ozetKontrol", roportaj: "roportajKontrol" };
+
+/**
+ * [2.33] Kipin KONTROL bölümü (Kontrol merkezi): yayın kartı (önizlemeye / yayına al, geçiş),
+ * yayına giden ses, katmanlar; Özet'te ayrıca plan, arka plan müziği, giriş / kapanış kartı,
+ * "Özeti oluştur" ve sonuç. Panelin kendisinde yalnız asıl liste kalır.
+ */
+export function ModeControl({ api, mode }) {
+  return (
+    <div className={`md-ctl is-${mode}`}>
+      <div className="md-ctl__side">
+        <AirBar api={api} mode={mode} />
+        <RoutePicker audio={api.audio} context={ROUTE_CONTEXT[mode]} />
+        <LayersPanel api={api} mode={mode} />
+      </div>
+      {mode === "ozet" && <div className="md-ctl__main"><HighlightsPanel api={api} view="build" /></div>}
+    </div>
+  );
 }
 
 export default function ModeTab({ api, mode }) {
   // [önizleme-geçiş] Sekmeyi açmak / kapatmak önizlemeyi değiştirmez (önizlemede ne varsa yayına o gider).
-  // Tekrar: panel kendi YAYINA AL / CANLIYA DÖN düğmelerini taşır; yan kart (geçiş, ses, katmanlar)
-  // panelin "Ayarlar" düğmesiyle açılır (panoda tek parça olarak her zaman görünür).
-  const [side, setSide] = useState(false);
-  const bodyApi = mode === "tekrar" ? { ...api, sideOpen: side, toggleSide: () => setSide((x) => !x) } : api;
+  // [2.33] Yan sütun (yayın kartı, ses, katmanlar) yok: Tekrar'da Ayarlar › Tekrar'da, Özet ve
+  // Röportaj'da Kontrol merkezinde (ModeControl). Yayına alma panelin üstündeki eylem çubuğunda.
+  const ctlKey = MODE_CONTROL_KEY[mode];
+  // Panoya tek parça olarak konan yayın kartı / ses / katmanlar (part:<kip>:air|route|layers) yine çizilir.
+  const parts = usePanelParts(mode);
+  const solo = !parts.visible("__yok__");
+  if (solo && ["air", "route", "layers"].some((id) => parts.visible(id))) {
+    return (
+      <div className={`md-tab is-${mode} is-bare`}>
+        <aside className="md-side">
+          <AirBar api={api} mode={mode} />
+          <RoutePicker audio={api.audio} context={ROUTE_CONTEXT[mode]} />
+          <LayersPanel api={api} mode={mode} />
+        </aside>
+      </div>
+    );
+  }
   return (
-    <div className={`md-tab is-${mode} ${side ? "is-side" : ""}`}>
-      <aside className="md-side">
-        <AirBar api={api} mode={mode} />
-        <RoutePicker audio={api.audio} context={ROUTE_CONTEXT[mode]} />
-        <LayersPanel api={api} mode={mode} />
-      </aside>
-      <Splitter id="mode:side" side="before" label="Yayın kartı ↔ panel" />
-      <div className="md-main"><ModeBody api={bodyApi} mode={mode} /></div>
+    <div className={`md-tab is-${mode} is-bare`}>
+      <div className="md-main">
+        {mode === "roportaj" && ctlKey && api.openControl && (
+          <div className="md-ctlbar">
+            <span className="st-top__spacer" />
+            <button type="button" className="btn btn--xs btn--soft" onClick={() => api.openControl(ctlKey)} title="Röportaj kontrolü (Kontrol merkezi): yayına al, geçiş, yayına giden ses, katmanlar">
+              <Icon name="sliders" size={12} /> Kontrol
+            </button>
+          </div>
+        )}
+        <ModeBody api={api} mode={mode} view={mode === "ozet" ? "order" : null} />
+      </div>
     </div>
   );
 }

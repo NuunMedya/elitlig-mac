@@ -365,3 +365,40 @@
   .rpx-pos__meta, .rpx-pos__team { display: none; }
   .rpx-pos__foot .btn { white-space: normal; }
 }
+
+/* ───────── [2.33] SADE tekrar paneli: üst süzgeç satırı + kompakt pozisyon satırları (~30 px) ───────── */
+.rpx.is-simple { display: flex; flex-direction: column; gap: 4px; padding: 4px 6px 6px; min-height: 0; }
+.rpx-bar { flex: none; display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; row-gap: 4px; }
+.rpx-bar__match { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.rpx-bar__match input { margin: 0; }
+.rpx-bar__n { color: var(--acc-text); font: 800 10.5px var(--font); white-space: nowrap; }
+.rpx.is-simple .rpx-moment { height: 24px; padding: 0 8px; gap: 4px; }
+.rpx-health.is-dot { padding: 0; width: 16px; height: 16px; justify-content: center; }
+.rpx-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+.rpx-row { position: relative; display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 2px 4px 2px 6px; border-radius: 7px; border: 1px solid var(--border); border-left-width: 3px; background: var(--surface); cursor: pointer; min-width: 0; }
+.rpx-row:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.rpx-row.is-goal { border-left-color: #4ade80; }
+.rpx-row.is-picked { background: rgba(var(--acc-rgb), 0.07); }
+.rpx-row.is-preview { border-color: #22c55e; box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.5); }
+.rpx-row.is-air { border-color: #ef4444; box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.55); }
+.rpx-row__min { flex: none; min-width: 26px; color: var(--muted); font: 800 11px var(--font); font-variant-numeric: tabular-nums; }
+.rpx-row__who { flex: 0 1 auto; min-width: 40px; max-width: 34%; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rpx-row__star { flex: none; color: var(--amber-text); }
+.rpx-row .ang-list.rpx-row__angles { flex: 1 1 auto; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; gap: 3px; }
+.rpx-row .ang-list.rpx-row__angles::-webkit-scrollbar { display: none; }
+.rpx-row .rpx-row__angles .ang-row { min-height: 22px; flex: none; }
+.rpx-row__flag { flex: none; padding: 0 5px; border-radius: 4px; background: rgba(34, 197, 94, 0.18); color: var(--green-text); font: 800 9px/16px var(--font); letter-spacing: 0.05em; }
+.rpx-row .rpx-chip { flex: none; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rpx-row__menu { flex: none; }
+.rpx-row__menu .icon-btn { width: 22px; height: 22px; }
+.rpx-row.is-pending { cursor: default; opacity: 0.85; border-style: dashed; }
+.rpx-row.is-pending .rpx-row__who { max-width: none; flex: 1; color: var(--muted); font-weight: 600; }
+.rpx-row.is-error { border-color: rgba(239, 68, 68, 0.6); }
+.rpx-empty { padding: 10px 6px; color: var(--muted); font-size: 12px; }
+@container dcol (max-width: 360px) {
+  .rpx-row__who { max-width: 30%; }
+  .rpx-row .rpx-chip { display: none; }
+  .rpx-row__min { min-width: 22px; }
+}
+.rpx-scenesel { margin-top: 8px; display: flex; flex-direction: column; gap: 3px; }
+.rpx.is-simple .rpx-filters { display: inline-flex; }
