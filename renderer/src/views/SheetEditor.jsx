@@ -5,7 +5,7 @@
 // pano, sütun genişliğini sürükleme, Excel/CSV/PDF dosyaları doğrudan diske,
 // otomatik kayıt; aynı anda başkası düzenlerse değişiklikler birleştirilir.
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Field, Icon, MenuButton, Modal, Spinner, useConfirm, useResult, useToast } from "../components/ui";
+import { Field, Icon, MenuButton, Modal, Spinner, keyLabel, useConfirm, useResult, useToast } from "../components/ui";
 import { get, put, request } from "../api";
 import { FUNCTION_LIST, addr, colName, createEvaluator, formatValue, isNumeric, rangeStats, toCsvText } from "../lib/sheets/sheetEngine";
 import {
@@ -13,6 +13,10 @@ import {
   normRange, pasteBlock, rangeLabel, renameSheet, shiftAxis, sortRange, styleRange, uniqueSheetName, usedBounds, workbooksDiffer, writeCells,
 } from "../lib/sheets/sheetOps";
 import { workbookToXlsx } from "../lib/sheets/xlsxExport";
+import ExportButton from "../components/ExportButton";
+import { sheetReport } from "../lib/export/reports";
+import { markPrintHandled } from "../lib/export/exportRegistry";
+import { useCommandGate } from "../workspace/gate";
 import { importFile as readSheetFile } from "../lib/sheets/importFile";
 import { relativeTime } from "../lib/helpers";
 import {
@@ -547,9 +551,11 @@ export default function SheetEditor({ id, onClose }) {
     else window.elitlig.print(html, title);
   };
 
+  const paneGate = useCommandGate();
   useEffect(() => window.elitlig.onCommand((cmd) => {
+    if (!paneGate()) return; // çalışma alanında yalnız odaktaki bölme
     if (cmd === "export") exportXlsx();
-    if (cmd === "print") printSheet(false);
+    if (cmd === "print") { markPrintHandled(); printSheet(false); }
     if (cmd === "find") document.querySelector(".formula-bar input")?.focus();
   }));
 
@@ -623,10 +629,17 @@ export default function SheetEditor({ id, onClose }) {
         <span className="spacer" />
         {meta.updated_by_name && <span className="muted small">Son: {meta.updated_by_name} · {relativeTime(meta.updatedAt)}</span>}
         {!readOnly && <button type="button" className="btn btn--sm btn--ghost" onClick={importIntoBook}><Icon name="upload" /> Sayfa içe aktar</button>}
-        <MenuButton icon="download" label="Dışa aktar" items={[
-          { label: "Excel (.xlsx)", icon: "grid", onClick: exportXlsx },
+        <ExportButton id="sheet" title={title} formats={["pdf", "docx", "md", "json"]} print={false}
+          scopes={[{ value: "view", label: `Bu sayfa (${sheet.name})` }, ...(book.sheets.length > 1 ? [{ value: "all", label: `Tüm sayfalar (${book.sheets.length})` }] : [])]}
+          report={({ scope: sc }) => sheetReport(title, (sc === "all" ? book.sheets.map((sh, i) => [sh, i]) : [[sheet, si]]).map(([sh, i]) => {
+            const u = usedBounds(sh);
+            const rows = Array.from({ length: u.rows }, (_, r) => Array.from({ length: u.cols }, (_, c) => { const key = addr(c, r); const cell = sh.cells[key]; return !cell || cell.v === "" ? "" : String(formatValue(evaluator.value(i, key), cell.s || {})); }));
+            return { name: sh.name, rows };
+          }))}
+          extraItems={[
+          { label: "Excel (.xlsx) — formüllerle", icon: "grid", onClick: exportXlsx },
           { label: "CSV (bu sayfa)", icon: "download", onClick: exportCsv },
-          { label: "PDF", icon: "printer", onClick: () => printSheet(true) },
+          { label: "PDF — tablo görünümü", icon: "printer", onClick: () => printSheet(true) },
           { label: "Yazdır", icon: "printer", onClick: () => printSheet(false) },
         ]} />
         {meta.access === "owner" && <button type="button" className="btn btn--sm" onClick={() => setShareOpen(true)}><Icon name="share" /> Paylaş{meta.shares?.length ? ` (${meta.shares.length})` : ""}</button>}
@@ -634,12 +647,12 @@ export default function SheetEditor({ id, onClose }) {
 
       {!readOnly && (
         <div className="sheet-toolbar" role="toolbar">
-          <button type="button" className="icon-btn" title="Geri al (⌘Z)" onClick={undo} disabled={!history.current.undo.length}><Icon name="undo" /></button>
-          <button type="button" className="icon-btn" title="Yinele (⇧⌘Z)" onClick={redo} disabled={!history.current.redo.length}><Icon name="redo" /></button>
+          <button type="button" className="icon-btn" title={keyLabel("Geri al (⌘Z)")} onClick={undo} disabled={!history.current.undo.length}><Icon name="undo" /></button>
+          <button type="button" className="icon-btn" title={keyLabel("Yinele (⇧⌘Z)")} onClick={redo} disabled={!history.current.redo.length}><Icon name="redo" /></button>
           <span className="tb-sep" />
-          <button type="button" className={`icon-btn ${activeStyle.b ? "is-on" : ""}`} title="Kalın (⌘B)" onClick={() => toggleStyle("b")}><Icon name="bold" /></button>
-          <button type="button" className={`icon-btn ${activeStyle.i ? "is-on" : ""}`} title="İtalik (⌘I)" onClick={() => toggleStyle("i")}><Icon name="italic" /></button>
-          <button type="button" className={`icon-btn ${activeStyle.u ? "is-on" : ""}`} title="Altı çizili (⌘U)" onClick={() => toggleStyle("u")}><Icon name="underline" /></button>
+          <button type="button" className={`icon-btn ${activeStyle.b ? "is-on" : ""}`} title={keyLabel("Kalın (⌘B)")} onClick={() => toggleStyle("b")}><Icon name="bold" /></button>
+          <button type="button" className={`icon-btn ${activeStyle.i ? "is-on" : ""}`} title={keyLabel("İtalik (⌘I)")} onClick={() => toggleStyle("i")}><Icon name="italic" /></button>
+          <button type="button" className={`icon-btn ${activeStyle.u ? "is-on" : ""}`} title={keyLabel("Altı çizili (⌘U)")} onClick={() => toggleStyle("u")}><Icon name="underline" /></button>
           <span className="tb-sep" />
           {[["left", "alignLeft"], ["center", "alignCenter"], ["right", "alignRight"]].map(([al, icon]) => <button key={al} type="button" className={`icon-btn ${activeStyle.al === al ? "is-on" : ""}`} title="Hizala" onClick={() => apply((b) => styleRange(b, si, range, { al: activeStyle.al === al ? null : al }))}><Icon name={icon} /></button>)}
           <span className="tb-sep" />
@@ -659,7 +672,7 @@ export default function SheetEditor({ id, onClose }) {
             { label: "Sağa sütun ekle", onClick: () => insert("col", true) },
             { label: "Sütunları sil", danger: true, onClick: () => remove("col") },
             "-",
-            { label: "Aşağı doldur (⌘D)", onClick: () => apply((b) => fill(b, si, range, "down")) },
+            { label: keyLabel("Aşağı doldur (⌘D)"), onClick: () => apply((b) => fill(b, si, range, "down")) },
             { label: "Sağa doldur", onClick: () => apply((b) => fill(b, si, range, "right")) },
             { label: sheet.freeze ? "Üst satırı çöz" : "Üst satırı dondur", onClick: () => apply((b) => ({ ...b, sheets: b.sheets.map((s, i) => (i === si ? { ...s, freeze: !s.freeze } : s)) })) },
             { label: "Biçimi temizle", onClick: () => apply((b) => clearRange(b, si, range, { values: false, styles: true })) },
@@ -668,7 +681,7 @@ export default function SheetEditor({ id, onClose }) {
           ]} />
           <button type="button" className="btn btn--xs" title="Seçili sütuna göre A→Z" onClick={() => sort(true)}>A→Z</button>
           <button type="button" className="btn btn--xs" title="Seçili sütuna göre Z→A" onClick={() => sort(false)}>Z→A</button>
-          <button type="button" className="btn btn--xs" title="Otomatik toplam (⌘⇧T ya da ⌥=)" onClick={autoSum}>Σ Toplam</button>
+          <button type="button" className="btn btn--xs" title={keyLabel("Otomatik toplam (⇧⌘T ya da ⌥=)")} onClick={autoSum}>Σ Toplam</button>
           <button type="button" className="btn btn--xs" onClick={() => setFnOpen(true)}>ƒx İşlevler</button>
         </div>
       )}

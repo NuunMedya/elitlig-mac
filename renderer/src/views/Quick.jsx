@@ -2,7 +2,8 @@
 // Görev, not, etkinlik ya da gider tek satırda kaydedilir.
 import React, { useEffect, useRef, useState } from "react";
 import { Icon, Kbd, Segmented, useToast } from "../components/ui";
-import { post, tempId } from "../api";
+import { get, post, tempId } from "../api";
+import { notebookTree, quickNote } from "../lib/noteCore";
 import { isoDay, parseQuickTask, formatDate, formatTime } from "../lib/helpers";
 import { parseAmount } from "../lib/ledgerUtils";
 
@@ -15,7 +16,7 @@ const KINDS = [
 
 const PLACEHOLDER = {
   task: "örn. yarın 14:00 sahayı ara !",
-  note: "Aklınıza geleni yazın… İlk satır başlık olur.",
+  note: "Aklınıza geleni yazın… İlk satır başlık olur; #etiket, - [ ] yapılacak yazabilirsiniz.",
   event: "örn. cuma 20:30 Hakem toplantısı",
   expense: "örn. 1.250 hakem ücreti",
 };
@@ -27,6 +28,13 @@ export default function Quick() {
   const [busy, setBusy] = useState(false);
   const [signedIn, setSignedIn] = useState(true);
   const ref = useRef(null);
+  const [notebooks, setNotebooks] = useState([]);
+  const [notebook, setNotebook] = useState(() => { try { return localStorage.getItem("quick:notebook") || ""; } catch { return ""; } });
+  useEffect(() => {
+    if (kind !== "note" || !signedIn) return;
+    get("/api/tools/notes/notebooks").then((r) => { if (r.ok) setNotebooks(notebookTree(r.data.items || [])); });
+  }, [kind, signedIn]);
+  const pickNotebook = (value) => { setNotebook(value); try { localStorage.setItem("quick:notebook", value); } catch { /* yoksay */ } };
 
   useEffect(() => {
     window.elitlig.auth.state().then((s) => setSignedIn(s.signedIn));
@@ -49,8 +57,9 @@ export default function Quick() {
     if (kind === "task") {
       res = await post("/api/todos", { kind: parsed.dueAt ? "reminder" : "task", title: parsed.title || value, due_at: parsed.dueAt, priority: parsed.priority }, { tempId: tempId() });
     } else if (kind === "note") {
-      const [first, ...rest] = value.split("\n");
-      res = await post("/api/tools/notes", rest.length ? { title: first, body: rest.join("\n") } : { body: first }, { tempId: tempId() });
+      // İlk satır başlık; #etiketler etiket olur; seçili deftere kaydedilir.
+      const note = quickNote(value);
+      res = await post("/api/tools/notes", { ...note, notebook_id: notebook ? Number(notebook) : null }, { tempId: tempId() });
     } else if (kind === "event") {
       const start = parsed.dueAt ? new Date(parsed.dueAt) : new Date(Date.now() + 3600000);
       res = await post("/api/tools/events", { title: parsed.title || value, start_at: start.toISOString(), end_at: new Date(start.getTime() + 3600000).toISOString(), all_day: false, category: "general", remind_minutes: 30 }, { tempId: tempId() });
@@ -98,6 +107,15 @@ export default function Quick() {
           {parsed?.dueAt && <><Icon name="clock" size={13} /> {formatDate(parsed.dueAt, { weekday: "long", day: "numeric", month: "long" })} {formatTime(parsed.dueAt)}</>}
           {parsed?.priority === "high" && <span className="pill pill--red">Yüksek öncelik</span>}
           {kind === "expense" && "Bugünün tarihiyle, nakit ödendi olarak kaydedilir."}
+          {kind === "note" && (
+            <>
+              <select className="select-sm" value={notebook} onChange={(e) => pickNotebook(e.target.value)} aria-label="Defter">
+                <option value="">Defter yok</option>
+                {notebooks.map((nb) => <option key={nb.id} value={nb.id}>{`${"  ".repeat(nb.depth)}${nb.emoji ? `${nb.emoji} ` : ""}${nb.name}`}</option>)}
+              </select>
+              {quickNote(text).tags.length > 0 && <span className="quick__tags">{quickNote(text).tags.map((t) => `#${t}`).join(" ")}</span>}
+            </>
+          )}
         </span>
         <button type="button" className="btn btn--primary btn--sm" disabled={!text.trim() || busy} onClick={save}>{busy ? "Kaydediliyor…" : "Kaydet"}</button>
       </div>

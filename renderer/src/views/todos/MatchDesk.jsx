@@ -5,6 +5,7 @@ import { Field, Icon, Modal, Spinner, useResult, useToast } from "../../componen
 import { get, patch, post, put, useResource } from "../../api";
 import { formatDate, formatTime, prettyPhone } from "../../lib/helpers";
 import { buildLineupMessage, whatsappNumber, whatsappUrl } from "./todoUtils";
+import { AllocatedCard } from "../equipment/links";
 
 const GROUPS = [["hazirlik", "Hazırlık"], ["yayin", "Yayın"], ["mac_sonu", "Maç sonu"]];
 const openWeb = (path) => path && window.elitlig.app.openWeb(path);
@@ -61,6 +62,7 @@ export default function MatchDesk({ task, onChanged }) {
       {(desk.teams || []).map((team) => <TeamPanel key={team.side} team={team} task={task} owner={owner} onLineup={() => setLineupFor(team)} reload={reload} result={result} />)}
 
       <CrewPanel matchId={desk.match?.id} crew={desk.crew} canAssign={desk.canAssignCrew} onSaved={reload} />
+      <AllocatedCard kind="match" id={desk.match?.id} title="Maça ayrılmış ekipman" />
 
       {lineupFor && <LineupDialog team={lineupFor} task={task} matchId={desk.match?.id} onClose={() => setLineupFor(null)} onSent={() => { setLineupFor(null); reload(); }} />}
     </div>

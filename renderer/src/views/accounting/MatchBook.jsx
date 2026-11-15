@@ -8,6 +8,7 @@ import { request, useResource } from "../../api";
 import { formatDate, includesTr, isoDay } from "../../lib/helpers";
 import { parseAmount } from "../../lib/ledgerUtils";
 import { toCsvText } from "../../lib/sheets/sheetEngine";
+import ExportButton from "../../components/ExportButton";
 import { AccountStrip, Bars, DAY_PRESETS, FlowChart, Kpi, Legend, PeriodPicker, dayRange, money } from "./common";
 
 const BASE = "/api/admin/accounting";
@@ -70,8 +71,9 @@ export default function MatchBook({ accounts, cities, nationwide, onTransfer, on
         <PeriodPicker presets={DAY_PRESETS} value={{ ...period, ...range }} onChange={setPeriod} />
         <span className="spacer" />
         <button type="button" className="btn btn--sm" onClick={async () => { const r = await call("POST", "/apply-defaults", { from: range.from, to: range.to }); if (r) toast(`${r.created || 0} kutucuk dolduruldu, ${r.updated || 0} güncellendi.`, { tone: "success" }); }}><Icon name="zap" /> Varsayılanları uygula</button>
-        <MenuButton icon="download" label="Dışa aktar" items={[
-          { label: "Defter (CSV)", onClick: () => exportLedger(b, cats) },
+        <ExportButton id="matchbook" title="Maç muhasebesi" report={() => matchBookReport(b, cats, { city: nationwide ? (cities.find((c) => String(c.id) === String(cityId))?.name || "Tüm iller") : b?.book?.cityName })}
+          extraItems={[
+          { label: "Defter (CSV, klasik)", onClick: () => exportLedger(b, cats) },
           { label: "Personel raporu (CSV)", onClick: () => exportRows("Personel", ["Personel", "Görev", "Kazanç", "Ödenen", "Bekleyen"], (b?.reports?.staff || []).map((x) => [x.name, x.tasks, x.earned, x.paid, x.pending])) },
           { label: "Takım tahsilatları (CSV)", onClick: () => exportRows("Takimlar", ["Takım", "Maç", "Faturalanan", "Tahsil", "Kalan"], (b?.reports?.teams || []).map((x) => [x.name, x.matches, x.billed, x.collected, x.outstanding])) },
         ]} />
@@ -125,6 +127,32 @@ function save(name, text) {
   window.elitlig.files.save(name, text, [{ name: "CSV", extensions: ["csv"] }]).then((r) => r.ok && window.elitlig.files.reveal(r.path));
 }
 function exportRows(name, header, rows) { save(`Elitlig-${name}.csv`, toCsvText([header, ...rows.map((r) => r.map((v) => (typeof v === "number" ? String(v).replace(".", ",") : String(v ?? ""))))])); }
+/** Maç muhasebesi raporu: defter + personel + takım tahsilatları (ortak dışa aktarma). */
+export function matchBookReport(b, cats, { city } = {}) {
+  const label = (k) => cats.find((c) => c.key === k)?.label || k;
+  const rows = [];
+  for (const d of b?.days || []) {
+    for (const m of d.matches) for (const e of [...Object.values(m.cells || {}), ...(m.extras || [])]) rows.push({ ...e, date: d.date, match: `${m.home} - ${m.away}` });
+    for (const e of d.entries || []) rows.push({ ...e, date: d.date, match: "Genel" });
+  }
+  const inc = rows.filter((e) => e.direction === "income").reduce((a, e) => a + (Number(e.amount) || 0), 0);
+  const exp = rows.filter((e) => e.direction !== "income").reduce((a, e) => a + (Number(e.amount) || 0), 0);
+  return {
+    title: "Maç muhasebesi",
+    filters: [city, b?.range ? `${formatDate(b.range.from)} – ${formatDate(b.range.to)}` : ""].filter(Boolean),
+    summary: [{ label: "Gelir", value: inc, type: "money", tone: "green" }, { label: "Gider", value: exp, type: "money", tone: "red" }, { label: "Net", value: inc - exp, type: "money" }, { label: "Kalem", value: rows.length, type: "number" }],
+    sections: [
+      { id: "ledger", title: "Defter", dateKey: "date", groupBy: "match", columns: [
+        { key: "date", label: "Tarih", type: "date" }, { key: "match", label: "Maç" }, { key: "category", label: "Kalem", get: (e) => label(e.category) },
+        { key: "title", label: "Başlık" }, { key: "direction", label: "Tür", get: (e) => (e.direction === "income" ? "Gelir" : "Gider") },
+        { key: "signed", label: "Tutar (±)", type: "money", total: "sum", get: (e) => (e.direction === "income" ? 1 : -1) * (Number(e.amount) || 0) },
+        { key: "status", label: "Durum", get: (e) => (e.status === "paid" ? "Ödendi" : "Bekliyor") }, { key: "paymentMethod", label: "Yöntem", hidden: true }, { key: "staffName", label: "Personel" },
+      ], rows },
+      { id: "staff", title: "Personel raporu", columns: [{ key: "name", label: "Personel" }, { key: "tasks", label: "Görev", type: "number", total: "sum" }, { key: "earned", label: "Kazanç", type: "money", total: "sum" }, { key: "paid", label: "Ödenen", type: "money", total: "sum" }, { key: "pending", label: "Bekleyen", type: "money", total: "sum" }], rows: b?.reports?.staff || [] },
+      { id: "teams", title: "Takım tahsilatları", columns: [{ key: "name", label: "Takım" }, { key: "matches", label: "Maç", type: "number", total: "sum" }, { key: "billed", label: "Faturalanan", type: "money", total: "sum" }, { key: "collected", label: "Tahsil", type: "money", total: "sum" }, { key: "outstanding", label: "Kalan", type: "money", total: "sum" }], rows: b?.reports?.teams || [] },
+    ],
+  };
+}
 function exportLedger(b, cats) {
   if (!b) return;
   const label = (k) => cats.find((c) => c.key === k)?.label || k;

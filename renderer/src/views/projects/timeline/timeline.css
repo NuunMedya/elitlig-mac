@@ -1,0 +1,100 @@
+/* Proje takvimi (Gantt) — Timeline.jsx (web sürümüyle aynı görünüm; yazdırma ganttHtml ile) */
+.ptl { --ptl-label: 220px; --ptl-line: color-mix(in srgb, var(--border, #e5e7eb) 80%, transparent); display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ptl-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ptl-toolbar select.select-sm { width: auto; min-width: 0; max-width: 200px; flex: 0 0 auto; padding-top: 6px; padding-bottom: 6px; }
+.ptl-nav { display: flex; align-items: center; gap: 6px; }
+.ptl-range { font-size: 14px; margin-left: 4px; white-space: nowrap; }
+.ptl-export { display: inline-flex; gap: 4px; }
+.ptl-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.ptl-mini { font: inherit; font-size: 11px; border: 1px solid var(--border, #e5e7eb); border-radius: 6px; background: var(--surface, #fff); color: inherit; padding: 1px 4px; max-width: 120px; }
+
+.ptl-scroll { overflow-x: auto; overflow-y: visible; border: 1px solid var(--border, #e5e7eb); border-radius: 12px; background: var(--surface, #fff); }
+.ptl-grid { position: relative; min-width: 100%; }
+.ptl-head { display: flex; position: sticky; top: 0; z-index: 4; background: var(--surface-2, #f8fafc); border-bottom: 1px solid var(--border, #e5e7eb); }
+.ptl-label { position: sticky; left: 0; z-index: 3; width: var(--ptl-label); flex: 0 0 var(--ptl-label); display: flex; align-items: center; gap: 6px; padding: 4px 10px; background: var(--surface, #fff); border-right: 1px solid var(--border, #e5e7eb); font-size: 13px; min-width: 0; box-sizing: border-box; }
+.ptl-label small { color: var(--muted, #64748b); font-size: 11px; white-space: nowrap; }
+.ptl-label__text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.ptl-label__text small { overflow: hidden; text-overflow: ellipsis; }
+.ptl-label--head { background: var(--surface-2, #f8fafc); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted, #64748b); }
+.ptl-label__name { font: inherit; font-weight: 650; background: none; border: 0; padding: 0; color: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 100%; }
+span.ptl-label__name { cursor: default; }
+button.ptl-label__name:hover { text-decoration: underline; }
+.ptl-label__act { margin-left: auto; }
+.ptl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--rc); flex: 0 0 auto; }
+.ptl-scale { position: relative; height: 44px; flex: 0 0 auto; }
+.ptl-scale__row { position: relative; height: 22px; }
+.ptl-scale__row span { position: absolute; top: 0; height: 22px; line-height: 22px; font-size: 11px; font-weight: 650; padding: 0 4px; box-sizing: border-box; border-left: 1px solid var(--ptl-line); overflow: hidden; white-space: nowrap; color: var(--text-2, #334155); }
+.ptl-scale__row.is-bottom span { font-weight: 500; color: var(--muted, #64748b); border-top: 1px solid var(--ptl-line); }
+
+.ptl-row { display: flex; position: relative; border-bottom: 1px solid var(--ptl-line); }
+.ptl-row--load { background: var(--surface-2, #f8fafc); }
+.ptl-row--steps .ptl-label { font-size: 11px; color: var(--muted, #64748b); padding-left: 26px; }
+.ptl-body { position: relative; }
+.ptl-lines { position: absolute; top: 0; bottom: 0; pointer-events: none; z-index: 0; }
+.ptl-lines span { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--ptl-line); }
+.ptl-today { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid #ef4444; z-index: 2; }
+.ptl-today::before { content: "Bugün"; position: absolute; top: 0; left: 3px; font-size: 10px; font-weight: 700; color: #ef4444; font-style: normal; }
+.ptl-canvas { position: relative; flex: 0 0 auto; z-index: 1; }
+.ptl-canvas.is-editable { cursor: crosshair; }
+.ptl-empty { padding: 18px; }
+
+.ptl-bar { position: absolute; height: 20px; border-radius: 6px; background: color-mix(in srgb, var(--bc) 85%, #fff); color: #fff; font-size: 11.5px; font-weight: 650; line-height: 20px; overflow: hidden; box-shadow: 0 1px 2px rgba(15, 23, 42, .18); user-select: none; cursor: pointer; box-sizing: border-box; }
+.ptl-bar.is-editable { cursor: grab; }
+.ptl-bar.is-editable:active { cursor: grabbing; }
+.ptl-bar.is-warn { outline: 2px dashed #f59e0b; outline-offset: 1px; }
+.ptl-bar__progress { position: absolute; inset: 0 auto 0 0; background: rgba(0, 0, 0, .18); pointer-events: none; }
+.ptl-bar__text { position: relative; padding: 0 8px; white-space: nowrap; text-shadow: 0 1px 1px rgba(0, 0, 0, .25); pointer-events: none; }
+.ptl-bar__handle { position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize; z-index: 1; }
+.ptl-bar__handle.is-start { left: 0; }
+.ptl-bar__handle.is-end { right: 0; }
+.ptl-bar:hover .ptl-bar__handle { background: rgba(255, 255, 255, .35); }
+.ptl-bar:focus-visible, .ptl-ms:focus-visible { outline: 2px solid var(--brand, #7c3aed); outline-offset: 2px; }
+
+.ptl-ms { position: absolute; height: 18px; display: flex; align-items: center; gap: 4px; transform: translateX(-7px); cursor: grab; user-select: none; z-index: 2; white-space: nowrap; }
+.ptl-ms__shape { width: 12px; height: 12px; background: var(--bc); transform: rotate(45deg); border: 2px solid var(--surface, #fff); box-shadow: 0 0 0 1px var(--bc); flex: 0 0 auto; }
+.ptl-ms__text { font-size: 11px; font-weight: 650; color: var(--text-2, #334155); pointer-events: none; }
+
+.ptl-step { position: absolute; height: 12px; border-radius: 3px; background: color-mix(in srgb, var(--brand, #7c3aed) 35%, var(--surface, #fff)); font-size: 9.5px; line-height: 12px; padding: 0 4px; overflow: hidden; white-space: nowrap; box-sizing: border-box; color: var(--text, #0f172a); }
+.ptl-step.is-done { opacity: .5; text-decoration: line-through; }
+.ptl-step.is-outside { outline: 1.5px solid #ef4444; background: color-mix(in srgb, #ef4444 18%, var(--surface, #fff)); }
+
+.ptl-select { position: absolute; top: 3px; bottom: 3px; border-radius: 6px; background: color-mix(in srgb, var(--brand, #7c3aed) 22%, transparent); border: 1.5px dashed var(--brand, #7c3aed); font-size: 11px; font-weight: 650; color: var(--brand, #7c3aed); display: flex; align-items: center; padding: 0 6px; white-space: nowrap; overflow: hidden; pointer-events: none; box-sizing: border-box; }
+
+.ptl-load { position: absolute; top: 3px; height: 16px; border-radius: 4px; background: rgba(14, 165, 233, var(--lv)); color: #fff; font-size: 10px; font-weight: 700; text-align: center; line-height: 16px; }
+.ptl-load.is-conflict { background: rgba(239, 68, 68, var(--lv)); }
+
+.ptl-warnings { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.ptl-warnings li { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 10px; border-radius: 8px; background: color-mix(in srgb, #f59e0b 14%, var(--surface, #fff)); color: var(--text, #0f172a); }
+.ptl-warnings li i { color: #d97706; }
+.ptl-hint { font-size: 12px; margin: 0; }
+.ptl-form { display: grid; gap: 10px; }
+.ptl-phases { display: flex; flex-wrap: wrap; gap: 6px 14px; max-height: 140px; overflow: auto; }
+.ptl-print-title { font-size: 16px; margin: 0; }
+
+/* Ajanda ay görünümü: proje dönemi şeritleri (agendaProjects.js periodBands) */
+.ag-bands { display: flex; flex-direction: column; gap: 2px; margin: 0 -6px 2px; }
+.ag-band { display: block; height: 6px; background: var(--bc); opacity: .55; border: 0; padding: 0; cursor: pointer; }
+.ag-band.is-start { border-top-left-radius: 4px; border-bottom-left-radius: 4px; margin-left: 4px; }
+.ag-band.is-end { border-top-right-radius: 4px; border-bottom-right-radius: 4px; margin-right: 4px; }
+.ag-band.is-gap { visibility: hidden; }
+.ag-band:hover { opacity: .9; }
+.ag-band__label { display: block; font-size: 10px; font-weight: 650; line-height: 12px; color: var(--bc); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 4px; }
+.ag-ms { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 650; color: var(--bc); background: none; border: 0; padding: 0; cursor: pointer; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.ag-ms::before { content: ""; width: 7px; height: 7px; background: var(--bc); transform: rotate(45deg); flex: 0 0 auto; }
+
+/* Yeni proje → takvim planı önizlemesi */
+.pj-new__plan { display: grid; gap: 6px; margin: 6px 0 10px; }
+.pj-new__planlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 13px; }
+.pj-new__planlist li { display: flex; align-items: center; gap: 8px; }
+.pj-new__planlist small { color: var(--muted, #64748b); }
+.pj-new__swatch { width: 18px; height: 8px; border-radius: 3px; background: var(--pc); }
+.pj-new__ms { width: 9px; height: 9px; background: var(--pc); transform: rotate(45deg); margin: 0 4.5px; }
+
+/* Masaüstü pencere ızgarası */
+.ptl-form__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
+.ptl-form .field select, .ptl-form .field input:not([type=checkbox]):not([type=range]), .ptl-form textarea { width: 100%; }
+.ptl-form .color-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.ptl-form .color-dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.ptl-form .color-dot.is-on { border-color: var(--text); }
+.ptl-label__act { padding: 2px; }
+.view--projects .ptl, .proj-body .ptl { margin-top: 4px; }

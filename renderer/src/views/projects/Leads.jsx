@@ -3,6 +3,7 @@
 // pencerede sağda açılır.
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Empty, Icon, MenuButton, Modal, Segmented, Spinner, useToast } from "../../components/ui";
+import { LeadBulkBar } from "./proposals/LeadSales";
 import { useCommand } from "../../api";
 import { filterLeads, formatWhen, kindSettings, leadColumns, leadDueState, leadKind, leadsOfKind, parseLeadRows, stageOf, supplierQuotes, waLink, telLink, mailLink } from "../../lib/projectUtils";
 import { prettyPhone, relativeTime } from "../../lib/helpers";
@@ -23,6 +24,8 @@ export default function Leads({ ctx: baseCtx, selectedId, initialFilter, initial
   const toast = useToast();
   const [filter, setFilter] = useState(() => ({ stage: "", source: "", owner: "", due: "", q: "", ...(initialFilter || {}) }));
   const [layout, setLayout] = useState(() => (embedded ? "table" : store("proj:leadLayout", "table")));
+  // Çoklu seçim (toplu e-posta / teklif): null → kapalı.
+  const [selected, setSelected] = useState(null);
   const [local, setLocal] = useState(null);
   const [importing, setImporting] = useState(null); // "excel" | "directory"
   const quickRef = useRef(null);
@@ -67,6 +70,7 @@ export default function Leads({ ctx: baseCtx, selectedId, initialFilter, initial
         </select>}
         <span className="spacer" />
         {!embedded && <Segmented size="sm" value={layout} onChange={setLayout} options={[{ value: "table", label: "Tablo", icon: "list" }, { value: "board", label: "Pano", icon: "board" }]} />}
+        {!supplier && !embedded && layout === "table" && <button type="button" className={`btn btn--sm ${selected ? "btn--primary" : ""}`} aria-pressed={Boolean(selected)} onClick={() => setSelected(selected ? null : new Set())}><Icon name="checkSquare" size={13} /> Seç</button>}
         {canEdit && <button type="button" className="btn btn--sm" onClick={() => setImporting("directory")}><Icon name="users" size={13} /> Rehberden ekle</button>}
         {canEdit && <MenuButton icon="upload" label="İçe aktar" items={[{ label: "Excel / CSV'den aktar", icon: "grid", onClick: () => setImporting("excel") }, { label: "Rehberden ekle (Rehberim, üye rehberi, portföy)", icon: "users", onClick: () => setImporting("directory") }]} />}
       </div>
@@ -80,7 +84,10 @@ export default function Leads({ ctx: baseCtx, selectedId, initialFilter, initial
         ? <Board ctx={ctx} leads={shown} activeId={activeId} onOpen={open} />
         : supplier
           ? <SupplierTable ctx={ctx} leads={shown} activeId={activeId} onOpen={open} compact={embedded || Boolean(selectedId)} empty={leads.length ? "Süzgece uyan tedarikçi yok." : null} />
-          : <LeadTable ctx={ctx} leads={shown} activeId={activeId} onOpen={open} compact={embedded} empty={leads.length ? "Süzgece uyan kişi yok." : null} />}
+          : <>
+            {selected && <LeadBulkBar ctx={baseCtx} visible={shown} selected={selected} setSelected={setSelected} onExit={() => setSelected(null)} />}
+            <LeadTable ctx={ctx} leads={shown} activeId={activeId} onOpen={open} compact={embedded} empty={leads.length ? "Süzgece uyan kişi yok." : null} selected={selected} onToggle={(id) => setSelected((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; })} />
+          </>}
     </>
   );
 
@@ -170,19 +177,20 @@ function ContactButtons({ lead }) {
   );
 }
 
-function LeadTable({ ctx, leads, activeId, onOpen, empty, compact = false }) {
+function LeadTable({ ctx, leads, activeId, onOpen, empty, compact = false, selected = null, onToggle }) {
   const { settings, people, canEdit, actions } = ctx;
   if (!leads.length) return <Empty icon="users" title={empty ? "Eşleşen kişi yok" : "Henüz kişi yok"} text={empty || "Aradığınız ya da arayacağınız kişileri yukarıdan ekleyin, Excel'den ya da Rehber'den aktarın."} />;
   return (
     <div className="table-wrap">
       <table className="table lead-table">
-        <thead><tr><th>Kişi</th><th>İletişim</th><th>Aşama</th><th>Sonraki aksiyon</th>{!compact && <><th className="num">Görüşme</th><th className="num">Tutar</th><th /></>}</tr></thead>
+        <thead><tr>{selected && <th className="sl-check-cell" aria-label="Seçim" />}<th>Kişi</th><th>İletişim</th><th>Aşama</th><th>Sonraki aksiyon</th>{!compact && <><th className="num">Görüşme</th><th className="num">Tutar</th><th /></>}</tr></thead>
         <tbody>
           {leads.map((l) => {
             const due = leadDueState(l);
             const st = stageOf(settings, l.stage);
             return (
               <tr key={l.id} className={`${String(activeId) === String(l.id) ? "is-selected" : ""} ${due === "overdue" ? "is-overdue" : ""}`} onClick={() => onOpen(l.id)}>
+                {selected && <td className="sl-check-cell" onClick={(e) => e.stopPropagation()}><input type="checkbox" className="sl-rowcheck" checked={selected.has(l.id)} onChange={() => onToggle(l.id)} aria-label={`Seç: ${l.name}`} /></td>}
                 <td><div className="lead-cell"><Avatar name={l.name} size={28} color={st?.color} /><span><strong>{l.name}</strong><small>{[l.company !== l.name ? l.company : null, l.title, l.city].filter(Boolean).join(" · ") || prettyPhone(l.phone)}</small></span></div></td>
                 <td><span className="lead-phone">{l.phone ? prettyPhone(l.phone) : <span className="muted">—</span>}</span><ContactButtons lead={l} /></td>
                 <td onClick={(e) => e.stopPropagation()}>

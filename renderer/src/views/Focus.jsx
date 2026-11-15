@@ -1,7 +1,7 @@
 // Odak Sayacı: pomodoro, geri sayım ve kronometre. Sayaç ana süreçte çalışır;
 // pencere kapalıyken de menü çubuğunda kalan süre görünür, bitince bildirim gelir.
 import React, { useEffect, useState } from "react";
-import { Field, Icon, Segmented, ViewHeader } from "../components/ui";
+import { Field, Icon, Segmented, ViewHeader, isMac } from "../components/ui";
 import { formatClock, formatTime } from "../lib/helpers";
 
 const PHASES = [{ value: "focus", label: "Odak" }, { value: "short", label: "Kısa mola" }, { value: "long", label: "Uzun mola" }];
@@ -33,7 +33,7 @@ export default function Focus() {
 
   return (
     <div className="view view--focus">
-      <ViewHeader icon="timer" title="Odak Sayacı" subtitle="Boşluk tuşu başlatır/duraklatır. Sayaç menü çubuğunda da görünür.">
+      <ViewHeader icon="timer" title="Odak Sayacı" subtitle={`Boşluk tuşu başlatır/duraklatır. Sayaç ${isMac() ? "menü çubuğunda" : "bildirim alanında (sistem tepsisi)"} da görünür.`}>
         <Segmented value={s.mode} onChange={(mode) => cmd("mode", { mode })} size="sm" options={[{ value: "pomodoro", label: "Pomodoro" }, { value: "timer", label: "Geri sayım" }, { value: "stopwatch", label: "Kronometre" }]} />
         <button type="button" className="icon-btn" title="Süreler" onClick={() => setSettingsOpen((v) => !v)}><Icon name="sliders" /></button>
       </ViewHeader>

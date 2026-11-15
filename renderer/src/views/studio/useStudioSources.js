@@ -88,6 +88,8 @@ export function matchScreen(source, list) {
 }
 
 const isStudioMedia = (url) => typeof url === "string" && url.startsWith("elitlig-studio:");
+// Masaüstü medya vekili (elitlig-media://, Panorama medya kutusunun web adresleri): CORS'lu yüklenir.
+const corsMedia = (url) => isStudioMedia(url) || (typeof url === "string" && url.startsWith("elitlig-media:"));
 const missingText = (source) => (source.fileMissing || source.fileName || source.filePath
   ? `Dosya bulunamadı${source.fileName ? ` (${source.fileName})` : ""}: yeniden seç.`
   : null);
@@ -235,7 +237,7 @@ export function useStudioSources(sources, { onResolve, replayUrlOf } = {}) {
         if (!source.url || source.fileMissing) { set(id, { status: "file", message: missingText(source) || "Görseli yeniden seç." }); return; }
         const el = new Image();
         el.decoding = "async";
-        if (isStudioMedia(source.url)) el.crossOrigin = "anonymous";
+        if (corsMedia(source.url)) el.crossOrigin = "anonymous";
         el.onload = () => { if (still()) set(id, { status: "live", el }); };
         el.onerror = () => { if (still()) set(id, isStudioMedia(source.url) ? { status: "file", message: missingText({ ...source, fileMissing: true }) } : { status: "error", message: "Görsel açılamadı." }); };
         el.src = source.url;
@@ -247,7 +249,7 @@ export function useStudioSources(sources, { onResolve, replayUrlOf } = {}) {
         const el = makeVideo();
         el.loop = source.loop !== false;
         // Kalıcı yerel dosya (elitlig-studio://media): CORS'lu yükle → tuval kirlenmez, ses karıştırıcıya bağlanabilir.
-        if (isStudioMedia(source.url)) el.crossOrigin = "anonymous";
+        if (corsMedia(source.url)) el.crossOrigin = "anonymous";
         el.src = source.url;
         el.onloadeddata = () => { if (still()) set(id, { status: "live", el }); };
         el.onerror = () => { if (still()) set(id, isStudioMedia(source.url) ? { status: "file", message: missingText({ ...source, fileMissing: true }) } : { status: "error", message: "Video açılamadı." }); };

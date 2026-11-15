@@ -923,6 +923,8 @@ function createStudioEngine({
     const stdin = s.child.stdin;
     if (!stdin || stdin.destroyed || !stdin.writable) return false;
     stdin.write(buf);
+    // Tanılama (yalnız ortam değişkeniyle): ffmpeg'e giren ham Matroska'yı dosyaya da yaz.
+    if (process.env.ELITLIG_STUDIO_DUMP_INPUT) { try { require("node:fs").appendFileSync(process.env.ELITLIG_STUDIO_DUMP_INPUT, buf); } catch { /* yoksay */ } }
     s.lastChunkAt = now();
     s.chunkCount += 1;
     const pending = stdin.writableLength;

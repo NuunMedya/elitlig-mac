@@ -115,6 +115,67 @@ test("yayın sesi: ±5 ms zaman damgası titreşimi tık üretmez; −6 dBFS ses
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+/**
+ * Sinüs bütünlüğü: (1) tık — x[n+1] − 2cos(ω)x[n] + x[n−1] saf sinüste ≈ 0'dır (yavaş perde kayması
+ * da ≈ 0 bırakır); faz / genlik sıçraması tepe yapar; (2) perde — 100 ms'lik pencerelerde sıfır
+ * geçişlerinden frekans, ortancadan en büyük sapma (sent). from / to: baş / son atlanır.
+ */
+function sineIntegrity(x, freq, amp) {
+  const w = (2 * Math.PI * freq) / 48000;
+  const k = 2 * Math.cos(w);
+  const from = 9600; const to = x.length - 9600;
+  let clicks = 0; let lastClick = -1e9;
+  for (let i = from; i < to; i += 1) {
+    const e = Math.abs(x[i + 1] - k * x[i] + x[i - 1]);
+    if (e > 0.03 * amp && i - lastClick > 480) { clicks += 1; lastClick = i; }
+  }
+  const freqs = [];
+  for (let s0 = from; s0 + 4800 < to; s0 += 4800) {
+    let first = null; let last = null; let n = 0;
+    for (let i = s0 + 1; i < s0 + 4800; i += 1) {
+      if (x[i - 1] < 0 && x[i] >= 0) { const t = i - 1 + (-x[i - 1]) / (x[i] - x[i - 1]); if (first === null) first = t; last = t; n += 1; }
+    }
+    if (n > 2) freqs.push(((n - 1) * 48000) / (last - first));
+  }
+  const sorted = [...freqs].sort((a, b) => a - b);
+  const med = sorted[Math.floor(sorted.length / 2)] || freq;
+  const cents = freqs.reduce((m, f) => Math.max(m, Math.abs(1200 * Math.log2(f / med))), 0);
+  return { clicks, cents };
+}
+
+test("yayın sesi: ses işçisinin ofset basamakları (10 ms) + 5 ms titreşim → esneme / tık YOK (2.30.1 cızırtı regresyonu)", { timeout: 120000 }, async (t) => {
+  const why = await skipReason();
+  if (why) { t.skip(why); return; }
+  const info = await getInfo();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "studio-audio-step-"));
+  try {
+    const input = path.join(root, "in.webm");
+    // Paket başına 20 ms (Opus): her 1,5 sn'de bir +10 ms basamak (min-pencere ofseti) ve her 7. pakette +5 ms.
+    await makeWebm(info.path, input, { seconds: 14, amp: 0.5, tsExpr: "PTS+if(lt(mod(N\\,150)\\,75)\\,0\\,0.010/TB)+if(eq(mod(N\\,7)\\,0)\\,0.005/TB\\,0)" });
+    const out = await runStream(info.path, root, input);
+    const r = sineIntegrity(await decodeLeft(info.path, out), 440, 0.5);
+    t.diagnostic(`basamaklı zaman damgası → tık ${r.clicks}, en büyük perde kayması ${r.cents.toFixed(1)} sent`);
+    assert.equal(r.clicks, 0, `tık ${r.clicks}`);
+    assert.ok(r.cents < 3, `perde kayması ${r.cents.toFixed(1)} sent (async=1000 ≈ 15–40 sent)`);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test("yayın sesi: 300 ms gerçek boşluk sessizlikle doldurulur (ses / görüntü eşi korunur)", { timeout: 120000 }, async (t) => {
+  const why = await skipReason();
+  if (why) { t.skip(why); return; }
+  const info = await getInfo();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "studio-audio-gap-"));
+  try {
+    const input = path.join(root, "in.webm");
+    await makeWebm(info.path, input, { seconds: 8, amp: 0.5, tsExpr: "PTS+if(gt(N\\,200)\\,0.300/TB\\,0)" });
+    const out = await runStream(info.path, root, input);
+    const x = await decodeLeft(info.path, out);
+    const sec = x.length / 48000;
+    t.diagnostic(`8 sn + 300 ms boşluk → çıkış ${sec.toFixed(3)} sn`);
+    assert.ok(sec > 8.2, `boşluk doldurulmadı: ${sec} sn`);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test("özet: oluşturulan MP4'te klip sesi var (AAC, sessiz değil)", { timeout: 60000 }, async (t) => {
   const why = await skipReason();
   if (why) { t.skip(why); return; }

@@ -14,15 +14,29 @@ import Activity from "./Activity";
 import { ProjectPortfolio } from "./Portfolio";
 import Settings from "./Settings";
 import Budget from "./Budget";
+import Costs from "./Costs";
+import Feed from "./Feed";
+import Timeline from "./timeline/Timeline";
+import "./lifecycle.css";
+import ExportButton from "../../components/ExportButton";
+import { projectReport } from "../../lib/export/reports";
+import { useFeedUnread } from "./useLifecycle";
+import ProposalsTab from "./proposals/Proposals";
+import SponsorshipTab from "./proposals/Sponsorship";
 
 const TABS = [
   { key: "overview", label: "Genel bakış", icon: "overview" },
   { key: "process", label: "Süreç", icon: "list" },
+  { key: "timeline", label: "Takvim", icon: "calendar" },
   { key: "leads", label: "Kişiler", icon: "users" },
   { key: "budget", label: "Bütçe", icon: "wallet" },
+  { key: "costs", label: "Maliyet", icon: "calculator" },
+  { key: "feed", label: "Akış", icon: "message" },
   { key: "questions", label: "Sorular", icon: "help" },
   { key: "activity", label: "İletişim", icon: "activity" },
   { key: "portfolio", label: "Portföy", icon: "briefcase" },
+  { key: "proposals", label: "Teklifler", icon: "file" },
+  { key: "sponsorship", label: "Sponsorluk", icon: "award" },
   { key: "settings", label: "Ayarlar", icon: "sliders" },
 ];
 
@@ -34,6 +48,7 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
   const [stepId, setStepId] = useState(route.step || null);
   const [leadId, setLeadId] = useState(route.lead || null);
   const [toolPanel, setToolPanel] = useState(null); // { tool, step }
+  const feedUnread = useFeedUnread(id, { active: tab === "feed" });
   useEffect(() => { setStepId(route.step || null); setLeadId(route.lead || null); }, [route.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setTab = useCallback((key, extra = {}) => setRoute((r) => ({ id: r.id, nonce: r.nonce, tab: key, ...extra })), [setRoute]);
@@ -92,6 +107,7 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
     process: `${st.done}/${st.total - st.skipped}`, leads: data.leads.length || null, questions: ctx.stats.open_questions || null,
     portfolio: data.portfolio.length || null,
   };
+  counts.feed = feedUnread || null;
 
   return (
     <div className="view view--project" style={{ "--pc": item.color }}>
@@ -114,7 +130,15 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
             <Progress value={st.progress} color={item.color} />
             <small>{st.done}/{st.total - st.skipped} adım{st.overdue ? <> · <b className="text-red">{st.overdue} geciken</b></> : ""}</small>
           </div>
-          <MenuButton icon="download" label="Dışa aktar" items={[
+          <ExportButton id="project" title={item.name} text=""
+            report={() => projectReport({
+              project: item, statusLabel: label(data.meta.project_statuses, item.status), people: data.people || {},
+              stepRows: stepsToRows({ phases: data.phases, steps: data.steps, people: data.people, meta: data.meta }),
+              leadRows: leadsToRows({ leads: data.leads, settings: item.settings }),
+              questions: data.questions, portfolio: data.portfolio, activities: data.activities || [],
+              portfolioStatus: (k) => ({ active: "Aktif", passive: "Pasif", renewal: "Yenilenecek" }[k] || k),
+            })}
+            extraItems={[
             { label: "Adımlar — Excel (.xlsx)", icon: "grid", onClick: () => exportSteps("xlsx") },
             { label: "Adımlar — CSV", icon: "download", onClick: () => exportSteps("csv") },
             "-",
@@ -122,9 +146,9 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
             { label: "Kişiler — CSV", icon: "download", onClick: () => exportLeads("csv") },
           ]} />
         </header>
-        <nav className="proj-tabs" role="tablist" aria-label="Proje bölümleri">
+        <nav className="proj-tabs" role="tablist" aria-label="Proje bölümleri" onWheel={(e) => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) e.currentTarget.scrollLeft += e.deltaY; }}>
           {TABS.map((t) => (
-            <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={tab === t.key ? "is-active" : ""} onClick={() => setTab(t.key)}>
+            <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={tab === t.key ? "is-active" : ""} onClick={(e) => { setTab(t.key); e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" }); }}>
               <Icon name={t.icon} size={14} /> {t.label}{counts[t.key] ? <span className="proj-tabs__count">{counts[t.key]}</span> : null}
             </button>
           ))}
@@ -133,11 +157,16 @@ export default function ProjectView({ id, route, setRoute, onBack, go, auth }) {
         <div className="proj-body" key={tab}>
           {tab === "overview" && <Overview ctx={ctx} />}
           {tab === "process" && <Process ctx={ctx} selectedId={stepId} focusPhase={route.phase} initialFilter={route.processFilter} />}
+          {tab === "timeline" && <Timeline projectId={Number(id)} />}
           {tab === "leads" && <Leads ctx={ctx} selectedId={leadId} initialFilter={route.leadFilter} initialKind={route.kind} />}
           {tab === "budget" && <Budget ctx={ctx} />}
+          {tab === "costs" && <Costs ctx={ctx} />}
+          {tab === "feed" && <Feed ctx={ctx} />}
           {tab === "questions" && <Questions ctx={ctx} highlight={route.question} />}
           {tab === "activity" && <Activity ctx={ctx} />}
           {tab === "portfolio" && <ProjectPortfolio ctx={ctx} />}
+          {tab === "proposals" && <ProposalsTab ctx={ctx} />}
+          {tab === "sponsorship" && <SponsorshipTab ctx={ctx} />}
           {tab === "settings" && <Settings ctx={ctx} onDeleted={() => onBack()} openProject={(pid) => setRoute({ id: pid, tab: "overview", nonce: Date.now() })} />}
         </div>
       </div>

@@ -169,6 +169,7 @@ export function normalizeLayer(l, sourceKind) {
 //   name     katmanın kendi adı (boşsa kaynağın adı)
 //   opacity  0…1 (varsayılan 1)
 //   radius   köşe yuvarlama: kutunun kısa kenarına oran 0…0.5
+//   mask     şekilli maske: circle | ellipse | diagL | diagR | cut | hex | slantL | slantR (LAYER_MASKS)
 //   border   { width (çıkış px, 0…40), color }
 //   shadow   { blur (çıkış px, 0…80), color }
 //   muted    true: katmanın sesi (video) yayına gitmez
@@ -177,6 +178,8 @@ export function normalizeLayer(l, sourceKind) {
 //   (visibleAt: görünürlüğün değiştiği an — yalnız bellekte; geçiş çizimi için, kayda yazılmaz)
 const HEX = /^#[0-9a-f]{3,8}$/i;
 const color = (v, d) => (typeof v === "string" && HEX.test(v) ? v : d);
+/** Katman maskeleri (drawLayer'daki maskPath). "rect" = maskesiz. */
+export const LAYER_MASKS = Object.freeze(["rect", "circle", "ellipse", "diagL", "diagR", "cut", "hex", "slantL", "slantR"]);
 export const LAYER_STYLE_DEFAULTS = Object.freeze({ opacity: 1, radius: 0, border: { width: 0, color: "#ffffff" }, shadow: { blur: 0, color: "#000000" }, muted: false, name: "" });
 export function layerStyle(l) {
   const out = {};
@@ -186,6 +189,8 @@ export function layerStyle(l) {
   if (op < 1) out.opacity = Math.round(op * 100) / 100;
   const r = clamp(num(l?.radius, 0), 0, 0.5);
   if (r > 0) out.radius = r;
+  // Şekilli maske (Panorama açıları): daire, elips, çapraz bölme, pah kırma, altıgen, eğik.
+  if (typeof l?.mask === "string" && LAYER_MASKS.includes(l.mask) && l.mask !== "rect") out.mask = l.mask;
   const bw = clamp(num(l?.border?.width, 0), 0, 40);
   if (bw > 0) out.border = { width: bw, color: color(l.border.color, "#ffffff") };
   const sb = clamp(num(l?.shadow?.blur, 0), 0, 80);

@@ -23,6 +23,7 @@ import { isFullPanel, normalizeVariant } from "./variants";
 import { isVisibleIn } from "./visibility";
 import { drawQrCard } from "./drawQr";
 import { qrVisible } from "../links";
+import { drawPanorama } from "../panorama/draw"; // [panorama] maç seçmeden içerik kartları
 
 const STAGE_W = 1920;
 const MARGIN = 110; // panel gölgesi için katman payı
@@ -192,6 +193,8 @@ function drawLayers(ctx, frame, snap, layers) {
  * yenisine karışır. snapshot.qr: programın köşesinde QR kartı (bağlantı).
  */
 export function drawGraphics(ctx, frame, snap) {
+  // [panorama] Panorama kipinin anlık görüntüsü: içerik kartları, künye, alt bant (lib/studio/panorama).
+  if (ctx && snap?.panorama) { drawPanorama(ctx, frame, snap); return; }
   if (!ctx || !snap || !snap.branding) return;
   const now = frame?.now ?? Date.now();
   const layers = graphicsLayers(snap, frame?.sceneId);

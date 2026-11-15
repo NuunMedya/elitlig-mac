@@ -266,9 +266,10 @@ export function resolvePlayable(config, id, rand = Math.random) {
 
 export const trackRange = (t) => (t ? `${formatTime(t.start || 0)}${t.end != null ? ` – ${formatTime(t.end)}` : " →"}` : "");
 
-export function readMusic(storage) {
-  try { return normalizeMusic(JSON.parse(storage?.getItem(MUSIC_KEY) || "null")); } catch { return normalizeMusic(null); }
+// key: uygulama geneli müzik çalar kendi listesini ayrı anahtarda tutar ("app.music.v1").
+export function readMusic(storage, key = MUSIC_KEY) {
+  try { return normalizeMusic(JSON.parse(storage?.getItem(key) || "null")); } catch { return normalizeMusic(null); }
 }
-export function writeMusic(storage, config) {
-  try { storage?.setItem(MUSIC_KEY, JSON.stringify(normalizeMusic(config))); return true; } catch { return false; }
+export function writeMusic(storage, config, key = MUSIC_KEY) {
+  try { storage?.setItem(key, JSON.stringify(normalizeMusic(config))); return true; } catch { return false; }
 }

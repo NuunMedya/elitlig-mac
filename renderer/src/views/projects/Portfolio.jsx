@@ -1,4 +1,6 @@
 // Portföy: satışı kapanan kişi ve kurumlar. Proje içinde ve tüm projelerde (genel).
+import ExportButton from "../../components/ExportButton";
+import { matrixReport } from "../../lib/export/reports";
 import React, { useMemo, useState } from "react";
 import { Empty, ErrorNote, Field, Icon, Modal, Spinner, useConfirm } from "../../components/ui";
 import { del, patch, request, useCommand, useResource } from "../../api";
@@ -52,7 +54,8 @@ function PortfolioBody({ items, categories, canEdit, global = false, title, onAd
   const total = shown.reduce((s, x) => s + (Number(x.value) || 0), 0);
   const cats = [...new Set([...categories, ...items.map((x) => x.category).filter(Boolean)])];
   const byCat = cats.map((c) => ({ c, n: items.filter((x) => x.category === c).length })).filter((x) => x.n);
-  const exportXlsx = () => saveRowsXlsx(`Portfoy-${title}`.replace(/[\\/:*?"<>|]/g, "-"), [["Ad", "Firma", "Kategori", "Durum", "Tutar", "Telefon", "E-posta", "Şehir", "Başlangıç", "Proje", "Not"], ...shown.map((x) => [x.name, x.company, x.category, STATUSES.find((s) => s.key === x.status)?.label || x.status, x.value == null ? "" : String(x.value), x.phone, x.email, x.city, x.start_date || "", x.project_name || "", x.note])], "Portföy", { A: 180, B: 180, K: 260 });
+  const portfolioRows = (list) => [["Ad", "Firma", "Kategori", "Durum", "Tutar", "Telefon", "E-posta", "Şehir", "Başlangıç", "Proje", "Not"], ...list.map((x) => [x.name, x.company, x.category, STATUSES.find((s) => s.key === x.status)?.label || x.status, x.value == null ? "" : String(x.value), x.phone, x.email, x.city, x.start_date || "", x.project_name || "", x.note])];
+  const exportXlsx = () => saveRowsXlsx(`Portfoy-${title}`.replace(/[\\/:*?"<>|]/g, "-"), portfolioRows(shown), "Portföy", { A: 180, B: 180, K: 260 });
   return (
     <div className="proj-section">
       <div className="kpis kpis--compact">
@@ -65,7 +68,10 @@ function PortfolioBody({ items, categories, canEdit, global = false, title, onAd
         <select className="select-sm" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Kategori"><option value="">Tüm kategoriler</option>{cats.map((c) => <option key={c} value={c}>{c}</option>)}</select>
         <select className="select-sm" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Durum"><option value="">Tüm durumlar</option>{STATUSES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}</select>
         <span className="spacer" />
-        {items.length > 0 && <button type="button" className="btn btn--sm" onClick={exportXlsx}><Icon name="download" size={13} /> Excel</button>}
+        {items.length > 0 && <ExportButton id="portfolio" title={`Portföy — ${title}`}
+          scopes={[{ value: "view", label: `Süzülmüş (${shown.length})` }, { value: "all", label: `Tümü (${items.length})` }]}
+          report={({ scope: sc }) => { const r = portfolioRows(sc === "all" ? items : shown); return matrixReport(`Portföy — ${title}`, r[0], r.slice(1), { filters: sc === "all" ? [] : [category, STATUSES.find((x) => x.key === status)?.label, q && `"${q}"`].filter(Boolean) }); }}
+          extraItems={[{ label: "Excel — klasik", icon: "grid", onClick: exportXlsx }]} />}
         {canEdit && <button type="button" className="btn btn--primary btn--sm" onClick={onAdd}><Icon name="plus" size={13} /> Portföye ekle</button>}
       </div>
       {shown.length ? (

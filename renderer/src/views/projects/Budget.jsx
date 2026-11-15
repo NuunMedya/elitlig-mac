@@ -1,6 +1,8 @@
 // Bütçe: projenin gelir / gider kalemleri (tahmin → bekliyor → ödendi), hesaba
 // bağlı. "Ödendi" / "Tahsil edildi" yapılan kalem bağlı muhasebe hesabına
 // işlenir. Adımın içinde (embedded) açıldığında o adıma süzülür.
+import ExportButton from "../../components/ExportButton";
+import { projectBudgetReport } from "../../lib/export/reports";
 import React, { useEffect, useMemo, useState } from "react";
 import { Empty, ErrorNote, Icon, MenuButton, Spinner, useConfirm } from "../../components/ui";
 import { EntryDialog, EntryStatusPill } from "../../components/finance";
@@ -114,6 +116,12 @@ export default function Budget({ ctx, embedded = false, step = null }) {
         {!embedded && <select className="select-sm" value={f.step} onChange={(e) => setF({ ...f, step: e.target.value })} aria-label="Adım"><option value="">Tüm adımlar</option>{[...new Set(items.map((e) => e.step_id).filter(Boolean))].map((sid) => <option key={sid} value={sid}>{steps.find((s) => s.id === sid)?.title || `Adım #${sid}`}</option>)}</select>}
         {f.step && step && <span className="pill pill--tool"><Icon name="list" size={10} /> {step.title}</span>}
         <span className="spacer" />
+        {items.length > 0 && <ExportButton id="project-budget" title={`${project.name} — Bütçe`} text=""
+          scopes={[{ value: "view", label: `Süzülmüş (${shown.length})` }, { value: "all", label: `Tümü (${items.length})` }]}
+          report={({ scope: sc }) => projectBudgetReport(sc === "all" ? items : shown, {
+            title: `${project.name} — Bütçe`, accountName,
+            filters: sc === "all" ? [] : [f.status && ({ open: "Açık", planned: "Tahmin", pending: "Bekliyor", paid: "Ödendi", cancelled: "İptal" }[f.status]), f.step && (steps.find((x) => String(x.id) === f.step)?.title), f.q && `"${f.q}"`].filter(Boolean),
+          })} />}
         {canEdit && <>
           <button type="button" className="btn btn--green" onClick={() => add("income")}><Icon name="plus" /> Gelir</button>
           <button type="button" className="btn btn--red" onClick={() => add("expense")}><Icon name="plus" /> Gider</button>

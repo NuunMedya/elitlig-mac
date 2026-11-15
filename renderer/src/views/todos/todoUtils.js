@@ -1,5 +1,7 @@
 // Yapılacaklar: görünümler, gruplama, sıralama ve yardımcılar (saf, testli).
 
+import { phaseGroups } from "../../lib/projectPhases";
+
 export const STATUSES = [
   { key: "open", label: "Yapılacak" },
   { key: "in_progress", label: "Sürüyor" },
@@ -12,8 +14,9 @@ export const KINDS = [
   { key: "", label: "Tüm türler" }, { key: "task", label: "Görev" }, { key: "reminder", label: "Hatırlatma" }, { key: "note", label: "Kişisel not" },
   { key: "match_duty", label: "Maç görevi" }, { key: "match_moment", label: "Maç anı" }, { key: "award_nomination", label: "Haftanın enleri önerisi" },
   { key: "award_coordination", label: "Haftanın enleri koordinasyonu" }, { key: "sheet_share", label: "Paylaşılan tablo" },
+  { key: "project_step", label: "Proje adımı" }, { key: "project_followup", label: "Görüşme takibi" },
 ];
-export const KIND_ICON = { task: "checkSquare", reminder: "bell", note: "note", match_duty: "ball", match_moment: "flag", award_nomination: "award", award_coordination: "award", sheet_share: "grid" };
+export const KIND_ICON = { task: "checkSquare", reminder: "bell", note: "note", match_duty: "ball", match_moment: "flag", award_nomination: "award", award_coordination: "award", sheet_share: "grid", project_step: "layers", project_followup: "phone" };
 export const MOMENT_PERIOD = { 1: "1. devre", 2: "2. devre", 3: "Uzatma" };
 
 const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -126,7 +129,10 @@ export function groupRows(list, { view, groupBy = "date", now = new Date() } = {
   }
   const delegated = active.filter(isDelegated);
   const mine = active.filter((t) => !isDelegated(t));
-  if (groupBy === "status") {
+  if (groupBy === "phase") {
+    // Etaba göre (proje aşaması): etaplar, Askıda, proje dışı (lib/projectPhases.js).
+    phaseGroups(mine).forEach((g) => push(g.key, g.label, g.items, g.color ? { color: g.color, hint: g.hint } : {}));
+  } else if (groupBy === "status") {
     push("in_progress", "Sürüyor", mine.filter((t) => t.status === "in_progress"));
     push("open", "Yapılacak", mine.filter((t) => t.status === "open"));
   } else {
@@ -141,7 +147,7 @@ export function groupRows(list, { view, groupBy = "date", now = new Date() } = {
 export function matchesSearch(t, q) {
   const needle = String(q || "").trim().toLocaleLowerCase("tr-TR");
   if (!needle) return true;
-  return [t.title, t.body, t.player?.name, t.team?.name, t.match?.label, t.owner?.name, t.assignedBy?.name, ...(t.labels || []).map((l) => l.text)]
+  return [t.title, t.body, t.project?.name, t.player?.name, t.team?.name, t.match?.label, t.owner?.name, t.assignedBy?.name, ...(t.labels || []).map((l) => l.text)]
     .filter(Boolean).join(" ").toLocaleLowerCase("tr-TR").includes(needle);
 }
 
@@ -242,4 +248,18 @@ export function autofill(draft, suggestions, { categories = [], squadSize = 7 } 
     next.squad = { formation, slots };
   }
   return next;
+}
+
+/**
+ * Pano sütunundaki "Kart ekle" gövdesi: seçili tek proje, etiket listesi ve
+ * Bugün/Yaklaşan görünümünün günü karta işlenir. Önceden yalnız başlık ve durum
+ * gidiyordu; proje kapsamında eklenen kart "bu görünümde gösterilmiyor" diyordu.
+ */
+export function boardAddBody(status, title, { viewKey, project, label } = {}, now = new Date()) {
+  const body = { kind: "task", title, status };
+  if (project) body.project_id = project.id;
+  if (label) body.labels = [label];
+  if (viewKey === "today") body.due_at = endOfDay(0, now);
+  else if (viewKey === "upcoming") body.due_at = endOfDay(1, now);
+  return body;
 }

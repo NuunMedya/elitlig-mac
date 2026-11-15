@@ -84,7 +84,7 @@ function buildAngleArgs({ width, height, fps, videoBitrateKbps, audioBitrateKbps
     "-f", inputFormat, "-i", "pipe:0",
     "-map", "0:v:0", "-map", "0:a:0?",
   ];
-  const audio = ["-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "48000", "-ac", "2", "-af", "aresample=async=1000"];
+  const audio = ["-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "48000", "-ac", "2", "-af", ff.STREAM_AUDIO_RESAMPLE];
   if (copy) {
     return [...head, "-c:v", "copy", "-bsf:v", "h264_mp4toannexb", ...audio, ...angleSegmentArgs({ segmentSeconds, segmentStart, listFile })];
   }
@@ -143,7 +143,7 @@ function buildRenderArgs({ input = "pipe:0", inputFormat = "matroska", outFile, 
     // 4:2:0 (yuv420p; QSV / AMF / Media Foundation aynı örneklemenin NV12 düzenini ister).
     "-vf", `${scaleFilterOf(width, height)},fps=${fps},format=${pixFmt(encoder)}`,
     ...ff.videoEncoderArgs(encoder, { videoBitrateKbps, fps, width, height }),
-    "-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "48000", "-ac", "2", "-af", "aresample=async=1000",
+    "-c:a", "aac", "-b:a", `${audioBitrateKbps}k`, "-ar", "48000", "-ac", "2", "-af", ff.STREAM_AUDIO_RESAMPLE,
     ...levelBsfArgs(width, height, fps),
     "-max_muxing_queue_size", "4096",
     "-movflags", "+faststart",

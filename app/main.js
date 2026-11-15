@@ -33,7 +33,7 @@ const fs = require("node:fs");
 const {
   app, BrowserWindow, Menu, Tray, Notification, shell, ipcMain, dialog, nativeImage, net,
   globalShortcut, safeStorage, powerMonitor, nativeTheme, screen, protocol,
-  session: electronSession, systemPreferences, desktopCapturer, powerSaveBlocker,
+  session: electronSession, systemPreferences, desktopCapturer, powerSaveBlocker, clipboard,
 } = require("electron");
 const crypto = require("node:crypto");
 const { io: socketIo } = require("socket.io-client");
@@ -42,10 +42,28 @@ const { createSessionStore, sessionStatus, sessionEndsAt } = require("./session"
 const { createApi } = require("./api");
 const { createFocus, trayTitle } = require("./focus");
 const { createReminders } = require("./reminders");
+const { createEquipmentFeed } = require("./equipmentFeed");
 const { createChatLink, buildMultipart, mimeOf } = require("./chat");
 const { accessFromUser, probeAccess, sameAccess } = require("./access");
 const { registerStudio, applyStudioSwitches, STUDIO_SCHEME } = require("./studio");
 const { isAllowedExternal } = require("./links");
+// Masaüstü araç takımı: pencere yerleştirme, araç takımı paneli, uyanık tut, müzik denetimi.
+const { registerDeskkit } = require("./toolkit");
+const netTools = require("./netTools"); // Araç Takımı → Ağ ve Sistem
+// Masaüstü widget'ları (saat, ajanda, yapılacaklar, sistem, hava, maçlar…): app/widgets.
+const { registerWidgets } = require("./widgets");
+// Masaüstünden her araca erişim: hızlı geçiş (⌃⌥O), Dock menüsü, atlama listesi, tepsi "Araçlar", derin bağlantı.
+const { registerLauncher, installEarly: installLauncherEarly } = require("./launcher");
+// Dosya Araçları (Float rafı dahil) ve Ekran Görüntüleri / Pano rafı: app/fileTools, app/shelf.
+const { registerFileTools } = require("./fileTools");
+const { registerShelf } = require("./shelf");
+const { createFileProtocol, SCHEME_PRIVILEGES: FILE_SCHEME_PRIVILEGES } = require("./fileTools/protocol");
+// Yönetim: elitlig.com yönetim panelinin tamamı uygulama içinde, masaüstü oturumuyla (app/adminPanel).
+const { WebContentsView } = require("electron");
+const { registerAdminPanel } = require("./adminPanel");
+// Tarayıcı (⇧⌘B): sekmeler, yalıtılmış profiller, video sabitleme, medya indirme (app/browser).
+const { registerBrowser } = require("./browser");
+const { applyTestSession } = require("./testSession");
 
 // Sohbet medyası (fotoğraf, ses, belge) bu şemayla ana süreç üzerinden açılır:
 // diskte önbelleklenir, çevrimdışı da görünür; arayüzün güvenlik politikası
@@ -57,6 +75,7 @@ const MEDIA_SCHEME = "elitlig-media";
 protocol.registerSchemesAsPrivileged([
   { scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
   { scheme: STUDIO_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true } },
+  FILE_SCHEME_PRIVILEGES,
 ]);
 
 app.setName(config.APP_NAME);
@@ -91,6 +110,13 @@ let focus;
 let reminders;
 let chatLink;
 let studio;
+let deskkit = null;
+let widgets = null;
+let launcher = null;
+let fileTools;
+let shelf;
+let adminPanel = null;
+let browser = null;
 let chatNotes = new Map();
 let probedAccess = null;
 let requestsInfo = { total: 0, categories: [] };
@@ -186,6 +212,7 @@ function signOutLocal(reason) {
   api.clearOutbox();
   app.dock?.setBadge("");
   trayInfo = { upcoming: [], summary: null };
+  billsCache = { at: 0, items: [] };
   refreshTray();
   broadcast("auth:changed", { signedIn: false, reason: reason || null });
 }
@@ -227,6 +254,27 @@ async function keepSessionFresh() {
   }
 }
 
+/* ---------------------------- düzenli ödemeler ---------------------------- */
+
+// Hatırlatıcı her dakika çalışır; düzenli ödemeler 30 dakikada bir okunur
+// (dönemler gün bazındadır). Tepsi menüsü de buradan beslenir.
+const BILLS_TTL = 30 * 60000;
+let billsCache = { at: 0, items: [] };
+async function loadBills(now = Date.now(), { force = false } = {}) {
+  if (!force && now - billsCache.at < BILLS_TTL) return billsCache.items;
+  const res = await api.request({ path: "/api/tools/recurring" });
+  if (res.ok && res.data) {
+    billsCache = { at: now, items: [...(res.data.overdue || []), ...(res.data.occurrences || [])] };
+    trayInfo.bills = res.data.summary || null;
+  } else if (res.error?.status === 404) {
+    billsCache = { at: now, items: [] }; // sunucu henüz güncellenmedi
+  }
+  return billsCache.items;
+}
+
+// Ekipman: benim zimmetlerim ve bakımı gelenler (bildirim için, 20 dk önbellek).
+const equipmentFeed = createEquipmentFeed({ request: (opts) => api.request(opts) });
+
 /* ---------------------------- rozet ve tepsi ---------------------------- */
 
 async function refreshSummary() {
@@ -239,7 +287,8 @@ async function refreshSummary() {
     trayInfo.summary = summary.data;
     updateBadge();
   }
-  if (overview.ok) trayInfo.upcoming = overview.data?.upcoming || [];
+  // Yaklaşan: etkinlikler + önümüzdeki 7 günün proje öğeleri (adım, son tarih, görüşme).
+  if (overview.ok) trayInfo.upcoming = [...(overview.data?.upcoming || []), ...(overview.data?.upcoming_projects || [])].sort((a, b) => String(a.occurrence_start).localeCompare(String(b.occurrence_start)));
   refreshTray();
 }
 
@@ -268,17 +317,35 @@ function refreshTray() {
     { label: "Uygulamayı aç", click: () => showMain() },
     { label: "Hızlı kayıt…", accelerator: config.QUICK_SHORTCUT, click: () => showQuick() },
     { type: "separator" },
+    // Araç Takımı ve masaüstü widget'ları menünün üstünde (app/toolkit.js trayTopItems).
+    ...(deskkit ? deskkit.trayTopItems() : []),
+    // Tüm araçlar ve yeni kayıt eylemleri (app/launcher).
+    ...(launcher ? [launcher.trayItem(), { type: "separator" }] : []),
   ];
   if (signedIn) {
     const unread = chatLink?.unread() || 0;
     template.push({ label: unread ? `${unread} okunmamış mesaj` : "Mesajlar", click: () => showMain("messages") });
     if (currentAccess().requests) template.push({ label: requestsInfo.total ? `${requestsInfo.total} bekleyen talep` : "Talepler", click: () => showMain("requests") });
     template.push({ label: s ? `${s.open || 0} açık iş${s.overdue ? ` · ${s.overdue} gecikmiş` : ""}${s.today ? ` · ${s.today} bugün` : ""}` : "Yapılacaklar", click: () => showMain("todos") });
+    const bills = trayInfo.bills;
+    if (bills?.active_count) {
+      template.push({ label: bills.overdue_count ? `${bills.overdue_count} geciken düzenli ödeme` : `Bu ay kalan ödeme: ${Math.round(bills.remaining_expense || 0).toLocaleString("tr-TR")} ₺`, click: () => showMain("ledger:duzenli") });
+    }
     template.push({ label: "Yaklaşan", enabled: false }, ...(upcoming.length ? upcoming : [{ label: "Önümüzdeki 7 gün boş", enabled: false }]));
     template.push({ type: "separator" });
   }
+  // Dosya Araçları ve raflar (kısayollar her yerden çalışır: ⌃⌥T, ⌃⌥S, ⌃⌥A).
+  template.push(
+    { label: "Raflar (Ekran görüntüleri, pano)", accelerator: "Control+Alt+T", registerAccelerator: false, click: () => shelf?.showShelf() },
+    { label: "Ekranı yakala", accelerator: "Control+Alt+A", registerAccelerator: false, click: () => shelf?.captureScreen() },
+    { label: "Araç Takımı › Dosya Araçları", click: () => showMain("files") },
+    { label: "Float rafı", click: () => fileTools?.float.show() },
+    { type: "separator" },
+  );
   // LED çıkışı açıksa her zaman buradan kapatılabilir (LED ekranı stüdyoyu örtse bile).
   if (studio?.led?.status?.().open) template.push({ label: "LED çıkışını kapat", click: () => studio?.led?.close("MENU") }, { type: "separator" });
+  // Masaüstü araç takımı: panel, pencere düzeni, müzik, ekranı uyanık tut (app/toolkit.js).
+  if (deskkit) template.push(...deskkit.trayItems());
   template.push(
     { label: focusLabel, click: () => focus.command("toggle") },
     ...(state.running || state.remainingMs !== state.totalMs ? [{ label: "Sayacı sıfırla", click: () => focus.command("reset") }] : []),
@@ -286,6 +353,7 @@ function refreshTray() {
     { label: `${config.APP_NAME}'tan çık`, click: () => { quitting = true; app.quit(); } },
   );
   tray.setContextMenu(Menu.buildFromTemplate(template));
+  launcher?.refreshOsMenus({ force: false });
 }
 
 function createTray() {
@@ -388,6 +456,8 @@ function createMainWindow() {
   mainWindow = win;
   guardNavigation(win);
   win.once("ready-to-show", () => {
+    // Giriş sırasında başlatıldıysa (widget'lar için) ana pencere gizli kalır.
+    if (widgets?.openedAtLogin?.() && !mainShownOnce) return;
     if (readWinState().maximized) win.maximize();
     win.show();
   });
@@ -407,7 +477,9 @@ function createMainWindow() {
   return win;
 }
 
+let mainShownOnce = false;
 function showMain(route) {
+  mainShownOnce = true;
   if (!mainWindow) createMainWindow();
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
@@ -463,6 +535,7 @@ function showQuick(kind) {
 
 const ROUTES = [
   ["today", "Bugün", "CmdOrCtrl+1"],
+  ["toolkit", "Araç Takımı", "CmdOrCtrl+Shift+A"],
   ["messages", "Mesajlar", "CmdOrCtrl+Shift+M"],
   ["requests", "Talepler", "CmdOrCtrl+Shift+T"],
   ["todos", "Yapılacaklar", "CmdOrCtrl+2"],
@@ -473,8 +546,11 @@ const ROUTES = [
   ["ledger", "Ön Muhasebe", "CmdOrCtrl+5"],
   ["sheets", "Tablolar", "CmdOrCtrl+6"],
   ["contacts", "Rehber", "CmdOrCtrl+7"],
-  ["calc", "Hesap Araçları", "CmdOrCtrl+8"],
-  ["focus", "Odak Sayacı", "CmdOrCtrl+9"],
+  ["calc", "Hesap Araçları", "CmdOrCtrl+8", "hub"],
+  ["focus", "Odak Sayacı", "CmdOrCtrl+9", "hub"],
+  ["equipment", "Ekipman", "CmdOrCtrl+Shift+E"],
+  ["files", "Dosya Araçları", "CmdOrCtrl+Shift+D", "hub"],
+  ["shelf", "Ekran Görüntüleri ve Pano", "CmdOrCtrl+Shift+P", "hub"],
 ];
 
 const sendCommand = (name) => {
@@ -541,7 +617,9 @@ function buildMenu() {
     {
       label: "Görünüm",
       submenu: [
-        ...ROUTES.map(([route, label, accelerator]) => ({ label, accelerator, click: () => showMain(route) })),
+        // Birleşik Araç Takımı'nın bölümleri (hub) "Araç Takımı" menüsünde, aynı kısayollarla (app/toolkit.js);
+        // o menü yoksa burada kalır.
+        ...ROUTES.filter((r) => !(deskkit && r[3] === "hub")).map(([route, label, accelerator]) => ({ label, accelerator, click: () => showMain(route) })),
         { type: "separator" },
         { label: "Yenile", accelerator: "CmdOrCtrl+R", click: () => sendCommand("refresh") },
         { label: "Kenar Çubuğunu Gizle/Göster", accelerator: "CmdOrCtrl+Alt+S", click: () => sendCommand("sidebar") },
@@ -553,6 +631,9 @@ function buildMenu() {
         ...(app.isPackaged ? [] : [{ role: "toggleDevTools", label: "Geliştirici Araçları" }]),
       ],
     },
+    ...(deskkit ? [deskkit.menuTemplate()] : []),
+    ...(adminPanel ? [adminPanel.menuTemplate()] : []),
+    ...(browser ? [browser.menuTemplate()] : []),
     { label: "Pencere", role: "window", submenu: [
       { role: "minimize", label: "Küçült" },
       ...(IS_MAC ? [{ role: "zoom", label: "Büyüt" }, { type: "separator" }, { role: "front", label: "Tümünü Öne Getir" }] : []),
@@ -566,10 +647,12 @@ function buildMenu() {
     ] },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-  app.dock?.setMenu(Menu.buildFromTemplate([
+  // Dock menüsü (Mac) ve atlama listesi (Windows): app/launcher; o yoksa eski liste.
+  if (launcher) launcher.refreshOsMenus();
+  else app.dock?.setMenu(Menu.buildFromTemplate([
     { label: "Hızlı Kayıt…", click: () => showQuick() },
     { type: "separator" },
-    ...ROUTES.map(([route, label]) => ({ label, click: () => showMain(route) })),
+    ...ROUTES.map(([route, label, , hub]) => ({ label: hub ? `Araç Takımı › ${label}` : label, click: () => showMain(route) })),
   ]));
 }
 
@@ -589,6 +672,8 @@ function registerIpc() {
       if (p.startsWith("/api/chat/")) chatLink.refreshSoon(800);
       else if (p.startsWith("/api/admin/chat/")) chatLink.refreshInboxSoon(600, false);
       else {
+        if (/^\/api\/tools\/(recurring|ledger)/.test(p)) billsCache.at = 0;
+        if (p.startsWith("/api/tools/equipment/")) equipmentFeed.invalidate();
         setTimeout(refreshSummary, 500);
         // Onay / ret uçları talebi kendiliğinden kapatır; özet tazelenir.
         refreshRequestsSoon(700);
@@ -683,7 +768,7 @@ function registerIpc() {
         const parent = BrowserWindow.fromWebContents(event.sender);
         const { canceled, filePath } = await dialog.showSaveDialog(parent, { defaultPath: path.join(app.getPath("downloads"), `${title || "Elitlig"}.pdf`), filters: [{ name: "PDF", extensions: ["pdf"] }] });
         if (canceled || !filePath) return { ok: false };
-        fs.writeFileSync(filePath, await win.webContents.printToPDF({ printBackground: true, pageSize: "A4", landscape: Boolean(pdf.landscape) }));
+        fs.writeFileSync(filePath, await win.webContents.printToPDF({ printBackground: true, pageSize: ["A3", "A4", "A5", "Letter", "Legal"].includes(pdf.pageSize) ? pdf.pageSize : "A4", landscape: Boolean(pdf.landscape), preferCSSPageSize: Boolean(pdf.preferCSSPageSize) }));
         return { ok: true, path: filePath };
       }
       return await new Promise((resolve) => win.webContents.print({ printBackground: true }, (ok, reason) => resolve({ ok, reason })));
@@ -788,13 +873,16 @@ function notify({ title, body, route }) {
   n.show();
 }
 
+installLauncherEarly(app);
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => showMain());
+  // İkinci örnek: derin bağlantı / atlama listesi bağımsız değişkeni varsa onu aç, yoksa pencereyi öne getir.
+  app.on("second-instance", (_e, argv) => { if (!launcher?.handleArgv(argv)) showMain(); });
 
   app.whenReady().then(() => {
     sessionStore = createSessionStore({ dir: dataDir(), safeStorage });
+    applyTestSession(sessionStore, app);
     api = createApi({
       origin: config.API_ORIGIN,
       dataDir: dataDir(),
@@ -832,6 +920,17 @@ if (!app.requestSingleInstanceLock()) {
       apiOrigin: config.API_ORIGIN,
       log: (...args) => { if (!app.isPackaged || process.env.ELITLIG_STUDIO_DEBUG) console.log(...args); },
     });
+    // Dosya Araçları + Ekran Görüntüleri rafı: ortak elitlig-file:// şeması.
+    const fileProtocol = createFileProtocol();
+    const localDeps = {
+      ipcMain, app, BrowserWindow, dialog, shell, clipboard, nativeImage, screen, electronSession, globalShortcut, desktopCapturer, systemPreferences, net,
+      fileProtocol, preloadPath: path.join(__dirname, "preload.js"), loadRenderer, broadcast, isOwnUrl, guardWindow: guardNavigation, showMain,
+      appRoot: path.join(__dirname, ".."), userAgent: userAgent(),
+      log: (...args) => { if (!app.isPackaged) console.log(...args); },
+    };
+    fileTools = registerFileTools(localDeps);
+    shelf = registerShelf(localDeps);
+    fileProtocol.register(protocol);
     // LED açılıp kapanınca menü çubuğu simgesindeki "LED çıkışını kapat" güncellenir.
     studio.led?.events.on("status", () => refreshTray());
     focus = createFocus({ dataDir: dataDir() });
@@ -841,11 +940,13 @@ if (!app.requestSingleInstanceLock()) {
       load: async () => {
         if (!authState().signedIn) return { events: [], todos: [] };
         const now = Date.now();
-        const [events, todos] = await Promise.all([
-          api.request({ path: "/api/tools/events", query: { from: new Date(now - 86400000).toISOString(), to: new Date(now + 2 * 86400000).toISOString(), todos: "0" } }),
+        const [events, todos, bills, equipment] = await Promise.all([
+          api.request({ path: "/api/tools/events", query: { from: new Date(now - 86400000).toISOString(), to: new Date(now + 2 * 86400000).toISOString(), todos: "0", projects: "0" } }),
           api.request({ path: "/api/todos", query: { view: "mine", status: "active" } }),
+          loadBills(now),
+          equipmentFeed.load(now).catch(() => null),
         ]);
-        return { events: events.ok ? events.data?.items || [] : [], todos: todos.ok ? todos.data?.items || [] : [] };
+        return { events: events.ok ? events.data?.items || [] : [], todos: todos.ok ? todos.data?.items || [] : [], bills, equipment };
       },
     });
 
@@ -868,12 +969,48 @@ if (!app.requestSingleInstanceLock()) {
       refreshTray();
     });
 
+    deskkit = registerDeskkit({
+      app, ipcMain, BrowserWindow, globalShortcut, screen, systemPreferences, shell, powerSaveBlocker, net,
+      loadRenderer, webPreferences: secureWebPreferences, guardNavigation, showMain, showQuick, broadcast,
+      getMainWindow: () => mainWindow, refreshTray: () => refreshTray(), rebuildMenu: () => buildMenu(), isMac: IS_MAC,
+      log: (...args) => { if (!app.isPackaged) console.log(...args); },
+    });
+    adminPanel = registerAdminPanel({
+      app, ipcMain, BrowserWindow, WebContentsView, electronSession, shell, dialog, Menu, net, clipboard,
+      sessionStore, siteOrigin: config.SITE_ORIGIN, apiOrigin: config.API_ORIGIN,
+      getMainWindow: () => mainWindow, showMain, broadcast, logout, secureWebPreferences, rebuildMenu: () => buildMenu(),
+      verifySession: async () => (await api.request({ path: "/api/users/verify", cache: false, queue: false })).ok,
+      log: (...args) => { if (!app.isPackaged) console.log(...args); },
+    });
+    browser = registerBrowser({
+      app, ipcMain, BrowserWindow, WebContentsView, electronSession, shell, dialog, Menu, clipboard, nativeImage, screen,
+      getMainWindow: () => mainWindow, showMain, broadcast, loadRenderer, secureWebPreferences, guardNavigation, isOwnUrl, isMac: IS_MAC,
+      fileTools: () => fileTools, shelf: () => shelf,
+      log: (...args) => { if (!app.isPackaged) console.log(...args); },
+    });
+    widgets = registerWidgets({
+      app, ipcMain, BrowserWindow, Menu, screen, net, nativeTheme,
+      loadRenderer, webPreferences: secureWebPreferences, guardNavigation, showMain, broadcast, deskkit, isMac: IS_MAC,
+      publicOrigin: process.env.ELITLIG_PUBLIC_API_ORIGIN || config.API_ORIGIN,
+      refreshTray: () => refreshTray(), rebuildMenu: () => buildMenu(),
+      studio: () => studio, access: () => currentAccess(),
+      log: (...args) => { if (!app.isPackaged) console.log(...args); },
+    });
+    deskkit.attachWidgets(widgets);
+    netTools.register({ ipcMain, app, screen });
+    launcher = registerLauncher({
+      app, ipcMain, BrowserWindow, globalShortcut, screen, Menu,
+      loadRenderer, webPreferences: secureWebPreferences, guardNavigation, showMain, showQuick,
+      access: () => currentAccess(), widgets: () => widgets, isMac: IS_MAC, quickShortcut: config.QUICK_SHORTCUT,
+      log: (...args) => { if (!app.isPackaged) console.log(...args); },
+    });
     registerIpc();
     buildMenu();
     createTray();
     createMainWindow();
     createQuickWindow();
     globalShortcut.register(config.QUICK_SHORTCUT, () => showQuick());
+    widgets.restore();
 
     setInterval(() => focus.tick(), 1000);
     setInterval(() => reminders.check(), 60000);
@@ -885,6 +1022,8 @@ if (!app.requestSingleInstanceLock()) {
     if (authState().signedIn) refreshUser().catch(() => {}).finally(() => chatLink.connect());
 
     powerMonitor.on("resume", () => { setTimeout(() => { keepSessionFresh(); api.flush(); reminders.check(); refreshSummary(); refreshRequests(); chatLink.kick(); }, 3000); });
+    // Masaüstü widget'ları: uyanınca / oturum kilidi açılınca yerinde ve görünür mü (app/widgets).
+    for (const ev of ["resume", "unlock-screen"]) powerMonitor.on(ev, () => setTimeout(() => widgets?.revalidate(), 2500));
     nativeTheme.on("updated", () => broadcast("theme", nativeTheme.shouldUseDarkColors ? "dark" : "light"));
 
     app.setAboutPanelOptions({
@@ -898,7 +1037,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on("before-quit", () => { quitting = true; });
-  app.on("will-quit", () => { globalShortcut.unregisterAll(); studio?.dispose(); });
+  app.on("will-quit", () => { globalShortcut.unregisterAll(); studio?.dispose(); fileTools?.dispose(); shelf?.dispose(); adminPanel?.dispose(); browser?.dispose(); });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
   app.on("web-contents-created", (_e, contents) => contents.on("will-attach-webview", (event) => event.preventDefault()));
 }

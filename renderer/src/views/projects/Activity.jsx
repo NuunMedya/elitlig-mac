@@ -1,6 +1,6 @@
 // İletişim: projenin tüm iletişim ve hareket geçmişi; süzgeç ve not ekleme.
 import React, { useMemo, useState } from "react";
-import { Empty, Icon } from "../../components/ui";
+import { Empty, Icon, keyLabel } from "../../components/ui";
 import { useCommand } from "../../api";
 import { includesTr } from "../../lib/helpers";
 import { Timeline } from "./LeadPanel";
@@ -28,7 +28,7 @@ export default function Activity({ ctx, embedded = false, step = null }) {
     <div className={`proj-section ${embedded ? "" : "activity-layout"}`}>
       {canEdit && (
         <form className="card activity-add" onSubmit={submit}>
-          <textarea id="activity-note" rows={2} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Not, görüşme özeti, karar… (⌘↩ kaydet)" onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.currentTarget.form.requestSubmit(); } }} />
+          <textarea id="activity-note" rows={2} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder={keyLabel("Not, görüşme özeti, karar… (⌘↩ kaydet)")} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.currentTarget.form.requestSubmit(); } }} />
           <div className="row-gap">
             <select className="select-sm" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} aria-label="Tür">{types.filter((t) => !t.system).map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}</select>
             <select className="select-sm" value={form.lead_id} onChange={(e) => setForm({ ...form, lead_id: e.target.value })} aria-label="Kişi"><option value="">Kişi seçin (isteğe bağlı)</option>{leads.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select>

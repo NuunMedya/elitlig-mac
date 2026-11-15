@@ -18,7 +18,10 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { EventEmitter } = require("node:events");
 
-const QUEUEABLE = /^\/api\/(tools\/(notes|events|ledger|contacts)|todos)(\/[\w-]+)?$/;
+// Düzenli ödeme ve bütçe tanımları (ekle / düzenle / sil) da kuyruğa alınır;
+// bir dönemi işlemek ya da atlamak (/api/tools/recurring/:id/post|skip) sunucuda
+// çift kayıt denetimi gerektirdiği için bağlantı ister.
+const QUEUEABLE = /^\/api\/(tools\/(notes|events|ledger|contacts|recurring|budgets)|todos)(\/[\w-]+)?$/;
 // Projeler: sahada en çok yapılan, sırası önemsiz ve kimliğe bağımlı olmayan
 // yazmalar kuyruğa alınır: iletişim kaydı (arama sonucu, not), soru ekleme ve
 // cevaplama, adımın ve kişinin alan güncellemesi. Proje, aşama, adım ve kişi
@@ -40,10 +43,21 @@ const FINANCE_QUEUEABLE = /^\/api\/(finance\/entries|tools\/projects\/\d+\/finan
 // gönderim güvenlidir. Diğer sohbet yazmaları (tepki, düzenleme, dosya, grup
 // işlemleri) bağlantı ister.
 const CHAT_QUEUEABLE = /^\/api\/chat\/conversations\/\d+\/messages$/;
+// Ekipman: kart ekleme ve alan güncellemesi (konum, not, kondisyon…), bakım
+// kaydı ve arıza bildirimi kuyruğa alınır (depoda bağlantı zayıf olabilir).
+// Zimmet / iade, rezervasyon, toplu işlem, içe aktarma ve silme bağlantı ister:
+// stok ve çakışma denetimi sunucuda o anki duruma göre yapılmalıdır.
+const EQUIPMENT_QUEUEABLE = /^\/api\/tools\/equipment\/items(\/(\d+|tmp_[\w-]+)(\/(maintenance|fault))?)?$/;
 const isChatQueueable = (method, pathname, body) => method === "POST" && CHAT_QUEUEABLE.test(pathname)
   && (!body?.kind || body.kind === "text") && Boolean(body?.client_id) && Boolean(String(body?.body || "").trim());
-const isQueueable = (method, pathname, body) => QUEUEABLE.test(pathname)
+// Not Defteri ve Rehber (v2): defter ekle / düzenle / sil, çöpten geri alma,
+// hedef kitle ekle / düzenle / sil ve kitleye kişi ekleme-çıkarma kuyruğa
+// alınır (not ve kişi CRUD'u yukarıdaki QUEUEABLE'da). Paylaşım, sürüm geri
+// yükleme, kitle birleştirme, kişi birleştirme ve içe aktarma bağlantı ister.
+const NOTES_CONTACTS_QUEUEABLE = /^\/api\/tools\/(notes\/(notebooks(\/[\w-]+)?|[\w-]+\/restore)|contacts\/audiences(\/[\w-]+(\/members)?)?)$/;
+const isQueueable = (method, pathname, body) => QUEUEABLE.test(pathname) || NOTES_CONTACTS_QUEUEABLE.test(pathname)
   || ((method === "POST" || method === "PATCH") && (PROJECT_QUEUEABLE.test(pathname) || FINANCE_QUEUEABLE.test(pathname)))
+  || ((method === "POST" || method === "PATCH") && EQUIPMENT_QUEUEABLE.test(pathname))
   || isChatQueueable(method, pathname, body);
 const TEMP_ID = /^tmp_[\w-]+$/;
 
@@ -255,4 +269,4 @@ function createApi({ origin, dataDir, fetchImpl, sessionStore, userAgent, timeou
   };
 }
 
-module.exports = { createApi, ApiError, buildUrl, QUEUEABLE, PROJECT_QUEUEABLE, FINANCE_QUEUEABLE, CHAT_QUEUEABLE, isQueueable, isChatQueueable };
+module.exports = { createApi, ApiError, buildUrl, QUEUEABLE, PROJECT_QUEUEABLE, FINANCE_QUEUEABLE, CHAT_QUEUEABLE, EQUIPMENT_QUEUEABLE, isQueueable, isChatQueueable };

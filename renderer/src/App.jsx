@@ -1,12 +1,18 @@
 // Uygulama kabuğu: giriş kontrolü, kenar çubuğu, görünümler, komut paleti.
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { ConfirmProvider, Icon, Kbd, Modal, Spinner, isMac, keyLabel, useToast } from "./components/ui";
 import Palette from "./components/Palette";
+// Çalışma alanı: sekmeler, gruplar, yan yana / yüzen bölmeler, sabit düğme ve bileşenler (workspace/*).
+import { useWorkspace } from "./workspace/useWorkspace";
+import Workspace, { WORKSPACE_SHORTCUTS } from "./workspace/Workspace";
+import { WorkspacePrintHost } from "./workspace/print";
 import Login from "./views/Login";
 import { refreshAll, useResource } from "./api";
 import { formatClock } from "./lib/helpers";
-import { canLeave } from "./lib/leaveGuard";
 import logo from "./assets/logo-white.png";
+// Uygulama geneli müzik çalar (kabuk kökünde yaşar) ve kenar çubuğundaki mini çalar.
+import MusicProvider from "./music/MusicProvider";
+import MiniPlayer from "./music/MiniPlayer";
 
 const Today = lazy(() => import("./views/Today"));
 const Messages = lazy(() => import("./views/messages/Messages"));
@@ -19,14 +25,23 @@ const Planning = lazy(() => import("./views/Planning"));
 const Ledger = lazy(() => import("./views/accounting/Accounting"));
 const Sheets = lazy(() => import("./views/Sheets"));
 const Contacts = lazy(() => import("./views/Contacts"));
-const Calculators = lazy(() => import("./views/Calculators"));
-const Focus = lazy(() => import("./views/Focus"));
 const Account = lazy(() => import("./views/Account"));
 const Studio = lazy(() => import("./views/studio/Studio"));
+const Equipment = lazy(() => import("./views/equipment/Equipment"));
+// Birleşik Araç Takımı (⇧⌘A): Dosya Araçları, Ekran Görüntüleri ve Pano, Hesap Araçları, Odak,
+// Müzik, Masaüstü ayarları, Widget'lar ve tüm araçlar tek girişte (views/toolkit/hub).
+const ToolkitPage = lazy(() => import("./views/toolkit/ToolkitPage"));
+// Yönetim: elitlig.com yönetim panelinin tamamı (gömülü, masaüstü oturumuyla) ve kenar çubuğundaki bölüm listesi.
+const AdminPanel = lazy(() => import("./views/admin/AdminPanel"));
+import AdminNavTree from "./views/admin/AdminNavTree";
+// Tarayıcı (⇧⌘B): sekmeler, profiller (ayrı oturumlar), video sabitleme, medya indirme (app/browser).
+const Browser = lazy(() => import("./views/browser/Browser"));
 
 export const ROUTES = [
   { key: "today", label: "Bugün", icon: "sun", view: Today, shortcut: "⌘1", group: "Günlük" },
+  { key: "toolkit", label: "Araç Takımı", icon: "toolbox", view: ToolkitPage, shortcut: "⇧⌘A", group: "Günlük" },
   { key: "messages", label: "Mesajlar", icon: "message", view: Messages, shortcut: "⇧⌘M", group: "Günlük" },
+  { key: "browser", label: "Tarayıcı", icon: "globe", view: Browser, shortcut: "⇧⌘B", group: "Günlük" },
   { key: "requests", label: "Talepler", icon: "inbox", view: Requests, shortcut: "⇧⌘T", group: "Günlük", needs: "requests" },
   { key: "todos", label: "Yapılacaklar", icon: "checkSquare", view: Todos, shortcut: "⌘2", group: "Günlük" },
   { key: "agenda", label: "Ajanda", icon: "calendar", view: Agenda, shortcut: "⌘3", group: "Günlük" },
@@ -37,8 +52,16 @@ export const ROUTES = [
   { key: "ledger", label: "Muhasebe", icon: "wallet", view: Ledger, shortcut: "⌘5", group: "Finans ve veri" },
   { key: "sheets", label: "Tablolar", icon: "grid", view: Sheets, shortcut: "⌘6", group: "Finans ve veri" },
   { key: "contacts", label: "Rehber", icon: "users", view: Contacts, shortcut: "⌘7", group: "Finans ve veri" },
-  { key: "calc", label: "Hesap Araçları", icon: "calculator", view: Calculators, shortcut: "⌘8", group: "Yardımcılar" },
-  { key: "focus", label: "Odak Sayacı", icon: "timer", view: Focus, shortcut: "⌘9", group: "Yardımcılar" },
+  { key: "equipment", label: "Ekipman", icon: "box", view: Equipment, shortcut: "⇧⌘E", group: "Finans ve veri" },
+  // Birleşik Araç Takımı'nın bölümleri: kenar çubuğunda ayrı giriş YOK (hub: true); eski rota ve
+  // kısayollar aynen çalışır, Araç Takımı'nın ilgili bölümünü açar (palette "Araç Takımı › …").
+  { key: "calc", label: "Araç Takımı › Hesap Araçları", icon: "calculator", view: ToolkitPage, shortcut: "⌘8", group: "Araç Takımı", hub: true },
+  { key: "focus", label: "Araç Takımı › Odak Sayacı", icon: "timer", view: ToolkitPage, shortcut: "⌘9", group: "Araç Takımı", hub: true },
+  { key: "music", label: "Araç Takımı › Müzik", icon: "music", view: ToolkitPage, shortcut: "⇧⌘J", group: "Araç Takımı", hub: true },
+  { key: "desk", label: "Araç Takımı › Masaüstü ayarları", icon: "sliders", view: ToolkitPage, shortcut: "⌘,", group: "Araç Takımı", hub: true },
+  { key: "files", label: "Araç Takımı › Dosya Araçları", icon: "folder", view: ToolkitPage, shortcut: "⇧⌘D", group: "Araç Takımı", hub: true },
+  { key: "shelf", label: "Araç Takımı › Ekran Görüntüleri ve Pano", icon: "image", view: ToolkitPage, shortcut: "⇧⌘P", group: "Araç Takımı", hub: true },
+  { key: "admin", label: "Yönetim paneli", icon: "overview", view: AdminPanel, shortcut: "⇧⌘L", group: "Yönetim", needs: "requests" },
 ];
 const ROUTE_KEYS = new Set([...ROUTES.map((r) => r.key), "account"]);
 
@@ -70,10 +93,6 @@ export default function App() {
 
 function Shell({ auth }) {
   const toast = useToast();
-  const [route, setRoute] = useState(readRoute);
-  const routeRef = useRef(route);
-  routeRef.current = route;
-  const [routeArg, setRouteArg] = useState(null);
   const [palette, setPalette] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
   // Daraltılmış kenar çubuğu: yalnız simgeler (ipucu balonuyla). Tercih hatırlanır.
@@ -82,7 +101,14 @@ function Shell({ auth }) {
   // Yayın Stüdyosu tüm pencereyi kullanır: kenar çubuğu HİÇ çizilmez (yanlışlıkla
   // tıklanıp yayının kopmasını önler). Stüdyodan çıkış üst çubuktaki
   // "Programdan çık" düğmesiyle (yayın / kayıt sürüyorsa onay sorulur).
-  const bare = route === "studio";
+  // Yetki listesi eski oturumda "live" alanını taşımıyorsa yönetim hesaplarına açık (sunucu yine denetler).
+  const access = auth.access || { requests: true };
+  const allowed = (key) => (key === "live" && access.live === undefined ? Boolean(access.requests) : Boolean(access[key]));
+  const routes = useMemo(() => ROUTES.filter((r) => !r.needs || allowed(r.needs)), [auth.access]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Sekmeler ve bölmeler: odaktaki sekmenin bölümü eski "route" yerine geçer; go odaktaki bölmede gezinir.
+  const ws = useWorkspace({ auth, routes, fallbackRoute: readRoute() });
+  const { route, go } = ws;
+  const bare = ws.bare;
   const toggleSidebar = useCallback(() => {
     setCollapsed((v) => {
       const next = !v;
@@ -103,17 +129,8 @@ function Shell({ auth }) {
     return () => { window.removeEventListener("elitlig:todos-changed", refresh); clearInterval(t); };
   }, [summary.reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const go = useCallback(async (key, arg = null) => {
-    const [base, sub] = String(key).split(":");
-    if (!ROUTE_KEYS.has(base)) return;
-    // Açık görünüm çıkışı onaya bağlamış olabilir (ör. yayın sürerken stüdyo).
-    if (base !== routeRef.current && !(await canLeave())) return;
-    setRoute(base);
-    setRouteArg(sub || arg || null);
-    try { localStorage.setItem("route", base); } catch { /* yoksay */ }
-  }, []);
-
-  useEffect(() => window.elitlig.onNavigate((key) => key && go(key)), [go]);
+  // Hedef nesne de olabilir (hızlı geçiş: { route, arg }).
+  useEffect(() => window.elitlig.onNavigate((key) => key && (typeof key === "object" ? go(key.route, key.arg || null) : go(key))), [go]);
   useEffect(() => window.elitlig.onCommand((cmd) => {
     if (cmd === "palette") setPalette(true);
     if (cmd === "refresh") { refreshAll(); window.elitlig.sync.flush(); }
@@ -157,12 +174,12 @@ function Shell({ auth }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const access = auth.access || { requests: true };
-  // Yetki listesi eski oturumda "live" alanını taşımıyorsa yönetim hesaplarına açık (sunucu yine denetler).
-  const allowed = (key) => (key === "live" && access.live === undefined ? Boolean(access.requests) : Boolean(access[key]));
-  const routes = ROUTES.filter((r) => !r.needs || allowed(r.needs));
-  const current = routes.find((r) => r.key === route);
-  const View = route === "account" ? Account : current?.view || Today;
+  const sideRoutes = routes.filter((r) => !r.hub);
+  // Araç Takımı bölümündeyken (eski rotalar dahil) kenar çubuğunda "Araç Takımı" seçili görünür.
+  const inHub = route === "toolkit" || Boolean(ROUTES.find((r) => r.key === route)?.hub);
+  const sideActive = inHub ? "toolkit" : route;
+  const viewFor = (key) => (key === "account" ? Account : routes.find((r) => r.key === key)?.view || Today);
+  const viewKey = (key) => (key === "toolkit" || ROUTES.find((r) => r.key === key)?.hub ? "toolkit" : key);
   const s = summary.data;
   const reqTotal = Number(requestsSummary?.total) || 0;
   const badgeTone = (key, sum) => (key === "messages" ? "is-chat" : key === "requests" ? "is-req" : sum?.overdue ? "is-alert" : "");
@@ -172,6 +189,7 @@ function Shell({ auth }) {
   const syncLabel = !sync.online ? "Çevrimdışı" : sync.pending ? `${sync.pending} değişiklik bekliyor` : "Eşitlendi";
 
   return (
+    <MusicProvider route={route}>
     <div className={`shell ${bare ? "shell--bare" : collapsed ? "shell--collapsed" : ""}`} style={bare ? { gridTemplateColumns: "minmax(0, 1fr)" } : undefined}>
       {!bare && <aside className="sidebar" aria-label="Kenar çubuğu">
         <div className="sidebar__drag" />
@@ -186,14 +204,14 @@ function Shell({ auth }) {
           <Icon name="search" size={14} /><span>Ara veya komut…</span><Kbd>⌘K</Kbd>
         </button>
         <nav className="sidebar__nav" aria-label="Araçlar" onKeyDown={onNavKey} onScroll={() => setTip(null)}>
-          {routes.map((r, i) => {
+          {sideRoutes.map((r, i) => {
             const badge = badges[r.key];
-            const timer = r.key === "focus" && focusState?.running ? formatClock(focusState.mode === "stopwatch" ? focusState.elapsedMs : focusState.remainingMs) : null;
+            const timer = r.key === "toolkit" && focusState?.running ? formatClock(focusState.mode === "stopwatch" ? focusState.elapsedMs : focusState.remainingMs) : null;
             return (
               <React.Fragment key={r.key}>
-                {(i === 0 || routes[i - 1].group !== r.group) && <div className="sidebar__section" role="presentation">{r.group}</div>}
-                <button type="button" data-tool={r.key} className={`nav-item ${route === r.key ? "is-active" : ""}`} onClick={() => go(r.key)}
-                  aria-current={route === r.key ? "page" : undefined}
+                {(i === 0 || sideRoutes[i - 1].group !== r.group) && <div className="sidebar__section" role="presentation">{r.group}</div>}
+                <button type="button" data-tool={r.key} className={`nav-item ${sideActive === r.key ? "is-active" : ""}${sideActive !== r.key && ws.openRoutes.has(r.key) && !ws.single ? " is-open-tab" : ""}`} {...ws.navProps(r.key)}
+                  aria-current={sideActive === r.key ? "page" : undefined}
                   aria-label={collapsed ? `${r.label}${badge ? ` (${badge})` : ""}` : undefined}
                   title={collapsed ? undefined : `${r.label} (${keyLabel(r.shortcut)})`}
                   {...railTip(collapsed, setTip, r.label, r.shortcut, badge || timer)}>
@@ -204,11 +222,13 @@ function Shell({ auth }) {
                   {timer && <span className="nav-item__timer">{timer}</span>}
                   {!collapsed && badge ? <span className={`nav-item__badge ${badgeTone(r.key, s)}`}>{badge}</span> : null}
                 </button>
+                {r.key === "admin" && <AdminNavTree go={go} route={route} collapsed={collapsed} railTip={(c, label, sc, extra) => railTip(c, setTip, label, sc, extra)} />}
               </React.Fragment>
             );
           })}
         </nav>
         <div className="sidebar__foot">
+          <MiniPlayer go={go} collapsed={collapsed} route={route} />
           {(!sync.online || sync.pending > 0) && (
             <button type="button" className={`sync-pill ${!sync.online ? "is-offline" : "is-pending"}`} onClick={() => window.elitlig.sync.flush()} title="Şimdi eşitle">
               <Icon name={sync.online ? "cloud" : "cloudOff"} size={14} /> {syncLabel}
@@ -234,15 +254,18 @@ function Shell({ auth }) {
       )}
       <main className="content" data-tool={route} style={bare ? { borderRadius: 0 } : undefined}>
         <div className="content__drag" />
-        <Suspense fallback={<Spinner />}>
-          <View key={route} go={go} arg={routeArg} auth={auth} summary={s} />
-        </Suspense>
+        <Workspace ws={ws} routes={routes} viewFor={viewFor} viewKey={viewKey} auth={auth} summary={s} />
       </main>
       {palette && <Palette onClose={() => setPalette(false)} go={go} routes={routes} />}
+      {!bare && <WorkspacePrintHost subscribe={subscribePrint} />}
       {shortcuts && <ShortcutsHelp onClose={() => setShortcuts(false)} />}
     </div>
+    </MusicProvider>
   );
 }
+
+/** ⌘P (Dosya ▸ Yazdır…): sayfanın birincil dışa aktarması ya da "Bu sayfayı yazdır" (lib/export/PagePrint). */
+const subscribePrint = (fn) => window.elitlig.onCommand((cmd) => { if (cmd === "print") fn(); });
 
 /** Dar kenar çubuğunda ipucu balonu: fareyle üzerine gelince ya da klavye odağında. */
 function railTip(collapsed, setTip, label, shortcut, extra) {
@@ -276,9 +299,18 @@ function ShortcutsHelp({ onClose }) {
     ["Mesajlar: ⌥⌘↓ / ⌥⌘↑", "Sonraki / önceki sohbet"],
     ["Mesajlar: Enter / ⇧Enter", "Gönder / yeni satır; ↑ son mesajı düzenler"],
     ["⌃⌥N", "Her yerden hızlı kayıt (uygulama arka plandayken de)"],
+    ["⇧⌘A", "Araç Takımı: dosya araçları, ekran görüntüleri, hesap, odak, müzik, widget'lar ve tüm araçlar tek yerde"],
+    ["Araç Takımı: /", "Araç ara ya da komut (kdv 1500 · çevir 100 usd · kura a, b, c)"],
+    [isMac() ? "⌃⌥B" : "⌃⌥Boşluk", "Araç takımı paneli (her yerden): pencere düzeni, renk, hesap, metin, QR…"],
+    ["⌃⌥W", "Masaüstü widget'larını göster / gizle"],
+    ["⌃⌥← → ↑ ↓", "Öndeki pencereyi yarıya yerleştir (⌃⌥U I J K çeyrek, ⌃⌥↩ tam, ⌃⌥⌫ geri al)"],
+    ["⇧⌘J", "Araç Takımı › Müzik (medya tuşları da çalışır)"],
+    ["⌘,", "Araç Takımı › Masaüstü ayarları: kısayollar"],
+    ["⌘8 / ⌘9", "Araç Takımı › Hesap Araçları / Odak Sayacı"],
     ["⌘N", "Açık araçta yeni kayıt"],
-    ["⌘1 … ⌘9", "Araçlar arasında geçiş"],
+    ["⌘1 … ⌘7", "Araçlar arasında geçiş"],
     ["⌘0", "Projeler (süreç, kişiler, portföy)"],
+    ["⇧⌘E", "Ekipman (envanter, zimmet, rezervasyon, bakım)"],
     ["⇧⌘0", "Saha ve maç planlama (sahalar, program, talepler, takımlar)"],
     ["⇧⌘Y", "Yayın Stüdyosu (canlı yayın, reji, gol klipleri)"],
     ["Stüdyo: M / R", "Mikrofonu aç-kapat / son golün tekrarı"],
@@ -293,6 +325,21 @@ function ShortcutsHelp({ onClose }) {
     ["⌘⌥S", "Kenar çubuğunu gizle/göster"],
     ["Tablolar: ⌘B ⌘I ⌘U", "Kalın, italik, altı çizili"],
     ["Tablolar: ⌘Z / ⇧⌘Z", "Geri al / yinele"],
+    ["⇧⌘D", "Araç Takımı › Dosya Araçları (⌘V yapıştır, ⌘↩ çark, ⌘O dosya seç)"],
+    ["⇧⌘P", "Araç Takımı › Ekran Görüntüleri ve Pano kütüphanesi"],
+    ["⇧⌘B", "Tarayıcı: sekmeler, profiller (ayrı Google hesapları), video sabitleme, medya indirme"],
+    ["Tarayıcı: ⌘T / ⌘W / ⇧⌘T", "Yeni sekme / sekmeyi kapat / kapatılanı geri aç"],
+    ["Tarayıcı: ⌘L · ⌘D · ⌘Y", "Adres çubuğu · yer imi · geçmiş"],
+    ["Tarayıcı: ⇧⌘S · ⇧⌘K · ⇧⌘N", "Videoyu sabitle · sekme ara · gizli sekme"],
+    ["Tarayıcı: ⌃Tab · ⌘[ ⌘] · ⌘+ ⌘-", "Sekmeler arası · geri / ileri · yakınlaştır"],
+    ...WORKSPACE_SHORTCUTS,
+    ["⇧⌘L", "Yönetim paneli: maç, oyuncu, takım, lig, sezon… elitlig.com yönetiminin tamamı"],
+    ["Yönetim: ⌘[ / ⌘] · ⌘R · ⌘F · ⌘P", "Geri / ileri · yenile · sayfada bul · yazdır"],
+    ["⌃⌥T / ⌃⌥S", "Raflar: göster/gizle · arama odaklı (her yerden)"],
+    ["⌃⌥A", "Ekranı yakala (işaretçinin altındaki ekran)"],
+    ["Raflar: ↩ / Boşluk / P / S / ⌫", "Kopyala ve kapat · önizle · sabitle · raftan kaldır · geri al"],
+    ["Düzenleyici: B H R O A D T / C", "Kalem, fosforlu, dikdörtgen, elips, ok, çizgi, metin / kırp"],
+    ["Medya: Boşluk / ← → / I O", "Oynat · 1 sn · başlangıç/bitiş"],
   ], []);
   return (
     <Modal title="Klavye kısayolları" onClose={onClose} width={480}>

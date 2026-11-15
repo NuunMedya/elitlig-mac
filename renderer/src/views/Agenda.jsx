@@ -1,28 +1,53 @@
 // Ajanda: ay / hafta / gün / liste görünümü. Etkinlikler sürüklenerek başka
 // güne taşınır; son tarihli görevler de takvimde görünür. Mac Takvim'ine .ics
 // olarak aktarılabilir. Hatırlatmalar uygulama kapalıyken de bildirim olur.
-import React, { useMemo, useRef, useState } from "react";
+// Projelerdeki tarihler (adımlar, son tarihler, proje başlangıç/bitiş, soru
+// son tarihleri, görüşme takipleri) proje rengiyle, şerit ve simgeyle görünür;
+// tıklayınca projeye gider. "Projeler" düğmesiyle açılıp kapanır.
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Empty, ErrorNote, Field, Icon, Modal, OfflineNote, Segmented, ViewHeader, useConfirm, useResult } from "../components/ui";
 import { del, patch, post, tempId, useCommand, useResource } from "../api";
+import ExportButton from "../components/ExportButton";
+import { agendaReport } from "../lib/export/reports";
 import {
   CATEGORIES, RECURRENCES, REMINDERS, WEEKDAYS, categoryOf, colorOf, eventPayload, itemsOnDay,
   monthGrid, rangeFor, sameDay, shiftCursor, startOfDay, timeBox, titleFor, weekDays,
 } from "../lib/agendaUtils";
 import { formatTime, isoDay, localInput, formatDate } from "../lib/helpers";
 import { toIcs } from "../lib/ics";
+import { bandsOnDay, isProjectItem, periodBands, projectKindOf, projectLegend, projectRoute, projectSubtitle, spanPart, visibleProjectItems } from "../lib/projectAgenda";
+import "./projects/timeline/timeline.css";
+import "./agendaProjects.css";
+
+const readJson = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
+const writeJson = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* yoksay */ } };
 
 const HOUR_PX = 44;
 
-export default function Agenda({ arg, go }) {
+export default function Agenda({ arg, argSeq, go }) {
   const [view, setView] = useState(() => localStorage.getItem("agenda:view") || "month");
   const [cursor, setCursor] = useState(() => new Date());
   const [editing, setEditing] = useState(arg === "new" ? { draft: {} } : null);
   const [showTodos, setShowTodos] = useState(true);
+  const [showProjects, setShowProjectsState] = useState(() => readJson("agenda:projects", true));
+  const [hiddenProjects, setHiddenProjectsState] = useState(() => readJson("agenda:hiddenProjects", []));
+  const setShowProjects = (v) => { setShowProjectsState(v); writeJson("agenda:projects", v); };
+  const toggleProject = (id) => setHiddenProjectsState((cur) => { const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]; writeJson("agenda:hiddenProjects", next); return next; });
   const result = useResult();
+  // Ajanda açıkken paletten "Yeni etkinlik" seçilince.
+  useEffect(() => { if (arg === "new") setEditing({ draft: {} }); }, [arg, argSeq]);
   const range = useMemo(() => rangeFor(view, cursor), [view, cursor]);
   const data = useResource("/api/tools/events", { from: range.from.toISOString(), to: range.to.toISOString(), todos: showTodos ? undefined : "0" });
 
-  const items = useMemo(() => [...(data.data?.items || []), ...(showTodos ? data.data?.todos || [] : [])], [data.data, showTodos]);
+  const legend = useMemo(() => projectLegend(data.data?.projects || []), [data.data]);
+  // Proje takvimi dönemleri ay görünümünde arka plan şeridi (Projeler düğmesi ve açıklama listesiyle gizlenir).
+  const bands = useMemo(() => periodBands(data.data?.project_periods || [], { show: showProjects, hidden: hiddenProjects }), [data.data, showProjects, hiddenProjects]);
+  const openBand = (period) => go("projects", { id: Number(period.project?.id ?? period.project_id), tab: "timeline" });
+  const items = useMemo(() => [
+    ...(data.data?.items || []),
+    ...(showTodos ? data.data?.todos || [] : []),
+    ...visibleProjectItems(data.data?.projects || [], { show: showProjects, hidden: hiddenProjects }),
+  ], [data.data, showTodos, showProjects, hiddenProjects]);
   const today = new Date();
 
   const changeView = (v) => { setView(v); try { localStorage.setItem("agenda:view", v); } catch { /* yoksay */ } };
@@ -31,6 +56,7 @@ export default function Agenda({ arg, go }) {
 
   const open = (item) => {
     if (item.source === "todo") { go(`todos:${item.id}`); return; }
+    if (isProjectItem(item)) { go("projects", projectRoute(item.link)); return; }
     setEditing({ item });
   };
 
@@ -62,13 +88,31 @@ export default function Agenda({ arg, go }) {
         </div>
         <Segmented value={view} onChange={changeView} size="sm" options={[{ value: "month", label: "Ay" }, { value: "week", label: "Hafta" }, { value: "day", label: "Gün" }, { value: "list", label: "Liste" }]} />
         <label className="toggle"><input type="checkbox" checked={showTodos} onChange={(e) => setShowTodos(e.target.checked)} /> Görevler</label>
+        <button type="button" className={`ag-projtoggle ${showProjects ? "is-on" : ""}`} aria-pressed={showProjects} onClick={() => setShowProjects(!showProjects)} title="Projelerdeki tarihleri göster / gizle">
+          <Icon name="layers" size={13} /> Projeler{(data.data?.projects || []).length > 0 && <b>{data.data.projects.length}</b>}
+        </button>
+        <button type="button" className="btn btn--sm" title="Projeleri dönemleriyle zaman çizelgesinde planlayın" onClick={() => go("projects", { section: "timeline" })}><Icon name="calendar" size={13} /> Proje takvimi</button>
+        <ExportButton id="agenda" title="Ajanda" text="" extraItems={[{ label: "Takvim dosyası (.ics)", icon: "calendar", onClick: exportIcs }]}
+          report={() => agendaReport(items, { title: `Ajanda — ${titleFor(view, cursor)}`, filters: [{ month: "Ay", week: "Hafta", day: "Gün", list: "Liste" }[view] + " görünümü", showTodos ? "görevler dahil" : "", showProjects ? "proje tarihleri dahil" : ""].filter(Boolean), groupBy: view === "day" ? "" : "day" })} />
         <button type="button" className="icon-btn" title="Mac Takvim'ine aktar (.ics)" onClick={exportIcs}><Icon name="download" /></button>
         <button type="button" className="btn btn--primary" onClick={() => setEditing({ draft: {} })}><Icon name="plus" /> Etkinlik</button>
       </ViewHeader>
       <OfflineNote offline={data.offline} savedAt={data.savedAt} />
       <ErrorNote error={data.error && !data.data ? data.error : null} onRetry={data.reload} />
+      {showProjects && legend.length > 0 && (
+        <div className="ag-legend" role="group" aria-label="Takvimde gösterilen projeler">
+          {legend.map((p) => {
+            const off = hiddenProjects.includes(p.id);
+            return (
+              <button key={p.id} type="button" className={`ag-legend__item ${off ? "is-off" : ""}`} style={{ "--c": p.color }} aria-pressed={!off} onClick={() => toggleProject(p.id)} title={off ? "Göster" : "Gizle"}>
+                <span className="ag-legend__dot" />{p.name}<small>{p.count}</small>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-      {view === "month" && <MonthView cursor={cursor} items={items} today={today} onOpen={open} onCreate={(day) => setEditing({ draft: { day } })} onMove={moveTo} onDay={(day) => { setCursor(day); changeView("day"); }} />}
+      {view === "month" && <MonthView cursor={cursor} items={items} today={today} onOpen={open} onCreate={(day) => setEditing({ draft: { day } })} onMove={moveTo} onDay={(day) => { setCursor(day); changeView("day"); }} bands={bands} onOpenBand={openBand} />}
       {(view === "week" || view === "day") && <TimeGrid days={view === "week" ? weekDays(cursor) : [startOfDay(cursor)]} items={items} today={today} onOpen={open} onCreate={(day, hour) => setEditing({ draft: { day, hour } })} onMove={moveTo} />}
       {view === "list" && <ListView items={items} onOpen={open} />}
 
@@ -84,7 +128,22 @@ export default function Agenda({ arg, go }) {
   );
 }
 
-function Chip({ item, onOpen, draggable = true }) {
+function ProjectChip({ item, onOpen, day }) {
+  const kind = projectKindOf(item);
+  const part = spanPart(item, day);
+  return (
+    <button type="button" className={`ev-chip ev-chip--project ${item.done ? "is-done" : ""} ${item.overdue ? "is-late" : ""} ${part ? `is-span-${part}` : ""}`} style={{ "--c": item.color || item.project?.color }}
+      onClick={(e) => { e.stopPropagation(); onOpen(item); }} title={`${kind.label}: ${item.title} · ${item.project?.name || ""}${item.done ? " (tamamlandı)" : ""}`}
+      aria-label={`${kind.label}: ${item.title}, ${item.project?.name || "proje"}${item.done ? ", tamamlandı" : ""}`}>
+      <Icon name={kind.icon} size={11} />
+      {!item.all_day && <span className="ev-chip__time">{formatTime(item.occurrence_start)}</span>}
+      <span className="ev-chip__title">{part === "middle" || part === "end" ? `↳ ${item.title}` : item.title}</span>
+    </button>
+  );
+}
+
+function Chip({ item, onOpen, draggable = true, day = null }) {
+  if (isProjectItem(item)) return <ProjectChip item={item} onOpen={onOpen} day={day} />;
   return (
     <button type="button" className={`ev-chip ${item.source === "todo" ? "ev-chip--todo" : ""}`} style={{ "--c": colorOf(item) }}
       draggable={draggable && item.source === "event" && item.recurrence === "none"}
@@ -113,7 +172,28 @@ function useDropTarget(items, onMove) {
   return { over, bind };
 }
 
-function MonthView({ cursor, items, today, onOpen, onCreate, onMove, onDay }) {
+/** Ay hücresinin üstünde proje dönemi şeritleri ve kilometre taşları. */
+function DayBands({ bands, day, onOpenBand }) {
+  if (!bands || (!bands.ranged.length && !bands.milestones.length)) return null;
+  const { lanes, milestones } = bandsOnDay(bands, day);
+  if (!lanes.length && !milestones.length) return null;
+  const labelled = lanes.find((slot) => slot?.label);
+  return (
+    <div className="ag-bands">
+      {lanes.map((slot, i) => (slot ? (
+        <button key={slot.period.occurrence_key} type="button" className={`ag-band is-${slot.part === "single" ? "start is-end" : slot.part}`} style={{ "--bc": slot.period.color }}
+          title={`${slot.period.title} · ${slot.period.start_date} – ${slot.period.end_date}`} aria-label={`Proje dönemi: ${slot.period.title}`}
+          onClick={(e) => { e.stopPropagation(); onOpenBand(slot.period); }} />
+      ) : <span key={`gap-${i}`} className="ag-band is-gap" aria-hidden="true" />))}
+      {labelled && <span className="ag-band__label" style={{ "--bc": labelled.period.color }}>{labelled.period.title}</span>}
+      {milestones.map((m) => (
+        <button key={m.occurrence_key} type="button" className="ag-ms" style={{ "--bc": m.color }} title={m.title} aria-label={`Kilometre taşı: ${m.title}`} onClick={(e) => { e.stopPropagation(); onOpenBand(m); }}>{m.name}</button>
+      ))}
+    </div>
+  );
+}
+
+function MonthView({ cursor, items, today, onOpen, onCreate, onMove, onDay, bands, onOpenBand }) {
   const days = monthGrid(cursor.getFullYear(), cursor.getMonth());
   const { over, bind } = useDropTarget(items, onMove);
   return (
@@ -125,8 +205,9 @@ function MonthView({ cursor, items, today, onOpen, onCreate, onMove, onDay }) {
         return (
           <div key={day.toISOString()} className={`month__day ${outside ? "is-outside" : ""} ${sameDay(day, today) ? "is-today" : ""} ${over === isoDay(day) ? "is-over" : ""}`} onDoubleClick={() => onCreate(day)} {...bind(day)}>
             <button type="button" className="month__num" onClick={() => onDay(day)}>{day.getDate()}</button>
+            <DayBands bands={bands} day={day} onOpenBand={onOpenBand} />
             <div className="month__items">
-              {list.slice(0, 4).map((item) => <Chip key={item.occurrence_key} item={item} onOpen={onOpen} />)}
+              {list.slice(0, 4).map((item) => <Chip key={item.occurrence_key} item={item} onOpen={onOpen} day={day} />)}
               {list.length > 4 && <button type="button" className="month__more" onClick={() => onDay(day)}>+{list.length - 4} daha</button>}
             </div>
           </div>
@@ -152,7 +233,7 @@ function TimeGrid({ days, items, today, onOpen, onCreate, onMove }) {
         {days.map((d) => (
           <div key={d.toISOString()} className={`tgrid__dayhead ${sameDay(d, today) ? "is-today" : ""}`}>
             <span>{d.toLocaleDateString("tr-TR", { weekday: "short" })}</span><strong>{d.getDate()}</strong>
-            <div className="tgrid__allday">{itemsOnDay(items, d).filter((i) => i.all_day).map((item) => <Chip key={item.occurrence_key} item={item} onOpen={onOpen} />)}</div>
+            <div className="tgrid__allday">{itemsOnDay(items, d).filter((i) => i.all_day).map((item) => <Chip key={item.occurrence_key} item={item} onOpen={onOpen} day={d} />)}</div>
           </div>
         ))}
       </div>
@@ -166,7 +247,7 @@ function TimeGrid({ days, items, today, onOpen, onCreate, onMove }) {
             {itemsOnDay(items, day).filter((i) => !i.all_day).map((item) => {
               const box = timeBox(item, day);
               return (
-                <button type="button" key={item.occurrence_key} className="tgrid__ev" style={{ top: box.top * (HOUR_PX / 60), height: Math.max(20, box.height * (HOUR_PX / 60) - 2), "--c": colorOf(item) }}
+                <button type="button" key={item.occurrence_key} className={`tgrid__ev ${isProjectItem(item) ? "tgrid__ev--project" : ""}`} style={{ top: box.top * (HOUR_PX / 60), height: Math.max(20, box.height * (HOUR_PX / 60) - 2), "--c": colorOf(item) }}
                   onClick={(e) => { e.stopPropagation(); onOpen(item); }} draggable={item.source === "event" && item.recurrence === "none"} onDragStart={(e) => e.dataTransfer.setData("text/elitlig-event", String(item.id))}>
                   <strong>{item.title}</strong>
                   <span>{formatTime(item.occurrence_start)}{item.occurrence_end ? `–${formatTime(item.occurrence_end)}` : ""}{item.location ? ` · ${item.location}` : ""}</span>
@@ -197,11 +278,17 @@ function ListView({ items, onOpen }) {
         <section key={day}>
           <h3>{formatDate(day, { weekday: "long", day: "numeric", month: "long" })}</h3>
           {list.map((item) => (
-            <button type="button" key={item.occurrence_key} className="agenda-row" onClick={() => onOpen(item)}>
+            <button type="button" key={item.occurrence_key} className={`agenda-row ${isProjectItem(item) ? "agenda-row--project" : ""} ${item.done ? "is-done" : ""}`} onClick={() => onOpen(item)}>
               <span className="agenda-row__bar" style={{ background: colorOf(item) }} />
-              <span className="agenda-row__time">{item.all_day ? "Tüm gün" : formatTime(item.occurrence_start)}</span>
-              <span className="agenda-row__title">{item.title}{item.location && <small><Icon name="map" size={11} /> {item.location}</small>}</span>
-              <span className="pill">{item.source === "todo" ? "Görev" : categoryOf(item.category).label}</span>
+              <span className="agenda-row__time">{item.all_day ? (item.multi_day ? "Plan" : "Tüm gün") : formatTime(item.occurrence_start)}</span>
+              <span className="agenda-row__title">
+                {isProjectItem(item) && <Icon name={projectKindOf(item).icon} size={12} className="agenda-row__picon" />}
+                {item.title}
+                {item.location && <small><Icon name="map" size={11} /> {item.location}</small>}
+                {isProjectItem(item) && <small>{projectSubtitle(item)}{item.multi_day ? ` · ${formatDate(item.end_date, { day: "numeric", month: "short" })} tarihine kadar` : ""}</small>}
+              </span>
+              {item.overdue && !item.done && <span className="pill pill--red">Gecikti</span>}
+              <span className="pill">{item.source === "todo" ? "Görev" : isProjectItem(item) ? "Proje" : categoryOf(item.category).label}</span>
               {item.recurrence && item.recurrence !== "none" && <Icon name="rotate" size={13} className="muted" />}
               {item.remind_minutes != null && <Icon name="clock" size={13} className="muted" />}
             </button>
@@ -288,11 +375,11 @@ function EventEditor({ item, draft, onClose, onSaved }) {
         </>)}
         <Field label="Tekrar"><select value={form.recurrence} onChange={set("recurrence")}>{RECURRENCES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></Field>
         {form.recurrence !== "none" ? <Field label="Tekrar bitişi"><input type="date" value={form.repeat_until} onChange={set("repeat_until")} /></Field> : <span />}
-        <Field label="Hatırlatma (Mac bildirimi)"><select value={form.remind_minutes} onChange={set("remind_minutes")}>{REMINDERS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></Field>
+        <Field label="Hatırlatma (masaüstü bildirimi)"><select value={form.remind_minutes} onChange={set("remind_minutes")}>{REMINDERS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></Field>
         <Field label="Renk">
           <div className="color-dots color-dots--lg">
-            <button type="button" className={!form.color ? "is-on" : ""} style={{ background: categoryOf(form.category).color }} onClick={() => setForm({ ...form, color: "" })} title="Türün rengi" />
-            {["#6366f1", "#7c3aed", "#0284c7", "#059669", "#dc2626", "#d97706", "#db2777", "#475569"].map((c) => <button key={c} type="button" className={form.color === c ? "is-on" : ""} style={{ background: c }} onClick={() => setForm({ ...form, color: c })} />)}
+            <button type="button" className={!form.color ? "is-on" : ""} style={{ background: categoryOf(form.category).color }} onClick={() => setForm({ ...form, color: "" })} title="Türün rengi" aria-label="Türün rengi" aria-pressed={!form.color} />
+            {["#6366f1", "#7c3aed", "#0284c7", "#059669", "#dc2626", "#d97706", "#db2777", "#475569"].map((c) => <button key={c} type="button" className={form.color === c ? "is-on" : ""} style={{ background: c }} onClick={() => setForm({ ...form, color: c })} aria-label={`Renk ${c}`} aria-pressed={form.color === c} />)}
           </div>
         </Field>
         <Field label="Açıklama" className="span2"><textarea rows={3} value={form.description} onChange={set("description")} /></Field>

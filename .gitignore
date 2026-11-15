@@ -4,3 +4,4 @@ dist/
 renderer/dist/
 .DS_Store
 build/ffmpeg/
+build/yt-dlp/

@@ -4,23 +4,48 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Icon, Kbd, keyLabel } from "./ui";
 import { get, useDebounced } from "../api";
-import { includesTr, formatMoney, formatDate } from "../lib/helpers";
+import { includesTr } from "../lib/helpers";
+// İçerik araması hızlı geçiş penceresiyle (⌃⌥O) ortak: lib/paletteSearch.js.
+import { loadSearchSources, searchSources } from "../lib/paletteSearch";
+// Yönetim: web yönetim panelinin sayfaları ve maç / oyuncu / takım araması (views/admin).
+import { useAdminPalette } from "../views/admin/adminPalette";
+// Birleşik Araç Takımı: her araç ve kategori bir komut (yalnız arama yapılınca listelenir).
+import { paletteEntries } from "../views/toolkit/hub/catalog";
 
 const ACTIONS = [
   { label: "Yeni sohbet", icon: "message", route: "messages:new", hint: "Mesajlar · ⌘N" },
   { label: "Yeni grup", icon: "users", route: "messages:newGroup", hint: "Mesajlar · ⇧⌘N" },
   { label: "Yeni görev", icon: "plus", route: "todos:new", hint: "Yapılacaklar" },
   { label: "Yeni not", icon: "plus", route: "notes:new", hint: "Not Defteri" },
+  { label: "Şablondan yeni not (toplantı, maç raporu, saha keşfi…)", icon: "layers", route: "notes:template", hint: "Not Defteri" },
   { label: "Yeni etkinlik", icon: "plus", route: "agenda:new", hint: "Ajanda" },
   { label: "Yeni proje", icon: "plus", route: "projects:new", hint: "Projeler" },
   { label: "Projelerde bugün aranacaklar", icon: "phone", route: "projects", arg: { section: "followups" }, hint: "Projeler · Takip" },
   { label: "Portföy", icon: "briefcase", route: "projects", arg: { section: "portfolio" }, hint: "Projeler" },
   { label: "Yeni gelir/gider kaydı", icon: "plus", route: "ledger:new", hint: "Ön Muhasebe" },
+  { label: "Düzenli ödemeler (fatura, maaş, kira)", icon: "repeat", route: "ledger:duzenli", hint: "Muhasebe" },
+  { label: "Bütçe", icon: "target", route: "ledger:butce", hint: "Muhasebe" },
   { label: "Yeni tablo", icon: "plus", route: "sheets:new", hint: "Tablolar" },
   { label: "Yeni kişi", icon: "plus", route: "contacts:new", hint: "Rehber" },
+  { label: "Yeni ekipman", icon: "box", route: "equipment:new", hint: "Ekipman" },
+  { label: "Kimde ne var (zimmetler)", icon: "user", route: "equipment:zimmet", hint: "Ekipman" },
+  { label: "Ekipman rezervasyonları", icon: "calendar", route: "equipment:rezervasyon", hint: "Ekipman" },
+  { label: "Bakım takvimi ve arızalar", icon: "wrench", route: "equipment:bakim", hint: "Ekipman" },
   { label: "Odak turunu başlat", icon: "play", run: () => window.elitlig.focus.command("start"), hint: "Odak Sayacı" },
   { label: "Hızlı kayıt penceresi", icon: "zap", run: () => window.elitlig.quick.show(), hint: "⌃⌥N" },
+  // Dosya Araçları ve raflar
+  { label: "Dosya dönüştür / düzenle", icon: "folder", route: "files", hint: "Araç Takımı › Dosya Araçları · ⇧⌘D" },
+  { label: "Sosyal medya boyutuna getir (Instagram, hikâye, YouTube)", icon: "image", route: "toolkit:social", hint: "Araç Takımı" },
+  { label: "Panodaki dosyayı Dosya Araçları'na yapıştır", icon: "copy", route: "files:paste", hint: "Dosya Araçları" },
+  { label: "Float rafını aç", icon: "paperclip", run: () => window.elitlig.float.show(), hint: "Dosya Araçları" },
+  { label: "Rafları aç (ekran görüntüleri, pano)", icon: "layers", run: () => window.elitlig.shelf.show(), hint: "⌃⌥T" },
+  { label: "Raflarda ara", icon: "search", run: () => window.elitlig.shelf.show({ search: true }), hint: "⌃⌥S" },
+  { label: "Ekranı yakala", icon: "camera", run: () => window.elitlig.shelf.capture(), hint: "⌃⌥A" },
+  { label: "Ekran görüntüleri kütüphanesi", icon: "image", route: "shelf", hint: "Araç Takımı › Ekran Görüntüleri · ⇧⌘P" },
+  { label: "Raf ayarları (kaynaklar, saklama, kısayollar)", icon: "sliders", route: "shelf:settings", hint: "Ekran Görüntüleri" },
 ];
+/** Bugün panosu düğmeleri de aynı komutları çalıştırır (views/today/actions.js). */
+export { ACTIONS as PALETTE_ACTIONS };
 
 export default function Palette({ onClose, go, routes }) {
   const [q, setQ] = useState("");
@@ -38,64 +63,26 @@ export default function Palette({ onClose, go, routes }) {
   }, []);
   useEffect(() => {
     inputRef.current?.focus();
-    Promise.all([
-      get("/api/todos", { view: "mine", status: "all" }),
-      get("/api/tools/notes", { archived: "all" }),
-      get("/api/tools/contacts"),
-      get("/api/tools/sheets"),
-      get("/api/tools/ledger", {}),
-      get("/api/tools/projects", { archived: "all" }),
-      get("/api/tools/projects/followups", { days: 30 }),
-      get("/api/chat/conversations"),
-      get("/api/chat/directory"),
-    ]).then(([todos, notes, contacts, sheets, ledger, projects, follow, chats, people]) => {
-      sources.current = {
-        todos: todos.ok ? todos.data?.items || [] : [],
-        notes: notes.ok ? notes.data?.items || [] : [],
-        contacts: contacts.ok ? contacts.data?.items || [] : [],
-        sheets: sheets.ok ? sheets.data?.items || [] : [],
-        ledger: ledger.ok ? ledger.data?.items || [] : [],
-        projects: projects.ok ? projects.data?.items || [] : [],
-        leads: follow.ok ? follow.data?.leads || [] : [],
-        chats: chats.ok ? chats.data?.conversations || [] : [],
-        people: people.ok ? [...(people.data?.staff || []), ...(people.data?.managers || []), ...(people.data?.players || [])] : [],
-      };
+    loadSearchSources(get).then((src) => {
+      sources.current = src;
       setContent((c) => [...c]);
     });
   }, []);
 
   useEffect(() => {
-    const s = sources.current;
-    if (!s || query.trim().length < 2) { setContent([]); return; }
-    const out = [];
-    const chatUsers = new Set();
-    s.chats.filter((c) => includesTr(`${c.title} ${c.subtitle} ${c.other_user?.team_name || ""}`, query)).slice(0, 6).forEach((c) => {
-      if (c.other_user?.user_id) chatUsers.add(Number(c.other_user.user_id));
-      out.push({ label: c.title, icon: "message", hint: `Sohbet${c.unread ? ` · ${c.unread} okunmamış` : ""}${c.other_user?.team_name && c.other_user.team_name !== c.title ? ` · ${c.other_user.team_name}` : ""}`, route: "messages", arg: { conversationId: c.id } });
-    });
-    const seenPeople = new Set();
-    s.people.filter((p) => !chatUsers.has(Number(p.user_id)) && includesTr(`${p.name} ${p.team_name || ""} ${p.username || ""}`, query)).forEach((p) => {
-      if (seenPeople.has(p.user_id) || seenPeople.size >= 6) return;
-      seenPeople.add(p.user_id);
-      out.push({ label: p.name, icon: "user", hint: `Mesaj gönder · ${p.team_name && p.team_name !== p.name ? p.team_name : p.subtitle || ""}`, route: "messages", arg: { userId: p.user_id } });
-    });
-    s.todos.filter((t) => includesTr(`${t.title} ${t.body}`, query)).slice(0, 6).forEach((t) => out.push({ label: t.title, icon: "checkSquare", hint: t.status === "done" ? "Tamamlandı" : t.dueAt ? formatDate(t.dueAt) : "Yapılacaklar", route: `todos:${t.id}` }));
-    s.notes.filter((n) => includesTr(`${n.title} ${n.body} ${(n.tags || []).join(" ")} ${(n.checklist || []).map((c) => c.text).join(" ")}`, query)).slice(0, 6).forEach((n) => out.push({ label: n.title || (n.body || "Not").slice(0, 60), icon: "note", hint: "Not", route: `notes:${n.id}` }));
-    s.contacts.filter((c) => includesTr(`${c.name} ${c.company} ${c.phone} ${c.email} ${c.city}`, query)).slice(0, 6).forEach((c) => out.push({ label: c.name, icon: "user", hint: c.phone || c.company || "Kişi", route: `contacts:${c.id}` }));
-    s.sheets.filter((x) => includesTr(x.title, query)).slice(0, 5).forEach((x) => out.push({ label: x.title, icon: "grid", hint: "Tablo", route: `sheets:${x.id}` }));
-    s.projects.filter((p) => includesTr(`${p.name} ${p.description}`, query)).slice(0, 5).forEach((p) => out.push({ label: p.name, icon: "layers", hint: `Proje · %${p.stats?.steps?.progress ?? 0}`, route: "projects", arg: { id: p.id } }));
-    s.leads.filter((l) => includesTr(`${l.name} ${l.company} ${l.phone}`, query)).slice(0, 5).forEach((l) => out.push({ label: l.name, icon: "phone", hint: `${l.project_name} · ${l.stage_label}`, route: "projects", arg: { id: l.project_id, tab: "leads", lead: l.id } }));
-    s.ledger.filter((e) => includesTr(`${e.description} ${e.party} ${e.category} ${e.document_no}`, query)).slice(0, 5).forEach((e) => out.push({ label: e.description || e.party || e.category || "Kayıt", icon: "receipt", hint: `${formatDate(e.entry_date)} · ${formatMoney(e.amount)}`, route: `ledger:${e.id}` }));
-    setContent(out);
+    setContent(searchSources(sources.current, query));
   }, [query]);
 
+  const admin = useAdminPalette(q);
   // Gruplar: Araçlar · Komutlar · Sonuçlar (arama yapılınca içerik eşleşmeleri).
   const items = useMemo(() => {
     const match = (item) => !q.trim() || includesTr(`${item.label} ${item.hint}`, q);
     const nav = routes.map((r) => ({ label: r.label, icon: r.icon, route: r.key, hint: keyLabel(r.shortcut), group: "Araçlar" })).filter(match);
     const actions = ACTIONS.map((a) => ({ ...a, hint: keyLabel(a.hint), group: "Komutlar" })).filter(match);
-    return [...nav, ...actions, ...content.map((c) => ({ ...c, group: "Sonuçlar" }))];
-  }, [q, content, routes]);
+    const toolkit = q.trim() ? paletteEntries().filter((t) => includesTr(`${t.label} ${t.hint} ${t.keywords}`, q)).map((t) => ({ ...t, group: "Araç Takımı" })) : [];
+    const toAdmin = (e) => ({ ...e, route: "admin", arg: { path: e.path } });
+    return [...nav, ...actions, ...toolkit, ...admin.pages.map(toAdmin), ...content.map((c) => ({ ...c, group: "Sonuçlar" })), ...admin.content.map(toAdmin)];
+  }, [q, content, routes, admin]);
 
   useEffect(() => setIndex(0), [q]);
   // Klavyeyle seçilen satır görünür alanda kalır.

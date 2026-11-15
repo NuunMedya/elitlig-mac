@@ -17,6 +17,9 @@ exports.default = async function afterPack(context) {
   if (context.electronPlatformName === "win32") {
     const exe = path.join(context.appOutDir, "resources", "ffmpeg", "ffmpeg.exe");
     if (!fs.existsSync(exe)) throw new Error(`Yayın Stüdyosu ffmpeg pakette yok: ${exe} (önce: npm run ffmpeg:win)`);
+    // Bağlantıdan indir (yt-dlp): yoksa uygulama ilk kullanımda indirmeyi önerir; derleme durmaz.
+    const ytdlp = path.join(context.appOutDir, "resources", "yt-dlp", "yt-dlp.exe");
+    if (!fs.existsSync(ytdlp)) console.warn(`  • uyarı: yt-dlp pakette yok: ${ytdlp} (npm run ytdlp:win)`);
     return;
   }
   if (context.electronPlatformName !== "darwin" || process.platform !== "darwin") return;
@@ -26,6 +29,11 @@ exports.default = async function afterPack(context) {
   // "--deep" kapsamına girmez; Apple Silicon imzasız ikiliyi çalıştırmaz.
   const ffmpeg = path.join(appPath, "Contents", "Resources", "ffmpeg", "ffmpeg");
   if (fs.existsSync(ffmpeg)) execFileSync("codesign", ["--force", "--sign", "-", ffmpeg], { stdio: "inherit" });
+  // Bağlantıdan indir: yt-dlp (universal2 tek dosya) da Resources içinde, ayrıca imzalanır.
+  const ytdlp = path.join(appPath, "Contents", "Resources", "yt-dlp", "yt-dlp");
+  if (fs.existsSync(ytdlp)) {
+    try { execFileSync("codesign", ["--force", "--sign", "-", ytdlp], { stdio: "inherit" }); } catch (e) { console.warn(`  • uyarı: yt-dlp imzalanamadı (${e.message}); yayımcının imzası korunur`); }
+  }
   execFileSync("codesign", ["--force", "--deep", "--sign", "-", appPath], { stdio: "inherit" });
   execFileSync("codesign", ["--verify", "--deep", "--strict", appPath], { stdio: "inherit" });
 };

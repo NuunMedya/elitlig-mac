@@ -195,6 +195,8 @@ export function useProject(id, me) {
       const r = await patch(`${base}/questions/${q.id}`, changes);
       if (!run(r)) { quiet(); return; }
       if (r.data?.item) swap("questions", r.data.item);
+      // Künyeye bağlı soru: cevap künyeye (ve proje tarihlerine, aynı alana bağlı sorulara) işlendi.
+      if (r.data?.brief_updated) quiet();
     },
     async deleteQuestion(q) {
       drop("questions", q.id);

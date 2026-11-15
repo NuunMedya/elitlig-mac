@@ -97,7 +97,7 @@ test("videoCopy: ffmpeg görüntüyü kopyalar (kodlayıcı / fps süzgeci yok),
   assert.equal(at(args, "-bsf:v"), "h264_mp4toannexb");
   assert.equal(args.includes("-vf"), false);
   assert.equal(args.includes("-force_key_frames"), false);
-  assert.match(at(args, "-af"), /aresample=async=1000/);
+  assert.match(at(args, "-af"), /^aresample=min_comp=0\.05:max_soft_comp=0\.002:min_hard_comp=0\.25,/);
   engine.pushChunk(HEADER);
   progress(children[0], 1000);
   const s = statuses.at(-1);

@@ -27,6 +27,7 @@ import {
 } from "../../lib/studio/audio";
 import { EQ_BANDS, HPF_BYPASS_HZ, MAX_AUDIO_DELAY_MS, gateStep, peakDb, resolveFilters } from "../../lib/studio/audioFilters";
 import { AV_KINDS } from "../../lib/studio/liveSources";
+import { registerProgramTap } from "./audio/programTap";
 
 const stopStream = (stream) => stream?.getTracks?.().forEach((t) => { try { t.stop(); } catch { /* yoksay */ } });
 const RAMP = 0.015;
@@ -135,6 +136,8 @@ export function useStudioAudio({ sources, settings } = {}) {
       music.loop = true;
       // Aygıt değişimi / uyku sonrası askıya alınan bağlam kendiliğinden sürdürülür.
       ctx.onstatechange = () => { if (ctx.state === "suspended" || ctx.state === "interrupted") ctx.resume().catch(() => {}); };
+      // Kodlama yolu program sesini bu bağlamdan (kill düğümünden) doğrudan alır: ikinci bağlam yok.
+      registerProgramTap(dest.stream.getAudioTracks()[0], { ctx, node: kill });
       g.current = { ctx, dest, master, leveler, loudTap, levelState: null, chain, limiter, wet, dry, post, kill, masterTap, monitor, programMon, buses, strips, music, musicSrc: null };
     } catch {
       g.current = null;
@@ -616,6 +619,45 @@ export function useStudioAudio({ sources, settings } = {}) {
   }, []);
   const masterAnalyser = useCallback(() => g.current?.masterTap || null, []);
 
+  /* ───────── ses sağlığı: tavana değme sayacı (güvenlik kırpıcısından önce, 250 ms'de bir) ───────── */
+  const clipRef = useRef({ events: [], over: false });
+  useEffect(() => {
+    const G = g.current;
+    if (!G?.masterTap?.clip) return undefined;
+    const buf = new Float32Array(G.masterTap.clip.L.fftSize || 1024);
+    const limit = dbToGain(MASTER_CLIP_DB);
+    const t = setInterval(() => {
+      let peak = 0;
+      for (const a of [G.masterTap.clip.L, G.masterTap.clip.R]) {
+        a.getFloatTimeDomainData(buf);
+        for (let i = 0; i < buf.length; i += 1) { const v = Math.abs(buf[i]); if (v > peak) peak = v; }
+      }
+      const over = peak >= limit;
+      const c = clipRef.current;
+      const now = Date.now();
+      if (over && !c.over) c.events.push(now);
+      c.over = over;
+      while (c.events.length && now - c.events[0] > 60000) c.events.shift();
+    }, 250);
+    return () => clearInterval(t);
+  }, []);
+  /** Tanılama (Ses sağlığı): bağlam hızı / durumu / gecikmesi, son dakikadaki tavan sayısı. */
+  const health = useCallback(() => {
+    const G = g.current;
+    if (!G) return null;
+    const { ctx } = G;
+    const ms = (v) => (Number.isFinite(v) ? Math.round(v * 10000) / 10 : null);
+    return {
+      sampleRate: ctx.sampleRate,
+      state: ctx.state,
+      baseLatencyMs: ms(ctx.baseLatency),
+      outputLatencyMs: ms(ctx.outputLatency),
+      clipEvents: clipRef.current.events.length,
+      clipping: clipRef.current.over,
+      limiter: Boolean(valueRef.current?.master?.limiter),
+    };
+  }, []);
+
   return {
     available: Boolean(g.current),
     context: g.current?.ctx || null,
@@ -664,6 +706,7 @@ export function useStudioAudio({ sources, settings } = {}) {
     // ölçerler
     analyser,
     masterAnalyser,
+    health,
     /** Eski ölçer: post = fader sonrası (yayına giden), pre = ham giriş. */
     micAnalyser: (post = true) => (post ? g.current?.strips.get("mic")?.tap.L : g.current?.strips.get("mic")?.pre) || null,
     inputAnalyser: (id) => g.current?.strips.get(id)?.tap.L || null,

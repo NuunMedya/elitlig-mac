@@ -1,7 +1,7 @@
 // Ön Muhasebe: gelir-gider defteri, KDV, cari bakiyeler, vade takibi.
 // Dönem seçimi, süzgeçler, 12 aylık grafik, kategori dağılımı; CSV, Excel ve
 // PDF olarak dışa aktarma.
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Empty, ErrorNote, Field, Icon, MenuButton, Modal, OfflineNote, Segmented, Spinner, ViewHeader, useConfirm, useResult } from "../../components/ui";
 import { del, patch, post, tempId, useCommand, useResource } from "../../api";
 import { METHODS, PERIODS, PRESET_CATEGORIES, STATUS_LABELS_BY_TYPE, TYPE_LABELS, VAT_RATES, filterEntries, isOverdue, parseAmount, periodRange, splitVat, toCsv, totals } from "../../lib/ledgerUtils";
@@ -10,16 +10,22 @@ import { workbookToXlsx } from "../../lib/sheets/xlsxExport";
 import { addr, createEvaluator } from "../../lib/sheets/sheetEngine";
 import { AccountStrip, Kpi } from "./common";
 import { AccountSelectField } from "../../components/finance";
+import ExportButton from "../../components/ExportButton";
+import { ledgerReport } from "../../lib/export/reports";
 
 const methodLabel = (key) => METHODS.find((m) => m.key === key)?.label || key;
 
-export default function Personal({ arg, accounts = [], onTransfer, onManageAccounts }) {
+export default function Personal({ arg, argSeq, accounts = [], onTransfer, onManageAccounts }) {
   const [period, setPeriod] = useState(() => localStorage.getItem("ledger:period") || "this_month");
   const [custom, setCustom] = useState({ from: "", to: "" });
   const [filters, setFilters] = useState({ type: "", status: "", category: "", query: "", account: "" });
   const [tab, setTab] = useState("entries");
   const [editing, setEditing] = useState(arg === "new" ? { draft: { type: "expense" } } : arg ? { id: arg } : null);
   const searchRef = useRef(null);
+  useEffect(() => {
+    if (arg === "new") setEditing({ draft: { type: "expense" } });
+    else if (arg) setEditing({ id: arg });
+  }, [arg, argSeq]);
   const result = useResult();
   const confirm = useConfirm();
 
@@ -38,7 +44,7 @@ export default function Personal({ arg, accounts = [], onTransfer, onManageAccou
   useCommand("new", () => setEditing({ draft: { type: "expense" } }));
   useCommand("find", () => searchRef.current?.focus());
   useCommand("export", () => exportXlsx());
-  useCommand("print", () => printReport(false));
+  // ⌘P: yazdırma stüdyosu (ExportButton "ledger", lib/export/exportRegistry) açılır.
 
   const setPeriodSaved = (v) => { setPeriod(v); try { localStorage.setItem("ledger:period", v); } catch { /* yoksay */ } };
   const periodLabel = PERIODS.find((p) => p.key === period)?.label || "";
@@ -88,12 +94,17 @@ export default function Personal({ arg, accounts = [], onTransfer, onManageAccou
           <input type="date" className="select-sm" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} aria-label="Bitiş" />
         </>}
         <span className="spacer" />
-        <MenuButton icon="download" label="Dışa aktar" items={[
-          { label: "Excel (.xlsx)", icon: "grid", onClick: exportXlsx },
-          { label: "CSV (Excel Türkçe)", icon: "download", onClick: exportCsv },
-          { label: "PDF rapor", icon: "printer", onClick: () => printReport(true) },
-          { label: "Yazdır", icon: "printer", onClick: () => printReport(false) },
-        ]} />
+        <ExportButton id="ledger" title="Ön Muhasebe"
+          scopes={[{ value: "view", label: `Süzülmüş kayıtlar (${shown.length})` }, { value: "all", label: `Dönemin tüm kayıtları (${entries.length})` }]}
+          report={({ scope: sc }) => ledgerReport(sc === "all" ? entries : shown, {
+            title: `Ön Muhasebe — ${periodLabel}`,
+            filters: [range.from ? `${formatDate(range.from)} – ${formatDate(range.to)}` : "", ...(sc === "all" ? [] : [TYPE_LABELS[filters.type], filters.status && STATUS_LABELS_BY_TYPE[filters.type || "expense"]?.[filters.status], filters.category, filters.account && accountNames.get(String(filters.account)), filters.query && `"${filters.query}"`])].filter(Boolean),
+            accountName: (e) => accountNames.get(String(e.account_id)) || "",
+          })}
+          extraItems={[
+            { label: "Excel — formüllü klasik tablo", icon: "grid", onClick: exportXlsx },
+            { label: "CSV — tüm alanlar (klasik)", icon: "download", onClick: exportCsv },
+          ]} />
         <button type="button" className="btn btn--green" onClick={() => setEditing({ draft: { type: "income" } })}><Icon name="plus" /> Gelir</button>
         <button type="button" className="btn btn--red" onClick={() => setEditing({ draft: { type: "expense" } })}><Icon name="plus" /> Gider</button>
       </div>

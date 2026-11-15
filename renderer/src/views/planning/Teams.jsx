@@ -14,6 +14,29 @@ import {
 } from "../../lib/planningUtils";
 import { A, MoveTargetPicker, OutcomeTag, SidePanel, Tag, TeamAvatar, TeamContactForm, TeamNotesPanel, openExternal, openSite } from "./shared";
 import { Conversation } from "./Conversation";
+import ExportButton from "../../components/ExportButton";
+import { tableReport } from "../../lib/export/reports";
+
+/** Takım listesi → rapor (Dışa aktar / ⌘P yazdırma stüdyosu). */
+function teamsReport(rows, teams, { title, filters }) {
+  return tableReport({
+    title, filters, sectionTitle: "Takımlar", groupBy: "",
+    columns: [
+      { key: "team_name", label: "Takım" },
+      { key: "city", label: "İl", get: (r) => teamProfile(r).city },
+      { key: "total", label: "Maç", type: "number", total: "sum", get: (r) => teamProfile(r).total },
+      { key: "top", label: "En çok oynadığı sezon", get: (r) => teamProfile(r).top || "" },
+      { key: "metric", label: "Alışkanlık", get: (r) => [r.metric, r.summary].filter(Boolean).join(" · ") },
+      { key: "last", label: "Son maç / sıradaki", get: (r) => { const p = teamProfile(r); return [p.lastMatch, p.next].filter(Boolean).join(" · "); } },
+      { key: "contact", label: "Son görüşme", get: (r) => (r.last_contact_at ? `${r.last_contact_label || "Görüşüldü"} · ${timeAgo(r.last_contact_at)}` : "") },
+      { key: "manager", label: "Yetkili", get: (r) => contactOf(teams, r.team_id).name },
+      { key: "phone", label: "Telefon", get: (r) => contactOf(teams, r.team_id).phone },
+      { key: "email", label: "E-posta", get: (r) => contactOf(teams, r.team_id).email, hidden: true },
+      { key: "registered", label: "Kayıt", get: (r) => registeredText(r), hidden: true },
+    ],
+    rows,
+  });
+}
 
 const PAGE = 60;
 
@@ -67,6 +90,9 @@ export function TeamsView({ refreshKey, leagues, seasons, onOpenTeam, onNewCard,
         {list === "by_day" && <span className="pl-fl pl-fl--days">{[1, 2, 3, 4, 5, 6, 7].map((d) => <button key={d} type="button" className={day === d ? "is-on" : ""} title={DAY_LABELS[d]} onClick={() => setDay(d)}>{DAY_SHORT[d]} <small>{(lists.by_day?.[d] || []).length}</small></button>)}</span>}
         <span className="spacer" />
         <small className="muted">{meta.hint}</small>
+        {data && <ExportButton id="planning-teams" title={`Takımlar — ${meta.label}`} text=""
+          scopes={[{ value: "view", label: `Bu liste, süzülmüş (${visible.length})` }, { value: "all", label: `Tüm takımlar (${(lists.all || []).length})` }]}
+          report={({ scope: sc }) => teamsReport(sc === "all" ? lists.all || [] : visible, data?.teams, { title: sc === "all" ? "Takımlar" : `Takımlar — ${meta.label}`, filters: sc === "all" ? [] : [city, q && `“${q}”`].filter(Boolean) })} />}
       </div>
       {loading && !data ? <div className="pl-skeleton">{[0, 1, 2, 3].map((i) => <i key={i} />)}</div> : visible.length === 0 ? (
         <div className="empty"><span className="empty__icon"><Icon name="team" size={26} /></span><strong>{q || city ? "Süzgece uyan takım yok." : scope ? "Seçilen lig / sezonda bu listeye giren takım yok." : "Bu listede takım yok."}</strong></div>
