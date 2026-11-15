@@ -181,6 +181,8 @@
 .pr-theme__head b { font: 800 15px/1.2 var(--font); }
 .pr-theme__head small { color: var(--muted); font-size: 11px; }
 .pr-live { width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 10px; background: #000; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
+.pr-live__wrap { position: relative; }
+.pr-live__wrap .pr-live__play { position: absolute; right: 8px; bottom: 8px; opacity: 0.9; }
 .pr-theme__ed { display: flex; flex-direction: column; gap: 6px; }
 .pr-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 10px; align-items: end; }
 .pr-colors { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important; }

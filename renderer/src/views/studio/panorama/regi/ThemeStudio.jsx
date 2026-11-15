@@ -30,32 +30,53 @@ function Thumb({ brand }) {
   return src ? <img src={src} alt="" /> : <i className="pr-thumb__ph" style={{ background: `linear-gradient(135deg, ${brand.colors.background}, ${brand.colors.primary})` }} />;
 }
 
-/** Canlı önizleme: örnek program karesi ~20 kare/sn (alt yazı her 6 sn'de bir girer / çıkar). */
+/**
+ * Tema önizlemesi: örnek program karesi. 2.32.0: varsayılan DURAĞAN (tema değişince bir kez çizilir;
+ * sürekli döngü yok). "Hareketi oynat" ile ~20 kare/sn canlanır (alt yazı her 6 sn'de bir girer /
+ * çıkar); görünmezken çizilmez.
+ */
 function LivePreview({ brand }) {
   const ref = useRef(null);
   const brandRef = useRef(brand);
   brandRef.current = brand;
+  const [playing, setPlaying] = useState(false);
+  const frameAt = (el) => {
+    const c = ref.current;
+    if (!c) return;
+    const b = brandRef.current;
+    const now = Date.now();
+    const snap = demoSnapshot(b);
+    // Alt yazı döngüsü: 0–4,4 sn görünür, sonra çıkış hareketi.
+    snap.panorama.lower = { ...snap.panorama.lower, at: now - el, hideAt: el > 4400 ? now - (el - 4400) : null };
+    try { drawDemoFrame(c.getContext("2d"), b, c.width, c.height, { now, snap }); } catch { /* yoksay */ }
+  };
   useEffect(() => {
+    if (playing) return undefined;
+    frameAt(1500); // durağan kare: alt yazı tam görünür
+    return undefined;
+  }, [brand, playing]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!playing) return undefined;
     let raf = 0; let last = 0;
     const t0 = performance.now();
     const loop = (t) => {
       raf = requestAnimationFrame(loop);
       if (t - last < 50) return;
       last = t;
-      const c = ref.current;
-      if (!c || c.offsetParent === null) return;
-      const b = brandRef.current;
-      const el = (t - t0) % 6000;
-      const now = Date.now();
-      const snap = demoSnapshot(b);
-      // Alt yazı döngüsü: 0–4,4 sn görünür, sonra çıkış hareketi.
-      snap.panorama.lower = { ...snap.panorama.lower, at: now - el, hideAt: el > 4400 ? now - (el - 4400) : null };
-      try { drawDemoFrame(c.getContext("2d"), b, c.width, c.height, { now, snap }); } catch { /* yoksay */ }
+      if (!ref.current || ref.current.offsetParent === null) return;
+      frameAt((t - t0) % 6000);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, []);
-  return <canvas ref={ref} className="pr-live" width={960} height={540} data-theme-preview="" />;
+  }, [playing]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div className="pr-live__wrap">
+      <canvas ref={ref} className="pr-live" width={960} height={540} data-theme-preview="" />
+      <button type="button" className="btn btn--xs pr-live__play" onClick={() => setPlaying((p) => !p)} aria-pressed={playing} data-act="theme-preview-play" title={playing ? "Önizlemeyi durdur (durağan kare)" : "Tema hareketlerini oynat"}>
+        <Icon name={playing ? "stop" : "play"} size={11} /> {playing ? "Durdur" : "Hareketi oynat"}
+      </button>
+    </div>
+  );
 }
 
 function Field({ def, value, onChange }) {

@@ -45,8 +45,8 @@ import { useStudioSources } from "../useStudioSources";
 import { useAudioMixer } from "../useAudioMixer";
 import { useCanvasImage, useCompositor } from "../useCompositor";
 import { useEngine } from "../useEngine";
-import { drawScene } from "../draw";
-import { canvasLoop } from "../perf/renderLoad";
+import { paintScenePlaceholder, paintSceneStill } from "../useSnapshot";
+import { sharedSnapshotScheduler } from "../../../lib/studio/snapshotScheduler";
 import { useStudioSettings } from "../settings/useStudioSettings";
 import { SourceDialog } from "../SourcesPanel";
 import HealthChip from "../scenes/HealthChip";
@@ -54,7 +54,6 @@ import OutMuteButton from "../audio/OutMuteButton";
 import { useMusicPlayer } from "../music";
 import { useLed } from "../led/useLed";
 import LedPanel from "../led/LedPanel";
-import { resolveScene } from "../../../lib/studio/scenes";
 import { usePanoramaData } from "./usePanoramaData";
 import PanoramaWorkspace, { LAYOUT_PRESETS } from "./regi/PanoramaWorkspace";
 import { RegiCtx } from "./regi/RegiCtx";
@@ -117,31 +116,48 @@ function StatusPill({ state, since }) {
 /**
  * Açı küçük resimleri: sahne + panorama katmanı (kart, künye, bant) — program ile aynı çizim.
  * registerTile(anahtar, sahne = anahtar): aynı sahne birden çok panelde (Sahneler, Çoklu görünüm).
+ *
+ * 2.32.0: Yayın Stüdyosu'nun "hareketli küçük resim yok" kuralı burada da geçerli — açı kutuları
+ * VİDEO DEĞİL, durağan karedir: ortak küçük resim zamanlayıcısıyla (lib/studio/snapshotScheduler)
+ * 30 sn'de bir, kademeli ve yalnız ekranda görünürken yeniden çizilir (önceden 5 kare/sn döngü).
+ * Canlı görüntü yalnız Önizleme / Program ekranlarında.
  */
 function useAngleTiles(configRef, runtimeRef, snapRef) {
-  const canvases = useRef(new Map()); // canvas → { key, id }
-  useEffect(() => canvasLoop("Panorama açıları (küçük resim)", { fps: 5 }, () => {
+  const tiles = useRef(new Map()); // canvas → { key, id, h, io }
+  const paint = useCallback((c, id) => {
     const cfg = configRef.current;
-    if (!cfg) return;
-    const now = performance.now();
-    for (const [c, { id }] of canvases.current) {
-      if (!c.isConnected || c.offsetParent === null) continue;
-      const ctx = c.getContext("2d", { alpha: false });
-      drawScene(ctx, resolveScene(cfg, id), cfg.sources, runtimeRef.current, c.width, c.height, { placeholders: true, now, noFx: true });
-      try { drawGraphics(ctx, { width: c.width, height: c.height, now: Date.now(), sceneId: id }, snapRef.current); } catch { /* yoksay */ }
-    }
-  }), [configRef, runtimeRef, snapRef]);
+    if (!cfg) return false;
+    const ok = paintSceneStill(c, cfg, id, runtimeRef.current);
+    try { drawGraphics(c.getContext("2d", { alpha: false }), { width: c.width, height: c.height, now: Date.now(), sceneId: id }, snapRef.current); } catch { /* yoksay */ }
+    return ok;
+  }, [configRef, runtimeRef, snapRef]);
+  const detach = useCallback((c) => {
+    const t = tiles.current.get(c);
+    if (!t) return;
+    t.io?.disconnect();
+    t.h.remove();
+    tiles.current.delete(c);
+  }, []);
+  useEffect(() => () => { for (const c of [...tiles.current.keys()]) detach(c); }, [detach]);
   const refs = useRef(new Map());
   return useCallback((key, id = key) => {
     const k = `${key}|${id}`;
     if (!refs.current.has(k)) {
       refs.current.set(k, (el) => {
-        for (const [c, v] of canvases.current) if (v.key === key && c !== el) canvases.current.delete(c);
-        if (el) canvases.current.set(el, { key, id });
+        for (const [c, v] of tiles.current) if (v.key === key && c !== el) detach(c);
+        if (!el || tiles.current.has(el)) return;
+        try { paintScenePlaceholder(el, configRef.current, id); } catch { /* yoksay */ }
+        const h = sharedSnapshotScheduler().add(() => (el.isConnected ? paint(el, id) : true));
+        let io = null;
+        if (typeof IntersectionObserver !== "undefined") {
+          io = new IntersectionObserver((list) => { const e = list[list.length - 1]; if (e) h.setVisible(e.isIntersecting); });
+          io.observe(el);
+        }
+        tiles.current.set(el, { key, id, h, io });
       });
     }
     return refs.current.get(k);
-  }, []);
+  }, [configRef, detach, paint]);
 }
 
 /* ─────────────────────────────── yan paneller ─────────────────────────────── */
