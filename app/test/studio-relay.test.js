@@ -628,3 +628,48 @@ test("motor: start({ rtmpPublisher }) aktarıcının ağ ucunu seçer (Ayarlar �
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test("aktarıcı (Node ağ ucu, 2.25.0): kodlayıcı yeniden başlayınca RTMP bağlantısı KORUNUR; yalnız TS → FLV ffmpeg'i yenilenir (yeni segment)", async () => {
+  const { made, factory } = fakePublisher();
+  let segs = 0;
+  const wrapped = (o) => { const p = factory(o); p.newSegment = () => { segs += 1; }; return p; };
+  const { relay, children, notes } = setupRelay({ publisher: "node", publisherFactory: wrapped });
+  relay.write(gop(1));
+  made[0].up();
+  relay.newStream(); // ilk akış
+  relay.newStream(); // kodlayıcı yeniden başladı
+  assert.equal(made.length, 1, "yeni RTMP bağlantısı açılmaz");
+  assert.equal(made[0].destroyed, false);
+  assert.equal(segs, 1);
+  assert.equal(children.length, 2, "yeni TS → FLV ffmpeg'i");
+  assert.equal(children[0].stdin.ended, true, "eski ffmpeg'in girişi kapanır");
+  // Eski ffmpeg'in geç kalan çıktısı yayıncıya gitmez; yenisininki gider.
+  const before = made[0].flv.length;
+  children[0].stdout.emit("data", Buffer.from("eski"));
+  assert.equal(made[0].flv.length, before);
+  children[1].stdout.emit("data", Buffer.from("yeni"));
+  assert.equal(made[0].flv.length, before + 1);
+  // Eski ffmpeg'in çıkışı aktarıcıyı düşürmez.
+  children[0].emit("exit", 0, null);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(relay.status().state, "up");
+  assert.equal(relay.status().remuxSwaps, 1);
+  assert.ok(notes.some((n) => /RTMP bağlantısı korunuyor/.test(n.m)));
+  await relay.stop();
+});
+
+test("aktarıcı (ffmpeg RTMP yolu, 2.25.0): yeniden bağlanmada zaman damgaları -output_ts_offset ile kaldığı yerden sürer", async () => {
+  const { relay, children, timers, clock } = setupRelay();
+  relay.write(gop(1));
+  sent(children[0], 100);
+  assert.equal(children[0].args.includes("-output_ts_offset"), false);
+  clock.t += 60_000;
+  children[0].emit("exit", 1, null);
+  await new Promise((r) => setImmediate(r));
+  timers.runNext(1000);
+  const args = children.at(-1).args;
+  const i = args.indexOf("-output_ts_offset");
+  assert.ok(i > 0, "ofset verilir");
+  assert.ok(Number(args[i + 1]) >= 60, `ofset ${args[i + 1]} sn`);
+  await relay.stop();
+});

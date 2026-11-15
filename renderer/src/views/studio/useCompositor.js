@@ -9,7 +9,7 @@
 //    meşgul olursa olsun yayın fps'i düşmez. Program ekranı işçinin küçültülmüş aynasıdır.
 //    Kip tabanı (tekrar / VAR / röportaj / özet; React durumuna bağlı çizimler) ana iş
 //    parçacığında çizilir, VideoFrame olarak işçiye gider; grafik / rozet / geçiş / FTB ve
-//    kodlama yine işçide. Önizleme ana iş parçacığında ≤20 fps (görünürken).
+//    kodlama yine işçide. Önizleme ana iş parçacığında proje hızında (≤ 60 fps, görünürken).
 //  • ANA İŞ PARÇACIĞI (eski yol / yedek): her şey burada, rAF + yedek setInterval.
 //    İşçi çökerse ya da kare vermezse oturum boyunca buna dönülür.
 //
@@ -24,7 +24,8 @@ import { fallbackDue, previewSize } from "../../lib/studio/compose";
 import { STINGER_MS } from "../../lib/studio/stinger";
 import { progressAt } from "../../lib/studio/transitions";
 import { resolveScene } from "../../lib/studio/scenes";
-import { SECONDARY_FPS, chooseCompositorEngine } from "../../lib/studio/renderBudget";
+import { chooseCompositorEngine } from "../../lib/studio/renderBudget";
+import { createFrameGate, monitorFps } from "../../lib/studio/framePacing";
 import { drawScene } from "./draw";
 import { drawVar } from "./var/drawVar";
 import { MODE_TARGET, composeBase, composeTop, drawFtb, drawProgramFx, ftbLevel, needsMainBase, transitionTouchesMode } from "./compositor/composeProgram";
@@ -160,7 +161,8 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
     }
     drawFtb(ctx, W, H, ftbRef.current, now);
     const f = frame.current;
-    f.previewSkip = (f.previewSkip + 1) % (fps > 40 ? 3 : 2);
+    // Önizleme her karede (≤ 30 fps), 60 fps'te iki karede bir (eskiden 15–20 fps: takılır görünüyordu).
+    f.previewSkip = (f.previewSkip + 1) % (fps > 40 ? 2 : 1);
     if (f.previewSkip === 0) drawPreview(now);
     const dt = performance.now() - t0;
     if (dt > f.drawMax) f.drawMax = dt;
@@ -188,16 +190,19 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       for (const fn of frameSubsRef.current) { try { fn(now); } catch { /* kodlayıcı hatası çizimi durdurmasın */ } }
       trackDraw("Program (ana iş parçacığı)", performance.now() - t0);
     };
+    // Biriken son tarih (framePacing.createFrameGate): "son kare + aralık − 2 ms" kuralı ekran
+    // hızı aralığı bölmeyince hızı düşürüyordu (144 Hz'de 60 → 48 fps, 75 Hz'de 30 → 25 fps).
+    const gate = createFrameGate(fps);
     const loop = () => {
       if (!alive) return;
       const now = performance.now();
-      if (now - frame.current.last >= interval - 2) run(now);
+      if (gate.due(now)) run(now);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     const timer = setInterval(() => {
       const now = performance.now();
-      if (fallbackDue(frame.current.last, now, fps)) run(now);
+      if (fallbackDue(frame.current.last, now, fps)) { gate.mark(now); run(now); }
     }, Math.max(8, Math.floor(interval / 2)));
     return () => { alive = false; cancelAnimationFrame(raf); clearInterval(timer); };
   }, [draw, fps, engine]);
@@ -277,15 +282,17 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       host.pushBase(base.oc || program, { graphics: out.graphics, gSceneId: out.gSceneId, stingerP: out.stingerP, stingerKind: out.stingerKind }, now);
       trackDraw("Kip tabanı (ana iş parçacığı)", performance.now() - t0);
     };
+    const baseGate = createFrameGate(fps);
     const loop = () => {
       if (!alive) return;
       const now = performance.now();
-      if (now - base.last >= interval - 2) runBase(now);
+      if (baseGate.due(now)) runBase(now);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    const baseTimer = setInterval(() => { const now = performance.now(); if (fallbackDue(base.last, now, fps)) runBase(now); }, Math.max(8, Math.floor(interval / 2)));
-    const stopPreview = canvasLoop("Önizleme ekranı", { fps: SECONDARY_FPS.preview, el: preview }, drawPreview);
+    const baseTimer = setInterval(() => { const now = performance.now(); if (fallbackDue(base.last, now, fps)) { baseGate.mark(now); runBase(now); } }, Math.max(8, Math.floor(interval / 2)));
+    // Önizleme ekranı proje hızında (≤ 60 fps; eskiden 20 fps): küçük resim döngüleri kalktı.
+    const stopPreview = canvasLoop("Önizleme ekranı", { fps: monitorFps(fps), el: preview }, drawPreview);
     const statTimer = setInterval(() => {
       const s = host.stats();
       statsRef.current = { fps: s.fps || 0, drawMs: s.drawMs || 0, avgMs: s.avgMs || 0, stalls: s.late || 0, totalStalls: (statsRef.current.totalStalls || 0) + (s.late || 0), engine: "worker", unique: s.unique, mainBase: s.mainBase, basesIn: s.basesIn, baseMs: s.baseMs, gfxMs: s.gfxMs, encSubmitMs: s.encSubmitMs, srcFps: s.srcFps, sources: s.sources, mirrorAgeMs: s.mirrorAgeMs };

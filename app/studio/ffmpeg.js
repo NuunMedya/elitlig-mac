@@ -474,7 +474,7 @@ const streamLogLevel = ({ url, relayUrl, fifo }) => (url && fifo && !relayUrl ? 
  * canlı FLV'de geri dönüp süre / boyut yazılmaz. -progress: gönderilen bayt
  * (total_size) bağlantının canlı olduğunu gösterir (askı buradan anlaşılır).
  */
-function buildRelayArgs({ url, rwTimeoutMs = 10000, output = "url" } = {}) {
+function buildRelayArgs({ url, rwTimeoutMs = 10000, output = "url", tsOffsetMs = 0 } = {}) {
   const pipe = output === "pipe";
   const rtmp = !pipe && /^rtmps?:/i.test(String(url || ""));
   return [
@@ -505,6 +505,9 @@ function buildRelayArgs({ url, rwTimeoutMs = 10000, output = "url" } = {}) {
     // TCP paketi oluyordu (12 Mbps → kabloda ~21 Mbps, ~22 000 paket/sn). Nagle açıkken aynı
     // akış ~1 000 paket/sn, kabloda ~12 Mbps (ölçüm: app/test/studio-rtmppub.test.js notları).
     ...(rtmp ? ["-rw_timeout", String(Math.round(rwTimeoutMs * 1000))] : []),
+    // Yeniden bağlanmada zaman damgaları 0'dan değil, yayının kaldığı yerden (ffmpeg RTMP yolu;
+    // Node yolunda süreklilik rtmppub.createFlvTimeline'da): YouTube DVR'ı sıfırlanmasın.
+    ...(tsOffsetMs > 0 ? ["-output_ts_offset", (Math.round(tsOffsetMs) / 1000).toFixed(3)] : []),
     pipe ? "pipe:1" : url,
   ];
 }

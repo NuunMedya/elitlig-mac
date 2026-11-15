@@ -406,3 +406,23 @@ test("gerçek ffmpeg (2.24.3): aktarıcının İLK AAC dizi başlığı dolu ve 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("zaman çizelgesi (2.25.0): yeni segmentte damgalar 0'a dönmez, duvar saati aralığıyla sürer; türe göre azalmaz", () => {
+  const { createFlvTimeline } = require("../studio/rtmppub");
+  const tl = createFlvTimeline();
+  tl.segment(1000);
+  assert.equal(tl.map(9, 0, 1000), 0);
+  assert.equal(tl.map(8, 10, 1010), 10);
+  assert.equal(tl.map(9, 5000, 6000), 5000);
+  // Kodlayıcı yeniden başladı: yeni FLV 0'dan; 1,5 sn sonra ilk etiket.
+  tl.segment(7400);
+  const a = tl.map(9, 0, 7500);
+  assert.equal(a, 5000 + 1500);
+  assert.equal(tl.map(9, 33, 7533), a + 33);
+  assert.equal(tl.map(8, 0, 7540) >= 10, true);
+  // İşaretsiz büyük geri sıçrama da yeniden tabanlanır (asla geri gitmez).
+  const c = tl.map(9, 3000, 10500);
+  const b = tl.map(9, 0, 10600);
+  assert.ok(b > c, `${b} > ${c}`);
+  assert.equal(tl.segments(), 3);
+});

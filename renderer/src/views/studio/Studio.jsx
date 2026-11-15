@@ -823,7 +823,7 @@ export default function Studio({ auth, go }) {
   const previewScene = resolveScene(config, config.previewSceneId);
   const programScene = resolveScene(config, config.programSceneId);
   const tiles = useMemo(() => multiviewTiles(config), [config]);
-  const registerTile = useTileRenderer(configRef, src.runtimeRef);
+  const registerTile = useTileRenderer(configRef, src.runtimeRef, { config });
 
   /* ───────── sahne / katman / kaynak işlemleri (kimliği sabit) ───────── */
   const [selectedLayerId, setSelectedLayerId] = useState(null);

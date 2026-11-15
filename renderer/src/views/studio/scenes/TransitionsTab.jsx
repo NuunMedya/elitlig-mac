@@ -4,7 +4,7 @@
 //   3. Tekrarlar arası geçiş: prefs.modes.between
 //   4. Logo geçişleri: markanın renkleri ve logosuyla (Marka sekmesinden)
 // Monitörlerin yanındaki geçiş paneli yalnız GEÇİŞ + hızlı tür seçimi tutar.
-import React, { memo, useEffect, useRef } from "react";
+import React, { memo, useEffect, useRef, useState } from "react";
 import { canvasLoop } from "../perf/renderLoad";
 import { Field, Icon } from "../../../components/ui";
 import { TRANSITION_KINDS, drawTransitionStinger, isStingerKind, transitionFrame, transitionKind, transitionMs } from "../../../lib/studio/transitions";
@@ -47,10 +47,13 @@ export function paintTransitionSample(ctx, kind, p, logo, branding) {
   if (isStingerKind(kind)) { try { drawTransitionStinger(ctx, W, H, kind, p, logo, branding); } catch { /* yoksay */ } }
 }
 
-/** Döngüyle oynayan örnek (görünürken ~30 fps; görünmüyorsa çizmez). */
+/** Geçiş örneği: durağan kare; YALNIZ üzerine gelince döngüyle oynar (sürekli hareket yok). */
 function Sample({ kind, ms, brandRef }) {
   const ref = useRef(null);
+  const [hover, setHover] = useState(false);
   useEffect(() => {
+    const still = () => { const c = ref.current; if (c) paintTransitionSample(c.getContext("2d"), kind, 0.5, brandRef?.current?.logo || null, brandRef?.current?.branding || null); };
+    if (!hover) { still(); return undefined; }
     const t0 = performance.now();
     const dur = Math.max(300, ms || 600);
     const cycle = dur + 900;
@@ -61,9 +64,10 @@ function Sample({ kind, ms, brandRef }) {
       const p = t < 450 ? 0 : Math.min(1, (t - 450) / dur);
       paintTransitionSample(c.getContext("2d"), kind, p, brandRef?.current?.logo || null, brandRef?.current?.branding || null);
     };
-    return canvasLoop("Geçiş örnekleri", { fps: 20, el: () => ref.current }, loop);
-  }, [kind, ms, brandRef]);
-  return <canvas ref={ref} width={W} height={H} className="st-trs__canvas" />;
+    const stop = canvasLoop("Geçiş örnekleri", { fps: 20, el: () => ref.current }, loop);
+    return () => { stop(); still(); };
+  }, [kind, ms, brandRef, hover]);
+  return <canvas ref={ref} width={W} height={H} className="st-trs__canvas" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} />;
 }
 
 /** Tür kartları + süre (bir geçiş ayarı için). */

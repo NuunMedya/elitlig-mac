@@ -45,7 +45,7 @@ const net = require("node:net");
 const { EventEmitter } = require("node:events");
 const ff = require("./ffmpeg");
 const { killProcess } = require("./proc");
-const { createRtmpPublisher } = require("./rtmppub");
+const { createRtmpPublisher, createFlvTimeline } = require("./rtmppub");
 
 const TS_PACKET = 188;
 const RELAY_BACKOFF_MS = Object.freeze([1000, 2000, 4000, 8000, 10000]);
@@ -283,6 +283,10 @@ function createRelay({
   noAckMs = 15000,
 } = {}) {
   const events = new EventEmitter();
+  // Yayın boyunca TEK zaman çizelgesi (rtmppub.createFlvTimeline): yeniden bağlanmada / kodlayıcı
+  // yeniden başlamasında RTMP zaman damgaları 0'a dönmez (YouTube DVR'ı sıfırlanmasın).
+  const timeline = createFlvTimeline();
+  let tsWall0 = null; // ffmpeg RTMP yolu için: yayın zaman çizelgesinin 0 anının duvar saati
   const delay = createDelayLine({ delayMs, now, timers, tickMs: delayTickMs, onData: (d) => write(d), onMarker: () => newStream() });
   const gopBuf = createTsGopBuffer();
   const backup = backupUrl && backupUrl !== primaryUrl ? backupUrl : null;
@@ -354,6 +358,8 @@ function createRelay({
       attempt: st.attempt,
       failures: st.failures,
       reconnects: st.reconnects,
+      remuxSwaps: st.remuxSwaps || 0,
+      lastTsMs: timeline.lastOut(),
       everUp: st.everUp,
       lastError: st.lastError,
       upSince: st.upSince,
@@ -437,6 +443,10 @@ function createRelay({
     audioOnly = false;
     overSince = null;
     if (streams > 1 && pusher && !pusher.stopping) {
+      // Node yayıncısı yayındaysa RTMP bağlantısı KORUNUR: yalnız TS → FLV ffmpeg'i değişir,
+      // zaman damgaları çizelgede kaldığı yerden sürer (YouTube'da yeni giriş oturumu açılmaz,
+      // DVR / geri sarma bozulmaz). Eskiden aktarıcı tümden yeniden kurulup damgalar 0'dan başlıyordu.
+      if (pusher.pub && pusher.pub.isPublishing() && swapRemuxer(pusher)) return;
       // Zaman damgaları sıfırlandı: aktarıcı geri çekilmeden yeniden kurulur.
       note("aktarıcı yeniden kuruluyor (kodlayıcı yeniden başladı)");
       pusher.restartNow = true;
@@ -527,7 +537,9 @@ function createRelay({
     const target = st.target;
     const dest = target === "backup" ? backup : primaryUrl;
     const viaNode = mode === "node";
-    const args = buildArgs(viaNode ? { url: dest, output: "pipe" } : { url: dest });
+    // ffmpeg RTMP yolunda (yedek) damgalar duvar saatiyle sürer (-output_ts_offset); Node yolunda çizelge.
+    const tsOffsetMs = !viaNode && tsWall0 !== null ? Math.max(0, now() - tsWall0) : 0;
+    const args = buildArgs(viaNode ? { url: dest, output: "pipe" } : { url: dest, ...(tsOffsetMs > 0 ? { tsOffsetMs } : {}) });
     st.starts += 1;
     note(`RTMP aktarıcısı başlıyor (${target === "backup" ? "yedek" : "ana"} adres, deneme ${st.attempt}, ${viaNode ? "Node yayıncısı" : "ffmpeg RTMP"})`, { url: ff.maskUrl(dest), publisher: mode, args: ff.maskSecrets(args.join(" ")) });
     let child;
@@ -538,7 +550,7 @@ function createRelay({
       onPusherExit(pusher, -1, null);
       return;
     }
-    const p = { child, target, startedAt: now(), connected: false, lastSize: 0, lastSizeAt: now(), stderrTail: [], failReason: null, restartNow: false, stopping: false, pub: null, mode };
+    const p = { child, target, dest, startedAt: now(), connected: false, lastSize: 0, lastSizeAt: now(), stderrTail: [], failReason: null, restartNow: false, stopping: false, pub: null, mode, paused: false };
     pusher = p;
     feeding = false;
     audioOnly = false;
@@ -548,23 +560,10 @@ function createRelay({
       child.stdout?.setEncoding?.("utf8");
       child.stdout?.on("data", (d) => parser.feed(d));
     }
-    let errBuf = "";
-    child.stderr?.setEncoding?.("utf8");
-    child.stderr?.on("data", (d) => {
-      errBuf += d;
-      let i;
-      while ((i = errBuf.search(/[\r\n]/)) >= 0) {
-        const line = errBuf.slice(0, i).trim();
-        errBuf = errBuf.slice(i + 1);
-        if (!line) continue;
-        p.stderrTail.push(line);
-        if (p.stderrTail.length > 30) p.stderrTail.shift();
-        note(`aktarıcı: ${ff.maskSecrets(line)}`);
-      }
-    });
+    wireStderr(p, child);
     child.stdin?.on?.("error", () => { /* EPIPE: süreç kapanıyor */ });
-    child.on("error", (error) => { if (!p.exited) { p.failReason = p.failReason || { code: "SPAWN", message: error.message }; onPusherExit(p, -1, null); } });
-    child.on("exit", (code, signal) => onPusherExit(p, code, signal));
+    child.on("error", (error) => { if (p.child === child && !p.exited) { p.failReason = p.failReason || { code: "SPAWN", message: error.message }; onPusherExit(p, -1, null); } });
+    child.on("exit", (code, signal) => { if (p.child === child) onPusherExit(p, code, signal); });
     // Son anahtar kareden besle.
     const snap = gopBuf.snapshot();
     if (snap && child.stdin?.writable !== false) { child.stdin.write(snap); feeding = true; }
@@ -576,21 +575,15 @@ function createRelay({
   function attachPublisher(p, dest) {
     let pub;
     try {
-      pub = publisherFactory({ url: dest, now, connectTimeoutMs, ...publisherOptions });
+      pub = publisherFactory({ url: dest, now, connectTimeoutMs, timeline, ...publisherOptions });
     } catch (error) {
       p.failReason = { code: "PUBLISHER", message: error.message, publisherCode: "PUBLISHER" };
       kill(p);
       return;
     }
     p.pub = pub;
-    let paused = false;
-    const out = p.child.stdout;
-    out?.on("data", (d) => {
-      if (pusher !== p && !p.stopping) return;
-      if (!pub.writeFlv(d) && !paused) { paused = true; out.pause(); }
-    });
-    out?.on("end", () => { if (p.stopping) pub.end(); });
-    pub.events.on("drain", () => { if (paused) { paused = false; out?.resume(); } });
+    wireRemuxerOutput(p, p.child);
+    pub.events.on("drain", () => { if (p.paused) { p.paused = false; p.child?.stdout?.resume(); } });
     pub.events.on("publishing", () => {
       if (pusher !== p) return;
       nodeFails = 0;
@@ -608,6 +601,71 @@ function createRelay({
       if (!p.stopping) kill(p);
     });
     pub.start();
+  }
+
+  /** Aktarıcı ffmpeg'inin FLV çıktısı → yayıncı (yalnız GÜNCEL ffmpeg'in çıktısı; eskisininki atılır). */
+  function wireRemuxerOutput(p, child) {
+    const out = child?.stdout;
+    out?.on("data", (d) => {
+      if (p.child !== child) return; // değiştirilmiş eski ffmpeg'in kalan çıktısı
+      if (pusher !== p && !p.stopping) return;
+      if (!p.pub.writeFlv(d) && !p.paused) { p.paused = true; out.pause(); }
+    });
+    out?.on("end", () => { if (p.child === child && p.stopping) p.pub.end(); });
+  }
+
+  /** stderr satırları tanılamaya (son 30 satır pusher'da). */
+  function wireStderr(p, child) {
+    let errBuf = "";
+    child.stderr?.setEncoding?.("utf8");
+    child.stderr?.on("data", (d) => {
+      errBuf += d;
+      let i;
+      while ((i = errBuf.search(/[\r\n]/)) >= 0) {
+        const line = errBuf.slice(0, i).trim();
+        errBuf = errBuf.slice(i + 1);
+        if (!line) continue;
+        p.stderrTail.push(line);
+        if (p.stderrTail.length > 30) p.stderrTail.shift();
+        note(`aktarıcı: ${ff.maskSecrets(line)}`);
+      }
+    });
+  }
+
+  /**
+   * Kodlayıcı yeniden başladı (yeni TS akışı, damgalar 0'dan) ve Node yayıncısı yayında: RTMP
+   * bağlantısı açık kalır, yalnız TS → FLV ffmpeg'i yenilenir; yayıncı yeni FLV'yi yeni segment
+   * olarak alır (damgalar çizelgede sürer). Başarısızsa false (eski yol: aktarıcı yeniden kurulur).
+   */
+  function swapRemuxer(p) {
+    const old = p.child;
+    let child;
+    try {
+      child = spawnImpl(ffmpegPath, buildArgs({ url: p.dest, output: "pipe" }), { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    } catch (error) {
+      note("aktarıcı ffmpeg'i yenilenemedi; aktarıcı yeniden kuruluyor", { error: error.message });
+      return false;
+    }
+    st.remuxSwaps = (st.remuxSwaps || 0) + 1;
+    note("kodlayıcı yeniden başladı: RTMP bağlantısı korunuyor, yalnız aktarıcı ffmpeg'i yenilendi (zaman damgaları sürüyor)", { swaps: st.remuxSwaps, lastTsMs: timeline.lastOut() });
+    p.child = child;
+    p.paused = false;
+    p.pub.newSegment();
+    wireRemuxerOutput(p, child);
+    wireStderr(p, child);
+    child.stdin?.on?.("error", () => { /* EPIPE */ });
+    child.on("error", (error) => { if (p.child === child && !p.exited) { p.failReason = p.failReason || { code: "SPAWN", message: error.message }; onPusherExit(p, -1, null); } });
+    child.on("exit", (code, signal) => { if (p.child === child) onPusherExit(p, code, signal); });
+    // Eski ffmpeg: girişi kapanır, çıktısı yok sayılır; süre dolunca öldürülür.
+    if (old) {
+      try { old.stdin?.end?.(); } catch { /* yoksay */ }
+      try { old.stdout?.resume?.(); } catch { /* yoksay */ }
+      const t = timers.setTimeout(() => { try { killImpl(old); } catch { /* yoksay */ } }, stopTimeoutMs);
+      old.on?.("exit", () => timers.clearTimeout(t));
+    }
+    // Askı bekçisi yeni ffmpeg için baştan (veri gelene dek).
+    p.lastSizeAt = now();
+    return true;
   }
 
   /** Node yolunda saniyelik sayaç: çekirdeğe verilen bayt (askı ve gönderim hızı buradan). */
@@ -648,6 +706,7 @@ function createRelay({
     if (st.dropping && feeding) st.dropping = false;
     if (!p.connected) {
       p.connected = true;
+      if (tsWall0 === null) tsWall0 = t - Math.max(0, timeline.lastOut());
       if (st.everUp) st.reconnects += 1;
       st.everUp = true;
       st.upSince = t;

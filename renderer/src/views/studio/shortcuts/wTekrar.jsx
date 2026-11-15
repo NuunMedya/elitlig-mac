@@ -24,6 +24,7 @@ import { healthText } from "../../../lib/studio/uploadGuard";
 import { MOMENT_SECONDS, RATE_STEPS, goalReplays, jogTo, secText } from "./flowLogic";
 import { Chip, FlowNote, Head, Kbd, Ring, Shell, hk, openPop, startTimer, stopTimer, timerOf, useNow, usePress } from "./wkit";
 import "./wTekrar.css";
+import { AngleList, AngleRow } from "../replayAngleList";
 
 const playable = (R) => (R?.list || []).filter((r) => anglesOf(r).length);
 const titleOf = (R, r) => replayTitle(r, metaFor(r, R.meta));
@@ -57,16 +58,6 @@ function focusPos(R) {
   return (id && l.find((r) => r.id === id)) || l.find((r) => (R.picks || {})[r.id]?.length) || lastGoal(R);
 }
 
-function Thumb({ a, R, preview, on, order, onClick, onDoubleClick, title, live = true }) {
-  return (
-    <button type="button" className={`wx-th ${on ? "is-on" : ""} ${order != null ? "is-picked" : ""}`} onClick={onClick} onDoubleClick={onDoubleClick} title={title} aria-pressed={order != null}>
-      {preview || !a.url ? <span className="wx-th__ph"><Icon name="video" size={14} /></span> : <video src={live ? a.url : `${a.url}#t=0.5`} muted loop autoPlay={live} playsInline preload="metadata" />}
-      <span className="wx-th__l">{angleLabel(a, R.sources)}</span>
-      {order != null && <b className="wx-th__o">{order}</b>}
-    </button>
-  );
-}
-
 /* ═════════════════════════ SON GOL → ÖNİZLEME / YAYINA (seçili açılar) ═════════════════════════ */
 
 function LastReplay({ ctx, w, h, air }) {
@@ -93,22 +84,24 @@ function LastReplay({ ctx, w, h, air }) {
 
 /* ═════════════════════════ AÇI SEÇ: son golün açıları (hızlı seçim ızgarası) ═════════════════════════ */
 
-function PosGrid({ R, r, w, preview, max }) {
+/** Pozisyonun açıları: alt alta İSİM listesi (küçük resim / video yok); tık: seç (sıra numarası). */
+function PosGrid({ R, r, max }) {
   const nums = pickNumbers(R.picks || {}, r.id);
   const list = haveAngles(r).slice(0, max);
   const pv = R.previewPos?.replayId === r.id ? R.previewPos.angle : null;
+  const air = R.airPos?.replayId === r.id ? R.airPos.angle : null;
   return (
-    <div className={`wx-ap__g is-n${list.length} is-seq`}>
+    <AngleList className="wx-ap__g is-list" label="Açılar">
       {list.map((a) => (
-        <Thumb key={a.angle} a={a} R={R} preview={preview} on={pv === a.angle} order={nums[a.angle] ?? null} live={w >= 2}
+        <AngleRow key={a.angle} name={angleLabel(a, R.sources)} order={nums[a.angle] ?? null} stage={air === a.angle ? "air" : pv === a.angle ? "preview" : null}
           onClick={() => pickToggle(R, r, a.angle)} onDoubleClick={() => sendPos(R, r)}
           title={`${angleLabel(a, R.sources)} — tık: ${nums[a.angle] ? `seçimden çıkar (${nums[a.angle]}.)` : "seç"} · çift tık: önizlemeye gönder`} />
       ))}
-    </div>
+    </AngleList>
   );
 }
 
-function AnglePick({ ctx, w, h, preview }) {
+function AnglePick({ ctx, w, h }) {
   const R = ctx.replay;
   const r = lastGoal(R);
   if (!r) return empty(w, h, "AÇI SEÇ", "video");
@@ -116,7 +109,7 @@ function AnglePick({ ctx, w, h, preview }) {
   return (
     <Shell tone="violet" w={w} h={h} state={R.previewPos?.replayId === r.id ? "pvw" : null} className="wx-ap">
       <Head icon="video" label={titleOf(R, r)} right={<small className="wx-head__r">{n ? `${n} seçili` : "tık: seç"}</small>} />
-      <PosGrid R={R} r={r} w={w} preview={preview} max={6} />
+      <PosGrid R={R} r={r} max={6} />
       {h >= 2 && (
         <div className="wx-row is-actions">
           <button type="button" className="wx-btn is-pvw" onClick={() => sendPos(R, r)}><Icon name="eye" size={12} /> Önizlemeye{n ? ` (${n})` : ""}</button>
@@ -129,7 +122,7 @@ function AnglePick({ ctx, w, h, preview }) {
 
 /* ═════════════════════════ POZİSYON GEZGİNİ (önceki / sonraki gol + açılar) ═════════════════════════ */
 
-function AngleSeq({ ctx, w, h, preview }) {
+function AngleSeq({ ctx, w, h }) {
   const R = ctx.replay;
   const list = playable(R);
   const [id, setId] = useState(null);
@@ -141,7 +134,7 @@ function AngleSeq({ ctx, w, h, preview }) {
   return (
     <Shell tone="violet" w={w} h={h} state={R.airPos?.replayId === r.id ? "air" : R.previewPos?.replayId === r.id ? "pvw" : null} className="wx-seq">
       <Head icon="layers" label="POZİSYON" right={<span className="wx-pager"><button type="button" onClick={() => step(-1)} disabled={i <= 0} title="Daha yeni">‹</button><small>{titleOf(R, r)}</small><button type="button" onClick={() => step(1)} disabled={i >= list.length - 1} title="Daha eski">›</button></span>} />
-      <PosGrid R={R} r={r} w={w} preview={preview} max={6} />
+      <PosGrid R={R} r={r} max={6} />
       {w >= 3 && chosen.length > 0 && (
         <div className="wx-seq__order">
           {chosen.map((a, k) => <span key={a} className="wx-seq__it"><b>{k + 1}</b>{angleLabel(haveAngles(r).find((x) => x.angle === a) || { angle: a }, R.sources)}</span>)}

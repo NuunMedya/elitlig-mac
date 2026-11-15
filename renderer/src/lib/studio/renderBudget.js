@@ -21,14 +21,20 @@ export function chooseCompositorEngine(setting, { supported = false, failed = fa
   return "worker";
 }
 
-/** İkincil çizimlerin kare sınırları (fps). Yayın çıkışını etkilemez. */
+/**
+ * İkincil çizimlerin kare sınırları (fps). Yayın çıkışını etkilemez.
+ * 2.25.0: sahne / kaynak küçük resimleri, LED önizlemesi ve tekrar açı küçük resimleri artık
+ * CANLI DEĞİL (sabit şema / isim listesi; döngü yok) — sceneThumb / multiview / ledPreview
+ * yalnız eski yapılandırmalar için duruyor. ÖNİZLEME ekranı proje hızında çizilir
+ * (framePacing.monitorFps); "preview" kullanılmıyor.
+ */
 export const SECONDARY_FPS = Object.freeze({
-  sceneThumb: 6, // sahne / kaynak küçük resimleri
-  multiview: 8, // çoklu görünüm kutuları
-  ledPreview: 8, // LED önizleme
-  replayThumb: 8, // tekrar açısı / önizleme yüzeyleri (oynatma dışı)
-  editor: 20, // sahne düzenleyici tuvali
-  preview: 20, // ÖNİZLEME ekranı (işçi motorunda; program ayrı)
+  sceneThumb: 6, // (kullanılmıyor: sahne kutuları sabit şema)
+  multiview: 8, // (kullanılmıyor)
+  ledPreview: 8, // (kullanılmıyor: LED önizlemesi sabit şema)
+  replayThumb: 8, // tekrar küçük haritası (önizleme ekranının üstünde, yakınlaştırmada)
+  editor: 20, // sahne düzenleyici tuvali (yalnız düzenlerken)
+  preview: 20, // (kullanılmıyor: önizleme proje hızında)
   meter: 15, // ses ölçerleri
 });
 

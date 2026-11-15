@@ -12,6 +12,7 @@
 import { resolveScene } from "../../../lib/studio/scenes";
 import { STUDIO_FONT_FACES } from "../../../lib/studio/fonts";
 import { getImage, snapshotImageUrls } from "../../../lib/studio/graphics";
+import { createTimestampSync, monitorFps, pickDue } from "../../../lib/studio/framePacing";
 
 const isVideo = (el) => typeof HTMLVideoElement !== "undefined" && el instanceof HTMLVideoElement;
 const isImg = (el) => typeof HTMLImageElement !== "undefined" && el instanceof HTMLImageElement;
@@ -91,22 +92,54 @@ export function createWorkerCompositor({ width, height, fps, mirrorCanvas, onFai
   let tap = null; // { gen: MediaStreamTrackGenerator, writer }
   let lastMirrorAt = 0;
   let mirrorN = 0;
+  // Ayna (Program ekranı) SUNUMU ekran karesinde (rAF): gelen küçük kareler işçinin ideal tik
+  // zamanıyla kuyruğa girer, her ekran karesinde zamanı gelmiş en yeni kare basılır. İleti
+  // geliş titreşimi (çift / atlanan kare) Program ekranına yansımaz.
+  const mq = []; // [{ bmp, ts }] (ts: yerel ideal tik zamanı)
+  const msync = createTimestampSync();
+  let mraf = 0;
+  let mShown = null;
+  let vsyncAt = 0;
+  let vsync = 0; // ekran karesi aralığı (ms, ortalama)
+  const presentMirror = (now) => {
+    mraf = 0;
+    if (dead) return;
+    if (vsyncAt && now - vsyncAt < 50) vsync = vsync ? vsync * 0.9 + (now - vsyncAt) * 0.1 : now - vsyncAt;
+    vsyncAt = now;
+    if (mq.length) {
+      if (vsync > 4) msync.align(now, vsync, mq[mq.length - 1].ts);
+      const idx = pickDue(mq, now, msync);
+      for (let i = 0; i < idx; i += 1) { try { mq.shift().bmp.close(); } catch { /* yoksay */ } }
+      const head = mq[0];
+      if (head && head !== mShown && msync.dueAt(head.ts) <= now) {
+        try {
+          const ctx = mirrorCanvas.getContext("2d", { alpha: false });
+          ctx.drawImage(head.bmp, 0, 0, mirrorCanvas.width, mirrorCanvas.height);
+          mirrorN += 1;
+          lastMirrorAt = performance.now();
+        } catch { /* yoksay */ }
+        mShown = head;
+      }
+    }
+    if (mq.length > 1 || (mq[0] && mq[0] !== mShown)) mraf = requestAnimationFrame(presentMirror);
+  };
 
   const fail = (reason) => { if (dead) return; dead = true; try { enc?.handlers.onError?.("WORKER", reason); } catch { /* yoksay */ } try { onFail?.(reason); } catch { /* yoksay */ } };
   const post = (m, tr) => { if (dead) return false; try { worker.postMessage(m, tr || []); return true; } catch { return false; } };
 
-  const mirrorSize = (W, H) => { const w = Math.min(W, W >= 1920 ? 1280 : 960); return { w, h: Math.round((w * H) / W), fps: Math.min(30, fps) }; };
+  const mirrorSize = (W, H) => { const w = Math.min(W, W >= 1920 ? 1280 : 960); return { w, h: Math.round((w * H) / W), fps: monitorFps(fps) }; };
   const initMirror = (W, H) => { const m = mirrorSize(W, H); if (mirrorCanvas.width !== m.w) mirrorCanvas.width = m.w; if (mirrorCanvas.height !== m.h) mirrorCanvas.height = m.h; return m; };
 
   worker.onmessage = (e) => {
     const m = e.data || {};
     if (m.type === "mirror") {
-      try {
-        const ctx = mirrorCanvas.getContext("2d", { alpha: false });
-        ctx.drawImage(m.bmp, 0, 0, mirrorCanvas.width, mirrorCanvas.height);
-        mirrorN += 1;
-        lastMirrorAt = performance.now();
-      } catch { /* yoksay */ } finally { try { m.bmp.close(); } catch { /* yoksay */ } post({ type: "mirrorAck" }); }
+      post({ type: "mirrorAck" });
+      const ts = Number.isFinite(m.tAbs) ? m.tAbs - performance.timeOrigin : performance.now();
+      if (mq.length && ts <= mq[mq.length - 1].ts) { for (const x of mq) { try { x.bmp.close(); } catch { /* yoksay */ } } mq.length = 0; mShown = null; }
+      msync.observe(ts, performance.now());
+      mq.push({ bmp: m.bmp, ts });
+      while (mq.length > 4) { try { mq.shift().bmp.close(); } catch { /* yoksay */ } }
+      if (!mraf && typeof requestAnimationFrame === "function") mraf = requestAnimationFrame(presentMirror);
       return;
     }
     if (m.type === "stats") { stats = { draw: m.draw, enc: m.enc, at: performance.now() }; return; }
@@ -313,6 +346,9 @@ export function createWorkerCompositor({ width, height, fps, mirrorCanvas, onFai
       try { tap?.writer.close().catch(() => {}); tap?.track.stop(); } catch { /* yoksay */ }
       post({ type: "stop" });
       dead = true;
+      if (mraf) cancelAnimationFrame(mraf);
+      for (const x of mq) { try { x.bmp.close(); } catch { /* yoksay */ } }
+      mq.length = 0;
       setTimeout(() => { try { worker.terminate(); } catch { /* yoksay */ } }, 500);
     },
   };

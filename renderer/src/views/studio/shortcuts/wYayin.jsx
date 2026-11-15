@@ -2,7 +2,7 @@
 //   grafik   skorbord çeşit + göster / gizle, skorbord aç / kapat, altyazı (hazır metin,
 //            serbest metin, N sn göster), röportaj bandı kişi seçici, sponsor (göster, süre,
 //            dönüşüm), LED (yönlendirme + içerik)
-//   sahne    önceki / sonraki sahne, sahne bankası (canlı küçük resim), geçiş (tür + süre),
+//   sahne    önceki / sonraki sahne, sahne bankası (sabit şema), geçiş (tür + süre),
 //            hazır ekranlar (Başlıyor / Ara / Bitti, geri sayım dakikası)
 //   yayın    YouTube bölümü (etiketli), yayını başlat / durdur + sağlık, kayıt (prova / yerel)
 //   VAR      VAR'a gir / çık + durum (İNCELEME / KONTROL / KARAR) + karar çipleri

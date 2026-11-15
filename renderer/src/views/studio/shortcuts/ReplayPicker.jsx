@@ -1,16 +1,14 @@
 // Yayın Stüdyosu · TEKRAR kısayolu paneli: son tekrarların listesi, seçilen
-// tekrarın kaydedilmiş AÇILARI (canlı küçük video). Seçilen açılar önce
+// tekrarın kaydedilmiş AÇILARI (alt alta isim listesi; küçük resim / video yok). Seçilen açılar önce
 // ÖNİZLEME'ye yüklenir (modes.loadReplay); "Önizle + yayına al" önce önizlemeye yükler,
 // sonra Studio'nun tek GEÇİŞ yolunu çağırır (önizlemede görünen aynen gider) [önizleme-geçiş].
 //
 //   ctx.replay = { list, meta, sources, playing, previewing, preview(r, angles), take(), stop(), openTab(), recordAngles }
 import React, { useEffect, useMemo, useState } from "react";
 import { Icon } from "../../../components/ui";
-import { PROGRAM_ANGLE, angleLabel, anglesOf, defaultAngles, metaFor, replayTitle } from "../../../lib/studio/replays";
+import { PROGRAM_ANGLE, angleLabel, anglesOf, defaultAngles, metaFor, replayTitle, secondsText } from "../../../lib/studio/replays";
+import { AngleList, AngleRow } from "../replayAngleList";
 
-function AngleThumb({ url }) {
-  return <video src={url} muted loop autoPlay playsInline preload="metadata" />;
-}
 
 export default function ReplayPicker({ ctx, onClose }) {
   const R = ctx.replay;
@@ -58,19 +56,15 @@ export default function ReplayPicker({ ctx, onClose }) {
         ))}
       </div>
       <h6 className="st-rp__h">Açılar <small>sırayla yayına gider · birden çok seçilebilir</small></h6>
-      <div className="st-rp__angles">
+      <AngleList className="st-rp__angles" label="Açılar">
         {have.map((a, i) => {
           const on = chosen.includes(a.angle);
           const order = chosen.indexOf(a.angle);
           return (
-            <button key={a.angle} type="button" className={`st-rp__angle ${on ? "is-on" : ""}`} onClick={() => toggle(a.angle)} aria-pressed={on} title={angleLabel(a, R.sources)}>
-              <AngleThumb url={a.url} />
-              <span>{i + 1}. {angleLabel(a, R.sources)}</span>
-              {on && <b>{order + 1}</b>}
-            </button>
+            <AngleRow key={a.angle} order={on ? order + 1 : null} name={`${i + 1}. ${angleLabel(a, R.sources)}`} meta={secondsText(a.durationMs)} onClick={() => toggle(a.angle)} title={angleLabel(a, R.sources)} />
           );
         })}
-      </div>
+      </AngleList>
       <div className="st-rp__actions">
         <button type="button" className={`btn btn--sm ${R.previewing ? "is-pvw" : ""}`} onClick={preview}><Icon name="eye" size={13} /> {R.previewing ? "Önizlemede · yenile" : "Önizlemeye al"}</button>
         <button type="button" className="st-rp__go" onClick={take} disabled={busy} title="Önizlemeye yükler ve aynı GEÇİŞ yoluyla yayına verir (önizlemede görünen aynen gider)"><Icon name="play" size={15} /> ÖNİZLE + YAYINA AL</button>

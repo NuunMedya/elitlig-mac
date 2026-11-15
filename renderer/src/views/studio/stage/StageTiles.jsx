@@ -1,23 +1,22 @@
 // Yayın Stüdyosu · sahne alanı ızgarasının araç kutuları:
 //   ScenesStrip   tüm sahneler (kutunun biçimine göre şerit / liste / ızgara) + "Yeni sahne ekle"
 //   SceneCell     sıradaki tek sahne (kamera hücresi; numarası düzenleme kipinde seçilir)
-//   LedMonitor    LED ekranda görünen içerik: LED yönlendirmesi (Program / Önizleme /
-//                 sahne / kapalı) aynı sahne + kaynak + grafik durumuyla çizilir; web
+//   LedMonitor    LED yönlendirmesi (Program / Önizleme / sahne / kapalı) + hedef sahnenin SABİT
+//                 şeması (canlı değil; gerçek LED çıkışı kendi penceresinde); web
 //                 kipinde sitenin LED sayfası (iframe) ve adresi
-//   AnglesTile    son (ya da önizlenen) tekrarın açıları: tıkla → önizlemede o açı
+//   AnglesTile    son (ya da önizlenen) tekrarın açıları (isim listesi): tıkla → önizlemede o açı
 //   MetersTile    program ses şeridi (varsa) ya da mikrofon ölçeri
 //   ClockTile     saat + maç dakikası
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { canvasLoop } from "../perf/renderLoad";
 import { SECONDARY_FPS } from "../../../lib/studio/renderBudget";
+import { paintSchematic } from "../../../lib/studio/sceneSchematic";
 import { Icon } from "../../../components/ui";
 import { resolveScene } from "../../../lib/studio/scenes";
 import { stripGrid } from "../../../lib/studio/stageGrid";
 import { PROGRAM_ANGLE, angleLabel, replayTitle, metaFor } from "../../../lib/studio/replays";
 import { meterFraction, samplesLevel } from "../../../lib/studio/audio";
-import { drawScene } from "../draw";
 import { Tile } from "../Multiview";
-import { drawGraphicsSafe } from "../scenes/graphicsBridge";
 import { LED_WEB_BASE } from "../led/useLed";
 import { ledRouteLabel, ledTargetScene } from "../led/ledRouting";
 import Monitor from "../scenes/Monitor";
@@ -96,7 +95,7 @@ export function SceneCellPicker({ tile, tiles, onPick }) {
  * grafik anlık görüntüsünden çizer; burada aynı yapılandırma ve aynı kaynak
  * akışlarıyla (stüdyonun kendi runtime'ı) aynı çizim yapılır.
  */
-function LedMonitorInner({ led, configRef, runtimeRef, graphicsRef, matchClockRef, matchId, scenes, programId, previewId, onOpenTab }) {
+function LedMonitorInner({ led, configRef, matchId, scenes, programId, previewId, onOpenTab }) {
   const canvas = useMemo(() => { const c = document.createElement("canvas"); c.width = 960; c.height = 540; return c; }, []);
   const p = led.prefs;
   const web = Boolean(p.web);
@@ -106,28 +105,20 @@ function LedMonitorInner({ led, configRef, runtimeRef, graphicsRef, matchClockRe
   targetRef.current = { id: target, off: p.route === "off" };
   const [box, setBox] = useState({ w: 0, h: 0 });
 
+  // SABİT şema (canlı değil): LED'in gösterdiği sahnenin yerleşimi, hedef / sahne değişince bir
+  // kez boyanır. Gerçek LED çıkışı kendi penceresinde tam hızda; stüdyoda video yalnız
+  // ÖNİZLEME ve PROGRAM ekranlarında döner.
   useEffect(() => {
-    if (web) return undefined;
-    const loop = (now) => {
-      const cfg = configRef.current;
-      const { id, off } = targetRef.current;
-      const ctx = canvas.getContext("2d", { alpha: false });
-      const W = canvas.width;
-      const H = canvas.height;
-      const scene = off || !id ? null : resolveScene(cfg, id);
-      drawScene(ctx, scene, cfg?.sources || [], runtimeRef.current, W, H, { now, matchClockMs: matchClockRef?.current?.() ?? null, noFx: true });
-      const snap = graphicsRef?.current;
-      if (scene && snap && drawGraphicsSafe) { try { drawGraphicsSafe(ctx, { width: W, height: H, now: Date.now(), sceneId: id, target: "led" }, snap); } catch { /* yoksay */ } }
-      if (!scene) {
-        ctx.fillStyle = "rgba(255,255,255,0.4)";
-        ctx.font = `700 ${Math.round(H * 0.05)}px -apple-system, sans-serif`;
-        ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillText(off ? "LED kapalı (siyah)" : "LED için sahne yok", W / 2, H / 2);
-      }
-    };
-    // LED önizleme ~8 fps, görünürken (gerçek LED çıkışı kendi penceresinde tam hızda).
-    return canvasLoop("LED önizleme", { fps: SECONDARY_FPS.ledPreview, el: canvas }, loop);
-  }, [canvas, configRef, graphicsRef, matchClockRef, runtimeRef, web]);
+    if (web) return;
+    const cfg = configRef.current;
+    const { id, off } = targetRef.current;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) return;
+    const W = canvas.width;
+    const H = canvas.height;
+    const scene = off || !id ? null : resolveScene(cfg, id);
+    paintSchematic(ctx, scene, cfg?.sources || [], W, H, { empty: off ? "LED kapalı (siyah)" : "LED için sahne yok" });
+  }, [canvas, configRef, web, target, p.route, scenes]);
 
   const value = web ? "web" : p.route === "scene" ? `scene:${p.sceneId}` : p.route;
   const onRoute = (v) => {
@@ -176,15 +167,13 @@ export const AnglesTile = memo(function AnglesTile({ replays, meta, sources, cur
   return (
     <div className="stg-box is-angles">
       <div className="stg-box__head"><Icon name="repeat" size={12} /> Tekrar açıları {r && <span className="st-monitor__name" style={{ textTransform: "none", letterSpacing: 0 }}>· {replayTitle(r, metaFor(r, meta))}</span>}</div>
-      <div className="stg-angles">
+      <AngleList className="stg-angles" label="Tekrar açıları">
         {angles.map((a) => (
-          <button key={a.angle} type="button" className={`stg-angle ${cursor?.replayId === r.id && cursor?.angle === a.angle ? "is-on" : ""}`} onClick={() => onPick(r, a.angle)} title={`${angleLabel(a, sources)} — önizlemede aç (yakınlaştır, kes, yayına al)`}>
-            <video src={`${a.url}#t=0.5`} poster={a.posterUrl || undefined} preload="metadata" muted playsInline />
-            <span>{a.angle === PROGRAM_ANGLE ? "PROGRAM" : angleLabel(a, sources)}</span>
-          </button>
+          <AngleRow key={a.angle} check={false} stage={cursor?.replayId === r.id && cursor?.angle === a.angle ? "preview" : null} name={a.angle === PROGRAM_ANGLE ? "PROGRAM" : angleLabel(a, sources)}
+            onClick={() => onPick(r, a.angle)} title={`${angleLabel(a, sources)} — önizlemede aç (yakınlaştır, kes, yayına al)`} />
         ))}
         {!angles.length && <p className="stg-angles__empty">{r ? "Bu tekrarın açıları hazırlanıyor…" : "Henüz tekrar yok: GOL ya da ÖNEMLİ AN (B)."}</p>}
-      </div>
+      </AngleList>
     </div>
   );
 });

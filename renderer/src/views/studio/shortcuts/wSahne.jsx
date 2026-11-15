@@ -1,7 +1,7 @@
 // Yayın Stüdyosu · SAHNE düğmeleri: sahne ızgarası çeşitleri (ızgara · liste · şerit · büyük
 // küçük resim + tally), A/B veriyolu (PGM / PVW sıraları, KES / GEÇİŞ), otomatik kamera
 // dönüşü (her N sn), PiP aç / kapat, sahne başına katman aç / kapat, siyah / bekleme kartı,
-// programı dondur. Sahneler ctx.sceneTile (önizleme / yayın, canlı küçük resim kaydı),
+// programı dondur. Sahneler ctx.sceneTile (önizleme / yayın, sabit şema kaydı),
 // katmanlar ctx.sceneOps (setLayerVisible), program durumu ctx.pgmFx (useCompositor).
 import React, { useCallback, useEffect, useRef } from "react";
 import { Icon } from "../../../components/ui";
@@ -10,7 +10,7 @@ import { useLocal } from "./localStore";
 import { ROTATE_SECONDS, nextInRotation, pipLayers } from "./opsLogic";
 import { optMenu, withOptions } from "./wOptions";
 
-/** Canlı küçük resim (sahne kutusu çizicisine kayıtlı tuval). */
+/** Sahne şeması (sahne kutusu çizicisine kayıtlı tuval; canlı değil, değişince bir kez boyanır). */
 function Thumb({ ctx, id, w = 160, h = 90, preview }) {
   const register = ctx.sceneTile?.register;
   const ref = useRef(null);

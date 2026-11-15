@@ -19,6 +19,10 @@ import { drawGraphics, putImage } from "../../../lib/studio/graphics";
 import { composeBase, composeTop, drawFtb, drawProgramFx } from "./composeProgram";
 import { progressAt } from "../../../lib/studio/transitions";
 import { timerNowMs } from "../../../lib/studio/match";
+import { createTimestampSync, pickDue, sleepSlice } from "../../../lib/studio/framePacing";
+
+// Kaynak başına bekleyen kare sayısı (titreşim tamponu; kamera arabellek havuzunu tüketmesin).
+const MAX_QUEUED = 6;
 
 const S = {
   W: 1920, H: 1080, fps: 30, canvas: null, ctx: null, scratch: null,
@@ -50,6 +54,8 @@ function releaseSource(id) {
   if (r) { r.dead = true; try { r.reader.cancel(); } catch { /* yoksay */ } S.readers.delete(id); }
   const rt = S.runtime.get(id);
   if (rt) {
+    for (const q of rt.queue || []) { if (q.f !== rt.el) { try { q.f.close?.(); } catch { /* yoksay */ } } }
+    rt.queue = null;
     try { rt.el?.close?.(); } catch { /* yoksay */ }
     for (const b of rt.images || []) { try { b.close?.(); } catch { /* yoksay */ } }
     S.runtime.delete(id);
@@ -61,19 +67,47 @@ async function readStream(id, readable, gen) {
   const reader = readable.getReader();
   const r = { reader, gen, dead: false };
   S.readers.set(id, r);
-  const rt = { status: "live", el: null, gen };
+  // Kareler zaman damgasıyla kuyruğa girer; hangisinin çizileceğini tik seçer (selectFrames):
+  // varış titreşimi çift / atlanan kareye dönüşmez.
+  const rt = { status: "live", el: null, gen, queue: [], sync: createTimestampSync() };
   S.runtime.set(id, rt);
   try {
     for (;;) {
       const { value, done } = await reader.read();
       if (done || r.dead) { value?.close?.(); break; }
-      const prev = rt.el;
-      rt.el = value;
-      try { prev?.close?.(); } catch { /* yoksay */ }
+      const at = performance.now();
+      const ts = Number.isFinite(value.timestamp) ? value.timestamp / 1000 : at;
+      const q = rt.queue;
+      // Damga geri giderse (döngü / yeniden bağlanma): kuyruk yeni kareyle başlar.
+      if (q.length && ts <= q[q.length - 1].ts) { for (const x of q) { try { x.f.close(); } catch { /* yoksay */ } } q.length = 0; rt.el = null; }
+      rt.sync.observe(ts, at);
+      q.push({ f: value, ts });
+      if (!rt.el) { rt.el = value; freshSince = true; }
+      while (q.length > MAX_QUEUED) dropHead(rt);
       st.srcFrames += 1;
-      freshSince = true;
     }
   } catch { /* iz bitti */ }
+}
+
+/** Kuyruğun başındaki (gösterilen) kareyi bırakır; sıradaki gösterilir. */
+function dropHead(rt) {
+  const head = rt.queue.shift();
+  if (head) { try { head.f.close(); } catch { /* yoksay */ } }
+  const next = rt.queue[0];
+  rt.el = next ? next.f : null;
+  if (next) freshSince = true;
+}
+
+/** Tik: her kaynakta zamanı gelmiş en yeni kare gösterilir (ideal ızgara zamanına göre). */
+function selectFrames(tickMs) {
+  for (const rt of S.runtime.values()) {
+    const q = rt.queue;
+    if (!q || !q.length) continue;
+    // Sunum gecikmesi bir kez çıkış ızgarasının ortasına hizalanır (kare zamanı tik sınırına düşmez).
+    rt.sync.align(tickMs, 1000 / S.fps, q[q.length - 1].ts);
+    const idx = pickDue(q, tickMs, rt.sync);
+    for (let i = 0; i < idx; i += 1) dropHead(rt);
+  }
 }
 
 /* ───────────────────────────── grafikler ───────────────────────────── */
@@ -161,10 +195,11 @@ function encStats() {
 
 /* ───────────────────────────── kare ───────────────────────────── */
 
-function render(now) {
+function render(now, tick = now) {
   const cfg = S.cfg;
   if (!cfg || !S.ctx) return;
   const t0 = performance.now();
+  selectFrames(tick);
   const { ctx, W, H } = S;
   // Süzme kalitesi: yalnız KÜÇÜLTMEDE (ör. 4K kamera → 1080p) "high" gerekir (titreşim / tırtık);
   // büyütme / aynı boyutta "medium" yeterli ve çok daha ucuz (yazılım çiziminde kare başına ms'ler).
@@ -201,7 +236,7 @@ function render(now) {
   if (!S.mirror.inFlight && S.mirror.n % S.mirror.every === 0) {
     S.mirror.inFlight = true;
     createImageBitmap(S.canvas, { resizeWidth: S.mirror.w, resizeHeight: S.mirror.h, resizeQuality: "medium" })
-      .then((bmp) => { st.mirrors += 1; post({ type: "mirror", bmp }, [bmp]); })
+      .then((bmp) => { st.mirrors += 1; post({ type: "mirror", bmp, tAbs: performance.timeOrigin + tick }, [bmp]); })
       .catch(() => { S.mirror.inFlight = false; });
   }
   if (S.tap) {
@@ -235,17 +270,22 @@ function flushStats(now) {
 }
 
 // Sabit ızgara: kayan zamanlayıcı (gecikme düzeltmeli). İşçi zamanlayıcıları ana iş parçacığından bağımsızdır.
+// Uyku kısa dilimlerle (framePacing.sleepSlice): tek uzun setTimeout Windows'ta düşük çözünürlüklü
+// zamanlayıcıya düşüp tikleri 15,6 ms adımlara yuvarlayabilir (31 / 47 ms → takılma).
 function loop() {
   if (!S.running) return;
   const now = performance.now();
+  const wait = S.nextAt - now;
+  if (wait > 0.5) { setTimeout(loop, sleepSlice(wait - 0.25)); return; }
   const interval = 1000 / S.fps;
   const late = now - S.nextAt;
   if (late > interval * 0.5) { st.late += 1; if (late > st.lateMax) st.lateMax = late; }
-  try { render(now); } catch (err) { post({ type: "drawError", message: String(err?.message || err) }); }
+  const tick = late > interval ? now : S.nextAt; // kare seçimi ideal ızgara zamanına göre
+  try { render(now, tick); } catch (err) { post({ type: "drawError", message: String(err?.message || err) }); }
   flushStats(now);
   S.nextAt += interval;
   if (S.nextAt < now - interval) S.nextAt = now + interval; // çok geride: ızgarayı yeniden kur (biriken kare çizilmez)
-  setTimeout(loop, Math.max(0, S.nextAt - performance.now()));
+  setTimeout(loop, sleepSlice(S.nextAt - performance.now() - 0.25));
 }
 
 /* ───────────────────────────── iletiler ───────────────────────────── */

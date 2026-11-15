@@ -1,6 +1,6 @@
 // Yayın Stüdyosu · KAYNAK KİTAPLIĞI ve kaynak penceresi.
 //
-//   SourceLibrary  KAYNAKLAR sekmesi (kartlar): canlı küçük resim, durum, kaç sahnede
+//   SourceLibrary  KAYNAKLAR sekmesi (kartlar): sabit küçük resim (tür + ad), durum, kaç sahnede
 //                  kullanıldığı, ayarlar, yeniden bağlan, sahneye ekle, "sahne oluştur", sil.
 //                  Bir kaynak birçok sahnede katman olabilir (akış bir kez açılır).
 //                  Kaynak eklemek sahne oluşturmaz.
@@ -22,7 +22,7 @@ import { FONTS, SOURCE_GROUPS, SOURCE_TYPES, persistentUrl, sourceDefaults, sour
 import { AV_KINDS, isLiveKind } from "../../lib/studio/liveSources";
 import { hotkeyOwner } from "../../lib/studio/hotkeys";
 import { ConnectGuide, GUIDE_KIND, HotkeyField, LiveConnect, LiveFields, SyncFields } from "./live/LiveSourceFields";
-import { drawSource } from "./draw";
+import { paintSchematic } from "../../lib/studio/sceneSchematic";
 import { useStable } from "./useStable";
 import { compactFx, fxActive, migrateSourceFx, resolveFx } from "../../lib/studio/videoFx";
 import FxEditor from "./fx/FxEditor";
@@ -37,24 +37,21 @@ const DELAY_KINDS = new Set(["camera", "screen", "window", "region", "phone", "i
 /** Eklendikten sonra bağlantı bilgisi (QR / adres) gösterilen türler. */
 export const CONNECT_KINDS = new Set(["phone", "ingest"]);
 
-/** Kaynağın canlı küçük resmi (yarım saniyede bir; görünmüyorsa çizilmez). */
+/**
+ * Kaynağın SABİT küçük resmi: tür rengi + kaynak adı (canlı video çizilmez, döngü yok;
+ * kaynak değişince bir kez boyanır). Video yalnız önizleme / program ekranlarında döner.
+ */
 export function SourceThumb({ source, runtimeRef, width = 96 }) {
+  void runtimeRef;
   const ref = useRef(null);
-  const srcRef = useRef(source);
-  srcRef.current = source;
+  const key = `${source?.id}|${source?.name}|${source?.kind}|${source?.color || ""}`;
   useEffect(() => {
-    const draw = () => {
-      const c = ref.current;
-      if (!c || !c.isConnected || c.offsetParent === null) return;
-      const ctx = c.getContext("2d");
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, c.width, c.height);
-      drawSource(ctx, srcRef.current, runtimeRef.current.get(srcRef.current.id), { x: 0, y: 0, w: c.width, h: c.height }, srcRef.current.kind === "image" ? "contain" : "cover", { placeholders: true, noFx: true });
-    };
-    draw();
-    const t = setInterval(draw, 600);
-    return () => clearInterval(t);
-  }, [runtimeRef]);
+    const c = ref.current;
+    const ctx = c?.getContext?.("2d");
+    if (!ctx || !source) return;
+    const scene = { layers: [{ visible: true, sourceId: source.id, x: 0, y: 0, w: 1, h: 1 }] };
+    try { paintSchematic(ctx, scene, [source], c.width, c.height); } catch { /* yoksay */ }
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
   return <canvas ref={ref} className="st-thumb" width={width} height={Math.round((width * 9) / 16)} />;
 }
 

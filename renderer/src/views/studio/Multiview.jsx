@@ -5,43 +5,41 @@
 //   Üstünde hızlı düğmeler: "Yayına al" ve "LED'e ver"; ⋯ menüsünde Düzenle, Çoğalt…
 //   Numara = 1–9 kısayolu. LED'de görünen sahnede mavi "LED" rozeti.
 //
-// Küçük resimler TEK zamanlayıcıyla (saniyede ~6 kare) doğrudan tuvallere
-// çizilir; görünmeyen kutu ve gizli pencere atlanır. React durumu kare başına
-// değişmez — program tuvalinin kare hızını bozmaz.
+// Küçük resimler CANLI DEĞİLDİR: sahnenin sabit yerleşim şeması (katman kutuları +
+// kaynak adları) yalnız sahne değişince bir kez çizilir. Video yalnız önizleme / program
+// ekranlarında döner (akıcılık: ikincil video çözme / tuval döngüsü yok).
 import React, { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { canvasLoop, onScreen } from "./perf/renderLoad";
-import { SECONDARY_FPS } from "../../lib/studio/renderBudget";
+import { paintSchematic } from "../../lib/studio/sceneSchematic";
 import { createPortal } from "react-dom";
 import { Icon, MenuButton } from "../../components/ui";
 import { resolveScene } from "../../lib/studio/scenes";
-import { drawScene } from "./draw";
 import { BAD, STATUS_TEXT } from "./SourcesPanel";
 
 const TILE_W = 256;
 const TILE_H = 144;
-const TILE_MS = 1000 / SECONDARY_FPS.sceneThumb; // ~6 fps
 
-/** Tüm kutu tuvallerini çizen tek zamanlayıcı. register(id, canvas | null). */
-export function useTileRenderer(configRef, runtimeRef, { ms = TILE_MS } = {}) {
+/**
+ * Sahne kutusu tuvalleri: SABİT şema (katman kutuları + kaynak adları). Canlı video çizilmez,
+ * döngü / zamanlayıcı yoktur: tuval kaydedilince ve sahne yapılandırması (config) değişince
+ * bir kez boyanır. Video yalnız ÖNİZLEME ve PROGRAM ekranlarında döner. register(id, canvas | null).
+ */
+export function useTileRenderer(configRef, runtimeRef, { config = null } = {}) {
+  void runtimeRef;
   const canvases = useRef(new Map()); // canvas → id
+  const paint = useCallback((c, id) => {
+    const cfg = configRef.current;
+    if (!c || !cfg) return;
+    const ctx = c.getContext?.("2d", { alpha: false });
+    if (!ctx) return;
+    try { paintSchematic(ctx, resolveScene(cfg, id), cfg.sources, c.width, c.height); } catch { /* yoksay */ }
+  }, [configRef]);
   useEffect(() => {
-    const draw = () => {
-      const cfg = configRef.current;
-      if (!cfg) return;
-      const now = performance.now();
-      for (const [c, id] of canvases.current) {
-        if (!c.isConnected || c.offsetParent === null || !onScreen(c)) continue;
-        const ctx = c.getContext("2d", { alpha: false });
-        // noFx: küçük resimde WebGL görüntü ayarı yapılmaz (yalnız çevirme).
-        drawScene(ctx, resolveScene(cfg, id), cfg.sources, runtimeRef.current, c.width, c.height, { placeholders: true, now, noFx: true });
-      }
-    };
-    return canvasLoop("Sahne kutuları (küçük resim)", { fps: 1000 / ms }, draw);
-  }, [configRef, runtimeRef, ms]);
+    for (const [c, id] of canvases.current) paint(c, id);
+  }, [config, paint]);
   return useCallback((id, canvas, prev) => {
     if (prev && prev !== canvas) canvases.current.delete(prev);
-    if (canvas) canvases.current.set(canvas, id);
-  }, []);
+    if (canvas) { canvases.current.set(canvas, id); paint(canvas, id); }
+  }, [paint]);
 }
 
 /** Kutunun uyarı metni (sahnedeki bozuk kaynak). */
@@ -104,6 +102,8 @@ export const Tile = memo(function Tile({ tile, register, onAir, inPreview, onLed
     ref.current = el;
   }, [register, tile.id]);
   useEffect(() => () => { if (ref.current) register(tile.id, null, ref.current); }, [register, tile.id]);
+  // Boyut değişince tuval silinir: şema yeniden boyansın (döngü yok).
+  useEffect(() => { if (ref.current) register(tile.id, ref.current, ref.current); }, [register, tile.id, size, large]);
   const cls = `st-tile is-${size} ${onAir ? "is-program" : ""} ${inPreview ? "is-preview" : ""} ${bad ? "is-bad" : ""} ${onLed ? "is-led" : ""}`;
   return (
     <div className={cls} onContextMenu={menu ? (e) => { e.preventDefault(); e.stopPropagation(); setCtx({ x: e.clientX, y: e.clientY }); } : undefined}>

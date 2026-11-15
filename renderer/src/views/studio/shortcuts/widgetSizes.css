@@ -188,3 +188,4 @@ button.st-w.is-go:hover:not(:disabled) { background: radial-gradient(120% 140% a
 .st-ri.is-s2x1 .st-w.is-go { gap: 8px; padding: 6px 10px; justify-content: flex-start; }
 .st-ri.is-s2x1 .st-w__goicon { width: 36px; height: 36px; box-shadow: 0 0 0 3px rgba(var(--ink-rgb), 0.15); }
 .st-ri.is-s2x1 .st-w.is-go .st-w__label { font-size: 11.5px; letter-spacing: 0.03em; }
+.st-wag__list { flex: 1; min-height: 0; }

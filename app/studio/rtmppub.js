@@ -150,6 +150,67 @@ function createFlvReader() {
   };
 }
 
+/* ------------------------- zaman çizelgesi (süreklilik) ------------------------- */
+
+/**
+ * TEK YAYIN = TEK ZAMAN ÇİZELGESİ (2.25.0). NEDEN: aktarıcının TS → FLV ffmpeg'i her yeni
+ * süreçte zaman damgalarını 0'dan başlatır. Kodlayıcı yeniden başladığında ya da ağ koptuğunda
+ * YouTube'a giden RTMP zaman damgaları 0'a dönüyordu; YouTube bunu yeni bir giriş oturumu sayıp
+ * DVR'ı (geri sarma) sıfırlıyordu — izleyici yalnız son birkaç dakikayı görebiliyordu.
+ * Bu çizelge, aktarıcı oturumu boyunca (kodlayıcı yeniden başlasa, ağ yeniden bağlansa da)
+ * zaman damgalarını kaldığı yerden, TEKDÜZE ARTAN biçimde sürdürür:
+ *   segment(nowMs)  yeni giriş akışı (yeni ffmpeg / yeni bağlantı): sıradaki etiket yeniden tabanlanır
+ *   map(type, ts, nowMs) → çıkış ms (gelen damga − segment tabanı + çıkış tabanı; türe göre azalmaz)
+ * Yeni segmentin çıkış tabanı = son çıkış damgası + aradaki duvar saati süresi (ffmpeg'in açılış
+ * patlaması düşülür; 1 ms … 10 sn): damgalar gerçek zamana yakın kalır, asla geri gitmez.
+ */
+function createFlvTimeline({ maxGapMs = 10000, burstWindowMs = 500 } = {}) {
+  let inBase = null;
+  let outBase = 0;
+  let lastOut = -1; // tüm türlerde en büyük çıkış
+  let lastWall = null;
+  let lastIn = null;
+  let pendingAt = null; // segment() çağrıldı: sıradaki etikette taban
+  const lastByType = new Map();
+  let segments = 0;
+  // Yeni ffmpeg açılışta ~1–2 sn'lik veriyi (probesize / analyzeduration) bir anda verir: duvar
+  // saati aralığı bu kadar fazla görünür. Segment başındaki "bir anda gelen" süre ölçülür ve
+  // sonraki segmentin aralığından düşülür (damgalar gerçek zamanın önüne kaçmaz).
+  let segWall = null;
+  let burst = 0; // bu segmentin açılış patlaması (ms)
+  let burstEst = 0; // son tamamlanan ölçüm
+  const rebase = (ts, nowMs) => {
+    if (segWall !== null) burstEst = burst;
+    const wallGap = lastWall === null || lastOut < 0 ? 0 : nowMs - lastWall;
+    const gap = Math.max(1, Math.min(maxGapMs, wallGap - burstEst));
+    inBase = ts;
+    outBase = lastOut < 0 ? 0 : lastOut + gap;
+    pendingAt = null;
+    segments += 1;
+    segWall = nowMs;
+    burst = 0;
+  };
+  return {
+    segment(nowMs = Date.now()) { pendingAt = nowMs; },
+    map(type, ts, nowMs = Date.now()) {
+      // Segment başı ya da akış içinde büyük geri sıçrama (süreç değişti, işaret gelmedi).
+      if (inBase === null || pendingAt !== null || (lastIn !== null && ts < lastIn - 1000)) rebase(ts, nowMs);
+      lastIn = ts;
+      if (nowMs - segWall <= burstWindowMs) burst = Math.max(burst, (ts - inBase) - (nowMs - segWall));
+      let out = outBase + (ts - inBase);
+      const prev = lastByType.get(type);
+      if (prev !== undefined && out < prev) out = prev;
+      if (out < 0) out = 0;
+      lastByType.set(type, out);
+      if (out > lastOut) lastOut = out;
+      lastWall = nowMs;
+      return out;
+    },
+    lastOut: () => lastOut,
+    segments: () => segments,
+  };
+}
+
 /* ----------------------------- el sıkışma ----------------------------- */
 
 // ffmpeg'in (libavformat/rtmpproto.c) yayın el sıkışmasıyla aynı: C1'de Flash Player
@@ -202,7 +263,7 @@ const PUB_MESSAGES = {
  *   .end() / .destroy()
  * Olaylar: "publishing", "error" (Error{code}), "close", "drain".
  */
-function createRtmpPublisher({ url, connect = null, now = () => Date.now(), chunkSize = OUT_CHUNK, connectTimeoutMs = 20000, pauseBytes = 1024 * 1024, tlsOptions = {}, setTimeoutImpl = setTimeout, clearTimeoutImpl = clearTimeout } = {}) {
+function createRtmpPublisher({ url, connect = null, now = () => Date.now(), chunkSize = OUT_CHUNK, connectTimeoutMs = 20000, pauseBytes = 1024 * 1024, tlsOptions = {}, setTimeoutImpl = setTimeout, clearTimeoutImpl = clearTimeout, timeline = null } = {}) {
   const events = new EventEmitter();
   const target = parseRtmpUrl(url);
   let sock = null;
@@ -219,7 +280,12 @@ function createRtmpPublisher({ url, connect = null, now = () => Date.now(), chun
   let txn = 1;
   const pendingTx = new Map();
   const cs = new Map();
-  const reader = createFlvReader();
+  let reader = createFlvReader();
+  // Zaman çizelgesi: aktarıcı oturumu boyunca ortak (verilmezse bu bağlantıya özel).
+  const tl = timeline || createFlvTimeline();
+  tl.segment(now());
+  let avcSent = null; // bu bağlantıda gönderilmiş son AVC dizi başlığı
+  let metaSent = false; // onMetaData bu bağlantıda gönderildi mi
   let early = []; // yayın açılmadan gelen FLV etiketleri (başlık + ilk GOP)
   let earlyBytes = 0;
   let mediaBytes = 0;
@@ -451,10 +517,17 @@ function createRtmpPublisher({ url, connect = null, now = () => Date.now(), chun
           if (!aacSent || !asc.equals(aacSent)) {
             aacSent = Buffer.from(asc);
             mediaBytes += header.data.length;
-            write(chunkMessage({ csid: CS_AUDIO, type: 8, streamId, timestamp: Math.min(header.timestamp, t.timestamp), payload: header.data, chunkSize }));
+            write(chunkMessage({ csid: CS_AUDIO, type: 8, streamId, timestamp: tl.map(8, Math.min(header.timestamp, t.timestamp), now()), payload: header.data, chunkSize }));
           }
         }
       }
+      // Yeni giriş segmentinde (kodlayıcı yeniden başladı) aynı yapılandırma yeniden gönderilmez:
+      // alıcı kod çözücüyü akış ortasında yeniden kurmasın. Değiştiyse gönderilir.
+      if (t.type === 9 && (t.data[0] & 0x0f) === 7 && t.data[1] === 0) {
+        if (avcSent && avcSent.equals(t.data)) continue;
+        avcSent = Buffer.from(t.data);
+      }
+      if (t.type === 18) { if (metaSent) continue; metaSent = true; }
       let payload = t.data;
       let csid = CS_VIDEO;
       if (t.type === 8) csid = CS_AUDIO;
@@ -463,11 +536,12 @@ function createRtmpPublisher({ url, connect = null, now = () => Date.now(), chun
         // FLV betik etiketi (onMetaData) → "@setDataFrame" önekiyle (ffmpeg / OBS ile aynı).
         payload = Buffer.concat([amfEncode("@setDataFrame"), payload]);
       } else if (t.type !== 9) continue;
+      const ts = t.type === 18 ? Math.max(0, tl.lastOut()) : tl.map(t.type, t.timestamp, now());
       if (t.type === 9 || t.type === 8) {
         mediaBytes += payload.length;
-        if (t.type === 9) { if (firstTs === null) firstTs = t.timestamp; lastTs = t.timestamp; }
+        if (t.type === 9) { if (firstTs === null) firstTs = ts; lastTs = ts; }
       }
-      write(chunkMessage({ csid, type: t.type, streamId, timestamp: t.timestamp, payload, chunkSize }));
+      write(chunkMessage({ csid, type: t.type, streamId, timestamp: ts, payload, chunkSize }));
     }
     sock.uncork();
   }
@@ -493,6 +567,17 @@ function createRtmpPublisher({ url, connect = null, now = () => Date.now(), chun
     }
     sendTags(tags);
     return !sock || sock.writableLength < pauseBytes;
+  }
+
+  /**
+   * Yeni giriş akışı (aktarıcının TS → FLV ffmpeg'i değişti): FLV başlığı yeniden beklenir,
+   * zaman damgaları çizelgede kaldığı yerden sürer. RTMP bağlantısı KESİLMEZ.
+   */
+  function newSegment() {
+    reader = createFlvReader();
+    tl.segment(now());
+    aacConfig = null;
+    if (phase !== "publishing") { early = []; earlyBytes = 0; }
   }
 
   function stats() {
@@ -535,7 +620,7 @@ function createRtmpPublisher({ url, connect = null, now = () => Date.now(), chun
     try { sock?.destroy(); } catch { /* yoksay */ }
   }
 
-  return { start, writeFlv, stats, end, destroy, events, target, isPublishing: () => phase === "publishing" };
+  return { start, writeFlv, newSegment, stats, end, destroy, events, target, timeline: tl, isPublishing: () => phase === "publishing" };
 }
 
-module.exports = { createRtmpPublisher, createFlvReader, chunkMessage, parseRtmpUrl, amfEncode, amfDecode, OUT_CHUNK, PUB_MESSAGES };
+module.exports = { createRtmpPublisher, createFlvTimeline, createFlvReader, chunkMessage, parseRtmpUrl, amfEncode, amfDecode, OUT_CHUNK, PUB_MESSAGES };

@@ -60,7 +60,7 @@ export const RAIL_WIDGETS = [
   // ── tekrar ──
   { type: "replay", family: "replay", label: "Tekrar · açı seç", icon: "repeat", group: "tekrar", size: "2x2", sizes: ["1x1", "2x1", "2x2"], hint: "Son tekrarın açılarını seç, önizlemeye al", hotkey: "replay" },
   { type: "replayGo", family: "replay", label: "Son tekrar", icon: "play", group: "tekrar", size: "2x1", sizes: ALL, hint: "Tek büyük düğme: son tekrar önizlemeye (Ayarlar › Tekrar: R = doğrudan yayına)", hotkey: "replay" },
-  { type: "replayAngles", family: "replay", label: "Açı ızgarası (canlı)", icon: "video", group: "tekrar", size: "2x2", sizes: ["2x1", "2x2"], hint: "Son tekrarın açıları canlı küçük resimle; tık: o açı önizlemede" },
+  { type: "replayAngles", family: "replay", label: "Açı listesi", icon: "video", group: "tekrar", size: "2x2", sizes: ["2x1", "2x2"], hint: "Son tekrarın açıları isim listesi; tık: o açı önizlemede" },
   { type: "replayRecent", family: "replay", label: "Son 3 tekrar", icon: "list", group: "tekrar", size: "2x2", sizes: ["1x2", "2x1", "2x2"], hint: "Son üç tekrar; tık: önizlemeye al" },
   { type: "replaySlow", family: "replay", label: "Ağır çekim", icon: "repeat", group: "tekrar", size: "2x1", sizes: ["2x1", "2x2"], hint: "Hız (0,25× – 1×) ve son tekrarı önizlemeye al" },
   { type: "replayQueue", family: "replay", label: "Tekrar kuyruğu", icon: "list", group: "tekrar", size: "2x2", sizes: ["1x2", "2x2"], hint: "Tekrarları sırayla seç, kuyruğu önizlemeye al" },
@@ -84,7 +84,7 @@ export const RAIL_WIDGETS = [
   { type: "interview", family: "interview", label: "Röportaj kaydı", icon: "mic", group: "roportaj", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "Röportaj kaydını başlat / bitir", hotkey: "interview" },
   { type: "led", family: "led", label: "LED çıkışı · yönlendirme", icon: "overview", group: "grafik", size: "1x1", sizes: ["1x1", "2x1", "2x2"], hint: "LED ekranda ne görünsün, aç / kapat" },
   { type: "ready", family: "ready", label: "Hazır ekranlar", icon: "clock", group: "sahne", size: "2x2", sizes: ["1x2", "2x1", "2x2"], hint: "Başlıyor · Devre arası · Bitti" },
-  { type: "sceneGrid", family: "scene", label: "Sahne ızgarası (mini)", icon: "layers", group: "sahne", size: "2x2", sizes: ["2x1", "1x2", "2x2"], hint: "İlk sahneler canlı küçük resimle; tık: önizleme · çift tık: yayın" },
+  { type: "sceneGrid", family: "scene", label: "Sahne ızgarası (mini)", icon: "layers", group: "sahne", size: "2x2", sizes: ["2x1", "1x2", "2x2"], hint: "İlk sahneler (sabit şema); tık: önizleme · çift tık: yayın" },
   { type: "scene", family: "scene", label: "Sahne", icon: "layers", group: "sahne", size: "1x1", sizes: ALL, hint: "Tek sahne: tık önizleme · çift tık yayın", multi: true },
   // ══════════ çok işlevli düğmeler (./wReji, ./wSes, ./wTekrar, ./wYayin) ══════════
   // ── reji ──
@@ -157,7 +157,7 @@ export const RAIL_WIDGETS = [
   { type: "linksBoard", family: "links", label: "Bağlantılar · aç / kopyala / QR", icon: "link", group: "yayin", size: "2x2", sizes: ["2x1", "2x2", "3x2"], hint: "YouTube yayını, YouTube Studio, maç sayfası; kopyala ve QR" },
   // ── sahne ──
   { type: "sceneNav", family: "scene", label: "Önceki / sonraki sahne", icon: "chevronRight", group: "sahne", size: "2x1", sizes: ["2x1", "1x2", "2x2"], hint: "‹ › sahneyi önizlemeye; büyükte YAYINA" },
-  { type: "sceneBank", family: "scene", label: "Sahne bankası (4–8)", icon: "layers", group: "sahne", size: "3x2", sizes: WIDE, hint: "Canlı küçük resimli sahneler; tık önizleme · çift tık yayın" },
+  { type: "sceneBank", family: "scene", label: "Sahne bankası (4–8)", icon: "layers", group: "sahne", size: "3x2", sizes: WIDE, hint: "Sahneler (sabit şema); tık önizleme · çift tık yayın" },
   { type: "transitionPro", family: "transition", label: "Geçiş · tür + süre", icon: "swap", group: "sahne", size: "2x2", sizes: ["2x1", "2x2", "3x2"], hint: "Büyük GEÇİŞ, tür çipleri, süre (250 ms – 2 sn)" },
   { type: "readyPro", family: "ready", label: "Hazır ekranlar · geri sayım", icon: "clock", group: "sahne", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2"], hint: "Başlıyor · Devre arası · Bitti; geri sayım dakikası" },
   // ── yayın ──
@@ -241,7 +241,7 @@ export const RAIL_WIDGETS = [
   { type: "teamColors", family: "macOps", label: "Takım renkleri · değiştir", icon: "palette", group: "mac", size: "2x1", sizes: ["1x1", "2x1", "2x2"], hint: "Ev / deplasman renkleri, yer değiştir, temaya dön" },
   { type: "teamShort", family: "macOps", label: "Skorbord kısa adları", icon: "pencil", group: "mac", size: "2x1", sizes: ["2x1", "2x2"], hint: "Skorborddaki 3 harfli adları elle yaz" },
   // ── sahne ──
-  { type: "sceneGridPro", family: "scene", label: "Sahneler · ızgara / liste / şerit / büyük", icon: "grid", group: "sahne", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2", "4x2"], hint: "Tally'li canlı küçük resimler; görünüm seçenekten" },
+  { type: "sceneGridPro", family: "scene", label: "Sahneler · ızgara / liste / şerit / büyük", icon: "grid", group: "sahne", size: "2x2", sizes: ["1x2", "2x1", "2x2", "3x2", "4x2"], hint: "Tally’li sahne kutuları (sabit şema); görünüm seçenekten" },
   { type: "abBus", family: "scene", label: "A/B veriyolu (PGM / PVW)", icon: "swap", group: "sahne", size: "3x2", sizes: WIDE, hint: "Üst sıra doğrudan yayın, alt sıra önizleme; KES / GEÇİŞ" },
   { type: "autoSwitch", family: "scene", label: "Otomatik kamera dönüşü", icon: "repeat", group: "sahne", size: "2x1", sizes: ["1x1", "2x1", "2x2", "3x2"], hint: "Her N sn sıradaki sahne (kesme ya da geçiş)" },
   { type: "pipToggle", family: "scene", label: "PiP aç / kapat", icon: "layers", group: "sahne", size: "1x1", sizes: ALL, hint: "Sahnenin köşe kutularını (PiP) gizle / göster" },

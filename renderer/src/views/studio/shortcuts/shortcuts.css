@@ -182,7 +182,7 @@ button.st-w:active:not(:disabled) { transform: scale(0.97); }
 .st-rp__item.is-on { border-color: var(--tool); background: var(--tool-soft); }
 .st-rp__h { margin: 0; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 800; display: flex; align-items: baseline; gap: 6px; }
 .st-rp__h small { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--faint); }
-.st-rp__angles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.st-rp__angles { max-height: 240px; }
 .st-rp__angle { position: relative; padding: 0; border: 2px solid var(--border); border-radius: 9px; overflow: hidden; background: #000; color: var(--on-strong); cursor: pointer; }
 .st-rp__angle video { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; pointer-events: none; }
 .st-rp__angle span { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 6px 3px; font-size: 10.5px; font-weight: 800; text-align: left; background: linear-gradient(transparent, rgba(0, 0, 0, 0.85)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -7,6 +7,7 @@
 // açık yayında "YouTube ayarlarını düzenle" (başlık, açıklama, gizlilik, etiketler).
 // YouTube bölümleri yayındayken açıklamaya kendiliğinden yazılır.
 import { LinksInline } from "./links/LinkButtons";
+import { youtubeConnectView, youtubeErrorText } from "../../lib/studio/youtubeConnect";
 import React, { memo, useEffect, useState } from "react";
 import { Field, Icon } from "../../components/ui";
 import * as api from "./studioApi";
@@ -74,21 +75,46 @@ const fmtBytes = (n) => (!Number.isFinite(Number(n)) || !n ? "" : n > 1e9 ? `${(
 function YoutubeConnect({ yt, busy, toast, ask }) {
   const c = yt.config;
   const [working, setWorking] = useState(false);
-  const connect = async () => {
+  const view = youtubeConnectView(c);
+  const connect = async (switching = false) => {
     setWorking(true);
-    try { await yt.connect(); toast("Tarayıcıda Google hesabınla giriş yap ve kanala izin ver; bağlantı burada kendiliğinden görünür.", { tone: "info", timeout: 7000 }); } catch (e) { toast(e?.message || "YouTube bağlantısı başlatılamadı.", { tone: "error", timeout: 6000 }); } finally { setWorking(false); }
+    try {
+      await yt.connect(switching ? { switching: true } : undefined);
+      toast(switching ? "Tarayıcıda bağlamak istediğin Google hesabını / kanalı seç; yeni kanal burada kendiliğinden görünür." : "Tarayıcıda Google hesabınla giriş yap ve kanala izin ver; bağlantı burada kendiliğinden görünür.", { tone: "info", timeout: 7000 });
+    } catch (e) { toast(youtubeErrorText(e, "YouTube bağlantısı başlatılamadı."), { tone: "error", timeout: 8000 }); } finally { setWorking(false); }
   };
   const disconnect = async () => {
     if (!(await ask({ title: "YouTube bağlantısını kes", message: "Kanal bağlantısı sunucudan kaldırılır; yeni maçlarda yayın otomatik açılmaz.", confirmLabel: "Bağlantıyı kes", danger: true }))) return;
     setWorking(true);
-    try { await yt.disconnect(); toast("YouTube bağlantısı kesildi.", { tone: "success" }); } catch (e) { toast(e?.message || "Bağlantı kesilemedi.", { tone: "error" }); } finally { setWorking(false); }
+    try {
+      const r = await yt.disconnect();
+      toast(r?.text || "YouTube bağlantısı kesildi.", { tone: r?.tone || "success", timeout: r?.tone === "info" ? 9000 : undefined });
+    } catch (e) { toast(youtubeErrorText(e, "Bağlantı kesilemedi."), { tone: "error", timeout: 8000 }); } finally { setWorking(false); }
   };
-  if (c.configured && c.connected !== false) {
+  const waiting = yt.connecting
+    ? <div className="st-note"><span className="st-spin" /> Tarayıcıda Google girişi bekleniyor… (2 dakika) <button type="button" className="btn btn--xs" onClick={() => yt.reloadConfig()}>Denetle</button></div>
+    : null;
+  if (view === "connected") {
     return (
-      <div className="st-yt-chan">
-        {c.channel?.thumbnail ? <img src={c.channel.thumbnail} alt="" /> : <span className="st-yt-chan__ph"><Icon name="video" size={16} /></span>}
-        <span><small>Bağlı kanal</small><strong>{c.channel?.title || "YouTube kanalı"}</strong></span>
-        <button type="button" className="btn btn--xs btn--ghost" disabled={busy || working} onClick={disconnect} title="Kanal bağlantısını kes">Bağlantıyı kes</button>
+      <>
+        <div className="st-yt-chan">
+          {c.channel?.thumbnail ? <img src={c.channel.thumbnail} alt="" /> : <span className="st-yt-chan__ph"><Icon name="video" size={16} /></span>}
+          <span><small>Bağlı kanal</small><strong>{c.channel?.title || "YouTube kanalı"}</strong></span>
+          <button type="button" className="btn btn--xs" disabled={busy || working || Boolean(yt.connecting)} onClick={() => connect(true)} title="Başka bir Google hesabı / kanal bağla (bağlı kanalın yerine geçer)">Kanalı değiştir</button>
+          <button type="button" className="btn btn--xs btn--ghost" disabled={busy || working} onClick={disconnect} title="Kanal bağlantısını kes">Bağlantıyı kes</button>
+        </div>
+        {yt.connecting === "switch" && waiting}
+      </>
+    );
+  }
+  if (view === "env") {
+    return (
+      <div className="st-yt-connect">
+        <div className="st-note is-warn st-note--block">
+          <Icon name="info" size={14} />
+          <span><strong>Uygulamadan bağlı kanal yok.</strong> {c.envNote}</span>
+        </div>
+        {waiting || <button type="button" className="btn btn--red btn--block" disabled={busy || working} onClick={() => connect(false)}><Icon name="video" size={13} /> YouTube kanalını bağla</button>}
       </div>
     );
   }
@@ -108,9 +134,7 @@ function YoutubeConnect({ yt, busy, toast, ask }) {
   return (
     <div className="st-yt-connect">
       <p className="st-hint">Kanalını bir kez bağla: her maç için yayın <strong>maç adıyla kendiliğinden açılır</strong>, yayın anahtarı gerekmez ve canlı link maç sayfasına eklenir.{c.error ? ` (${c.error})` : ""}</p>
-      {yt.connecting
-        ? <div className="st-note"><span className="st-spin" /> Tarayıcıda Google girişi bekleniyor… (2 dakika) <button type="button" className="btn btn--xs" onClick={() => yt.reloadConfig()}>Denetle</button></div>
-        : <button type="button" className="btn btn--red btn--block" disabled={busy || working} onClick={connect}><Icon name="video" size={13} /> YouTube kanalını bağla</button>}
+      {waiting || <button type="button" className="btn btn--red btn--block" disabled={busy || working} onClick={() => connect(false)}><Icon name="video" size={13} /> YouTube kanalını bağla</button>}
     </div>
   );
 }
@@ -276,7 +300,8 @@ function BroadcastPanel({ links = null, yt, engine, busy, matchId, matchName, ma
   const ff = engine.info?.ffmpeg;
   const manualUrl = joinRtmp(rtmpUrl, rtmpKey);
   const openStream = s?.broadcast_id && s.active !== false;
-  const connected = yt.config.configured && yt.config.connected !== false;
+  // Sunucu ayarındaki jetonla (token_source "env") da yayın açılabilir: başlatma düğmeleri görünür.
+  const connected = yt.config.configured && (yt.config.connected !== false || yt.config.tokenSource === "env");
   const [editOpen, setEditOpen] = useState(false);
 
   const copy = async () => {

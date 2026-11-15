@@ -7,6 +7,7 @@
 // w × h (1×1, 1×2, 2×1, 2×2) — dar boyutlarda içerik kısalır.
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "../../../components/ui";
+import { AngleList, AngleRow } from "../replayAngleList";
 import { SCOREBOARD_VARIANTS } from "../../../lib/studio/graphics/variants";
 import { SCOREBUG_VARIANTS, clockText } from "../../../lib/studio/scorebug";
 import { TRANSITION_KINDS } from "../../../lib/studio/transitions";
@@ -74,19 +75,16 @@ function AngleGrid({ ctx, w }) {
   const r = withAngles(R)[0] || null;
   const [busy, setBusy] = useState(null);
   if (!r) return <div className="st-w is-violet is-panel is-big"><span className="st-w__state"><Icon name="video" size={14} /> AÇILAR</span><span className="st-w__empty">Henüz tekrar yok. GOL ya da ÖNEMLİ AN ile kaydet.</span></div>;
-  const have = (r.angles || []).filter((a) => a.url).slice(0, w === 2 ? 4 : 2);
+  const have = (r.angles || []).filter((a) => a.url).slice(0, w === 2 ? 6 : 4);
   const take = async (a) => { setBusy(a.angle); try { await R.preview(r, [a.angle]); } finally { setBusy(null); } };
   return (
     <div className={`st-w is-violet is-panel is-big st-wag ${R.playing ? "is-on" : ""}`}>
       <span className="st-w__state"><Icon name="video" size={13} /> <span className="st-w__ellip">{replayTitle(r, metaFor(r, R.meta))}</span></span>
-      <div className={`st-wag__grid is-n${have.length}`}>
+      <AngleList className="st-wag__list" label="Son tekrarın açıları">
         {have.map((a) => (
-          <button key={a.angle} type="button" className={`st-wag__cell ${busy === a.angle ? "is-busy" : ""}`} onClick={() => take(a)} title={`${angleLabel(a, R.sources)} — bu açıyı önizlemeye al (yayına GEÇİŞ ile)`}>
-            <video src={a.url} muted loop autoPlay playsInline preload="metadata" />
-            <span>{angleLabel(a, R.sources)}</span>
-          </button>
+          <AngleRow key={a.angle} check={false} busy={busy === a.angle} name={angleLabel(a, R.sources)} onClick={() => take(a)} title={`${angleLabel(a, R.sources)} — bu açıyı önizlemeye al (yayına GEÇİŞ ile)`} />
         ))}
-      </div>
+      </AngleList>
     </div>
   );
 }

@@ -345,6 +345,7 @@ function SceneTile({ ctx, item, big }) {
   const register = S.register;
   const setRef = useCallback((el) => { register(id, el, ref.current); ref.current = el; }, [register, id]);
   useEffect(() => () => { if (ref.current) register(id, null, ref.current); }, [register, id]);
+  useEffect(() => { if (ref.current) register(id, ref.current, ref.current); }, [register, id, big]);
   if (!scene) return <Tile tone="plain" icon="layers" big={big} label="SAHNE" sub="silinmiş" disabled />;
   const onAir = S.programId === id;
   const inPvw = S.previewId === id && !onAir;
@@ -355,7 +356,7 @@ function SceneTile({ ctx, item, big }) {
     </button>
   );
 }
-// Katalog önizlemesinde çizilmez: canlı küçük resim kaydı aynı sahneyi şeritten çalmasın.
+// Katalog önizlemesinde çizilmez (şema kaydı aynı sahneyi şeritten çalmasın).
 const scene = { noPreview: true, render: (p) => <SceneTile {...p} /> };
 
 export const WIDGET_IMPL = {

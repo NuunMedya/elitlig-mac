@@ -77,7 +77,7 @@ export function RailCatalog({ items, onAdd, scenes = [], compact = false, ctx = 
           </div>
           {grp.key === "sahne" && (
             <div className="st-cat__scenes">
-              <small>Sahne kısayolu (canlı küçük resim, tık: önizleme, çift tık: yayın)</small>
+              <small>Sahne kısayolu (sabit sahne şeması, tık: önizleme, çift tık: yayın)</small>
               <div className="st-chips">
                 {scenes.map((s) => {
                   const has = items.some((x) => x.type === "scene" && x.opts?.sceneId === s.id);

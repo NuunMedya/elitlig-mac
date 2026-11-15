@@ -16,7 +16,7 @@
 // yükleme bekler ("Yayın öncelikli"). Parçalar (<Part>) panoya ayrı konabilir:
 // part:tekrar:list (pozisyonlar) / grid (önizlemedeki pozisyonun açıları) / queue (önizleme /
 // yayın kutusu) / timeline / transport / rate / zoom / moment / angles / between / uploads.
-import React, { memo, useMemo, useRef, useState } from "react";
+import React, { memo, useMemo, useState } from "react";
 import { Icon, Kbd } from "../../components/ui";
 import { angleLabel, anglesOf, recordableSources, metaFor, replayOfMatch, replayTitle, secondsText, toggleIn } from "../../lib/studio/replays";
 import { STAGE_LABEL, pickNumbers, picksOf, positionAngles, stageOf } from "../../lib/studio/replayDeck";
@@ -27,6 +27,7 @@ import UploadLog from "./modes/UploadLog";
 import { PendingNote } from "./replayUploadUi"; // [gol-klip]
 import { DeckAngles, DeckExtras, DeckSeq, DeckSpeed, DeckTarget, DeckTime, DeckTimeline, DeckTransport, DeckZoom, angleShort, useDeckClock } from "./modes/replayDeckUi";
 import "./modes/replayEditor.css";
+import { AngleList, AngleRow } from "./replayAngleList";
 import { Part, usePanelParts } from "./dock/parts";
 import { Splitter } from "./dock/PanelFrame";
 
@@ -201,25 +202,9 @@ function ReplayPanelInner({ api }) {
   );
 }
 
-/* ───────────────────────── açı küçük resmi ───────────────────────── */
-
-function AngleThumb({ a, sources, no, stage, live, onClick, onDoubleClick, title, size = "md" }) {
-  const ref = useRef(null);
-  const hover = (on) => { const v = ref.current; if (!v || live) return; try { if (on) v.play().catch(() => {}); else { v.pause(); v.currentTime = 0.5; } } catch { /* yoksay */ } };
-  return (
-    <button type="button" className={`rpx-pa is-${size} ${no ? "is-on" : ""} is-${stage || "idle"}`} onClick={onClick} onDoubleClick={onDoubleClick}
-      onMouseEnter={() => hover(true)} onMouseLeave={() => hover(false)} title={title} aria-pressed={Boolean(no)}>
-      <video ref={ref} src={live ? a.url : `${a.url}#t=0.5`} poster={a.posterUrl || undefined} muted loop playsInline autoPlay={live} preload="metadata" />
-      <span className="rpx-pa__l">{angleShort(a, sources)}</span>
-      {no ? <b className="rpx-pa__no">{no}</b> : <span className="rpx-pa__add"><Icon name="plus" size={11} /></span>}
-      {stage === "preview" || stage === "air" ? <StageBadge stage={stage} small /> : null}
-    </button>
-  );
-}
-
 /* ───────────────────────── pozisyon listesi ───────────────────────── */
 
-function PositionList({ list, pending, R, meta, picks, pick, cursor, air, sources, onSend, onSplit, splitId, solo, live }) {
+export function PositionList({ list, pending, R, meta, picks, pick, cursor, air, sources, onSend, onSplit, splitId, solo, live }) {
   return (
     <section className="rpx-col rpx-poss" aria-label="Pozisyonlar">
       <h5 className="rpx-col__h">Pozisyonlar <span className="muted">({list.length}) · açılara tıkla → seç (sıra numaralı) · ÖNİZLEMEYE GÖNDER</span>{solo && <span className="st-top__spacer" />}</h5>
@@ -235,8 +220,8 @@ function PositionList({ list, pending, R, meta, picks, pick, cursor, air, source
             </div>
           </li>
         ))}
-        {list.map((r, i) => (
-          <PositionRow key={r.id} r={r} R={R} meta={meta} picks={picks} pick={pick} cursor={cursor} air={air} sources={sources} onSend={onSend} onSplit={onSplit} isSplit={splitId === r.id} liveThumbs={i < 2} live={live} />
+        {list.map((r) => (
+          <PositionRow key={r.id} r={r} R={R} meta={meta} picks={picks} pick={pick} cursor={cursor} air={air} sources={sources} onSend={onSend} onSplit={onSplit} isSplit={splitId === r.id} live={live} />
         ))}
         {!list.length && !pending.length && <li className="st-hint st-pad">Henüz tekrar yok. GOL'e bas ya da <strong>ÖNEMLİ AN</strong> (<Kbd>B</Kbd>) ile kaydet.</li>}
       </ul>
@@ -244,7 +229,7 @@ function PositionList({ list, pending, R, meta, picks, pick, cursor, air, source
   );
 }
 
-function PositionRow({ r, R, meta, picks, pick, cursor, air, sources, onSend, onSplit, isSplit, liveThumbs, live }) {
+function PositionRow({ r, R, meta, picks, pick, cursor, air, sources, onSend, onSplit, isSplit, live }) {
   const m = metaFor(r, meta);
   const u = R.uploadOf?.(r.id);
   const chip = uploadChip(u, r, m, R.now || Date.now());
@@ -282,16 +267,16 @@ function PositionRow({ r, R, meta, picks, pick, cursor, air, sources, onSend, on
           <button type="button" className="icon-btn icon-btn--xs" title="Tekrarı sil" onClick={() => R.onRemove?.(r)} disabled={isAir}><Icon name="trash" size={13} /></button>
         </span>
       </div>
-      <div className={`rpx-pos__angles is-n${Math.min(angles.length, 6)}`}>
+      <AngleList className="rpx-pos__angles" label="Açılar (tık: seç, sıra numaralı)">
         {angles.map((a) => {
           const st = isAir && (air.angle === a.angle) ? "air" : isPvw && cursor.angle === a.angle ? "preview" : null;
           return (
-            <AngleThumb key={a.angle} a={a} sources={sources} no={nums[a.angle]} stage={st} live={liveThumbs}
+            <AngleRow key={a.angle} name={angleShort(a, sources)} order={nums[a.angle] ?? null} stage={st} meta={secondsText(a.durationMs)}
               onClick={() => toggle(a.angle)} onDoubleClick={() => onSend(r)}
               title={`${angleLabel(a, sources)} — tık: ${nums[a.angle] ? `seçimden çıkar (${nums[a.angle]}. sırada)` : "seç"} · çift tık: önizlemeye gönder`} />
           );
         })}
-      </div>
+      </AngleList>
       <div className="rpx-pos__foot">
         <span className="rpx-pos__plan">
           {chosen.length ? <><b>{chosen.length} açı seçili</b>: {chosen.map((a) => angleShort(r.angles.find((x) => x.angle === a) || { angle: a }, sources)).join(" → ")}</>
@@ -328,31 +313,23 @@ function PositionRow({ r, R, meta, picks, pick, cursor, air, sources, onSend, on
 function FocusGrid({ rm, meta, sources, picks, cursor, air, replays }) {
   const id = cursor?.replayId || air?.replayId || null;
   const r = id ? replays.find((x) => x.id === id) : null;
-  if (!r) return <section className="rpx-col rpx-grid"><h5 className="rpx-col__h">Açılar</h5><p className="st-hint st-pad">Bir pozisyonun açılarını seç ve <b>ÖNİZLEMEYE GÖNDER</b>: açıları burada büyük görünür.</p></section>;
+  if (!r) return <section className="rpx-col rpx-grid"><h5 className="rpx-col__h">Açılar</h5><p className="st-hint st-pad">Bir pozisyonun açılarını seç ve <b>ÖNİZLEMEYE GÖNDER</b>: açıları burada liste halinde görünür.</p></section>;
   const angles = r.angles.filter((a) => a.url);
   const nums = pickNumbers(picks, r.id);
   const pvw = rm.decks?.preview;
   return (
     <section className="rpx-col rpx-grid" aria-label="Önizlemedeki pozisyonun açıları">
       <h5 className="rpx-col__h"><span className="rpx-col__t">{replayTitle(r, metaFor(r, meta))}</span><span className="muted">· {angles.length} açı</span></h5>
-      <div className={`rpx-angles is-n${Math.min(angles.length, 6)}`}>
+      <AngleList className="rpx-angles" label="Önizlemedeki pozisyonun açıları">
         {angles.map((a) => {
           const stage = stageOf({ replayId: r.id, angle: a.angle, picks, cursor: cursor ? { replayId: cursor.replayId, angle: cursor.angle } : null, air });
           return (
-            <div key={a.angle} className={`rpx-ang is-${stage}`}>
-              <button type="button" className="rpx-ang__hit" onClick={() => rm.pick?.toggle(r.id, a.angle)} onDoubleClick={() => (pvw?.active && pvw.replayId === r.id ? pvw.setAngle(a.angle) : null)}
-                title={`${angleLabel(a, sources)} — tık: seç / bırak · çift tık: önizlemede bu açıya geç`}>
-                <video src={a.url} poster={a.posterUrl || undefined} muted loop autoPlay playsInline preload="metadata" />
-                <span className="rpx-ang__l">{angleShort(a, sources)}</span>
-                <StageBadge stage={stage === "selected" ? null : stage} small />
-              </button>
-              <button type="button" className={`rpx-ang__no ${nums[a.angle] ? "is-on" : ""}`} onClick={() => rm.pick?.toggle(r.id, a.angle)} aria-label={nums[a.angle] ? `Sıra ${nums[a.angle]}` : "Seç"}>
-                {nums[a.angle] || <Icon name="plus" size={11} />}
-              </button>
-            </div>
+            <AngleRow key={a.angle} name={angleShort(a, sources)} order={nums[a.angle] ?? null} stage={stage === "preview" || stage === "air" ? stage : null} meta={secondsText(a.durationMs)}
+              onClick={() => rm.pick?.toggle(r.id, a.angle)} onDoubleClick={() => (pvw?.active && pvw.replayId === r.id ? pvw.setAngle(a.angle) : null)}
+              title={`${angleLabel(a, sources)} — tık: seç / bırak · çift tık: önizlemede bu açıya geç`} />
           );
         })}
-      </div>
+      </AngleList>
     </section>
   );
 }

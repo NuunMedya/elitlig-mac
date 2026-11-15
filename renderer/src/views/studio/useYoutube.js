@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./studioApi";
 import { startBody } from "./youtube/templates";
+import { connectDone, disconnectResult, normalizeYoutubeConfig } from "../../lib/studio/youtubeConnect";
 
 export function useYoutube(matchId, { encodingLive }) {
   const [config, setConfig] = useState({ loading: true, configured: false, privacy: "public" });
@@ -27,16 +28,7 @@ export function useYoutube(matchId, { encodingLive }) {
     const r = await api.getLiveConfig();
     if (!mounted.current) return null;
     const c = r.ok ? r.data || {} : {};
-    const next = {
-      loading: false,
-      configured: Boolean(c.configured),
-      connected: c.connected != null ? Boolean(c.connected) : Boolean(c.configured),
-      channel: c.channel || null,
-      oauthReady: c.oauth_ready !== false,
-      oauthKnown: c.oauth_ready != null,
-      privacy: c.privacy || "public",
-      error: r.ok ? null : r.error?.message || null,
-    };
+    const next = normalizeYoutubeConfig(c, { ok: r.ok, error: r.error?.message });
     setConfig(next);
     if (c.privacy) setPrivacy(c.privacy);
     return next;
@@ -44,17 +36,24 @@ export function useYoutube(matchId, { encodingLive }) {
 
   useEffect(() => { loadConfig(); }, [loadConfig]);
 
-  /** "YouTube kanalını bağla": Google girişi tarayıcıda; bağlanınca kendiliğinden görünür. */
-  const connect = useCallback(async () => {
+  const configRef = useRef(config);
+  configRef.current = config;
+  /**
+   * "YouTube kanalını bağla" / "Kanalı değiştir" ({ switching: true }): Google girişi tarayıcıda
+   * (sunucu her seferinde hesap / kanal seçtirir); bağlanınca kendiliğinden görünür. Kanal
+   * değiştirirken yoklama, kanal kimliği / adı DEĞİŞENE dek (ya da 2 dk) sürer.
+   */
+  const connect = useCallback(async ({ switching = false } = {}) => {
+    const prevChannel = switching ? configRef.current?.channel || null : null;
     const data = await api.must(api.connectYoutube(), "YouTube bağlantısı başlatılamadı.");
     if (!data?.auth_url) throw new Error("Sunucu giriş adresi vermedi.");
     await window.elitlig?.app?.openExternal?.(data.auth_url);
-    setConnecting(true);
+    setConnecting(switching ? "switch" : true);
     const until = Date.now() + 120_000;
     const poll = async () => {
       if (!mounted.current) return;
       const c = await loadConfig();
-      if (c?.configured && c.connected !== false) { setConnecting(false); return; }
+      if (connectDone(c, { switching, prevChannel })) { setConnecting(false); return; }
       if (Date.now() > until) { setConnecting(false); return; }
       setTimeout(poll, 3000);
     };
@@ -62,9 +61,11 @@ export function useYoutube(matchId, { encodingLive }) {
     return true;
   }, [loadConfig]);
 
+  /** Bağlantıyı kes → { tone, text } (sunucu ayarındaki jetona düşüldüyse açıklama). */
   const disconnect = useCallback(async () => {
-    await api.must(api.disconnectYoutube(), "Bağlantı kesilemedi.");
-    await loadConfig();
+    const data = await api.must(api.disconnectYoutube(), "Bağlantı kesilemedi.");
+    const c = await loadConfig();
+    return disconnectResult(data, c?.envNote || null);
   }, [loadConfig]);
 
   const refresh = useCallback(async () => {

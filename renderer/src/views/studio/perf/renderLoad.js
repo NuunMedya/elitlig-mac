@@ -11,6 +11,7 @@
 //
 // Program çıkışı bu döngüye bağlı DEĞİLDİR (ayrı iş parçacığında çizilir: compositor/).
 import { topOffenders } from "../../../lib/studio/renderBudget";
+import { createFrameGate } from "../../../lib/studio/framePacing";
 
 const loops = new Set();
 const stats = new Map(); // ad → { calls, ms, maxMs, active }
@@ -61,14 +62,15 @@ function tick(now) {
   raf = loops.size ? requestAnimationFrame(tick) : 0;
   if (hasDoc() && document.hidden) return;
   for (const l of loops) {
-    if (now - l.last < l.interval - 2) continue;
+    // Biriken son tarih (framePacing.createFrameGate): ekran yenileme hızı aralığı bölmese de
+    // (75 / 144 Hz, 25 fps) ortalama hız hedefte kalır; "son çizim + aralık − 2 ms" hızı düşürüyordu.
+    if (!l.gate.due(now)) continue;
     if (l.el) {
       const el = elementOf(l);
       if (!el || !el.isConnected) continue;
       // Görünürlük henüz bilinmiyorsa (ilk kare) çizilir; sonra gözlemciye uyulur.
       if (visibleOf.has(el) && !visibleOf.get(el)) continue;
     }
-    l.last = now;
     const t0 = performance.now();
     try { l.draw(now); } catch { /* bir çizim hatası diğerlerini durdurmasın */ }
     trackDraw(l.name, performance.now() - t0);
@@ -80,7 +82,7 @@ function tick(now) {
  * onu döndüren işlev) — görünmüyorsa çizim atlanır. Dönüş: durdur. setFps(n) ile hız değişir.
  */
 export function canvasLoop(name, { fps = 8, el = null } = {}, draw) {
-  const l = { name, interval: 1000 / Math.max(0.5, fps), last: 0, el, draw, observed: null };
+  const l = { name, gate: createFrameGate(Math.max(0.5, fps)), el, draw, observed: null };
   loops.add(l);
   if (!raf && typeof requestAnimationFrame === "function") raf = requestAnimationFrame(tick);
   const stop = () => {
@@ -88,7 +90,7 @@ export function canvasLoop(name, { fps = 8, el = null } = {}, draw) {
     if (l.observed && io) { try { io.unobserve(l.observed); } catch { /* yoksay */ } }
     if (!loops.size && raf) { cancelAnimationFrame(raf); raf = 0; }
   };
-  stop.setFps = (n) => { l.interval = 1000 / Math.max(0.5, n); };
+  stop.setFps = (n) => { l.gate.setFps(Math.max(0.5, n)); };
   return stop;
 }
 
