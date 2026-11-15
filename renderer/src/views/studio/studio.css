@@ -586,7 +586,7 @@ input[type="range"] { accent-color: color-mix(in srgb, var(--acc), var(--ink-to)
 .st-monitor.is-live .st-screen-wrap { outline: 3px solid var(--st-live); outline-offset: -3px; }
 .st-screen-box { position: relative; }
 .st-screen-box > canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; max-width: none; max-height: none; display: block; }
-.st-monitor__hint { color: var(--faint); font-size: 10.5px; font-weight: 600; }
+.st-monitor__hint { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--faint); font-size: 10.5px; font-weight: 600; }
 .st-monitor__opt { font-size: 11px; color: var(--muted); }
 .st-edit { position: absolute; inset: 0; outline: none; cursor: default; touch-action: none; }
 .st-edit:focus-visible { box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.6); }
@@ -803,7 +803,7 @@ input[type="range"] { accent-color: color-mix(in srgb, var(--acc), var(--ink-to)
 .st-tag.is-led { background: rgba(96, 165, 250, 0.22); color: var(--blue-text); }
 .st-monitor.is-preview .st-screen-wrap { outline-color: rgba(34, 197, 94, 0.6); }
 .st-monitor.is-mode .st-screen-wrap { outline: 2px dashed rgba(var(--acc-2-rgb), 0.8); }
-.st-monitor__btn { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: 6px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
+.st-monitor__btn { flex: none; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: 6px; padding: 1px 8px; font-size: 11px; font-weight: 700; }
 .st-monitor__btn:hover { color: var(--text); border-color: var(--border-strong); }
 .st-silence { position: absolute; left: 50%; top: 34px; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 10px; background: var(--amber); color: var(--on-bright); font-weight: 800; font-size: 12.5px; white-space: nowrap; box-shadow: 0 8px 24px rgba(var(--shade-rgb), 0.4); }
 .st-silence button { border: 1px solid rgba(var(--shade-rgb), 0.3); background: rgba(var(--shade-rgb), 0.12); color: inherit; border-radius: 7px; padding: 2px 8px; font-weight: 800; font-size: 11px; }

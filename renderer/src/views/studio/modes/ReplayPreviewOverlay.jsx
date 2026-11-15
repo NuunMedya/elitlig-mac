@@ -6,17 +6,19 @@
 //              Köşede tam kare küçük haritası.
 //   Üst şerit  durum (ÖNİZLEMEDE / ● YAYINDA), pozisyonun SEÇİLİ açı dizisi (1 ▸ 2 ▸ 3: sırayla
 //              oynar; tık: o açıya geç) ya da tek açıda tüm açılar (A / S; programda kesme /
-//              karışım), yakınlaştırma basamakları 1 / 1,5 / 2 / 3.
+//              karışım), yakınlaştırma basamakları 1 / 1,5 / 2 / 3. Sığmazsa açı / yan yana çipleri
+//              ikinci satıra iner (ölçülür: topLayout) ve yatay kayar; başlık kısalır — üst üste binmez.
 //   Alt şerit  SÜRE ÇUBUĞU (tıkla / sürükle → ara; giriş / çıkış tutamakları), zaman, taşıma
 //              (−1 sn, kare, J, oynat, L, kare, +1 sn, döngü), hız 0,25…2× + T-bar.
 //              Önizlemede: Giriş / Çıkış, YAYINA AL. Programda: sıradaki, CANLIYA DÖN.
+//              ◎ OYUNCU TAKİBİ düğmesi de burada (taşımanın yanında; yüzey odaktayken T).
 // target="program": tüm denetimler YAYINDAKİ tekrara anında uygulanır (useReplayMode › decks.program).
 // [önizleme-geçiş] target="preview": yalnız önizleme; YAYINA AL Studio'nun tek GEÇİŞ yolunu çağırır.
 // YAN YANA: üst şeritte yerleşim çipleri; bölmede tekerlek / sürükle imlecin altındaki PENCEREYE
 // uygulanır (pencere başına yakınlaştırma), pencere üstünde ±kare kayması / "Ana".
 // TAKİP (◎): açıkken monitöre tık → oyuncu anahtar karesi (⌥ tık: sil), alt şeritte biçim / renk /
 // isim / Otomatik izle / Dondur ve göster.
-import React, { memo, useEffect, useRef, useState } from "react";
+import React, { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { canvasLoop } from "../perf/renderLoad";
 import { SECONDARY_FPS } from "../../../lib/studio/renderBudget";
 import { Icon } from "../../../components/ui";
@@ -39,6 +41,16 @@ function deckFromRm(rm, rate, onRate) {
     state: () => { const el = tr.el(); return { time: el?.currentTime || 0, dur: Number.isFinite(el?.duration) ? el.duration : 0, paused: el ? el.paused : true, reverse: 0, rate }; },
     setAngle: (angle) => rm.setCursor({ replayId: rm.cursor.replayId, angle }), mix: false, setMix: () => {}, marks: [], addMark: () => {},
   };
+}
+
+/**
+ * Üst şerit yerleşimi: çipler (açılar / dizi / yan yana) tek satıra sığmıyorsa ikinci satıra
+ * iner. Genişlikler px; başlık en çok `titleCap` kadar yer ister (gerisi üç noktayla kısalır).
+ */
+export function topLayout({ avail = 0, tag = 0, title = 0, chips = 0, tools = 0, gap = 6, titleCap = 150 } = {}) {
+  if (!avail || !chips) return { stack: false };
+  const need = tag + (title ? Math.min(title, titleCap) + gap : 0) + chips + gap + (tools ? tools + gap : 0);
+  return { stack: need > avail };
 }
 
 /** Bölmede (x, y: 0…1) hangi pencere ve pencere içi konum. */
@@ -65,6 +77,39 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
   const compact = w > 0 && w < 860;
   const tiny = w > 0 && w < 420;
   const trackOn = Boolean(deck.track?.tool?.on && deck.track?.available);
+  const toggleTrack = () => { const T = deckRef.current.track; if (T?.available) T.setTool({ on: !T.tool?.on }); };
+
+  // Üst şerit ve alt panel ölçüleri: çipler sığmazsa ikinci satır; yan yana pencere çubukları
+  // üst şeridin altına iner, alt panelle çakışan pencere çubuğu gizlenir.
+  const rootRef = useRef(null);
+  const topRef = useRef(null);
+  const tagRef = useRef(null);
+  const titleRef = useRef(null);
+  const chipsRef = useRef(null);
+  const toolsRef = useRef(null);
+  const panelRef = useRef(null);
+  const [stack, setStack] = useState(false);
+  const [lay, setLay] = useState({ top: 0, panel: 0, h: 0 });
+  const measureRef = useRef(() => {});
+  measureRef.current = () => {
+    const top = topRef.current;
+    if (!top) return;
+    const cs = typeof getComputedStyle === "function" ? getComputedStyle(top) : null;
+    const pad = cs ? (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) : 12;
+    const next = topLayout({
+      avail: top.clientWidth - pad, tag: tagRef.current?.offsetWidth || 0, title: titleRef.current?.scrollWidth || 0,
+      chips: chipsRef.current?.offsetWidth || 0, tools: toolsRef.current?.offsetWidth || 0,
+    }).stack;
+    setStack((s) => (s === next ? s : next));
+    const L = { top: Math.round(top.offsetTop + top.offsetHeight), panel: Math.round(panelRef.current?.offsetHeight || 0), h: Math.round(rootRef.current?.clientHeight || 0) };
+    setLay((p) => (p.top === L.top && p.panel === L.panel && p.h === L.h ? p : L));
+  };
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(() => measureRef.current());
+    for (const r of [rootRef, topRef, chipsRef, toolsRef, panelRef]) if (r.current) ro.observe(r.current);
+    return () => ro.disconnect();
+  }, [compact, tiny]);
 
   // Küçük harita (yakınlaşınca).
   useEffect(() => {
@@ -191,6 +236,7 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
     else if (k === "i" || k === "I") setIn();
     else if (k === "o" || k === "O") setOut();
     else if (k === "Enter" && onTake) onTake();
+    else if ((k === "t" || k === "T") && !e.altKey && !e.metaKey && !e.ctrlKey && deck.track?.available) toggleTrack();
     else used = false;
     if (used) { e.preventDefault(); e.stopPropagation(); }
   };
@@ -200,35 +246,43 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
   const tag = isPgm ? "● YAYINDA" : "ÖNİZLEMEDE";
   const S = deck.split;
   const splitOn = Boolean(S?.active);
+  const seqOn = (deck.seq || []).length > 1;
+  const trackN = deck.track?.tracks?.length || 0;
+  // Görünür içerik değişince yeniden ölç (başlık, açı sayısı, kip).
+  const measureKey = `${title}|${(deck.angles || []).length}|${(deck.seq || []).length}|${S?.available ? 1 : 0}${splitOn ? 1 : 0}|${trackOn ? 1 : 0}|${isZoomed(view) ? 1 : 0}|${compact}${tiny}|${deck.mix ? 1 : 0}`;
+  useLayoutEffect(() => { measureRef.current(); }, [measureKey]);
   return (
-    <div className={`rpo rdk ${isPgm ? "is-air is-pgm" : "is-pvw"} ${compact ? "is-compact" : ""} ${tiny ? "is-tiny" : ""}`} data-deck={target}
+    <div ref={rootRef} className={`rpo rdk ${isPgm ? "is-air is-pgm" : "is-pvw"} ${compact ? "is-compact" : ""} ${tiny ? "is-tiny" : ""}`} data-deck={target}
       aria-label={isPgm ? "Yayındaki tekrar denetimi (yalnız operatör görür)" : "Tekrar düzenleyici (önizleme)"} onPointerDownCapture={() => onFocus?.(target)}>
       <div ref={surfRef} className={`rpo__surf ${isZoomed(view) || splitOn ? "is-zoomed" : ""} ${area ? "is-area" : ""} ${trackOn ? "is-track" : ""}`} tabIndex={0} onKeyDown={onKeyDown} data-deck={target}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
         onDoubleClick={() => deck.active && deck.setView(DEFAULT_VIEW)}
         title="Tekerlek / kıstır: yakınlaştır · sürükle: kaydır · çift tık: sıfırla · J K L · ←/→ kare · ⇧ ±1 sn · 1–6 hız · A / S açı" />
-      {splitOn && <SplitPanes deck={deck} />}
+      {splitOn && <SplitPanes deck={deck} avoid={lay} />}
       {rect && <span className="rdk-rect" style={{ left: `${Math.min(rect.x0, rect.x1) * 100}%`, top: `${Math.min(rect.y0, rect.y1) * 100}%`, width: `${Math.abs(rect.x1 - rect.x0) * 100}%`, height: `${Math.abs(rect.y1 - rect.y0) * 100}%` }} />}
-      <div className="rpo__top">
-        <span className={`rpo__tag ${isPgm ? "is-air" : ""}`}>{tag}</span>
-        {!tiny && title && <span className="rdk-title">{title}{isPgm && deck.total > 1 ? ` · ${deck.index + 1}/${deck.total}` : ""}</span>}
-        {!tiny && <span className="rpo__angles">{(deck.seq || []).length > 1 ? <DeckSeq deck={deck} sources={sources} compact={compact} /> : null}<DeckAngles deck={(deck.seq || []).length > 1 ? { ...deck, angles: [] } : deck} sources={sources} mixToggle={!compact} />{(deck.seq || []).length > 1 && isPgm && !compact && <button type="button" className={`rdk-an__mix ${deck.mix ? "is-on" : ""}`} onClick={() => deck.setMix()} title="Açı değişimi: kesme ya da karışım">{deck.mix ? "KARIŞIM" : "KESME"}</button>}</span>}
-        {!tiny && S?.available && <SplitChips deck={deck} compact={compact} />}
-        <span className="st-top__spacer" />
-        {deck.track && !tiny && (
-          <button type="button" className={`rdk-area rtk-tog ${trackOn ? "is-on" : ""}`} disabled={!deck.track.available} onClick={() => deck.track.setTool({ on: !deck.track.tool?.on })}
-            title="Oyuncu takibi: monitörde oyuncuya tıkla → vurgu oyuncuyu izler (yayına çizilir)">◎{compact ? "" : " Takip"}{deck.track.tracks.length ? ` ${deck.track.tracks.length}` : ""}</button>
+      <div ref={topRef} className={`rpo__top ${stack ? "is-stack" : ""}`}>
+        <span ref={tagRef} className={`rpo__tag ${isPgm ? "is-air" : ""}`}>{tag}</span>
+        {!tiny && title && <span ref={titleRef} className="rdk-title" title={title}>{title}{isPgm && deck.total > 1 ? ` · ${deck.index + 1}/${deck.total}` : ""}</span>}
+        {!tiny && (
+          <div className="rpo__chips">
+            <span ref={chipsRef} className="rpo__chips-in">
+              {seqOn ? <DeckSeq deck={deck} sources={sources} compact={compact} /> : null}
+              <DeckAngles deck={seqOn ? { ...deck, angles: [] } : deck} sources={sources} mixToggle={!compact} />
+              {seqOn && isPgm && !compact && <button type="button" className={`rdk-an__mix ${deck.mix ? "is-on" : ""}`} onClick={() => deck.setMix()} title="Açı değişimi: kesme ya da karışım">{deck.mix ? "KARIŞIM" : "KESME"}</button>}
+              {S?.available && <SplitChips deck={deck} compact={compact} />}
+            </span>
+          </div>
         )}
         {!tiny && (
-          <span className="rpo__zoom">
+          <span ref={toolsRef} className="rpo__zoom">
             <DeckZoom deck={deck} compact={compact} />
             <button type="button" className={`rdk-area ${area ? "is-on" : ""}`} onClick={() => setArea((a) => !a)} disabled={!deck.active} title="Alan seç: monitörde dikdörtgen çiz → o bölgeye yakınlaş (tık: 2× o noktaya)">⌖{compact ? "" : " Alan"}</button>
           </span>
         )}
       </div>
-      {isZoomed(view) && !splitOn && <canvas ref={mapRef} className="rpo__map" width={160} height={90} aria-hidden="true" />}
-      <div className="rpo__panel" onPointerDown={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
-        {trackOn && <TrackBar deck={deck} compact={compact} />}
+      {isZoomed(view) && !splitOn && !tiny && <canvas ref={mapRef} className="rpo__map" width={160} height={90} aria-hidden="true" />}
+      <div ref={panelRef} className="rpo__panel" onPointerDown={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
+        {trackOn && <TrackBar deck={deck} compact={compact} onClose={toggleTrack} />}
         {splitOn && !isPgm && !compact && <div className="rpo__row"><SplitAngles deck={deck} /></div>}
         <DeckTimeline deck={deck} t={t} size={compact ? "normal" : "normal"} />
         <div className="rpo__row">
@@ -237,6 +291,12 @@ function ReplayPreviewOverlay({ deck: deckProp, rm, rate, onRate, target = "prev
           {!tiny && <DeckExtras deck={deck} t={t} compact={compact} />}
           {!tiny && <span className="rpo__rates"><DeckSpeed deck={deck} t={t} slider={!compact} /></span>}
           <span className="st-top__spacer" />
+          {deck.track && (
+            <button type="button" className={`rpo__trk ${trackOn ? "is-on" : ""}`} disabled={!deck.track.available} onClick={toggleTrack} aria-pressed={trackOn}
+              title="Oyuncu takibi (T): monitörde oyuncuya tıkla → vurgu oyuncuyu izler (yayına çizilir)">
+              <span aria-hidden="true">◎</span>{tiny ? "" : compact ? " Takip" : " Oyuncu takibi"}{trackN ? <b className="rpo__trk-n">{trackN}</b> : null}
+            </button>
+          )}
           {onKeys && !compact && <button type="button" className={`rdk-keys ${keysOn ? "is-on" : ""}`} onClick={() => onKeys(!keysOn)} title="Tekrar tuşları: J K L, ←/→, ⇧ ±1 sn, +/−, 1–6 hız, A / S açı, Enter yayına al, Esc canlıya dön">⌨</button>}
           {!isPgm && (
             <>

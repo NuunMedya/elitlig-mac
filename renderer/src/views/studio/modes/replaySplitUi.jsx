@@ -36,8 +36,25 @@ export function SplitChips({ deck, compact = false, closable = true }) {
   );
 }
 
+/** Pencere çubuğu yüksekliği (px) ve kenar payı: avoid hesabı. */
+const PANE_BAR_H = 22;
+const PANE_BAR_GAP = 4;
+
+/**
+ * Pencere çubuğunun yeri: üst satırdaki pencerelerde kaplamanın üst şeridinin altı; alt panelle
+ * çakışacaksa gizli (null). avoid: { top, panel, h } px (ölçülmediyse h = 0: CSS varsayılanı).
+ */
+export function paneBarPlace(rect, avoid) {
+  const h = avoid?.h || 0;
+  if (!h) return { top: undefined };
+  const isTop = rect.y < 0.01;
+  const y = isTop ? Math.max(avoid.top || 0, 0) + PANE_BAR_GAP : rect.y * h + PANE_BAR_GAP;
+  if (y + PANE_BAR_H > h - (avoid.panel || 0)) return null;
+  return { top: isTop ? y - rect.y * h : undefined };
+}
+
 /** Pencere üstü denetimler (DOM; yayına çizilmez). */
-export function SplitPanes({ deck }) {
+export function SplitPanes({ deck, avoid = null }) {
   const S = deck?.split;
   if (!S?.active) return null;
   return (
@@ -45,9 +62,10 @@ export function SplitPanes({ deck }) {
       {S.rects.map((r, i) => {
         const p = S.panes[i];
         if (!p) return null;
+        const place = paneBarPlace(r, avoid);
         return (
           <div key={p.angle} className={`rsp-pane ${S.focus === i ? "is-focus" : ""} ${r.inset ? "is-inset" : ""} ${r.y < 0.01 ? "is-top" : ""}`} style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%` }}>
-            <span className="rsp-pane__bar" onPointerDown={(e) => e.stopPropagation()}>
+            {place && <span className="rsp-pane__bar" style={place.top != null ? { top: place.top } : undefined} onPointerDown={(e) => e.stopPropagation()}>
               <button type="button" className="rsp-pane__name" onClick={() => S.setFocus(i)} title="Bu pencereyi seç (yakınlaştırma düğmeleri buna uygulanır)">{i === 0 ? "● " : ""}{p.label}{!p.ready ? " …" : ""}</button>
               {i > 0 && (
                 <span className="rsp-off" title="Kamera gecikmesi: bu açıyı ana açıya göre kare kare kaydır (30 fps)">
@@ -57,7 +75,7 @@ export function SplitPanes({ deck }) {
                 </span>
               )}
               {i > 0 && deck.target === "preview" && <button type="button" onClick={() => S.swap(i)} title="Ana açı yap: taşıma, ses ve yükleme bu açıyı izler">Ana</button>}
-            </span>
+            </span>}
           </div>
         );
       })}
@@ -79,7 +97,7 @@ export function SplitAngles({ deck }) {
 }
 
 /** Takip aracı şeridi. */
-export function TrackBar({ deck, compact = false }) {
+export function TrackBar({ deck, compact = false, onClose = null }) {
   const T = deck?.track;
   if (!T) return null;
   const tool = T.tool || {};
@@ -88,7 +106,9 @@ export function TrackBar({ deck, compact = false }) {
   const active = T.tracks.find((x) => x.active) || null;
   return (
     <div className={`rtk ${compact ? "is-compact" : ""}`} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-      <b className="rtk__h">◎ TAKİP</b>
+      {onClose
+        ? <button type="button" className="rtk__h rtk__close" onClick={onClose} title="Oyuncu takibi aracını kapat (T)">◎ TAKİP ✕</button>
+        : <b className="rtk__h">◎ TAKİP</b>}
       {!compact && <span className="rtk__hint">{T.tracks.length ? `${T.tracks.length} iz · ${active ? `${active.keys} anahtar` : "yeni: oyuncuya tıkla"}` : "Durdur (K), oyuncunun gövdesine tıkla · ⌥ tık: anahtarı sil"}</span>}
       <span className="rtk__group" role="group" aria-label="Vurgu biçimi">
         {T.styles.map((s) => <button key={s.key} type="button" className={tool.style === s.key ? "is-on" : ""} onClick={() => T.setTool({ style: s.key })} title={s.label}>{compact ? SHORT[s.key] : s.label}</button>)}

@@ -9,14 +9,26 @@
 .rpo__surf.is-area { cursor: crosshair; }
 .rpo__surf:focus-visible { box-shadow: inset 0 0 0 2px rgba(var(--acc-rgb), 0.7); }
 .rdk-rect { position: absolute; z-index: 2; border: 2px dashed #fbbf24; background: rgba(251, 191, 36, 0.12); pointer-events: none; border-radius: 3px; }
-.rpo__top { position: relative; display: flex; align-items: center; gap: 6px; padding: 6px; pointer-events: none; min-width: 0; }
+.rpo__top { position: relative; flex: none; display: flex; align-items: center; gap: 6px; padding: 6px; pointer-events: none; min-width: 0; }
 .rpo__top > * { pointer-events: auto; }
+/* tek satır: etiket · başlık (kısalır) · çipler (kayar) · araçlar (sağda, bütün kalır) */
+.rpo__chips { flex: 0 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior: contain; border-radius: 8px; }
+.rpo__chips::-webkit-scrollbar { display: none; }
+.rpo__chips:has(> .rpo__chips-in:empty) { display: none; }
+.rpo__chips-in { display: inline-flex; align-items: center; gap: 4px; width: max-content; vertical-align: top; }
+.rpo__chips-in > .rdk-an, .rpo__chips-in > .rdk-seq { overflow: visible; }
+.rpo__chips-in .rsp-chips { flex: none; }
+/* sığmazsa (ölçülür): 1. satır etiket · başlık · araçlar, 2. satır çipler */
+.rpo__top.is-stack { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; row-gap: 4px; }
+.rpo__top.is-stack > .rpo__tag { grid-row: 1; grid-column: 1; }
+.rpo__top.is-stack > .rdk-title { grid-row: 1; grid-column: 2; justify-self: start; max-width: 100%; }
+.rpo__top.is-stack > .rpo__zoom { grid-row: 1; grid-column: 3; }
+.rpo__top.is-stack > .rpo__chips { grid-row: 2; grid-column: 1 / -1; justify-self: start; max-width: 100%; }
 .rpo__tag { flex: none; padding: 2px 8px; border-radius: 5px; background: rgba(0, 0, 0, 0.7); color: #86efac; font: 800 10.5px/18px var(--font); letter-spacing: 0.08em; pointer-events: none; white-space: nowrap; box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.55); }
 .rpo__tag.is-air { background: var(--st-live); color: var(--on-strong); box-shadow: 0 0 12px rgba(255, 45, 85, 0.55); }
-.rdk-title { min-width: 0; max-width: 32%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 7px; border-radius: 5px; background: rgba(0, 0, 0, 0.55); color: rgba(var(--on-strong-rgb), 0.85); font: 700 11px/18px var(--font); pointer-events: none !important; }
-.rpo__angles { display: inline-flex; gap: 3px; min-width: 0; overflow: hidden; }
-.rpo__zoom { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px; border-radius: 8px; background: rgba(0, 0, 0, 0.7); color: var(--on-strong); }
-.rpo__map { position: absolute; right: 8px; top: 40px; width: 22%; max-width: 180px; aspect-ratio: 16 / 9; height: auto; border-radius: 5px; border: 1px solid rgba(255, 255, 255, 0.6); background: #000; pointer-events: none; opacity: 0.92; }
+.rdk-title { flex: 0 1 auto; min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 7px; border-radius: 5px; background: rgba(0, 0, 0, 0.55); color: rgba(var(--on-strong-rgb), 0.85); font: 700 11px/18px var(--font); pointer-events: none !important; }
+.rpo__zoom { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px; border-radius: 8px; background: rgba(0, 0, 0, 0.7); color: var(--on-strong); }
+.rpo__map { position: relative; flex: none; align-self: flex-end; margin: 2px 8px 0 0; width: 22%; max-width: 180px; aspect-ratio: 16 / 9; height: auto; border-radius: 5px; border: 1px solid rgba(255, 255, 255, 0.6); background: #000; pointer-events: none; opacity: 0.92; }
 .rpo.is-compact .rpo__map { max-width: 120px; }
 .rpo__panel { position: relative; margin-top: auto; display: flex; flex-direction: column; gap: 4px; padding: 6px 8px 7px; background: linear-gradient(transparent, rgba(6, 3, 10, 0.9) 26%); pointer-events: auto; }
 .rpo__row { display: flex; align-items: center; gap: 4px; row-gap: 4px; min-width: 0; flex-wrap: wrap; }
@@ -31,6 +43,12 @@
 .rpo__clear { min-width: 22px !important; padding: 0 !important; }
 .rpo__take { background: var(--st-live) !important; border-color: #ff2d55 !important; font-weight: 800 !important; letter-spacing: 0.04em; padding: 0 12px !important; box-shadow: 0 0 10px rgba(255, 45, 85, 0.4); color: var(--on-strong); }
 .rpo__live { background: #fff !important; color: var(--on-bright) !important; border-color: #fff !important; font-weight: 800 !important; letter-spacing: 0.04em; padding: 0 12px !important; }
+/* oyuncu takibi: alt şeritte, taşımanın yanında (üst şeritte yer kavgası yok) */
+.rpo__row > .rpo__trk { border-color: rgba(34, 211, 238, 0.65); color: #a5f3fc; background: rgba(4, 30, 38, 0.9); gap: 5px; }
+.rpo__row > .rpo__trk:hover:not(:disabled) { border-color: #22d3ee; }
+.rpo__row > .rpo__trk.is-on { background: #22d3ee; border-color: #22d3ee; color: var(--on-bright); }
+.rpo__trk-n { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; display: inline-grid; place-items: center; background: #22d3ee; color: var(--on-bright); font: 800 10px/1 var(--mono, ui-monospace, monospace); }
+.rpo__trk.is-on .rpo__trk-n { background: rgba(0, 0, 0, 0.75); color: #a5f3fc; }
 .rdk-area.is-on, .rdk-keys.is-on { background: #fbbf24 !important; color: var(--on-bright) !important; border-color: #fbbf24 !important; }
 .rpo.is-compact .rdk-time { min-width: 70px; font-size: 11.5px; }
 .rpo.is-tiny .rpo__row button { height: 22px; min-width: 22px; padding: 0 4px; font-size: 10px; }
@@ -317,7 +335,8 @@
 .rpo__surf.is-track { cursor: crosshair; }
 .rtk-tog.is-on { background: #22d3ee !important; border-color: #22d3ee !important; color: var(--on-bright) !important; }
 .rtk { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 4px 6px; border-radius: 8px; background: rgba(4, 30, 38, 0.86); box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.45); color: var(--on-strong); }
-.rtk__h { font: 800 10px var(--font); letter-spacing: 0.08em; color: var(--on-strong); }
+.rtk__h { font: 800 10px var(--font); letter-spacing: 0.08em; color: var(--on-strong); white-space: nowrap; flex: none; }
+.rtk button.rtk__close { background: #22d3ee; border-color: #22d3ee; color: var(--on-bright); font: 800 10px var(--font); letter-spacing: 0.06em; }
 .rtk__hint { font: 600 10.5px var(--font); color: rgba(var(--on-strong-rgb), 0.72); margin-right: 4px; }
 .rtk button { height: 22px; padding: 0 7px; border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 6px; background: rgba(0, 0, 0, 0.55); color: var(--on-strong); font: 700 10.5px var(--font); cursor: pointer; white-space: nowrap; }
 .rtk button.is-on { background: #22d3ee; border-color: #22d3ee; color: var(--on-bright); }
