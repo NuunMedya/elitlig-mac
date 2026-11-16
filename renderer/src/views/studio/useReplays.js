@@ -50,7 +50,7 @@ export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDel
   const [uploads, setUploads] = useState({}); // replayId → { status: "uploading" | "uploaded" | "failed" | "cancelled", error }
   const [scheduled, setScheduledState] = useState({}); // replayId → { dueAt, eventId }
   const [meta, setMeta] = useState(readMeta);
-  const [now, setNow] = useState(() => Date.now());
+  const [now] = useState(() => Date.now()); // 2.35.0: artık her saniye güncellenmez (geri sayımlar perf/clock ile)
   const keyToId = useRef(new Map()); // capture anahtarı → { run: Promise<replayId | null>, eventId, at, saveNow }
   const metaRef = useRef(meta);
   metaRef.current = meta;
@@ -247,7 +247,7 @@ export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDel
     let busy = false;
     const t = setInterval(async () => {
       const at = Date.now();
-      setNow(at);
+      // 2.35.0: geri sayımlar gösteren satırda (perf/clock) çizilir; kök durum her saniye değişmez.
       if (busy) return;
       busy = true;
       try {
@@ -421,11 +421,11 @@ export function useReplays(matchId, { postSeconds = POST_ROLL_DEFAULT, uploadDel
     const s = scheduled[id];
     if (s) {
       const r = replays.find((x) => x.id === id);
-      return { status: "scheduled", dueAt: s.dueAt, leftMs: Math.max(0, s.dueAt - now), deferred: Boolean(s.deferred), reason: s.reason || "", attempt: s.attempt || 0, plan: uploadPlanOf(r, meta[id]?.selection || r?.selection || null) };
+      return { status: "scheduled", dueAt: s.dueAt, leftMs: Math.max(0, s.dueAt - Date.now()), deferred: Boolean(s.deferred), reason: s.reason || "", attempt: s.attempt || 0, plan: uploadPlanOf(r, meta[id]?.selection || r?.selection || null) };
     }
     if (meta[id]?.uploaded || replays.find((r) => r.id === id)?.uploaded) return { status: "uploaded" };
     return uploads[id] || null;
-  }, [meta, uploads, replays, scheduled, now]);
+  }, [meta, uploads, replays, scheduled]);
 
   const latest = useMemo(() => latestReplay(replays), [replays]);
   /** Pozisyon başına seçili açılar: { replayId: [açı] }. */

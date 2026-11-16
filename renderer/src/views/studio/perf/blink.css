@@ -1,0 +1,25 @@
+/*
+ * 2.35.0 · ORTAK YANIP SÖNME (perf/blink.js).
+ * Stüdyonun sürekli (infinite) nabız / yanıp sönme animasyonları — canlı noktaları, kayıt
+ * noktaları, uyarı parıltıları — tam stüdyoda bileşik katmana alınamıyor, ana iş parçacığında
+ * HER KAREDE stil + boyama yaptırıyordu (ölçüm: ~85 ms/sn ana iş parçacığı; 144 Hz ekranda
+ * 2,4 katı). Hepsi tek bir zamanlayıcının <html data-st-blink> özniteliğine bağlandı:
+ * saniyede ~1,4 değişim, karede iş yok.
+ */
+:root :is(.mg-live__dot, .st-w__state > i.is-rec, .wx-dot.is-rec, .wx-recdot.is-on, .st-pill.is-live i, .st-iv.is-rec i, .gx-dot, .rdk-dot, .rpx-flow__s i, .rpx-stage.is-air i, .rpx-health.is-risk i, .md-chip.is-live i, .md-state.is-on i) { animation: none !important; }
+:root .au-dot::after, :root .st-w.is-blink::after, :root .st-w.st-wptt.is-on::after, :root .wx-kill.is-on::after, :root .wx-var__go.is-air::after, :root .wx-outmute.is-on::after, :root .st-var-top.is-on::after, :root .st-micwarn::after, :root .st-outmute.is-on::after { animation: none !important; }
+
+/* noktalar: yarım periyot soluk */
+:root[data-st-blink="1"] :is(.mg-live__dot, .st-w__state > i.is-rec, .wx-dot.is-rec, .wx-recdot.is-on, .st-pill.is-live i, .st-iv.is-rec i, .gx-dot:not(.is-amber), .rdk-dot, .rpx-flow__s i, .rpx-stage.is-air i, .rpx-health.is-risk i, .md-chip.is-live i, .md-state.is-on i) { opacity: 0.3; }
+/* yayındaki ses kanalı noktası: halka yarım periyot görünür */
+:root .au-dot::after { opacity: 0; transform: none; }
+:root[data-st-blink="1"] .au-dot::after { opacity: 0.9; }
+/* uyarı parıltıları (::after katmanı) */
+:root[data-st-blink="1"] .st-w.is-blink::after,
+:root[data-st-blink="1"] .st-w.st-wptt.is-on::after,
+:root[data-st-blink="1"] .wx-kill.is-on::after,
+:root[data-st-blink="1"] .wx-var__go.is-air::after,
+:root[data-st-blink="1"] .wx-outmute.is-on::after,
+:root[data-st-blink="1"] .st-var-top.is-on::after,
+:root[data-st-blink="1"] .st-micwarn::after,
+:root[data-st-blink="1"] .st-outmute.is-on::after { opacity: 1; }

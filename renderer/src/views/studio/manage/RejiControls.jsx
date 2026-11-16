@@ -5,8 +5,8 @@
 import React from "react";
 import { Icon } from "../../../components/ui";
 import { PHASE_LABEL } from "../../../lib/studio/match";
-import { clockText } from "../../../lib/studio/scorebug";
 import { flowButtons } from "./rejiLogic";
+import { LiveClockText } from "../perf/clock";
 
 const NUDGES = [-60_000, -10_000, 10_000, 60_000];
 
@@ -27,7 +27,7 @@ export default function RejiControls({ live, busy, onControl, onFinish, onNudge 
 
       <div className={`rj-clock${live.running ? " is-running" : ""}`}>
         <span className="rj-clock__phase">{live.running && <span className="mg-live__dot" />}{PHASE_LABEL[live.phase]}{["first", "second", "extra", "notStarted", "finished"].includes(live.phase) ? "" : ` · ${live.period >= 3 ? "uzatma" : `${live.period}. devre`}`}</span>
-        <strong>{clockText(live.clockMs)}</strong>
+        <strong><LiveClockText timer={live.timer} fallbackMs={live.clockMs} /></strong>
         <div className="rj-clock__nudges" role="group" aria-label="Saati düzelt">
           {NUDGES.map((d) => (
             <button key={d} type="button" className="rj-nudge" disabled={busy || notLive} onClick={() => onNudge(d)} title={`Saati ${d > 0 ? "ileri" : "geri"} al`}>

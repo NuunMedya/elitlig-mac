@@ -31,7 +31,7 @@ import { createFrameGate, createMonitorGovernor } from "../../lib/studio/framePa
 import { drawScene } from "./draw";
 import { drawVar } from "./var/drawVar";
 import { MODE_TARGET, composeBase, composeTop, drawFtb, drawProgramFx, ftbLevel, needsMainBase, transitionTouchesMode } from "./compositor/composeProgram";
-import { createWorkerCompositor, softwareGpu, workerCompositorSupported } from "./compositor/workerHost";
+import { createWorkerCompositor, gpuRendererName, softwareGpu, workerCompositorSupported } from "./compositor/workerHost";
 import { canvasLoop, loadSnapshot, startRenderLoadMonitor, trackDraw } from "./perf/renderLoad";
 
 export { MODE_TARGET, ftbLevel, drawSlate } from "./compositor/composeProgram";
@@ -58,6 +58,7 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
   const transitionRef = useRef(null); // { kind, fromId, toId, startedAt, ms }
   const stingerRef = useRef(null); // { startedAt, ms, onMid, onEnd, midFired }
   const statsRef = useRef({ fps: 0, drawMs: 0, stalls: 0, totalStalls: 0, engine: "main" });
+  const fallbackRef = useRef(null); // işçiden ana iş parçacığına dönüş nedeni (Performans raporu)
   const trackRef = useRef(null);
   // Kare aboneleri (ana motorda WebCodecs kodlayıcısı): program karesi çizildikten hemen sonra çağrılır.
   const frameSubsRef = useRef(new Set());
@@ -228,8 +229,9 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
     if (engine !== "worker") return undefined;
     let host;
     try {
-      host = createWorkerCompositor({ width, height, fps, mirrorCanvas: mirror, onFail: () => setFailed(true) });
-    } catch {
+      host = createWorkerCompositor({ width, height, fps, mirrorCanvas: mirror, onFail: (why) => { fallbackRef.current = { at: Date.now(), reason: `işçi hatası${why ? `: ${String(why?.message || why).slice(0, 160)}` : ""}` }; setFailed(true); } });
+    } catch (e) {
+      fallbackRef.current = { at: Date.now(), reason: `işçi kurulamadı: ${String(e?.message || e).slice(0, 160)}` };
       setFailed(true);
       return undefined;
     }
@@ -265,11 +267,25 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       host.syncImages(snapshotRef?.current ?? null);
       host.syncSources(cfg, runtimeRef.current, tr ? [tr.fromId, tr.toId] : []);
       const s = host.stats();
-      if (now - startedAt > WATCHDOG_MS + 2000 && (s.ageMs == null || s.ageMs > WATCHDOG_MS)) {
-        console.warn("çizim işçisi yanıt vermiyor: ana iş parçacığına dönülüyor");
-        setFailed(true);
-      }
+      // 2.35.0: ana iş parçacığı uzun süre kilitlendiyse (büyük bir panel açılışı, GC) işçinin
+      // iletileri kuyrukta bekliyor olabilir: önce kuyruk boşalsın (yeniden ölçme süresi), sonra
+      // karar ver. Eskiden tek bir 4 sn'lik donma işçiyi kalıcı olarak kapatıp HER ŞEYİ ana iş
+      // parçacığına (çok daha ağır yol) taşıyabiliyordu.
+      const gap = lastSyncAt ? now - lastSyncAt : 0;
+      lastSyncAt = now;
+      if (gap > 1000) graceUntil = now + 3000;
+      if (now - startedAt > WATCHDOG_MS + 2000 && now > graceUntil && (s.ageMs == null || s.ageMs > WATCHDOG_MS)) {
+        silentChecks += 1;
+        if (silentChecks >= 3) {
+          console.warn("çizim işçisi yanıt vermiyor: ana iş parçacığına dönülüyor");
+          fallbackRef.current = { at: Date.now(), ageMs: s.ageMs ?? null, reason: s.ageMs == null ? "işçiden hiç sayaç gelmedi" : `işçi ${Math.round(s.ageMs / 1000)} sn sessiz` };
+          setFailed(true);
+        }
+      } else silentChecks = 0;
     };
+    let lastSyncAt = 0;
+    let graceUntil = 0;
+    let silentChecks = 0;
     sync();
     const syncTimer = setInterval(sync, 50);
     hostRef.current.sync = sync;
@@ -374,6 +390,12 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
     return trackRef.current;
   }, []);
   const getStats = useCallback(() => statsRef.current, []);
+  /** Performans raporu: motor seçimi ve nedeni. */
+  const getEngineInfo = useCallback(() => ({
+    engine: engineRef.current, setting, workerSupported: workerCompositorSupported(), workerGraphics, softwareGpu: softwareGpu(), gpuRenderer: gpuRendererName(),
+    failed, fallback: fallbackRef.current,
+    why: engineRef.current === "worker" ? "ayrı iş parçacığı" : setting === "main" ? "ayar: ana iş parçacığı" : !workerGraphics ? "grafik modülü işçide yok" : !workerCompositorSupported() ? "tarayıcı desteği yok (OffscreenCanvas / VideoFrame / MediaStreamTrackProcessor)" : failed ? `işçi kapandı (${fallbackRef.current?.reason || "bilinmiyor"})` : softwareGpu() ? "yazılım grafik (donanım hızlandırma yok)" : "bilinmiyor",
+  }), [setting, workerGraphics, failed]);
   const getCanvas = useCallback(() => program, [program]);
   /** İşçi motorunda görüntü işçide kodlanır (webcodecs.js remoteEncoder); ana motorda null. */
   const getRemoteEncoder = useCallback(() => (engineRef.current === "worker" && hostRef.current?.alive() ? hostRef.current.encoder : null), []);
@@ -399,7 +421,7 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
 
   // Ekranda gösterilen program tuvali: işçi motorunda ayna.
   const shown = engine === "worker" ? mirror : program;
-  return { program: shown, preview, engine, getStats, startTransition, playStinger, getVideoTrack, getCanvas, getRemoteEncoder, subscribeFrames, busy, transitionNow, setFtb, programFx };
+  return { program: shown, preview, engine, getStats, getEngineInfo, startTransition, playStinger, getVideoTrack, getCanvas, getRemoteEncoder, subscribeFrames, busy, transitionNow, setFtb, programFx };
 }
 
 /**

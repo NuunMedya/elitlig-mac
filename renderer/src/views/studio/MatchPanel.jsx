@@ -3,7 +3,7 @@
 import React, { memo } from "react";
 import { Icon, Kbd } from "../../components/ui";
 import { HALF_MS, PHASE_LABEL, eventLabel, isGoalCode, primaryControl } from "../../lib/studio/match";
-import { clockText } from "../../lib/studio/scorebug";
+import { LiveClockText } from "./perf/clock";
 
 const NUDGES = [-60_000, -10_000, 10_000, 60_000];
 
@@ -39,7 +39,7 @@ function MatchPanel({ live, saving, goalArmed, onGoal, onControl, onFinish, onUn
 
      <div className="st-stack">
       <div className="st-clock">
-        <strong>{clockText(live.clockMs)}</strong>
+        <strong><LiveClockText timer={live.timer} fallbackMs={live.clockMs} /></strong>
         <span>{PHASE_LABEL[live.phase]} · {live.period >= 3 ? "Uzatma" : `${live.period}. devre`}</span>
         <div className="st-clock__nudges">
           {NUDGES.map((d) => (

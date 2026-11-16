@@ -16,6 +16,7 @@ import { Icon } from "../../../components/ui";
 import { XFADE_PRESETS, formatTime, trackName } from "../music/musicModel";
 import { PLAYLIST_REPEATS, searchPlayable } from "../music/playlistModel";
 import { SeekBar } from "../music/MusicPanel";
+import { useMusicTime } from "../music/useMusicPlayer";
 import "../music/music.css";
 import { Head, OrientCtx, Pill, Ring, Shell, openPop, useNow, usePress } from "./wkit";
 import { optMenu, withOptions } from "./wOptions";
@@ -45,6 +46,7 @@ function Tile({ mp, item, w, h, togglePop, icon, label, sub, on, tone = "violet"
 /* ───────── oynatma listesi çalar ───────── */
 function PlaylistPlayer({ ctx, item, w, h, togglePop }) {
   const mp = ctx.music;
+  useMusicTime(mp); // 2.35.0: konum saniyede 4 kez yalnız burada yenilenir
   if (!mp) return none(w, h, "LİSTE");
   const lists = playlistsOf(mp);
   const want = item.opts?.playlistId || mp.now.playlistId;
@@ -127,6 +129,7 @@ const ACTIONS = {
 };
 function ActionTile({ type, ctx, item, w, h, togglePop }) {
   const mp = ctx.music;
+  useMusicTime(mp); // 2.35.0: konum saniyede 4 kez yalnız burada yenilenir
   if (!mp) return none(w, h, "MÜZİK");
   const a = ACTIONS[type](mp, item.opts || {});
   return <Tile mp={mp} item={item} w={w} h={h} togglePop={togglePop} icon={a.icon} label={a.label} sub={a.sub} on={a.on} air={a.air} tone={a.tone} disabled={a.disabled} onPress={a.run} title={a.title} />;
@@ -136,6 +139,7 @@ const act = (type) => (p) => <ActionTile {...p} type={type} />;
 /* ───────── ±N sn ───────── */
 function MusicSeek({ ctx, item, w, h, togglePop }) {
   const mp = ctx.music;
+  useMusicTime(mp); // 2.35.0: konum saniyede 4 kez yalnız burada yenilenir
   if (!mp) return none(w, h, "KONUM");
   const st = Number(item.opts?.step) || 10;
   const on = isPlaying(mp);
@@ -169,6 +173,7 @@ function MusicXfade({ ctx, item, w, h, togglePop }) {
 /* ───────── şimdi çalıyor ───────── */
 function MusicNow({ ctx, item, w, h, togglePop }) {
   const mp = ctx.music;
+  useMusicTime(mp); // 2.35.0: konum saniyede 4 kez yalnız burada yenilenir
   if (!mp) return none(w, h, "ŞİMDİ ÇALIYOR");
   const n = mp.now;
   const playing = isPlaying(mp);

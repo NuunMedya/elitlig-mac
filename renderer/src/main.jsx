@@ -1,3 +1,5 @@
+// 2.35.0: React çizim sayacı (Performans raporu) — React'ten ÖNCE kurulmalı.
+import "./lib/perf/reactStats";
 import React, { Suspense, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";

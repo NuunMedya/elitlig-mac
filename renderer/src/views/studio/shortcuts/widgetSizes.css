@@ -74,7 +74,7 @@ button.st-w.is-go:hover:not(:disabled) { background: radial-gradient(120% 140% a
 .st-w.st-wptt.is-wide { flex-direction: row; justify-content: flex-start; gap: 10px; padding: 6px 12px; text-align: left; }
 .st-wptt__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .st-w.st-wptt.is-wide .st-w__meter { position: absolute; left: 12px; right: 12px; bottom: 6px; width: auto; }
-.st-w.st-wptt.is-on { animation: stWBlink 1.2s ease-in-out infinite; }
+.st-w.st-wptt.is-on::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; box-shadow: inset 0 0 0 3px rgba(var(--c-rgb, 255, 45, 85), 0.55), inset 0 0 18px rgba(var(--c-rgb, 255, 45, 85), 0.32); animation: stWBlink 1.2s ease-in-out infinite; }
 
 /* çok kanallı karıştırıcı */
 .st-wmx__strips { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; justify-content: space-around; }

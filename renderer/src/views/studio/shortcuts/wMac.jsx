@@ -204,7 +204,7 @@ function PeriodPreset({ ctx, item, w, h, togglePop }) {
   const half = Number(halfMin) || ops.halfMin || 25;
   useNow(Boolean(L?.running), 1000);
   if (!L) return noM(w, h, "DEVRE SÜRESİ", "clock");
-  const i = periodInfo({ clockMs: L.clockMs, period: L.period, halfMin: half });
+  const i = periodInfo({ clockMs: L.clockNow ? L.clockNow() : L.clockMs, period: L.period, halfMin: half });
   const halftime = () => run(ctx, () => studioApi.putTimer(mid(ctx), false, halfMs(half)), "Devre arası.", "Saat güncellenemedi.");
   const second = async () => {
     const ok = await run(ctx, () => studioApi.putTimer(mid(ctx), true, halfMs(half)), null, "Saat güncellenemedi.");
@@ -248,7 +248,7 @@ function InjuryTime({ ctx, item, w, h, togglePop }) {
   };
   const press = usePress(() => show(Math.min(max, (Number(added) || 0) + 1)), () => openPop(item, togglePop, { mode: "options" }));
   if (!L) return noM(w, h, "UZATMA", "clock");
-  const lbl = stoppageLabel({ clockMs: L.clockMs, period: L.period, halfMin: Number(halfMin) || ops.halfMin || 25, added: Number(added) || 0 });
+  const lbl = stoppageLabel({ clockMs: L.clockNow ? L.clockNow() : L.clockMs, period: L.period, halfMin: Number(halfMin) || ops.halfMin || 25, added: Number(added) || 0 });
   if (w === 1 && h === 1) {
     return (
       <Shell as="button" tone="amber" w={w} h={h} state={added ? "armed" : null} className="wx-tile" {...press} title="Tık: +1 dk uzatma (altyazıda) · sağ tık: seçenekler">

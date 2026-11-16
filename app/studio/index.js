@@ -69,6 +69,7 @@ const { registerLive } = require("./live");
 const { createOutMute } = require("./outmute");
 const { createMusicHost } = require("./musichost");
 const { createPanoramaNet } = require("./panoramaNet");
+const perfInfo = require("./perfinfo");
 
 const DAY_MS = 24 * 3600 * 1000;
 const LIVE_UPLOAD_BYTES_PER_SEC = 250 * 1024; // ≈ 2 Mbit/sn: yayın sürerken gol klibi yüklemesi
@@ -174,6 +175,7 @@ function registerStudio({
   const engine = createStudioEngine({
     getFfmpeg, tempRoot: path.join(tempRoot, "program"), log, diag: diagnostics,
     qualityTuning: true,
+    priority: "above-normal", // 2.35.0: Windows'ta canlı kodlayıcı normalin üstü öncelikte
     // 2.21.0: RTMP(S) Node yayıncısıyla (rtmppub.js; 4096 baytlık parçalar, tek yazma). Bağlanamazsa ffmpeg'e döner.
     relayOptions: { publisher: "node" },
     remuxLocal: ({ parts, outFile, ffmpegPath: bin }) => remuxParts({ parts, outFile, ffmpegPath: bin || ffmpegPath() }),
@@ -380,6 +382,14 @@ function registerStudio({
       delete o.localRecord;
     }
     if (!engine.active()) diagnostics.begin({ recordOnly: !o.url, localRecord: Boolean(o.localRecord), matchId: o.matchId ?? null, backupUrl: Boolean(o.backupUrl) });
+    // 2.35.0: grafik işlemcisi / donanım hızlandırma durumu tanılama günlüğünün başına.
+    if (!engine.active()) {
+      try {
+        const fs0 = app.getGPUFeatureStatus?.() || null;
+        diagnostics.write("program", "grafik işlemcisi", { verdict: perfInfo.gpuVerdict(fs0).text, featureStatus: fs0 });
+        Promise.resolve(app.getGPUInfo?.("basic")).then((gi) => { try { diagnostics.write("program", "grafik kartı", { devices: perfInfo.gpuDevices(gi) }); } catch { /* yoksay */ } }).catch(() => {});
+      } catch { /* yoksay */ }
+    }
     // Ekran uykusu engeli (varsayılan açık); yedek giriş adresi (backupUrl) motora olduğu gibi gider.
     keepDisplayAwake = o.keepDisplayAwake !== false;
     delete o.keepDisplayAwake;
@@ -588,6 +598,20 @@ function registerStudio({
     return { logPath: snap.logPath, lastErrors: snap.lastErrors, ffmpegErrors: engine.lastErrors(), truncated: snap.truncated, uploads: uploadLog.list(), uploadLogPath: uploadLog.file };
   });
   ipcMain.handle("studio:clearUploadLog", () => { uploadLog.clear(); return true; });
+  // 2.35.0 · Performans raporu (Yayın tanılama): sistem / grafik / süreç bilgisi ve kayıt.
+  ipcMain.handle("studio:perfInfo", async () => {
+    try { return await perfInfo.collectSystemInfo({ app }); } catch (e) { return { error: e?.message || String(e) }; }
+  });
+  ipcMain.handle("studio:savePerfReport", (_e, payload) => {
+    try {
+      const report = payload && typeof payload === "object" ? payload.report || payload : {};
+      const text = typeof payload?.text === "string" ? payload.text.slice(0, 200_000) : "";
+      const res = perfInfo.saveReport(logsDir, report, text);
+      try { diagnostics.write?.("program", "performans raporu kaydedildi", { path: res.path }); } catch { /* yoksay */ }
+      if (payload?.reveal !== false) { try { shell.showItemInFolder(res.path); } catch { /* yoksay */ } }
+      return res;
+    } catch (e) { return { ok: false, error: { message: e?.message || String(e) } }; }
+  });
   ipcMain.handle("studio:revealDiagnostics", () => {
     const file = diagnostics.logPath();
     if (file && fs.existsSync(file)) { shell.showItemInFolder(file); return true; }

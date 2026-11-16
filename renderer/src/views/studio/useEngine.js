@@ -52,8 +52,37 @@ export function drawPerf(d) {
   };
 }
 
+/** Kök durumu yeniden çizdiren alanlar (sayaçlar hariç). */
+export const STATUS_REFRESH_MS = 5000;
+export function statusKeyOf(p) {
+  if (!p) return "";
+  const n = p.network || null;
+  return [p.state, p.message || "", p.warning || "", p.code || "", p.encoder || "", p.encoderLabel || "", p.pipeline || "", p.rtmp || "", p.recordOnly ? 1 : 0,
+    p.attempt || 0, p.speedLevel || 0, p.sessionId || "", p.localPath || "", p.localFailed ? 1 : 0, p.localRemux || "", p.localQuality ? JSON.stringify(p.localQuality) : "",
+    n ? `${n.state}|${n.publisher || ""}|${n.dropping ? 1 : 0}|${n.reconnects || 0}` : ""].join("§");
+}
+
 export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subscribeFrames = null, getRemoteEncoder = null, getDrawStats = null, onError }) {
-  const [status, setStatus] = useState({ state: "idle" });
+  const [status, setStatusState] = useState({ state: "idle" });
+  // 2.35.0: ana süreç kodlayıcı durumunu SANİYEDE BİR yollar (fps, bit hızı, gönderim sayaçları).
+  // Her birini kök duruma yazmak bütün stüdyo ağacını saniyede bir yeniden çiziyordu. Artık
+  // kök durum yalnız durum ANAHTARI (aşama, uyarı, ileti, kodlayıcı, ağ aşaması…) değişince ya
+  // da en çok STATUS_REFRESH_MS'de bir güncellenir; anlık sayaçları gösteren yerler (Yayın
+  // tanılama, düşük bit hızı uyarısı) getStatus() ile en son durumu okur.
+  const statusRef = useRef({ state: "idle" });
+  const statusPushRef = useRef({ key: "", at: 0 });
+  const setStatus = useCallback((next) => {
+    const p = typeof next === "function" ? next(statusRef.current) : next;
+    if (p === statusRef.current && typeof next === "function") return;
+    statusRef.current = p;
+    const key = statusKeyOf(p);
+    const now = Date.now();
+    const last = statusPushRef.current;
+    if (key === last.key && now - last.at < STATUS_REFRESH_MS) return;
+    statusPushRef.current = { key, at: now };
+    setStatusState(p);
+  }, []);
+  const getStatus = useCallback(() => statusRef.current, []);
   const [since, setSince] = useState(null);
   const [mode, setMode] = useState(null); // "live" | "rehearsal"
   const [info, setInfo] = useState(null);
@@ -369,5 +398,5 @@ export function useEngine({ getVideoTrack, getAudioTrack, getCanvas = null, subs
   const local = localInfo?.path || localInfo?.mp4Path
     ? { path: localInfo.mp4Path || localInfo.path, sizeBytes: localInfo.bytes, state: localInfo.state, error: localInfo.error || null }
     : status.localRecord || (localPath ? { path: localPath } : null);
-  return { status, since, mode, info, active: isEncoding(status.state), start, stop, available: Boolean(studio()?.start), localRecord: local, getEncodeStats };
+  return { status, getStatus, since, mode, info, active: isEncoding(status.state), start, stop, available: Boolean(studio()?.start), localRecord: local, getEncodeStats };
 }

@@ -12,11 +12,46 @@ import { bottleneckCause, networkQueueSec, streamHealth } from "../../../lib/stu
 import { goalStressText } from "../../../lib/studio/goalStress";
 import { limitingStage } from "../../../lib/studio/renderBudget";
 import { loadSnapshot } from "../perf/renderLoad";
+import { buildPerfReport, copyText } from "../perf/perfReport";
 
 const kb = (n) => (Number.isFinite(Number(n)) ? `${Math.round(n)} kbps` : "—");
 const kbOf = (bytes) => (bytes >= 1024 * 1024 ? `${(bytes / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.round((Number(bytes) || 0) / 1024)} KB`);
 
-function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encoding, goalStress = null, goalMeasuring = false }) {
+/**
+ * 2.35.0 · PERFORMANS RAPORU: pencerenin altındaki düğmeler 5 sn ölçer; rapor (JSON + metin)
+ * tanılama klasörüne kaydedilir ve klasör açılır ya da metin panoya kopyalanır.
+ */
+function PerfReportButtons({ src }) {
+  const [state, setState] = useState(null); // { busy, mode, msg, tone }
+  const run = async (mode) => {
+    if (state?.busy) return;
+    setState({ busy: true, mode, msg: "Ölçülüyor… (5 sn, pencereyi açık tut)" });
+    try {
+      const { report, text } = await buildPerfReport(src);
+      if (mode === "copy") {
+        const ok = await copyText(text);
+        setState({ busy: false, msg: ok ? "Rapor panoya kopyalandı." : "Kopyalanamadı.", tone: ok ? "ok" : "warn" });
+        return;
+      }
+      const res = await window.elitlig?.studio?.savePerfReport?.({ report, text });
+      if (res?.ok) setState({ busy: false, msg: `Kaydedildi: ${res.path}`, tone: "ok" });
+      else { const ok = await copyText(text); setState({ busy: false, msg: ok ? "Dosyaya yazılamadı; rapor panoya kopyalandı." : "Rapor kaydedilemedi.", tone: "warn" }); }
+    } catch (e) {
+      setState({ busy: false, msg: `Rapor alınamadı: ${e?.message || e}`, tone: "warn" });
+    }
+  };
+  return (
+    <div className="st-health__perf">
+      <div className="st-health__perfbtns">
+        <button type="button" className="btn btn--sm" disabled={state?.busy} onClick={() => run("save")} title="5 sn ölçer; sürüm, sistem, grafik kartı, çizim motoru, fps, uzun görevler, React çizimleri ve süreçleri dosyaya kaydeder"><Icon name="activity" size={12} /> Performans raporu</button>
+        <button type="button" className="btn btn--sm" disabled={state?.busy} onClick={() => run("copy")} title="Aynı raporu metin olarak panoya kopyalar"><Icon name="copy" size={12} /> Kopyala</button>
+      </div>
+      {state?.msg && <p className={`st-hint${state.tone === "warn" ? " text-red" : ""}`}>{state.msg}</p>}
+    </div>
+  );
+}
+
+function HealthChip({ status: statusProp, getStatus = null, getEngineInfo = null, getStats, getEncodeStats = null, targetFps, encoding, goalStress = null, goalMeasuring = false }) {
   const [, setTick] = useState(0);
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -27,6 +62,9 @@ function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encodi
     window.addEventListener("pointerdown", close);
     return () => window.removeEventListener("pointerdown", close);
   }, [open]);
+  // 2.35.0: anlık kodlayıcı sayaçları kök durumdan değil, en son gelen durumdan (kök durum
+  // sayaç değişiminde yeniden çizilmiyor).
+  const status = (getStatus && getStatus()) || statusProp || { state: "idle" };
   const draw = getStats();
   const enc = encoding ? getEncodeStats?.() || null : null;
   const h = streamHealth({ status, draw, targetFps, encoding });
@@ -91,6 +129,7 @@ function HealthChip({ status, getStats, getEncodeStats = null, targetFps, encodi
             </>}
           </dl>
           {warnings.length ? <ul>{warnings.map((w) => <li key={w}>{w}</li>)}</ul> : <p className="st-hint">Sorun görünmüyor. Sayaçlar tanılama günlüğüne de yazılır.</p>}
+          <PerfReportButtons src={{ getStats, getEngineInfo, getEncodeStats, getStatus: () => (getStatus && getStatus()) || statusProp, targetFps, encoding }} />
         </div>
       )}
     </div>

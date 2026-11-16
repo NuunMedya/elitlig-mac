@@ -4,6 +4,7 @@
 //                   iptal edilmişse "Yükle".
 import React from "react";
 import { countdownText, scheduledText } from "../../lib/studio/goalClips";
+import { useSecondNow } from "./perf/clock";
 
 export function pendingText(p, now = Date.now()) {
   if (p?.status === "error") return p.error || "Tekrar kaydedilemedi.";
@@ -11,16 +12,20 @@ export function pendingText(p, now = Date.now()) {
   return "Kaydediliyor…";
 }
 
-export function PendingNote({ p, now }) {
+// 2.35.0: geri sayım bu küçük bileşende saniyede bir çizilir (stüdyo kökü değil).
+export function PendingNote({ p }) {
+  useSecondNow(p?.status === "waiting");
+  const now = Date.now();
   return <small className={p.status === "waiting" ? "st-rrow__wait" : undefined}>{pendingText(p, now)}</small>;
 }
 
 export function UploadControls({ u, replay, R }) {
+  useSecondNow(u?.status === "scheduled" && replay?.kind === "goal");
   if (!u || replay?.kind !== "goal") return null;
   if (u.status === "scheduled") {
     return (
       <small className="st-rrow__upl">
-        {scheduledText(u.dueAt, u.plan, R?.now || Date.now())}{" "}
+        {scheduledText(u.dueAt, u.plan, Date.now())}{" "}
         <button type="button" className="btn btn--xs" onClick={() => R?.uploadNow?.(replay.id)}>Şimdi yükle</button>{" "}
         <button type="button" className="btn btn--xs btn--ghost" onClick={() => R?.cancelUpload?.(replay.id)}>İptal</button>
       </small>

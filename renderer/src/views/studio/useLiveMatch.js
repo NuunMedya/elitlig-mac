@@ -15,6 +15,8 @@ import { updateEvent as putEvent } from "./manage/manageApi";
 import { BUG_EVENT_MS, TIMELINE_CODES, bugEventOf, controlSteps, eventBody, isManualResult, livePhase, normalizeMatchStatus, scoreFromEvents, sortEvents, timerNowMs, toSquad } from "../../lib/studio/match";
 import { eventUpdateBody, fullEventBody } from "../../lib/studio/manage";
 import { mergeEvents } from "../../lib/studio/goalClips";
+// 2.35.0: yoklama aynı veriyi döndürdüyse eski nesne kalır (kök durum değişmez → ağaç yeniden çizilmez).
+import { keepIfSame } from "../../lib/perf/same";
 
 function usePoll(fn, ms, enabled) {
   const ref = useRef(fn);
@@ -51,14 +53,14 @@ export function useLiveMatch(matchId, userId) {
 
   const guard = (id, fn) => (res) => { if (idRef.current === id) fn(res); };
   const loadMatch = useCallback(() => api.getMatch(matchId).then(guard(matchId, (r) => {
-    if (r.ok) { setMatch(r.data); setError(null); } else setError(r.error || { message: "Maç alınamadı." });
+    if (r.ok) { setMatch(keepIfSame(r.data)); setError(null); } else setError(keepIfSame(r.error || { message: "Maç alınamadı." }));
   })), [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
   const loadEvents = useCallback(() => {
     const issuedAt = Date.now();
-    return api.getEvents(matchId).then(guard(matchId, (r) => { if (r.ok && Array.isArray(r.data)) setRawEvents(merged(r.data, issuedAt)); }));
+    return api.getEvents(matchId).then(guard(matchId, (r) => { if (r.ok && Array.isArray(r.data)) setRawEvents(keepIfSame(merged(r.data, issuedAt))); }));
   }, [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
-  const loadTimer = useCallback(() => api.getTimer(matchId).then(guard(matchId, (r) => { if (r.ok && r.data) setTimer(r.data); })), [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
-  const loadLineup = useCallback(() => api.getLineup(matchId).then(guard(matchId, (r) => { if (r.ok && r.data) setLineup(r.data); })), [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const loadTimer = useCallback(() => api.getTimer(matchId).then(guard(matchId, (r) => { if (r.ok && r.data) setTimer(keepIfSame(r.data)); })), [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const loadLineup = useCallback(() => api.getLineup(matchId).then(guard(matchId, (r) => { if (r.ok && r.data) setLineup(keepIfSame(r.data)); })), [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   usePoll(loadMatch, 15_000, enabled);
   usePoll(loadEvents, 6_000, enabled);
@@ -82,11 +84,26 @@ export function useLiveMatch(matchId, userId) {
   }, [squads]);
 
   /* ───────── saat ───────── */
+  // 2.35.0: kök durum saniyede bir DEĞİL, yalnız maç dakikası değişince (ve skorbord bandının
+  // süresi dolunca) güncellenir — saniyede bir bütün stüdyo ağacı yeniden çiziliyordu. Saniyeyi
+  // gösteren yerler perf/clock (LiveClockText, useSecondNow) ile kendi küçük bileşenini çizer;
+  // eylemler (control / nudgeClock / olay dakikası) saati çağrı anında yeniden hesaplar.
   const [now, setNow] = useState(Date.now());
+  const timerRef = useRef(timer);
+  timerRef.current = timer;
+  const clockNow = useCallback(() => timerNowMs(timerRef.current, Date.now()), []);
+  const running0 = Boolean(timer?.running);
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
+    if (!running0) return undefined;
+    let t = 0;
+    const arm = () => {
+      const ms = timerNowMs(timerRef.current, Date.now());
+      const wait = 60_000 - (ms % 60_000) + 20; // bir sonraki dakika sınırı
+      t = setTimeout(() => { setNow(Date.now()); arm(); }, Math.max(250, Math.min(60_000, wait)));
+    };
+    arm();
+    return () => clearTimeout(t);
+  }, [running0, timer]);
   const clockMs = timerNowMs(timer, now);
   const period = Number(timer?.period) > 0 ? Number(timer.period) : 1;
   const running = Boolean(timer?.running);
@@ -104,7 +121,7 @@ export function useLiveMatch(matchId, userId) {
     // [gol-klip] Sunucu yeni golü henüz döndürmediyse (okuma gecikmesi) skor ESKİ listeden
     // hesaplanıp maç kaydına yazılmasın: yerel olaylarla birleştirilmiş liste esas.
     const list = merged(res.data, issuedAt);
-    if (idRef.current === matchId) setRawEvents(list);
+    if (idRef.current === matchId) setRawEvents(keepIfSame(list));
     if (manual || !match) return;
     const next = scoreFromEvents(list, homeTeamId, awayTeamId);
     if (next.home !== Number(match.first_team_score) || next.away !== Number(match.second_team_score)) {
@@ -128,6 +145,11 @@ export function useLiveMatch(matchId, userId) {
       if (bugEventOf(lastTimeline)) setBanner({ id: Number(lastTimeline.id), until: Date.now() + BUG_EVENT_MS });
     }
   }, [lastTimeline, rawEvents]);
+  useEffect(() => {
+    if (!banner) return undefined;
+    const t = setTimeout(() => setNow(Date.now()), Math.max(0, banner.until - Date.now()) + 20);
+    return () => clearTimeout(t);
+  }, [banner]);
   const bannerEvent = useMemo(() => {
     if (!banner || banner.until < now) return null;
     const ev = events.find((e) => Number(e.id) === banner.id);
@@ -139,7 +161,7 @@ export function useLiveMatch(matchId, userId) {
 
   /* ───────── eylemler ───────── */
   const control = useCallback(async (action) => {
-    const plan = controlSteps(action, { clockMs, manual, score: eventScore });
+    const plan = controlSteps(action, { clockMs: clockNow(), manual, score: eventScore });
     for (const step of plan.steps) {
       if (step.kind === "match") await api.must(api.updateMatch(matchId, step.body), "Maç güncellenemedi.");
       else if (step.kind === "timer") setTimer(await api.must(api.putTimer(matchId, step.running, step.baseMs), "Saat güncellenemedi."));
@@ -147,14 +169,14 @@ export function useLiveMatch(matchId, userId) {
     }
     if (plan.steps.some((s) => s.kind === "match")) loadMatch();
     return plan.message;
-  }, [clockMs, eventScore, manual, matchId, loadMatch]);
+  }, [clockNow, eventScore, manual, matchId, loadMatch]);
 
   const nudgeClock = useCallback(async (deltaMs) => {
-    setTimer(await api.must(api.putTimer(matchId, running, Math.max(0, clockMs + deltaMs)), "Saat düzeltilemedi."));
-  }, [clockMs, matchId, running]);
+    setTimer(await api.must(api.putTimer(matchId, running, Math.max(0, clockNow() + deltaMs)), "Saat düzeltilemedi."));
+  }, [clockNow, matchId, running]);
 
   const addEvent = useCallback(async ({ side, code, playerId }) => {
-    const created = await api.must(api.createEvent(matchId, eventBody({ side, code, playerId, minute, period, homeTeamId, awayTeamId, userId })), "Olay kaydedilemedi.");
+    const created = await api.must(api.createEvent(matchId, eventBody({ side, code, playerId, minute: Math.floor(clockNow() / 60000), period, homeTeamId, awayTeamId, userId })), "Olay kaydedilemedi.");
     if (created?.id != null) localRef.current.created.set(Number(created.id), { ev: created, at: Date.now() });
     setRawEvents((prev) => {
       const list = prev || [];
@@ -162,7 +184,7 @@ export function useLiveMatch(matchId, userId) {
     });
     syncScore().catch(() => {});
     return created;
-  }, [awayTeamId, homeTeamId, matchId, minute, period, syncScore, userId]);
+  }, [awayTeamId, homeTeamId, matchId, clockNow, period, syncScore, userId]);
 
   /**
    * Tam olay (reji ızgarası): form { side, code, playerId, outId, inId, minute?, period?, note }.
@@ -171,7 +193,7 @@ export function useLiveMatch(matchId, userId) {
   const addFullEvent = useCallback(async (form) => {
     const body = fullEventBody({
       ...form,
-      minute: form.minute === "" || form.minute == null ? minute : form.minute,
+      minute: form.minute === "" || form.minute == null ? Math.floor(clockNow() / 60000) : form.minute,
       period: form.period || period,
       homeTeamId, awayTeamId, userId,
     });
@@ -183,7 +205,7 @@ export function useLiveMatch(matchId, userId) {
     });
     syncScore().catch(() => {});
     return created;
-  }, [awayTeamId, homeTeamId, matchId, minute, period, syncScore, userId]);
+  }, [awayTeamId, homeTeamId, matchId, clockNow, period, syncScore, userId]);
 
   const updateEvent = useCallback(async (eventId, form) => {
     const body = eventUpdateBody({ ...form, minute: form.minute === "" ? 0 : form.minute }, { homeTeamId, awayTeamId });
@@ -209,7 +231,7 @@ export function useLiveMatch(matchId, userId) {
     enabled, match, error, loading: enabled && !match && !error,
     status, manual, homeTeamId, awayTeamId, homeName, awayName, logos,
     events, timeline, squads, nameOf,
-    timer, clockMs, minute, period, running, phase, score, bannerEvent,
+    timer, clockMs, clockNow, minute, period, running, phase, score, bannerEvent,
     control, nudgeClock, addEvent, addFullEvent, updateEvent, removeEvent,
     lineup, teams,
     refresh: () => { loadMatch(); loadEvents(); loadTimer(); loadLineup(); },

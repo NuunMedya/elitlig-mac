@@ -31,15 +31,19 @@ export function workerCompositorSupported() {
  * bağımsız. "Otomatik" bu durumda ana iş parçacığı motorunu seçer.
  */
 let softwareGpuMemo = null;
+let rendererNameMemo = null;
+/** WebGL'in bildirdiği grafik işlemcisi adı (ör. "ANGLE (NVIDIA, … Direct3D11 …)"); Performans raporu. */
+export function gpuRendererName() { softwareGpu(); return rendererNameMemo; }
 export function softwareGpu() {
   if (softwareGpuMemo !== null) return softwareGpuMemo;
   softwareGpuMemo = false;
   try {
     const c = document.createElement("canvas");
     const gl = c.getContext("webgl2") || c.getContext("webgl");
-    if (!gl) { softwareGpuMemo = true; return true; }
+    if (!gl) { softwareGpuMemo = true; rendererNameMemo = "WebGL yok"; return true; }
     const ext = gl.getExtension("WEBGL_debug_renderer_info");
     const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    rendererNameMemo = name;
     softwareGpuMemo = /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
     gl.getExtension("WEBGL_lose_context")?.loseContext();
   } catch { softwareGpuMemo = false; }

@@ -141,6 +141,13 @@ function parseSegmentList(text) {
   return out;
 }
 
+/** 'above-normal' → Windows öncelik değeri (os.constants.priority); başka platformda null. */
+function processPriorityFor(priority, platform = process.platform) {
+  if (priority !== "above-normal" || platform !== "win32") return null;
+  const v = os.constants?.priority?.PRIORITY_ABOVE_NORMAL;
+  return Number.isFinite(v) ? v : -7;
+}
+
 function createStudioEngine({
   getFfmpeg, // async () => probeFfmpeg sonucu ({ available, path, encoders })
   tempRoot,
@@ -165,6 +172,10 @@ function createStudioEngine({
   diagScope = "program",
   hardStallMs = 60000,
   niceness = 0, // açılar: 10 (program kodlayıcısına öncelik)
+  // 2.35.0: Windows'ta canlı program kodlayıcısı "normalin üstü" öncelikte (oyun / tarayıcı gibi
+  // ön plandaki uygulamalar işlemciyi doldurunca kodlayıcı geride kalmasın). Yönetici izni
+  // gerektirmez; macOS / Linux'ta negatif öncelik izin istediği için uygulanmaz.
+  priority = null, // null | 'above-normal'
   adjustAfterFailure = null, // (opts, reason) => yeni seçenekler | null (ilk ilerlemeden önce; açılar: kopya → kodlama)
   remuxLocal = null, // async ({ parts, outFile, ffmpegPath }) => { ok, path }
   beforeCleanup = null, // async (session) => {} — parça klasörü silinmeden önce (röportajlar)
@@ -427,6 +438,11 @@ function createStudioEngine({
     s.child = child;
     if (niceness && child.pid) {
       try { os.setPriority(child.pid, niceness); } catch { /* yoksay */ }
+    } else if (child.pid) {
+      const pr = processPriorityFor(priority, platform);
+      if (pr != null) {
+        try { os.setPriority(child.pid, pr); note("ffmpeg önceliği", { priority }); } catch (e) { note("ffmpeg önceliği ayarlanamadı", { message: e?.message || String(e) }); }
+      }
     }
     const parser = ff.createProgressParser((p) => onProgress(runInfo, p));
     child.stdout.setEncoding("utf8");
@@ -1050,4 +1066,4 @@ function createStudioEngine({
 /** Genel adı: parça halkası kaydedici (yayın motoru ve açılar). */
 const createSegmentRecorder = createStudioEngine;
 
-module.exports = { createStudioEngine, createSegmentRecorder, fallbackEncoder, parseSegmentList, isContainerHeader, localBaseName, slug, BACKOFF_MS, MESSAGES };
+module.exports = { createStudioEngine, processPriorityFor, createSegmentRecorder, fallbackEncoder, parseSegmentList, isContainerHeader, localBaseName, slug, BACKOFF_MS, MESSAGES };

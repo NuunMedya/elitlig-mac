@@ -12,6 +12,7 @@ import { TimeInput } from "../goalmusic/GoalMusicPanel";
 import { CURVES, AIR_CHOICES, MAX_MUSIC_TRACKS, REPEAT_MODES, XFADE_PRESETS, formatTime, parseTime, parseYoutubeUrl, trackName } from "./musicModel";
 import { PLAYLIST_ORDERS, PLAYLIST_REPEATS, itemId, parsePlaylistUrl, playlistLength } from "./playlistModel";
 import "./music.css";
+import { useMusicTime } from "./useMusicPlayer";
 
 const secText = (ms) => (ms ? `${(ms / 1000).toLocaleString("tr-TR", { maximumFractionDigits: 1 })} sn` : "Kesme");
 /** Tıklanan öğe etkileşimli mi (satır tıkı çalmasın)? */
@@ -21,6 +22,7 @@ const longTime = (sec) => (sec >= 3600 ? `${Math.floor(sec / 3600)} sa ${Math.ro
 
 /** İlerleme çubuğu (tık / sürükle: konum). */
 export function SeekBar({ mp, className = "mu-now__bar" }) {
+  useMusicTime(mp); // 2.35.0: konum saniyede 4 kez yalnız burada yenilenir
   const n = mp.now;
   const playing = n.status !== "idle";
   const can = playing && n.lengthSec != null;
@@ -37,6 +39,7 @@ export function SeekBar({ mp, className = "mu-now__bar" }) {
 
 /** "Şimdi çalıyor" kartı (panel ve büyük parçacık). */
 export function NowPlaying({ mp, big = true, compact = false }) {
+  useMusicTime(mp); // 2.35.0: konum saniyede 4 kez yalnız burada yenilenir
   const n = mp.now;
   const playing = n.status !== "idle";
   const pl = n.playlistId ? mp.tracks.find((t) => t.id === n.playlistId) : null;

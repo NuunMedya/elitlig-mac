@@ -43,20 +43,29 @@ export function useSilenceWatch({ getAnalyser, active, enabled, limitSec = 30 })
   return silentMs;
 }
 
-export function useLowBitrate({ status, targetKbps, active, enabled, toast }) {
+export function useLowBitrate({ status, getStatus = null, targetKbps, active, enabled, toast }) {
   const since = useRef(null);
   const warnedAt = useRef(0);
-  useEffect(() => {
-    if (!active || !enabled || status?.state !== "live") { since.current = null; return; }
+  const check = useRef(null);
+  check.current = () => {
+    const st = (getStatus && getStatus()) || status;
+    if (!active || !enabled || st?.state !== "live") { since.current = null; return; }
     const now = Date.now();
-    if (isLowBitrate(status, targetKbps)) {
+    if (isLowBitrate(st, targetKbps)) {
       since.current ??= now;
       if (now - since.current > 10_000 && now - warnedAt.current > 60_000) {
         warnedAt.current = now;
-        toast?.(`Düşük bit hızı: ${Math.round(status.bitrateKbps)} kbps (hedef ${targetKbps}). Bağlantı zayıf olabilir; kaliteyi düşürmeyi düşün.`, { tone: "warn", timeout: 7000 });
+        toast?.(`Düşük bit hızı: ${Math.round(st.bitrateKbps)} kbps (hedef ${targetKbps}). Bağlantı zayıf olabilir; kaliteyi düşürmeyi düşün.`, { tone: "warn", timeout: 7000 });
       }
     } else since.current = null;
-  }, [active, enabled, status, targetKbps, toast]);
+  };
+  useEffect(() => { check.current(); }, [active, enabled, status, targetKbps]);
+  // 2.35.0: kodlayıcı sayaçları kök durumu her saniye güncellemiyor; yayın sürerken saniyede bir okunur.
+  useEffect(() => {
+    if (!active || !enabled || !getStatus) return undefined;
+    const t = setInterval(() => check.current(), 1000);
+    return () => clearInterval(t);
+  }, [active, enabled, getStatus]);
 }
 
 const KEY = "studio.chapters.v1";

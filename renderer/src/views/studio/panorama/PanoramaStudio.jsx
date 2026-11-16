@@ -70,6 +70,7 @@ import logoInline from "../../../assets/elitlig-beyaz.png?inline";
 import "../studio.css";
 import "./panorama.css";
 import "./regi/regi.css";
+import { startBlink } from "../perf/blink"; // 2.35.0: ortak yanıp sönme
 
 const store = (() => { try { return window.localStorage; } catch { return null; } })();
 const PREFS_KEY = "studio.panorama.prefs.v1";
@@ -403,7 +404,8 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
 
   /* ── ses ── */
   const mixer = useAudioMixer({ mic: prefs.mic, inputs: [], replayEls: [], replayAudio: false });
-  const music = useMusicPlayer({ mixer: mixer?.attachStream ? mixer : null, toast });
+  useEffect(() => startBlink(), []);
+  const music = useMusicPlayer({ mixer: mixer?.attachStream ? mixer : null, toast, timeStore: true }); // 2.35.0: konum kökü yeniden çizmez
   const mediaCtlRef = useRef(null);
   const mediaCtl = usePanoramaMedia({ pano, setPano, runtimeRef: src.runtimeRef, mixer, programId: config.programSceneId });
 
@@ -819,7 +821,7 @@ export default function PanoramaStudio({ go, onSwitchMode }) {
           {activePreset && dirty && <button type="button" className="btn btn--sm" onClick={savePresetOver} title="Hazır ayarı güncelle" data-act="preset-quick-save"><Icon name="check" size={12} /> Kaydet</button>}
         </div>
         <StatusPill state={st.state} since={engine.since} />
-        <HealthChip status={st} getStats={comp.getStats} getEncodeStats={engine.getEncodeStats} targetFps={preset.fps} encoding={onAir} />
+        <HealthChip status={st} getStatus={engine.getStatus} getEngineInfo={comp.getEngineInfo} getStats={comp.getStats} getEncodeStats={engine.getEncodeStats} targetFps={preset.fps} encoding={onAir} />
         <span className="st-top__spacer" />
         <button type="button" className={`btn btn--sm ${prefs.mic.muted ? "" : "btn--red"}`} onClick={toggleMic} title={prefs.mic.muted ? "Mikrofon kapalı — aç" : "Mikrofon açık — kapat"} data-act="mic-label"><Icon name={prefs.mic.muted ? "micOff" : "mic"} size={13} /> <span>{prefs.mic.muted ? "Mikrofon kapalı" : "Mikrofon açık"}</span></button>
         <OutMuteButton />

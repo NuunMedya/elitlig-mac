@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveScene } from "../../../lib/studio/scenes";
 import { ledBackPatch, ledLiveOn, ledLivePatch, ledTargetScene, normalizeLedRoute, routeSceneToLed } from "./ledRouting";
 import { normalizeLedFx, patchLedFx } from "./ledFx";
+import { keepIfSame } from "../../../lib/perf/same";
 
 const PREFS_KEY = "studio.led.v2";
 function readPrefs(defaults) {
@@ -82,7 +83,7 @@ export function useLed({ configRef, programIdRef, previewIdRef, graphicsRef, bra
   }, []);
 
   const refreshStatus = useCallback(async () => {
-    try { const s = await led()?.status?.(); if (s) setStatus(s); } catch { /* yoksay */ }
+    try { const s = await led()?.status?.(); if (s) setStatus(keepIfSame(s)); } catch { /* yoksay */ }
   }, []);
 
   useEffect(() => { refreshDisplays(); refreshStatus(); }, [refreshDisplays, refreshStatus]);
@@ -90,7 +91,7 @@ export function useLed({ configRef, programIdRef, previewIdRef, graphicsRef, bra
     const t = setInterval(refreshStatus, status.open ? 2000 : 6000);
     return () => clearInterval(t);
   }, [refreshStatus, status.open]);
-  useEffect(() => led()?.onStatus?.((s) => s && setStatus(s)), []);
+  useEffect(() => led()?.onStatus?.((s) => s && setStatus(keepIfSame(s))), []);
   useEffect(() => window.elitlig?.studio?.onDisplaysChanged?.(() => refreshDisplays()), [refreshDisplays]);
 
   const targetScene = useCallback(() => {

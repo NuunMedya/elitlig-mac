@@ -22,6 +22,7 @@ import { healthText } from "../../lib/studio/uploadGuard";
 import { TRANSITIONS } from "../../lib/studio/transitions";
 import UploadLog from "./modes/UploadLog";
 import { PendingNote } from "./replayUploadUi"; // [gol-klip]
+import { useSecondNow } from "./perf/clock";
 import { DeckAngles, DeckExtras, DeckSeq, DeckSpeed, DeckTarget, DeckTime, DeckTimeline, DeckTransport, DeckZoom, angleShort, useDeckClock } from "./modes/replayDeckUi";
 import "./modes/replayEditor.css";
 import { AngleList, AngleRow } from "./replayAngleList";
@@ -138,7 +139,7 @@ function ReplayPanelInner({ api }) {
             <li key={p.key} className={`rpx-row is-pending ${p.status === "error" ? "is-error" : ""}`}>
               <span className="rpx-row__min"><Icon name={p.status === "error" ? "alert" : "clock"} size={11} /></span>
               <span className={`rpx-tag ${p.kind === "goal" ? "is-goal" : ""}`}>{p.kind === "goal" ? "GOL" : "AN"}</span>
-              <span className="rpx-row__who">{p.meta?.minute != null ? `${p.meta.minute}' · ` : ""}<PendingNote p={p} now={R.now} /></span>
+              <span className="rpx-row__who">{p.meta?.minute != null ? `${p.meta.minute}' · ` : ""}<PendingNote p={p} /></span>
               {p.status === "error" && <button type="button" className="icon-btn icon-btn--xs" onClick={() => R.dismissPending?.(p.key)} title="Kapat"><Icon name="x" size={12} /></button>}
             </li>
           ))}
@@ -238,7 +239,8 @@ function ReplayPanelInner({ api }) {
 export function PositionLine({ r, R, meta, picks, pick, cursor, air, sources, onSend, onSplit, isSplit, live }) {
   const m = metaFor(r, meta);
   const u = R.uploadOf?.(r.id);
-  const chip = uploadChip(u, r, m, R.now || Date.now());
+  useSecondNow(u?.status === "scheduled"); // 2.35.0: geri sayım yalnız bu satırda
+  const chip = uploadChip(u, r, m, Date.now());
   const angles = r.angles.filter((a) => a.url);
   const nums = pickNumbers(picks, r.id);
   const chosen = picksOf(picks, r);
@@ -302,7 +304,7 @@ export function PositionList({ list, pending, R, meta, picks, pick, cursor, air,
             <div className="rpx-pos__head">
               <span className="rpx-pos__min"><Icon name={p.status === "error" ? "alert" : "clock"} size={12} /></span>
               <strong>{p.kind === "goal" ? "GOL" : "Önemli an"}{p.meta?.minute != null ? ` · ${p.meta.minute}'` : ""}</strong>
-              <PendingNote p={p} now={R.now} />
+              <PendingNote p={p} />
               <span className="st-top__spacer" />
               {p.status === "error" && <button type="button" className="icon-btn icon-btn--xs" onClick={() => R.dismissPending?.(p.key)} title="Kapat"><Icon name="x" size={13} /></button>}
             </div>
@@ -320,7 +322,8 @@ export function PositionList({ list, pending, R, meta, picks, pick, cursor, air,
 function PositionRow({ r, R, meta, picks, pick, cursor, air, sources, onSend, onSplit, isSplit, live }) {
   const m = metaFor(r, meta);
   const u = R.uploadOf?.(r.id);
-  const chip = uploadChip(u, r, m, R.now || Date.now());
+  useSecondNow(u?.status === "scheduled"); // 2.35.0: geri sayım yalnız bu satırda
+  const chip = uploadChip(u, r, m, Date.now());
   const stage = stageOf({ replayId: r.id, picks, cursor, air });
   const angles = r.angles.filter((a) => a.url);
   const nums = pickNumbers(picks, r.id);

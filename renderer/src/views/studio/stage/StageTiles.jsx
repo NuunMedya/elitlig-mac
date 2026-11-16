@@ -21,6 +21,7 @@ import { LED_WEB_BASE } from "../led/useLed";
 import { ledRouteLabel, ledTargetScene } from "../led/ledRouting";
 import Monitor from "../scenes/Monitor";
 import "./stage.css";
+import { drawMeterBar } from "../perf/meterCanvas";
 
 /** Kutunun iç boyutu (ResizeObserver). */
 function useSize() {
@@ -191,11 +192,12 @@ function MicMeter({ mixer, muted }) {
       if (!buf || buf.length !== a.fftSize) buf = new Float32Array(a.fftSize);
       a.getFloatTimeDomainData(buf);
       const { peakDb } = samplesLevel(buf);
-      el.style.width = `${meterFraction(peakDb) * 100}%`;
+      // 2.35.0: tuvale çizilir (perf/meterCanvas); değişmeyen değer çizilmez.
+      drawMeterBar(el, meterFraction(peakDb), null, { vertical: false, muted: Boolean(el.closest?.(".stg-meter.is-muted")) });
     };
     return canvasLoop("Mikrofon ölçeri (pano)", { fps: SECONDARY_FPS.meter, el: () => ref.current }, loop);
   }, [mixer]);
-  return <div className={`stg-meter ${muted ? "is-muted" : ""}`}><span><Icon name={muted ? "micOff" : "mic"} size={11} /> Mikrofon</span><span className="stg-meter__bar"><i ref={ref} /></span></div>;
+  return <div className={`stg-meter ${muted ? "is-muted" : ""}`}><span><Icon name={muted ? "micOff" : "mic"} size={11} /> Mikrofon</span><span className="stg-meter__bar"><canvas ref={ref} /></span></div>;
 }
 
 export const MetersTile = memo(function MetersTile({ strip, mixer, muted }) {

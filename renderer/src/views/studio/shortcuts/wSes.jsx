@@ -13,6 +13,7 @@ import { FADER_MAX_DB, FADER_MIN_DB, PLAYBACK_CONTEXTS, ROUTE_GROUPS, dbText, pa
 import { levelFromSamples } from "../../../lib/studio/compose";
 import { DUCK_DEPTHS, PRESET_SLOTS, applyMixerSnapshot, duckedDb, dumpLeft, loadPresets, mixerSnapshot, pickStrips, savePresets } from "./flowLogic";
 import { Chip, FlowNote, Head, Kbd, Pill, Ring, Shell, hk, openPop, startTimer, stopTimer, timerOf, useNow, usePress } from "./wkit";
+import { drawMeterBar } from "../perf/meterCanvas";
 
 const store = () => { try { return window.localStorage; } catch { return null; } };
 const noMixer = (w, h, label = "SES") => <Shell tone="green" w={w} h={h}><Head icon="sliders" label={label} /><span className="st-w__empty">Karıştırıcı hazır değil.</span></Shell>;
@@ -32,11 +33,13 @@ export function Meter({ getAnalyser, muted, vertical = false }) {
       let pct = 0;
       if (a) { if (!buf || buf.length !== a.fftSize) buf = new Float32Array(a.fftSize); a.getFloatTimeDomainData(buf); pct = levelFromSamples(buf).pct; }
       peak = Math.max(pct, peak - decay);
-      if (ref.current) { ref.current.style.setProperty("--lvl", `${pct.toFixed(1)}%`); ref.current.style.setProperty("--peak", `${peak.toFixed(1)}%`); }
+      // 2.35.0: tuvale çizilir (perf/meterCanvas); değişmeyen değer çizilmez.
+      const el = ref.current;
+      if (el) drawMeterBar(el.firstChild, pct / 100, peak > 0.5 ? peak / 100 : null, { vertical: el.classList.contains("is-v"), muted: el.classList.contains("is-muted"), peakAlpha: 0.7 });
     };
     return canvasLoop("Kısayol ses ölçeri", { fps: 15, el: () => ref.current }, loop);
   }, []);
-  return <span ref={ref} className={`wx-meter ${vertical ? "is-v" : ""} ${muted ? "is-muted" : ""}`} aria-hidden="true"><i /><b /></span>;
+  return <span ref={ref} className={`wx-meter ${vertical ? "is-v" : ""} ${muted ? "is-muted" : ""}`} aria-hidden="true"><canvas /></span>;
 }
 
 /** Fader (yatay ya da dikey kaydırıcı); çift tık 0 dB. */

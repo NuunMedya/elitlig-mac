@@ -150,6 +150,7 @@ import logoInline from "../../assets/elitlig-beyaz.png?inline";
 import OutMuteButton from "./audio/OutMuteButton";
 import { applyNative as applyOutMuteNative, getOutMute, setOutMute, toggleOutMute, useOutMute } from "./audio/outMute";
 import "./studio.css";
+import { startBlink } from "./perf/blink"; // 2.35.0: ortak yanıp sönme (karede iş yok)
 // [panorama] yayın türü seçimi: Maç yayını | Panorama (maç seçmeden web içerikleri)
 import StudioModeGate from "./panorama/ModeGate";
 import PanoramaStudio from "./panorama/PanoramaStudio";
@@ -372,8 +373,9 @@ function MatchStudio({ auth, go, onSwitchMode }) {
   // [yayın öncelikli] gol klibi yüklemesi motor durumuna (aktarıcı kuyruğu, gönderim hızı,
   // kopmalar) bakarak ertelenir / kısılır; motor aşağıda kurulur, durum ref'ten okunur.
   const engineStatusRef = useRef(null);
+  const engineGetStatusRef = useRef(null); // en son kodlayıcı durumu (sayaçlar; kök durumu her saniye değişmez)
   const goalMarkRef = useRef(null); // [gol anı yükü] GOL'de tanılama ölçümü (useGoalStress)
-  const replays = useReplays(matchId, { postSeconds: settings.replay.postSeconds, uploadDelaySec: settings.replay.uploadDelaySec, getStatus: () => engineStatusRef.current, onCapture: (kind) => { if (kind === "goal") goalMarkRef.current?.(); } });
+  const replays = useReplays(matchId, { postSeconds: settings.replay.postSeconds, uploadDelaySec: settings.replay.uploadDelaySec, getStatus: () => engineGetStatusRef.current?.() || engineStatusRef.current, onCapture: (kind) => { if (kind === "goal") goalMarkRef.current?.(); } });
   /** [gol-klip] Yayına verilen tekrar yükü → tekrar başına açılar / bölümler (gecikmeli yükleme, özet). */
   const noteAired = useStable((payload) => {
     if (payload?.kind !== "replay") return;
@@ -475,6 +477,7 @@ function MatchStudio({ auth, go, onSwitchMode }) {
   workerSnapRef.current = gRef.current ? gRef.current.snapshotRef?.current || gRef.current.snapshot || null : null;
   const timerRef = useRef(null);
   timerRef.current = timer || null;
+  useEffect(() => startBlink(), []);
   const comp = useCompositor({ width: preset.width, height: preset.height, fps: preset.fps, configRef, runtimeRef: src.runtimeRef, overlayRef, replayRef, varRef, brandRef, overrideRef, previewGraphicsRef, matchClockRef, modesRef, pgmFxRef, engine: settings.stream.compositor, snapshotRef: workerSnapRef, timerRef, workerGraphics: Boolean(drawGraphicsSafe) });
   /** LED aynası için programın küçük JPEG karesi. */
   const ledFrameRef = useRef(null);
@@ -489,9 +492,10 @@ function MatchStudio({ auth, go, onSwitchMode }) {
   const onEngineError = useCallback((m) => toast(m, { tone: "error", timeout: 6000 }), [toast]);
   const engine = useEngine({ getVideoTrack: comp.getVideoTrack, getAudioTrack: mixer.audioTrack, getCanvas: comp.getCanvas, subscribeFrames: comp.subscribeFrames, getRemoteEncoder: comp.getRemoteEncoder, getDrawStats: comp.getStats, onError: onEngineError });
   engineStatusRef.current = engine.status;
+  engineGetStatusRef.current = engine.getStatus;
   // Tanılama kancası (geliştirici konsolu / ölçüm): çizim + kodlama sayaçları.
   try { globalThis.__elitligStudio = { draw: comp.getStats, enc: engine.getEncodeStats, engine: comp.engine }; } catch { /* yoksay */ }
-  const goalStress = useGoalStress({ active: engine.active, getDrawStats: comp.getStats, getEncodeStats: engine.getEncodeStats, getStatus: () => engineStatusRef.current });
+  const goalStress = useGoalStress({ active: engine.active, getDrawStats: comp.getStats, getEncodeStats: engine.getEncodeStats, getStatus: () => engineGetStatusRef.current?.() || engineStatusRef.current });
   goalMarkRef.current = goalStress.mark;
   const yt = useYoutube(matchId, { encodingLive: engine.mode === "live" && engine.active });
   // [bağlantılar] YouTube yayını / YouTube Studio / maç sayfası: aç, kopyala, programda QR.
@@ -652,7 +656,7 @@ function MatchStudio({ auth, go, onSwitchMode }) {
   /* ───────── uyarılar, bölümler ───────── */
   const chapters = useChapters(matchId, engine.since, { mode: engine.mode, active: engine.active, broadcastId: yt.stream?.broadcast_id || null }); // [medya] YouTube'a kendiliğinden gönderim
   const silentMs = useSilenceWatch({ getAnalyser: () => mixer.micAnalyser(true), active: engine.active && engine.mode === "live", enabled: settings.notify.silence, limitSec: settings.notify.silenceSec });
-  useLowBitrate({ status: engine.status, targetKbps: preset.videoBitrateKbps, active: engine.active, enabled: settings.notify.lowBitrate, toast });
+  useLowBitrate({ status: engine.status, getStatus: engine.getStatus, targetKbps: preset.videoBitrateKbps, active: engine.active, enabled: settings.notify.lowBitrate, toast });
   const addChapter = useStable(() => {
     if (!engine.active) { toast("Bölüm işareti için yayın ya da prova açık olmalı.", { tone: "warn" }); return; }
     const sc = resolveScene(configRef.current, configRef.current.programSceneId);
@@ -726,7 +730,7 @@ function MatchStudio({ auth, go, onSwitchMode }) {
   /* ───────── gol müziği (isteğe bağlı modül: ./goalmusic) ───────── */
   const goalMusic = useGoalMusicSafe({ homeTeamId: live.homeTeamId, awayTeamId: live.awayTeamId, homeName: live.homeName, awayName: live.awayName, matchId, live, toast });
   // Müzik çalar (./music): liste, geçiş; varsayılan yalnız hoparlör, "Yayına da ver" müzik penceresinden yakalar.
-  const music = useMusicPlayer({ mixer: mixer?.attachStream ? mixer : null, toast });
+  const music = useMusicPlayer({ mixer: mixer?.attachStream ? mixer : null, toast, timeStore: true }); // 2.35.0: konum kökü yeniden çizmez
   const goalPlaying = Boolean(goalMusic?.playing);
   useEffect(() => { music.duck(goalPlaying); }, [goalPlaying]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1954,7 +1958,7 @@ function MatchStudio({ auth, go, onSwitchMode }) {
           ? <button type="button" className="st-top__match" onClick={() => setTab("yonetim")} title={`${matchName} — Maç yönetimi`}><b>{live.score.home}–{live.score.away}</b><span>{matchName}</span>{live.match && <small>{live.minute}'</small>}</button>
           : <button type="button" className="st-top__match is-empty" onClick={() => setTab("yonetim")} title="Maç seçmek için Maç yönetimi">Maç seçilmedi</button>}
         <StatusPill state={st.state} since={engine.since} />
-        <HealthChip status={st} getStats={comp.getStats} getEncodeStats={engine.getEncodeStats} targetFps={preset.fps} encoding={onAir} goalStress={goalStress.last} goalMeasuring={goalStress.measuring} />
+        <HealthChip status={st} getStatus={engine.getStatus} getEngineInfo={comp.getEngineInfo} getStats={comp.getStats} getEncodeStats={engine.getEncodeStats} targetFps={preset.fps} encoding={onAir} goalStress={goalStress.last} goalMeasuring={goalStress.measuring} />
         <span className="st-top__spacer" />
         <OutMuteButton hotkey={settings.hotkeys?.outMute?.[0] ? keyText(settings.hotkeys.outMute[0]) : null} />
         <LayoutToolbar edit={lay.edit} setEdit={lay.setEdit} ctrlRef={lay.ctrlRef} preset={lay.layout.preset} onSettings={() => openSettings("yerlesim")} />

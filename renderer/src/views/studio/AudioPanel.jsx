@@ -29,6 +29,7 @@ import { persistFile } from "./SourcesPanel";
 import { Part, usePanelParts } from "./dock/parts";
 import "./modes/modes.css";
 import "./audio/audio.css";
+import { drawMeterBar } from "./perf/meterCanvas";
 
 /** Eski tek çubuk ölçer (üst çubuk): DOM'u doğrudan günceller. */
 export function LevelMeter({ getAnalyser, muted, compact = false }) {
@@ -50,15 +51,23 @@ export function LevelMeter({ getAnalyser, muted, compact = false }) {
         pct = levelFromSamples(buf).pct;
       }
       peak = Math.max(pct, peak - decay);
-      if (bar.current) {
-        bar.current.style.setProperty("--lvl", `${pct.toFixed(1)}%`);
-        bar.current.style.setProperty("--peak", `${peak.toFixed(1)}%`);
-      }
+      // 2.35.0: tuvale çizilir (perf/meterCanvas): genişlik değişimi her karede yerleşim + boyama yaptırıyordu.
+      const el = bar.current;
+      if (el) drawMeterBar(el.firstChild, pct / 100, peak > 0.5 ? peak / 100 : null, { vertical: false, muted: el.classList.contains("is-muted"), peakAlpha: 0.7 });
     };
     // Ölçer 15 fps, görünmüyorsa çizilmez (arayüz yükü; yayın ayrı iş parçacığında).
     return canvasLoop("Ses ölçeri (üst çubuk)", { fps: SECONDARY_FPS.meter, el: () => bar.current }, loop);
   }, []);
-  return <span ref={bar} className={`st-meter ${muted ? "is-muted" : ""} ${compact ? "st-meter--compact" : ""}`} aria-hidden="true"><i /><b /></span>;
+  return <span ref={bar} className={`st-meter ${muted ? "is-muted" : ""} ${compact ? "st-meter--compact" : ""}`} aria-hidden="true"><canvas /></span>;
+}
+
+/**
+ * 2.35.0: ölçer çubukları <canvas> üstüne çizilir (perf/meterCanvas). Eskiden kapsayıcıya CSS
+ * değişkeni (--l0, --p0) yazılıyor, clip-path değişiyordu: saniyede 15 kez bütün belgenin
+ * stili + boyama + katman listesi (ölçüm: ana iş parçacığının ~%10–15'i). Değer değişmediyse çizilmez.
+ */
+function setBar(canvas, level, peak) {
+  drawMeterBar(canvas, level, peak > 0.005 ? peak : null, { vertical: true });
 }
 
 /* ───────── ölçer bankası: tek döngü ───────── */
@@ -99,8 +108,7 @@ export function useMeterBank() {
           const st = it.state[i];
           st.db = meterBallistics(st.db, db, dt, 26);
           st.peak = peakHold(st.peak, db, now, { holdMs: 1500, decayDbPerSec: 18 });
-          el.style.setProperty(`--l${i}`, `${(meterFraction(st.db) * 100).toFixed(1)}%`);
-          el.style.setProperty(`--p${i}`, `${(meterFraction(st.peak.db) * 100).toFixed(1)}%`);
+          setBar(it.bars?.[i], meterFraction(st.db), meterFraction(st.peak.db));
           if (i === 0 && it.readout) {
             const pk = Math.max(st.peak.db, it.state[1].peak?.db ?? -Infinity);
             const txt = Number.isFinite(pk) && pk > -60 ? dbText(pk) : "−∞";
@@ -120,7 +128,8 @@ export function useMeterBank() {
   return useCallback((key, get) => (el) => {
     if (!el) { const it = items.current.get(key); if (it) it.el = null; return; }
     const prev = items.current.get(key);
-    const it = { get, el, readout: el.querySelector(".mx-meter__pk"), clip: prev?.clip || false, clipShown: false, state: prev?.state || [{ db: -Infinity, peak: null }, { db: -Infinity, peak: null }] };
+    const bars = [...el.querySelectorAll(".mx-bar canvas")];
+    const it = { get, el, bars, readout: el.querySelector(".mx-meter__pk"), clip: prev?.clip || false, clipShown: false, state: prev?.state || [{ db: -Infinity, peak: null }, { db: -Infinity, peak: null }] };
     items.current.set(key, it);
     const btn = el.querySelector(".mx-clip");
     if (btn) btn.onclick = () => { const cur = items.current.get(key); if (cur) cur.clip = false; };
@@ -133,8 +142,8 @@ function Meter({ bind, id, get, tall = false }) {
       <span className="mx-meter__pk">−∞</span>
       <button type="button" className="mx-clip" title="CLIP: ses tavana dayandı (bozulma). Seviyeyi düşürün ya da “Sesi düzelt”. Tıkla: sıfırla">CLIP</button>
       <div className="mx-meter__bars">
-        <i className="mx-bar" style={{ "--lv": "var(--l0)", "--pk": "var(--p0)" }}><b /><s /></i>
-        <i className="mx-bar" style={{ "--lv": "var(--l1)", "--pk": "var(--p1)" }}><b /><s /></i>
+        <i className="mx-bar"><canvas /></i>
+        <i className="mx-bar"><canvas /></i>
         <ul className="mx-scale">{METER_TICKS.map((t) => <li key={t} style={{ bottom: `${meterFraction(t) * 100}%` }}>{t === 0 ? "0" : t}</li>)}</ul>
       </div>
     </div>

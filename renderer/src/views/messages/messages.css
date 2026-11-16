@@ -362,8 +362,8 @@ button.ms-chat__who:hover { background: var(--surface-2); }
 .ms-composer--rec { align-items: center; gap: 10px; padding: 6px 6px 6px 10px; border-radius: 26px; background: var(--surface); box-shadow: var(--ms-float); }
 .ms-rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); animation: msPulse 1s infinite; }
 .ms-rec-wave { flex: 1; display: flex; align-items: center; gap: 3px; height: 26px; }
-.ms-rec-wave i { flex: 1; height: 30%; border-radius: 2px; background: var(--tool); animation: msWave 0.9s ease-in-out infinite; }
-@keyframes msWave { 50% { height: 100%; } }
+.ms-rec-wave i { flex: 1; height: 100%; border-radius: 2px; background: var(--tool); transform: scaleY(0.3); animation: msWave 0.9s ease-in-out infinite; }
+@keyframes msWave { 50% { transform: scaleY(1); } }
 .ms-send { width: 48px; height: 48px; border-radius: 50%; border: 0; display: grid; place-items: center; color: #fff; background: var(--tool); box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--tool) 80%, transparent); flex: none; transition: transform 0.15s, background 0.15s; }
 .ms-send:hover { transform: scale(1.05); background: color-mix(in srgb, var(--tool) 88%, #000); }
 .ms-send svg { animation: msMorph 0.22s cubic-bezier(.3,1.5,.6,1); }

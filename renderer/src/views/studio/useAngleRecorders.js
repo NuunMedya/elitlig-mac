@@ -20,6 +20,9 @@ import { createFxFeed } from "./fx/fxFeed";
 const studio = () => window.elitlig?.studio;
 export const ANGLE_BITRATE_KBPS = 6000;
 
+/** Açı durum listesinin görünen anahtarı (arayüz saniye gösterir). */
+export const angleStatusKey = (list) => (Array.isArray(list) ? list.map((x) => `${x?.id}|${x?.state}|${Math.round((Number(x?.bufferedMs) || 0) / 1000)}|${x?.error || ""}`).join(",") : "");
+
 /** Kaynağın kaydedilebilir görüntü izi (kamera / ekran akışı ya da video dosyası). */
 function videoTrackOf(rt) {
   if (!rt || rt.status !== "live") return null;
@@ -171,7 +174,9 @@ export function useAngleRecorders({ active, sourceIds, sources, runtimeRef, vers
   useEffect(() => {
     if (!key) { setStatus([]); return undefined; }
     let alive = true;
-    const poll = () => Promise.resolve(studio()?.angles?.status?.()).then((s) => { if (alive && Array.isArray(s)) setStatus(s); }).catch(() => {});
+    // 2.35.0: aynı görünen durum (saniyeye yuvarlanmış ara bellek) kök durumu değiştirmez;
+    // halka dolunca bufferedMs sabit kalır → stüdyo ağacı 2 sn'de bir yeniden çizilmez.
+    const poll = () => Promise.resolve(studio()?.angles?.status?.()).then((s) => { if (alive && Array.isArray(s)) setStatus((prev) => (angleStatusKey(prev) === angleStatusKey(s) ? prev : s)); }).catch(() => {});
     poll();
     const t = setInterval(poll, 2000);
     return () => { alive = false; clearInterval(t); };

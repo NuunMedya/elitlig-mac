@@ -496,10 +496,9 @@
 .st-option small { font-size: 11px; color: var(--muted); }
 
 /* Ses */
-.st-meter { position: relative; display: block; height: 6px; border-radius: 4px; background: rgba(var(--ink-rgb), 0.1); overflow: hidden; --lvl: 0%; --peak: 0%; }
-.st-meter i { position: absolute; inset: 0 auto 0 0; width: var(--lvl); background: linear-gradient(90deg, #22c55e 0%, #22c55e 65%, #facc15 82%, #ef4444 96%); background-size: 100% 100%; transition: width 0.05s linear; }
-.st-meter b { position: absolute; top: 0; bottom: 0; left: var(--peak); width: 2px; background: #fff; opacity: 0.7; }
-.st-meter.is-muted i { background: rgba(var(--ink-rgb), 0.28); }
+/* 2.35.0: ölçer tuvalde (perf/meterCanvas); genişlik geçişi her karede yerleşim + boyama yaptırıyordu */
+.st-meter { position: relative; display: block; height: 6px; border-radius: 4px; background: rgba(var(--ink-rgb), 0.1); overflow: hidden; }
+.st-meter canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .st-meter--compact { height: 4px; }
 .st-input { display: flex; flex-direction: column; gap: 5px; padding: 7px; border-radius: 9px; background: var(--surface-2); }
 .st-input select { flex: 1; min-width: 0; padding: 4px 6px !important; font-size: 12px; }
@@ -557,6 +556,9 @@ input[type="range"] { accent-color: color-mix(in srgb, var(--acc), var(--ink-to)
 .st-health__pop, .st-showpick__pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 280px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border-strong); box-shadow: 0 16px 40px rgba(var(--shade-rgb), 0.5); font-size: 12px; }
 .st-health__pop dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 8px 0; }
 .st-health__pop dt { color: var(--muted); }
+.st-health__perf { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.st-health__perfbtns { display: flex; gap: 6px; flex-wrap: wrap; }
+.st-health__perf .st-hint { margin: 6px 0 0; word-break: break-all; }
 .st-health__pop dd { margin: 0; font-family: var(--mono); text-align: right; }
 .st-health__pop ul { margin: 0; padding-left: 16px; color: var(--amber-text); }
 .st-health__cause { margin: 6px 0 0; padding: 6px 8px; border-radius: 8px; background: rgba(var(--ink-rgb), 0.04); line-height: 1.35; }
@@ -573,9 +575,11 @@ input[type="range"] { accent-color: color-mix(in srgb, var(--acc), var(--ink-to)
 .st-iv.is-busy { color: var(--muted); border-style: dashed; }
 .st-iv.is-err { border-color: var(--red); color: var(--red-text); background: var(--red-soft); }
 .st-var-top { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 11px; border-radius: 10px; border: 1px solid rgba(255, 45, 85, 0.5); background: var(--red-soft); color: var(--red-text); font-weight: 900; font-size: 12px; letter-spacing: 0.06em; white-space: nowrap; }
-.st-var-top.is-on { background: var(--st-live); color: var(--on-strong); animation: stVarGlow 1.2s ease-in-out infinite; }
+.st-var-top.is-on { position: relative; background: var(--st-live); color: var(--on-strong); }
+.st-var-top.is-on::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 0 4px rgba(255, 45, 85, 0.35); pointer-events: none; opacity: 0; animation: stVarGlow 1.2s ease-in-out infinite; }
 .st-var-top .kbd { background: transparent; color: inherit; border-color: rgba(var(--ink-rgb), 0.3); }
-@keyframes stVarGlow { 50% { box-shadow: 0 0 0 4px rgba(255, 45, 85, 0.35); } }
+/* 2.35.0: yalnız opacity (bileşik katmanda; ana iş parçacığı boyamaz) */
+@keyframes stVarGlow { 50% { opacity: 1; } }
 .st-help { flex: none; }
 .st-spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; display: inline-block; animation: stSpin 0.8s linear infinite; }
 @keyframes stSpin { to { transform: rotate(360deg); } }
@@ -606,9 +610,10 @@ input[type="range"] { accent-color: color-mix(in srgb, var(--acc), var(--ink-to)
 .st-edit__guide.is-y { left: 0; right: 0; height: 1px; }
 
 /* VAR: operatör uyarısı (yayına gitmez) */
-.st-monitor.is-micwarn .st-screen-wrap { outline: 6px solid #ff2d55 !important; outline-offset: -6px !important; animation: stMicWarn 0.9s ease-in-out infinite; }
-@keyframes stMicWarn { 50% { outline-color: rgba(255, 45, 85, 0.35); } }
-.st-micwarn { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); white-space: nowrap; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 12px; background: var(--st-live); color: var(--on-strong); font: 900 22px var(--display); letter-spacing: 0.06em; box-shadow: 0 10px 30px rgba(255, 45, 85, 0.5); animation: stVarGlow 1s ease-in-out infinite; }
+/* 2.35.0: çerçeve sabit (outline animasyonu her karede monitörü yeniden boyatıyordu); nabız uyarı bandında. */
+.st-monitor.is-micwarn .st-screen-wrap { outline: 6px solid #ff2d55 !important; outline-offset: -6px !important; }
+.st-micwarn { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); white-space: nowrap; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 12px; background: var(--st-live); color: var(--on-strong); font: 900 22px var(--display); letter-spacing: 0.06em; box-shadow: 0 10px 30px rgba(255, 45, 85, 0.5); }
+.st-micwarn::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 0 4px rgba(255, 45, 85, 0.35); pointer-events: none; opacity: 0; animation: stVarGlow 1s ease-in-out infinite; }
 .st-micwarn button { border: 1px solid rgba(var(--ink-rgb), 0.6); background: rgba(var(--shade-rgb), 0.2); color: var(--text); border-radius: 8px; padding: 4px 9px; font: 800 11px var(--font); letter-spacing: 0.04em; }
 .studio.is-micwarn::after { content: "MİKROFON AÇIK"; position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 50; padding: 6px 28px; border-radius: 12px 12px 0 0; background: var(--st-live); color: var(--on-strong); font: 900 15px var(--display); letter-spacing: 0.12em; pointer-events: none; }
 .st-tag.is-var { border: 0; background: var(--st-live); color: var(--on-strong); cursor: pointer; }

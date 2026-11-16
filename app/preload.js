@@ -199,6 +199,8 @@ contextBridge.exposeInMainWorld("elitlig", {
     diagnostics: () => ipcRenderer.invoke("studio:diagnostics"),
     clearUploadLog: () => ipcRenderer.invoke("studio:clearUploadLog"),
     revealDiagnostics: () => ipcRenderer.invoke("studio:revealDiagnostics"),
+    perfInfo: () => ipcRenderer.invoke("studio:perfInfo"),
+    savePerfReport: (payload) => ipcRenderer.invoke("studio:savePerfReport", payload),
     // Yerel tam kayıt: start({ …, localRecord: { enabled, dir?, videoBitrateKbps?, height?, fps?, allowSoftware? } });
     // kalite yayından farklıysa ikinci kodlayıcı (yalnız donanım kodlayıcıda; info().localQuality.supported).
     // start → { …, localQuality: { separate, width, height, fps, videoBitrateKbps } | { separate: false, reason, message } }

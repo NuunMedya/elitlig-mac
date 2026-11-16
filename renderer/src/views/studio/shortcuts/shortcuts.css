@@ -79,8 +79,9 @@ button.st-w:hover:not(:disabled) { border-color: rgba(var(--c-rgb), 0.75); backg
 button.st-w:active:not(:disabled) { transform: scale(0.97); }
 .st-w:disabled { opacity: 0.42; cursor: default; filter: saturate(0.5); }
 .st-w.is-on { border-color: var(--c); background: linear-gradient(160deg, rgba(var(--c-rgb), 0.95), rgba(var(--c-rgb), 0.7)); box-shadow: 0 0 0 1px rgba(var(--c-rgb), 0.6), 0 6px 18px rgba(var(--c-rgb), 0.28); }
-.st-w.is-blink { animation: stWBlink 1.2s ease-in-out infinite; }
-@keyframes stWBlink { 50% { box-shadow: 0 0 0 4px rgba(var(--c-rgb), 0.35), 0 6px 18px rgba(var(--c-rgb), 0.28); } }
+/* 2.35.0: yanıp sönme bir ::after katmanının opacity'si (bileşik); box-shadow animasyonu her karede ana iş parçacığında boyama yaptırıyordu. */
+.st-w.is-blink::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; box-shadow: inset 0 0 0 3px rgba(var(--c-rgb, 255, 45, 85), 0.55), inset 0 0 18px rgba(var(--c-rgb, 255, 45, 85), 0.32); animation: stWBlink 1.2s ease-in-out infinite; }
+@keyframes stWBlink { 50% { opacity: 1; } }
 .st-w.is-live { --c: var(--st-live); --c-rgb: 255, 45, 85; }
 .st-w.is-danger { --c: var(--st-live); --c-rgb: 255, 45, 85; }
 .st-w.is-green { --c: var(--green); --c-rgb: 34, 197, 94; }

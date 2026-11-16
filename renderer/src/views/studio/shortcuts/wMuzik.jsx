@@ -4,6 +4,7 @@
 import React from "react";
 import { Icon } from "../../../components/ui";
 import { formatTime, trackName } from "../music/musicModel";
+import { useMusicTime } from "../music/useMusicPlayer";
 import "../music/music.css";
 import { Head, Pill, Ring, Shell, openPop, usePress } from "./wkit";
 import { optMenu, withOptions } from "./wOptions";
@@ -14,6 +15,7 @@ const trackChoices = (ctx) => (ctx?.music?.tracks || []).map((t, i) => [t.id, `$
 
 function MusicDeck({ ctx, item, w, h, togglePop }) {
   const mp = ctx.music;
+  useMusicTime(mp); // 2.35.0: konum saniyede 4 kez yalnız burada yenilenir
   if (!mp) return none(w, h, "MÜZİK ÇALAR");
   const n = mp.now;
   const playing = n.status !== "idle";
@@ -51,6 +53,7 @@ function MusicDeck({ ctx, item, w, h, togglePop }) {
 
 function MusicTrackBtn({ ctx, item, w, h, togglePop }) {
   const mp = ctx.music;
+  useMusicTime(mp); // 2.35.0: konum saniyede 4 kez yalnız burada yenilenir
   const t = mp?.tracks.find((x) => x.id === item.opts?.trackId) || null;
   const cur = Boolean(t && (mp.now.trackId === t.id || mp.now.entryId === t.id) && mp.now.status !== "idle");
   const press = usePress(() => {

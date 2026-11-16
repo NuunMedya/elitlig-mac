@@ -23,7 +23,7 @@
 // "Yayına da ver": YouTube parçaları gizli MÜZİK PENCERESİNDE çalar ve o pencerenin sesi
 // (Chromium sekme sesi yakalaması) karıştırıcının "music" şeridine bağlanır; yerel dosyalar
 // <audio>.captureStream() ile bağlanır. Bkz. app/studio/musichost.js.
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   MUSIC_KEY, addMusicTrack, airSupport, deckVolume, entryStart, fadeState, moveMusicTrack, nextTrack, normalizeMusic, readMusic, removeMusicTrack,
   resolvePlayable, trackName, trackPlan, trackProgress, trackToAir, updateMusicTrack, writeMusic,
@@ -40,7 +40,20 @@ const IDLE = Object.freeze({ status: "idle", trackId: null, entryId: null, playl
 export const DUCK_LEVEL = 50;
 
 // storageKey: listenin localStorage anahtarı (varsayılan stüdyonunki). emptyHint: liste boşken uyarı.
-export function useMusicPlayer({ mixer = null, toast = null, storageKey = MUSIC_KEY, emptyHint = null } = {}) {
+/**
+ * 2.35.0: çalma konumu (elapsedSec, ratio, remainingSec) saniyede 4 kez değişir. timeStore:
+ * true iken (stüdyo) bu alanlar React durumuna YAZILMAZ — kancanın sahibi (stüdyo kökü) her
+ * çeyrek saniyede bir bütün ağacı yeniden çiziyordu. Alanlar now üstünde okuma anında güncel
+ * (getter); saati gösteren bileşenler useMusicTime(mp) ile yalnız kendilerini yeniler.
+ */
+const TIME_KEYS = ["elapsedSec", "ratio", "remainingSec"];
+const noTimeSub = () => () => {};
+const zeroVer = () => 0;
+export function useMusicTime(mp) {
+  return useSyncExternalStore(mp?.subscribeTime || noTimeSub, mp?.timeVersion || zeroVer, mp?.timeVersion || zeroVer);
+}
+
+export function useMusicPlayer({ mixer = null, toast = null, storageKey = MUSIC_KEY, emptyHint = null, timeStore = false } = {}) {
   const [config, setConfigState] = useState(() => readMusic(store(), storageKey));
   const cfgRef = useRef(config);
   cfgRef.current = config;
@@ -129,7 +142,34 @@ export function useMusicPlayer({ mixer = null, toast = null, storageKey = MUSIC_
   const queueRef = useRef([]);
   const [queue, setQueueState] = useState([]);
   const setQueue = (q) => { queueRef.current = q; setQueueState(q); };
-  const [now, setNow] = useState(IDLE);
+  const [nowState, setNowState] = useState(IDLE);
+  // timeStore: konum alanları ayrı (abonelikli) depoda; kök durum yalnız parça / durum değişince.
+  const timeRef = useRef({ v: 0, t: { elapsedSec: 0, ratio: null, remainingSec: null }, subs: new Set() });
+  const setNow = useCallback((next) => {
+    if (!timeStore) { setNowState(next); return; }
+    setNowState((prev) => {
+      const n = typeof next === "function" ? next(prev) : next;
+      if (n === prev) return prev;
+      const T = timeRef.current;
+      const t = { elapsedSec: n.elapsedSec ?? 0, ratio: n.ratio ?? null, remainingSec: n.remainingSec ?? null };
+      if (t.elapsedSec !== T.t.elapsedSec || t.ratio !== T.t.ratio || t.remainingSec !== T.t.remainingSec) {
+        T.t = t;
+        T.v += 1;
+        queueMicrotask(() => { for (const f of [...T.subs]) { try { f(); } catch { /* yoksay */ } } });
+      }
+      for (const k of Object.keys(n)) if (!TIME_KEYS.includes(k) && n[k] !== prev[k]) return n;
+      for (const k of Object.keys(prev)) if (!TIME_KEYS.includes(k) && !(k in n)) return n;
+      return prev; // yalnız konum değişti: kök yeniden çizilmez
+    });
+  }, [timeStore]);
+  const subscribeTime = useCallback((f) => { const T = timeRef.current; T.subs.add(f); return () => T.subs.delete(f); }, []);
+  const timeVersion = useCallback(() => timeRef.current.v, []);
+  const now = useMemo(() => {
+    if (!timeStore) return nowState;
+    const o = { ...nowState };
+    for (const k of TIME_KEYS) Object.defineProperty(o, k, { enumerable: true, get: () => (nowState.status === "idle" ? nowState[k] : timeRef.current.t[k]) });
+    return o;
+  }, [nowState, timeStore]);
   const other = (s) => (s === "a" ? "b" : "a");
 
   const airOut = useCallback((stream, deck) => {
@@ -693,10 +733,10 @@ export function useMusicPlayer({ mixer = null, toast = null, storageKey = MUSIC_
   return useMemo(() => ({
     config, setConfig, tracks, playable, favorites,
     play, next, prev, crossfade, random, stop, fadeIn, kill, pause, resume, toggle, duck, seek, seekBy, seekRatio, restart,
-    now, playing: now.status !== "idle", capability, air,
+    now, playing: now.status !== "idle", capability, air, subscribeTime, timeVersion,
     addLink, addPlaylist, refreshPlaylist, updatePlaylist, updateItem, plBusy, addFiles, updateTrack, removeTrack, moveTrack, toggleFav,
     queue, enqueue, dequeue, clearQueue, ducked, setDuck, sleepAt, sleep,
     volume: config.volume, setVolume, setShuffle, setRepeat, setCrossfadeMs, setCurve, setToAir, setTrackAir, toAir: config.toAir,
     airSupport: (track) => airSupport(track, capability, config.airMode),
-  }), [config, setConfig, tracks, playable, favorites, play, next, prev, crossfade, random, stop, fadeIn, kill, pause, resume, toggle, duck, seek, seekBy, seekRatio, restart, now, capability, air, addLink, addPlaylist, refreshPlaylist, updatePlaylist, updateItem, plBusy, addFiles, updateTrack, removeTrack, moveTrack, toggleFav, queue, enqueue, dequeue, clearQueue, ducked, setDuck, sleepAt, sleep, setVolume, setShuffle, setRepeat, setCrossfadeMs, setCurve, setToAir, setTrackAir]);
+  }), [config, setConfig, tracks, playable, favorites, play, next, prev, crossfade, random, stop, fadeIn, kill, pause, resume, toggle, duck, seek, seekBy, seekRatio, restart, now, subscribeTime, timeVersion, capability, air, addLink, addPlaylist, refreshPlaylist, updatePlaylist, updateItem, plBusy, addFiles, updateTrack, removeTrack, moveTrack, toggleFav, queue, enqueue, dequeue, clearQueue, ducked, setDuck, sleepAt, sleep, setVolume, setShuffle, setRepeat, setCrossfadeMs, setCurve, setToAir, setTrackAir]);
 }

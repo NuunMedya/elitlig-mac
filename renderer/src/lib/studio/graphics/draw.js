@@ -13,6 +13,7 @@
 import { createLayerCache, createMeasure, enter, fontOf } from "./canvas";
 import { drawBottom, drawMiniBoard, drawPremier } from "./drawBugs";
 import { drawInterview } from "./drawInterview";
+import { interviewStatusText, snapshotClockMs } from "./snapshot";
 import {
   lineupSize, lineupV2Size, lineupV2Slides, lineupV3Side, lineupV3Size, paintLineupV2, paintLineupV3, paintLineups, paintPreMatch,
   paintPreMatchV2, paintSummaryHead, paintSummaryRows, preMatchSize, preMatchV2Size, slideAt, summaryScroll, summarySize,
@@ -192,11 +193,36 @@ function drawLayers(ctx, frame, snap, layers) {
  * snapshot.fade { branding, brandingFor, at, ms }: grafik paketi değişince eski görünüm
  * yenisine karışır. snapshot.qr: programın köşesinde QR kartı (bağlantı).
  */
-export function drawGraphics(ctx, frame, snap) {
+/**
+ * 2.35.0: maç saati yazısı ("2. YARI · 33:04") çizim anında güncellenir. Anlık görüntü artık
+ * saniyede bir değil dakikada bir yenileniyor (stüdyo kökü saniyede bir yeniden çizilmesin);
+ * saat işlerken röportaj kartı / alt bant yazısı her karede saat bilgisinden yeniden kurulur.
+ */
+const freshMemo = new WeakMap(); // snap → { text, out }
+export function withFreshClock(snap, now) {
+  const m = snap?.match;
+  if (!m || !m.running || !m.clock || !m.statusText || m.finished) return snap;
+  const text = interviewStatusText({ finished: false, running: true, period: m.period, clockMs: snapshotClockMs(m.clock, now) });
+  if (text === m.statusText) return snap;
+  const hit = freshMemo.get(snap);
+  if (hit && hit.text === text) return hit.out;
+  const old = ` · ${m.statusText}`;
+  const blocks = snap.subtitle?.blocks;
+  const out = {
+    ...snap,
+    match: { ...m, statusText: text },
+    ...(Array.isArray(blocks) ? { subtitle: { ...snap.subtitle, blocks: blocks.map((b) => (b && b.key === "score" && typeof b.text === "string" && b.text.endsWith(old) ? { ...b, text: b.text.slice(0, -old.length) + ` · ${text}` } : b)) } } : {}),
+  };
+  freshMemo.set(snap, { text, out });
+  return out;
+}
+
+export function drawGraphics(ctx, frame, snap0) {
   // [panorama] Panorama kipinin anlık görüntüsü: içerik kartları, künye, alt bant (lib/studio/panorama).
-  if (ctx && snap?.panorama) { drawPanorama(ctx, frame, snap); return; }
-  if (!ctx || !snap || !snap.branding) return;
+  if (ctx && snap0?.panorama) { drawPanorama(ctx, frame, snap0); return; }
+  if (!ctx || !snap0 || !snap0.branding) return;
   const now = frame?.now ?? Date.now();
+  const snap = withFreshClock(snap0, now);
   const layers = graphicsLayers(snap, frame?.sceneId);
   const any = layers.variant || layers.subtitle || layers.interviewBand;
   if (any) {

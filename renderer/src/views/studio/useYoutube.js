@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./studioApi";
 import { startBody } from "./youtube/templates";
 import { connectDone, disconnectResult, normalizeYoutubeConfig } from "../../lib/studio/youtubeConnect";
+import { keepIfSame } from "../../lib/perf/same";
 
 export function useYoutube(matchId, { encodingLive }) {
   const [config, setConfig] = useState({ loading: true, configured: false, privacy: "public" });
@@ -71,7 +72,7 @@ export function useYoutube(matchId, { encodingLive }) {
   const refresh = useCallback(async () => {
     if (!matchId) return null;
     const r = await api.getMatchStream(matchId);
-    if (r.ok) setStream(r.data?.live_stream ?? null);
+    if (r.ok) setStream(keepIfSame(r.data?.live_stream ?? null));
     return r.ok ? r.data?.live_stream ?? null : null;
   }, [matchId]);
 
