@@ -32,7 +32,7 @@ const { computeH264Level } = require("./h264level");
 // highlights.js → render.js → scheme.js bu dosyayı içe aktarır: döngü olmasın diye geç yüklenir.
 const presignedFlow = () => require("./highlights");
 
-const STUDIO_SCHEME = "elitlig-studio";
+const { STUDIO_SCHEME } = require("./switches");
 const CLIP_NAME = /^clip-[\w-]{1,80}\.mp4$/;
 const MAX_AGE_MS = 24 * 3600 * 1000;
 const UPLOAD_LIMIT = 40 * 1024 * 1024; // sunucu sınırı (413 VIDEO_TOO_LARGE)

@@ -175,7 +175,7 @@ function createStudioEngine({
   // 2.35.0: Windows'ta canlı program kodlayıcısı "normalin üstü" öncelikte (oyun / tarayıcı gibi
   // ön plandaki uygulamalar işlemciyi doldurunca kodlayıcı geride kalmasın). Yönetici izni
   // gerektirmez; macOS / Linux'ta negatif öncelik izin istediği için uygulanmaz.
-  priority = null, // null | 'above-normal'
+  priority = null, // null | 'above-normal' | () => null | 'above-normal' (2.36.0: Ayarlar › Performans)
   adjustAfterFailure = null, // (opts, reason) => yeni seçenekler | null (ilk ilerlemeden önce; açılar: kopya → kodlama)
   remuxLocal = null, // async ({ parts, outFile, ffmpegPath }) => { ok, path }
   beforeCleanup = null, // async (session) => {} — parça klasörü silinmeden önce (röportajlar)
@@ -439,9 +439,10 @@ function createStudioEngine({
     if (niceness && child.pid) {
       try { os.setPriority(child.pid, niceness); } catch { /* yoksay */ }
     } else if (child.pid) {
-      const pr = processPriorityFor(priority, platform);
+      const prio = typeof priority === "function" ? priority() : priority; // 2.36.0: ayar her başlatmada okunur
+      const pr = processPriorityFor(prio, platform);
       if (pr != null) {
-        try { os.setPriority(child.pid, pr); note("ffmpeg önceliği", { priority }); } catch (e) { note("ffmpeg önceliği ayarlanamadı", { message: e?.message || String(e) }); }
+        try { os.setPriority(child.pid, pr); note("ffmpeg önceliği", { priority: prio }); } catch (e) { note("ffmpeg önceliği ayarlanamadı", { message: e?.message || String(e) }); }
       }
     }
     const parser = ff.createProgressParser((p) => onProgress(runInfo, p));

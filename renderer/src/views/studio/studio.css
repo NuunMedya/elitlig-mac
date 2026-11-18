@@ -755,8 +755,8 @@ input[type="range"] { accent-color: color-mix(in srgb, var(--acc), var(--ink-to)
 
 /* ══════════════════════ Stüdyo 4: basit sahne mantığı, çalışma alanları, ayarlar ══════════════════════ */
 
-/* Kenar çubuğu yok: macOS pencere düğmeleri üst çubuğun solunda */
-:root.platform-darwin .shell--bare .st-top { padding-left: 84px; }
+/* Kenar çubuğu yok (ve 2.36.0 Elitlig Stüdyo): macOS pencere düğmeleri üst çubuğun solunda */
+:root.platform-darwin .shell--bare .st-top, :root.platform-darwin .studio-app .st-top { padding-left: 84px; }
 .studio { --st-gap: 6px; --st-pad: 8px; }
 .studio.is-compact { --st-gap: 4px; --st-pad: 4px; }
 .studio.no-hints .kbd { display: none !important; }

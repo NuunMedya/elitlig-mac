@@ -131,7 +131,7 @@ import { LinksMenu, useBroadcastLinks } from "./links/LinkButtons"; // [bağlant
 import { VAR_THEME_SECTION } from "./settings/VarThemeSection";
 import { useStudioSettings } from "./settings/useStudioSettings";
 import { patchOps } from "./settings/opsDefaults";
-import { HOTKEY_ACTIONS, keyText, localRecordOptions, recordEstimate, recordQualityOf, stepScale, themeTone } from "./settings/settings";
+import { HOTKEY_ACTIONS, angleKbps, keyText, limitAngleSources, localRecordOptions, recordEstimate, recordQualityOf, stepScale, themeTone } from "./settings/settings";
 // ── alt panel çalışma alanı (sütunlar, parçalar) + ayar şablonları ──
 import { useDock } from "./dock/useDock";
 import { panelOf } from "./dock/dockModel";
@@ -579,10 +579,15 @@ function MatchStudio({ auth, go, onSwitchMode }) {
   }), [ask]);
 
   /* ───────── açılar ve tekrarlar ───────── */
+  // 2.36.0: Ayarlar › Tekrar › Kamera açısı kaydı: kapalı / en çok N kaynak / kalite (bit hızı).
+  const anglesOn = settings.replay.anglesOn !== false;
+  const angleMax = settings.replay.angleMax;
   const recordAngles = useMemo(() => {
     const list = anglesToRecord(prefs.angles, config.sources, config.scenes);
-    return list.length ? list : [PROGRAM_ANGLE];
-  }, [prefs.angles, config.sources, config.scenes]);
+    const srcIds = limitAngleSources(list.filter((a) => a !== PROGRAM_ANGLE), { anglesOn, angleMax });
+    const out = [...(list.includes(PROGRAM_ANGLE) ? [PROGRAM_ANGLE] : []), ...srcIds];
+    return out.length ? out : [PROGRAM_ANGLE];
+  }, [prefs.angles, config.sources, config.scenes, anglesOn, angleMax]);
   const angleRec = useAngleRecorders({
     active: engine.active,
     sourceIds: recordAngles.filter((a) => a !== PROGRAM_ANGLE),
@@ -590,6 +595,7 @@ function MatchStudio({ auth, go, onSwitchMode }) {
     runtimeRef: src.runtimeRef,
     version: src.version,
     onError: onEngineError,
+    bitrateKbps: angleKbps(settings.replay.angleQuality),
   });
   const liveAngles = angleRec.available ? recordAngles : recordAngles.filter((a) => a === PROGRAM_ANGLE);
   /**

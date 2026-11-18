@@ -67,7 +67,7 @@ const S = {
   mirror: { w: 960, h: 540, every: 1, inFlight: false, n: 0 },
   tap: false, enc: null, running: false, timer0: 0,
 };
-const st = { frames: 0, fresh: 0, drawMs: 0, drawMax: 0, baseMs: 0, gfxMs: 0, encMs: 0, late: 0, lateMax: 0, srcFrames: 0, basesIn: 0, mirrors: 0, wakes: 0, copies: 0, copyMs: 0, copyMax: 0, openMax: 0, queueMax: 0, since: performance.now() };
+const st = { frames: 0, fresh: 0, drawMs: 0, drawMax: 0, baseMs: 0, gfxMs: 0, encMs: 0, late: 0, lateMax: 0, srcFrames: 0, basesIn: 0, mirrors: 0, wakes: 0, copies: 0, copyMs: 0, copyMax: 0, openMax: 0, queueMax: 0, baseVideos: 0, since: performance.now() };
 
 let freshSince = false; // yeni kaynak karesi geldi mi (benzersiz kare sayacı)
 
@@ -99,7 +99,7 @@ function releaseSource(id) {
   }
 }
 
-async function readStream(id, readable, gen) {
+async function readStream(id, readable, gen, notify = false) {
   releaseSource(id);
   const reader = readable.getReader();
   const r = { reader, gen, dead: false };
@@ -142,6 +142,8 @@ async function readStream(id, readable, gen) {
       rt.sync.observe(ts, at);
       q.push({ f, ts });
       if (!rt.el) { rt.el = f; freshSince = true; }
+      // 2.36.0: kip tabanı videosu ilk karesini verdi → ana taraf artık pikselleri buraya bırakır.
+      if (notify && !rt.notified) { rt.notified = true; post({ type: "srcFirst", id, gen }); }
       const max = rt.copy ? MAX_QUEUED : 1;
       while (q.length > max) dropHead(rt);
       if (q.length > st.queueMax) st.queueMax = q.length;
@@ -279,7 +281,31 @@ function render(now, tick = now) {
     const tr = S.tr;
     let base;
     if (S.baseOn && S.base) {
-      // Kip tabanı (ana iş parçacığı): son gelen kare; üst katmanlar burada.
+      // Kip tabanı (ana iş parçacığı): son gelen kare; üst katmanlar burada. 2.36.0: tabandaki
+      // videolar (meta.videos) önce, kendi en son kareleriyle çizilir; taban (delikli) üstüne.
+      const vp = S.baseMeta?.videos;
+      if (vp?.length) {
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, W, H);
+        const kx = W / (S.baseMeta.bw || W);
+        const ky = H / (S.baseMeta.bh || H);
+        for (const p of vp) {
+          const f = S.runtime.get(p.id)?.el;
+          if (!f) continue;
+          const fw = f.displayWidth || f.width || p.vw;
+          const fh = f.displayHeight || f.height || p.vh;
+          const rx = fw / p.vw; const ry = fh / p.vh;
+          ctx.save();
+          ctx.setTransform(p.m[0] * kx, p.m[1] * ky, p.m[2] * kx, p.m[3] * ky, p.m[4] * kx, p.m[5] * ky);
+          ctx.globalAlpha = p.a;
+          try { ctx.drawImage(f, p.s[0] * rx, p.s[1] * ry, p.s[2] * rx, p.s[3] * ry, p.d[0], p.d[1], p.d[2], p.d[3]); } catch { /* yoksay */ }
+          ctx.restore();
+        }
+        st.baseVideos += vp.length;
+      } else if (S.baseMeta?.alpha) {
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, W, H);
+      }
       ctx.drawImage(S.base, 0, 0, W, H);
       base = { ...(S.baseMeta || {}), done: false };
     } else {
@@ -331,11 +357,12 @@ function flushStats(now) {
       sources: S.readers.size, mainBase: S.baseOn,
       // 2.25.2 tanılama: işçi uyanma / sn, kare kopyası (ms), açık VideoFrame, kuyruk, ayna hızı.
       wakes: Math.round((st.wakes * 1000) / win), copyMs: st.copies ? Math.round((st.copyMs / st.copies) * 10) / 10 : 0, copyMaxMs: Math.round(st.copyMax * 10) / 10,
+      baseVideos: Math.round((st.baseVideos * 1000) / win), // 2.36.0: işçide çizilen kip videosu / sn
       openFrames: st.openMax, queueMax: st.queueMax, mirrorFps: Math.round((st.mirrors * 1000) / win), copyFrames: [...S.runtime.values()].every((rt) => !rt.sync || rt.copy),
     },
     enc: encStats(),
   });
-  Object.assign(st, { frames: 0, fresh: 0, drawMs: 0, drawMax: 0, baseMs: 0, gfxMs: 0, encMs: 0, late: 0, lateMax: 0, srcFrames: 0, basesIn: 0, mirrors: 0, wakes: 0, copies: 0, copyMs: 0, copyMax: 0, openMax: 0, queueMax: 0, since: now });
+  Object.assign(st, { frames: 0, fresh: 0, drawMs: 0, drawMax: 0, baseMs: 0, gfxMs: 0, encMs: 0, late: 0, lateMax: 0, srcFrames: 0, basesIn: 0, mirrors: 0, wakes: 0, copies: 0, copyMs: 0, copyMax: 0, openMax: 0, queueMax: 0, baseVideos: 0, since: now });
 }
 
 // Sabit ızgara: kayan zamanlayıcı (gecikme düzeltmeli). İşçi zamanlayıcıları ana iş parçacığından bağımsızdır.
@@ -399,7 +426,7 @@ self.onmessage = (ev) => {
       break;
     }
     case "baseOff": try { S.base?.close?.(); } catch { /* yoksay */ } S.base = null; S.baseOn = false; break;
-    case "srcStream": readStream(m.id, m.readable, m.gen); break;
+    case "srcStream": readStream(m.id, m.readable, m.gen, Boolean(m.notify)); break;
     case "srcBitmap": releaseSource(m.id); S.runtime.set(m.id, { status: "live", el: m.bmp, gen: m.gen }); freshSince = true; break;
     case "srcSlides": releaseSource(m.id); S.runtime.set(m.id, { status: "live", images: m.bmps, intervalMs: m.intervalMs, gen: m.gen }); break;
     case "srcFrame": {

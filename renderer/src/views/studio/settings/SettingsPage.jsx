@@ -17,7 +17,8 @@ import { Field, Icon, Kbd } from "../../../components/ui";
 import { BITRATE_PRESETS, FPS_CHOICES, RESOLUTION_CHOICES, encodingPreset, recommendedBitrate } from "../../../lib/studio/broadcast";
 import { TRANSITION_KINDS, transitionKind, transitionMs } from "../../../lib/studio/transitions";
 import { WORKSPACES, FIXED_SHORTCUTS } from "../../../lib/studio/scenesWorkspace";
-import { AUDIO_KBPS_CHOICES, COMPOSITOR_ENGINES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, PIPELINES, RTMP_PUBLISHERS, STREAM_DELAY_CHOICES, RECORD_QUALITIES, RESERVED_KEYS, UI_SCALES, UI_THEMES, bindHotkey, keyText, recordEstimate } from "./settings";
+import PerfSection from "./PerfSection";
+import { ANGLE_MAX_CHOICES, ANGLE_QUALITIES, AUDIO_KBPS_CHOICES, COMPOSITOR_ENGINES, ENCODER_PREFS, HOTKEY_ACTIONS, KEYFRAME_CHOICES, PIPELINES, RTMP_PUBLISHERS, STREAM_DELAY_CHOICES, RECORD_QUALITIES, RESERVED_KEYS, UI_SCALES, UI_THEMES, bindHotkey, keyText, recordEstimate } from "./settings";
 import QualityPresets from "../QualityPresets";
 import { RAIL_SIZES, RAIL_WIDGETS, addWidget, moveWidget, removeWidget, resizeWidget, sizeKey, sizesOf, widgetOf } from "../shortcuts/railModel";
 import { RailCatalog } from "../shortcuts/ShortcutRail";
@@ -57,6 +58,8 @@ export const SETTINGS_SECTIONS = [
   { key: "makro", label: "Makrolar", icon: "zap", group: "islem" },
   { key: "gorunum", label: "Görünüm", icon: "grid", group: "genel" },
   { key: "bildirim", label: "Bildirimler", icon: "bell", group: "genel" },
+  // 2.36.0: ekran kartı / öncelik bayrakları, güvenli mod, çökme günlüğü, açı kaydı yükü.
+  { key: "performans", label: "Performans", icon: "activity", group: "genel" },
   { key: "serit", label: "Kısayollar panosu", icon: "zap", group: "yerlesim" },
   { key: "panel", label: "Panel parçaları", icon: "eye", group: "yerlesim" },
   { key: "kisayol", label: "Klavye kısayolları", icon: "command", group: "panel" },
@@ -291,6 +294,16 @@ function SettingsPage({
             </Field>
           )}
         </Section>
+        <Section title="Kamera açısı kaydı" sub="Her kamera / ekran kaynağı ayrı bir H.264 kaydıyla (MediaRecorder) tekrar açısı olur; kaynak başına bir kodlayıcı çalışır. Zayıf makinede ya da çok kamerada kaliteyi düşür ya da sınırla. Program açısı bundan etkilenmez.">
+          <Toggle checked={settings.replay.anglesOn !== false} onChange={(v) => set("replay", { anglesOn: v })} title="Kamera açılarını kaydet" text="Kapalıyken tekrarlar yalnız program açısıyla (en hafif)." />
+          <Field label="Açı kaydı kalitesi">
+            <div className="st-choices">{ANGLE_QUALITIES.map((q) => <Choice key={q.key} on={settings.replay.angleQuality === q.key} title={q.label} text={q.hint} onClick={() => set("replay", { angleQuality: q.key })} disabled={settings.replay.anglesOn === false} />)}</div>
+          </Field>
+          <Field label="Aynı anda en çok kaç kamera açısı">
+            <div className="st-seg">{ANGLE_MAX_CHOICES.map((n) => <button key={n} type="button" className={Number(settings.replay.angleMax || 0) === n ? "is-on" : ""} disabled={settings.replay.anglesOn === false} onClick={() => set("replay", { angleMax: n })}>{n ? n : "Sınırsız"}</button>)}</div>
+          </Field>
+          <p className="st-hint">Yeni ayar açı kaydı yeniden başlayınca (yayın / prova açıkken hemen) geçerli. Etkin açı kaydı sayısı Yayın tanılama › Performans raporunda.</p>
+        </Section>
         <Section title="Kaydedilecek açılar ve sahneler" sub="Hangi kaynakların ayrı açı olarak kaydedileceği ve hangi sahnelerin tekrarının tutulacağı.">
           {replayTools
             ? <RecordAngles R={{ ...replayTools.R, anglePref: prefs.angles, onAnglePref: (v) => setPref("angles", v) }} sources={replayTools.sources} scenes={replayTools.scenes} encoding={replayTools.encoding} />
@@ -451,6 +464,8 @@ function SettingsPage({
         </Section>
       </>
     );
+  } else if (section === "performans") {
+    body = <PerfSection Section={Section} Toggle={Toggle} toast={toast} />;
   } else if (section === "bildirim") {
     body = (
       <Section title="Uyarılar" sub="Yalnız operatör ekranında görünür; yayına gitmez.">

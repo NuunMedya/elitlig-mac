@@ -63,6 +63,8 @@ contextBridge.exposeInMainWorld("elitlig", {
   },
   // Yayın Stüdyosu: ffmpeg ana süreçte; arayüz MediaRecorder parçalarını pushChunk ile yollar.
   studio: {
+    // 2.36.0: Elitlig Araçlar yerleşik stüdyoyu tembel kurar; stüdyo görünümü açılmadan önce çağrılır.
+    ensure: () => ipcRenderer.invoke("studio:ensure").catch(() => false),
     info: () => ipcRenderer.invoke("studio:info"),
     mediaAccess: () => ipcRenderer.invoke("studio:mediaAccess"),
     requestMediaAccess: (kind) => ipcRenderer.invoke("studio:requestMediaAccess", kind),
@@ -472,6 +474,30 @@ contextBridge.exposeInMainWorld("elitlig", {
     show: (query) => ipcRenderer.invoke("launcher:show", typeof query === "string" ? query : ""),
     hide: () => ipcRenderer.invoke("launcher:hide"),
     onOpen: on("launcher:open"),
+  },
+  // 2.36.0 · Ayarlar › Performans: bayraklar, güvenli mod, çökme günlüğü (app/perfFlags.js, app/crashMonitor.js).
+  perf: {
+    state: () => ipcRenderer.invoke("perf:state"),
+    set: (patch) => ipcRenderer.invoke("perf:set", patch && typeof patch === "object" ? patch : {}),
+    relaunch: (opts) => ipcRenderer.invoke("perf:relaunch", opts && typeof opts === "object" ? opts : {}),
+    revealCrashLog: () => ipcRenderer.invoke("perf:revealCrashLog"),
+    onProcessGone: on("app:processGone"),
+    onSafeModeSuggested: on("app:safeModeSuggested"),
+  },
+  // 2.36.0 · Elitlig Araçlar → Elitlig Stüdyo (app/studioLink.js): ayar dışa aktarma, kurulum durumu, açma.
+  studioLink: {
+    exportState: (entries) => ipcRenderer.invoke("studioLink:export", entries && typeof entries === "object" ? entries : {}),
+    status: () => ipcRenderer.invoke("studioLink:status"),
+    open: () => ipcRenderer.invoke("studioLink:open"),
+    download: () => ipcRenderer.invoke("studioLink:download"),
+  },
+  // 2.36.0 · Elitlig Stüdyo (bağımsız uygulama, app/studio-app/main.js): Elitlig Araçlar'dan ayar içe aktarma.
+  studioApp: {
+    importState: (opts) => ipcRenderer.invoke("studioApp:importState", opts && typeof opts === "object" ? opts : {}),
+    importDone: (info) => ipcRenderer.invoke("studioApp:importDone", info && typeof info === "object" ? info : {}),
+    openAraclar: () => ipcRenderer.invoke("studioApp:openAraclar"),
+    quit: () => ipcRenderer.invoke("studioApp:quit"),
+    onReimport: on("studioApp:reimport"),
   },
   onNavigate: on("navigate"),
   onCommand: on("command"),

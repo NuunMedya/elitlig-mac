@@ -45,7 +45,15 @@ const { createReminders } = require("./reminders");
 const { createEquipmentFeed } = require("./equipmentFeed");
 const { createChatLink, buildMultipart, mimeOf } = require("./chat");
 const { accessFromUser, probeAccess, sameAccess } = require("./access");
-const { registerStudio, applyStudioSwitches, STUDIO_SCHEME } = require("./studio");
+// Yayın Stüdyosu (app/studio) TEMBEL yüklenir (2.36.0): stüdyo açılmadıkça ffmpeg / motor / açı
+// modülleri ve IPC'leri belleğe alınmaz (ensureStudio). Bayraklar ve şema adı hafif modülde.
+const { applyStudioSwitches, STUDIO_SCHEME } = require("./studio/switches");
+const { installMediaPermissions } = require("./studio/permissions");
+// 2.36.0: performans / güvenli mod bayrakları, çökme günlüğü, Elitlig Stüdyo bağlantısı.
+const { applyLaunchFlags, registerPerfIpc } = require("./perfFlags");
+const { createCrashMonitor } = require("./crashMonitor");
+const studioLink = require("./studioLink");
+const { createMediaProxy } = require("./mediaProxy");
 const { isAllowedExternal } = require("./links");
 // Masaüstü araç takımı: pencere yerleştirme, araç takımı paneli, uyanık tut, müzik denetimi.
 const { registerDeskkit } = require("./toolkit");
@@ -79,10 +87,12 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 app.setName(config.APP_NAME);
+if (process.env.ELITLIG_USER_DATA) app.setPath("userData", process.env.ELITLIG_USER_DATA);
 // Yayın Stüdyosu: pencere arkada / örtülü / küçültülmüşken Chromium çizimi ve
 // zamanlayıcıları kısmasın (canvas → MediaRecorder akışı durup yayın kopmasın).
-applyStudioSwitches(app);
-if (process.env.ELITLIG_USER_DATA) app.setPath("userData", process.env.ELITLIG_USER_DATA);
+// 2.36.0: Ayarlar › Performans bayrakları (güçlü ekran kartı, donanım hızlandırma) ve güvenli mod
+// (--safe-mode / --guvenli-mod) app hazır olmadan uygulanır.
+const { store: perfFlags, launch: perfLaunch } = applyLaunchFlags(app, { dir: app.getPath("userData"), applySwitches: applyStudioSwitches });
 
 const RENDERER = path.join(__dirname, "..", "renderer", "dist", "index.html");
 const DEV_URL = process.env.ELITLIG_RENDERER_URL || null;
@@ -109,7 +119,8 @@ let api;
 let focus;
 let reminders;
 let chatLink;
-let studio;
+let studio = null;
+let crashes = null;
 let deskkit = null;
 let widgets = null;
 let launcher = null;
@@ -473,6 +484,8 @@ function createMainWindow() {
   });
   win.on("closed", () => { if (mainWindow === win) mainWindow = null; });
   win.on("focus", () => { refreshSummary(); });
+  // 2.36.0: arayüz süreci çökerse (bellek / sürücü) boş pencere kalmasın: günlüğe yazılır (crashMonitor), yeniden yüklenir.
+  win.webContents.on("render-process-gone", (_e, d) => { if (d?.reason !== "clean-exit" && d?.reason !== "killed") setTimeout(() => { if (!win.isDestroyed()) win.reload(); }, 1000); });
   loadRenderer(win);
   return win;
 }
@@ -789,47 +802,80 @@ function registerIpc() {
   ipcMain.handle("app:showMain", (_e, route) => showMain(route));
   ipcMain.handle("quick:hide", () => quickWindow?.hide());
   ipcMain.handle("quick:show", (_e, kind) => showQuick(kind));
+
+  /* ---------------------- Elitlig Stüdyo (2.36.0) ---------------------- */
+  // Arayüz stüdyo anahtarlarını (localStorage) verir; ortak klasöre yazılır (Stüdyo ilk açılışta alır).
+  ipcMain.handle("studioLink:export", (_e, entries) => {
+    try { return studioLink.writeStudioExport({ dir: studioLink.sharedDir(app), userDataDir: dataDir(), entries, version: app.getVersion() }); } catch (e) { return { ok: false, error: e?.message || String(e) }; }
+  });
+  ipcMain.handle("studioLink:status", () => studioLink.studioInstallInfo({ app }));
+  ipcMain.handle("studioLink:open", () => openStudioApp());
+  ipcMain.handle("studioLink:download", () => shell.openExternal(studioLink.DOWNLOAD_URL));
+}
+
+/** Grafik süreci art arda çöktü: güvenli modda yeniden başlatmayı öner (yayın sürerken sorulmaz, yalnız bildirilir). */
+async function suggestSafeMode({ count } = {}) {
+  if (studio?.engine?.active?.()) { broadcast("app:safeModeSuggested", { count }); return; }
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  const { response } = await dialog.showMessageBox(parent, {
+    type: "warning", buttons: ["Güvenli modda yeniden başlat", "Şimdi değil"], defaultId: 0, cancelId: 1,
+    message: "Ekran kartı süreci art arda çöktü",
+    detail: `Son 10 dakikada ${count} kez. Bu çoğunlukla ekran kartı sürücüsünden kaynaklanır. Güvenli modda donanım hızlandırma kapalı açılır (Ayarlar › Performans'tan geri açılır). Sürücüyü güncellemeniz önerilir.`,
+  }).catch(() => ({ response: 1 }));
+  if (response === 0) { perfFlags.set({ safeModeOnce: true }); app.relaunch(); quitting = true; app.quit(); }
+}
+
+/* ----------------------------- Yayın Stüdyosu ----------------------------- */
+
+/**
+ * Yerleşik Yayın Stüdyosu'nu ilk gerektiğinde kurar (arayüz stüdyoyu açarken studio:ensure der;
+ * widget / tepsi yalnız varsa okur). Kurulduktan sonra uygulama kapanana dek kalır.
+ */
+function ensureStudio() {
+  if (studio) return studio;
+  const { registerStudio } = require("./studio");
+  studio = registerStudio({
+    ipcMain, api, broadcast, app, electronSession, systemPreferences, desktopCapturer, powerSaveBlocker, protocol, shell,
+    isOwnUrl,
+    isSignedIn: () => authState().signedIn,
+    dialog, screen, BrowserWindow, loadRenderer, powerMonitor, globalShortcut,
+    preloadPath: path.join(__dirname, "preload.js"),
+    siteOrigin: config.SITE_ORIGIN,
+    apiOrigin: config.API_ORIGIN,
+    ffmpegPriority: () => (perfLaunch.safeMode || !perfFlags.get().ffmpegAboveNormal ? null : "above-normal"),
+    log: (...args) => { if (!app.isPackaged || process.env.ELITLIG_STUDIO_DEBUG) console.log(...args); },
+  });
+  // LED açılıp kapanınca menü çubuğu simgesindeki "LED çıkışını kapat" güncellenir.
+  studio.led?.events.on("status", () => refreshTray());
+  crashes?.setDiagWriter((message, data) => { if (studio?.diagnostics?.logPath?.()) studio.diagnostics.write("program", message, data); });
+  return studio;
+}
+
+/** Elitlig Stüdyo'yu aç: kurulu ise oturum devriyle (elitlig-studyo://open?k=…), değilse { installed: false }. */
+async function openStudioApp() {
+  const info = studioLink.studioInstallInfo({ app });
+  if (!info.installed) return { ok: false, installed: false, downloadUrl: info.downloadUrl };
+  let key = null;
+  try { key = studioLink.createHandoff({ dir: studioLink.sharedDir(app), session: sessionStore.load() }); } catch { key = null; }
+  const url = `${studioLink.STUDIO_PROTOCOL}://open${key ? `?k=${key}` : ""}`;
+  try {
+    if (info.protocol) { await shell.openExternal(url); return { ok: true, via: "protocol" }; }
+    if (info.path) {
+      if (IS_MAC) { const err = await shell.openPath(info.path); return err ? { ok: false, error: err } : { ok: true, via: "path" }; }
+      const { spawn } = require("node:child_process");
+      spawn(info.path, [url], { detached: true, stdio: "ignore" }).unref();
+      return { ok: true, via: "path" };
+    }
+  } catch (e) { return { ok: false, installed: true, error: e?.message || String(e) }; }
+  return { ok: false, installed: false, downloadUrl: info.downloadUrl };
 }
 
 /* ------------------------------ sohbet medyası ------------------------------ */
 
-const mediaDir = () => path.join(dataDir(), "media");
-const MEDIA_CACHE_MAX = 40 * 1024 * 1024;
-
-/** Sohbet ekini getirir: önce disk önbelleği, sonra ağ (yalnız http/https). */
-async function fetchMedia(url) {
-  if (!/^https?:\/\//i.test(url)) return null;
-  const key = crypto.createHash("sha1").update(url).digest("hex");
-  const file = path.join(mediaDir(), key);
-  try {
-    const meta = JSON.parse(fs.readFileSync(`${file}.json`, "utf8"));
-    return { body: fs.readFileSync(file), type: meta.type || "application/octet-stream" };
-  } catch { /* önbellekte yok */ }
-  try {
-    const res = await net.fetch(url, { headers: { "User-Agent": userAgent() } });
-    if (!res.ok) return null;
-    const body = Buffer.from(await res.arrayBuffer());
-    const type = res.headers.get("content-type") || mimeOf(url.split("?")[0]);
-    if (body.length <= MEDIA_CACHE_MAX) {
-      fs.mkdirSync(mediaDir(), { recursive: true });
-      fs.writeFileSync(file, body);
-      fs.writeFileSync(`${file}.json`, JSON.stringify({ url, type, at: Date.now() }));
-    }
-    return { body, type };
-  } catch {
-    return null;
-  }
-}
-
-function registerMediaProtocol() {
-  protocol.handle(MEDIA_SCHEME, async (request) => {
-    const u = new URL(request.url);
-    const target = decodeURIComponent(u.pathname.replace(/^\//, ""));
-    const media = await fetchMedia(target);
-    if (!media) return new Response("", { status: 404 });
-    return new Response(media.body, { status: 200, headers: { "Content-Type": media.type, "Content-Length": String(media.body.length), "Cache-Control": "max-age=31536000" } });
-  });
-}
+// elitlig-media:// (app/mediaProxy.js): sohbet ekleri ve uzak görseller, disk önbellekli.
+const mediaProxy = createMediaProxy({ dataDir, fetch: (url, init) => net.fetch(url, init), userAgent });
+const fetchMedia = (url) => mediaProxy.fetchMedia(url);
+const registerMediaProtocol = () => mediaProxy.register(protocol);
 
 /** Yeni mesaj bildirimi: pencere odakta değilse, sohbet sessizde değilse. */
 function notifyChat({ conversation, message, muted, inbox = false }) {
@@ -881,6 +927,13 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", (_e, argv) => { if (!launcher?.handleArgv(argv)) showMain(); });
 
   app.whenReady().then(() => {
+    // 2.36.0: grafik / arayüz süreci çökmeleri günlüğe + toast; art arda grafik çökmesinde güvenli mod önerisi.
+    crashes = createCrashMonitor({
+      app, dir: path.join(dataDir(), "logs"), flags: perfFlags, launch: perfLaunch, shell,
+      notify: (e) => broadcast("app:processGone", e),
+      onRepeatedGpuCrash: (info) => suggestSafeMode(info),
+    }).install();
+    registerPerfIpc({ ipcMain, app, store: perfFlags, launch: perfLaunch, crashes });
     sessionStore = createSessionStore({ dir: dataDir(), safeStorage });
     applyTestSession(sessionStore, app);
     api = createApi({
@@ -910,16 +963,11 @@ if (!app.requestSingleInstanceLock()) {
     chatLink.events.on("status", (st) => { if (st.state === "connected") refreshRequestsSoon(300); });
     registerMediaProtocol();
     allowYoutubeEmbeds(electronSession.defaultSession);
-    studio = registerStudio({
-      ipcMain, api, broadcast, app, electronSession, systemPreferences, desktopCapturer, powerSaveBlocker, protocol, shell,
-      isOwnUrl,
-      isSignedIn: () => authState().signedIn,
-      dialog, screen, BrowserWindow, loadRenderer, powerMonitor, globalShortcut,
-      preloadPath: path.join(__dirname, "preload.js"),
-      siteOrigin: config.SITE_ORIGIN,
-      apiOrigin: config.API_ORIGIN,
-      log: (...args) => { if (!app.isPackaged || process.env.ELITLIG_STUDIO_DEBUG) console.log(...args); },
-    });
+    // Kamera / mikrofon izinleri yalnız kendi arayüzümüze (stüdyo tembel yüklendiği için ayrıca).
+    installMediaPermissions(electronSession.defaultSession, { isOwnUrl });
+    // Yerleşik stüdyo: arayüz açarken (studio:ensure) ya da ELITLIG_STUDIO_EAGER=1 ile hemen.
+    ipcMain.handle("studio:ensure", () => { ensureStudio(); return true; });
+    if (process.env.ELITLIG_STUDIO_EAGER === "1") ensureStudio();
     // Dosya Araçları + Ekran Görüntüleri rafı: ortak elitlig-file:// şeması.
     const fileProtocol = createFileProtocol();
     const localDeps = {
@@ -931,8 +979,6 @@ if (!app.requestSingleInstanceLock()) {
     fileTools = registerFileTools(localDeps);
     shelf = registerShelf(localDeps);
     fileProtocol.register(protocol);
-    // LED açılıp kapanınca menü çubuğu simgesindeki "LED çıkışını kapat" güncellenir.
-    studio.led?.events.on("status", () => refreshTray());
     focus = createFocus({ dataDir: dataDir() });
     reminders = createReminders({
       dataDir: dataDir(),
@@ -1037,7 +1083,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on("before-quit", () => { quitting = true; });
-  app.on("will-quit", () => { globalShortcut.unregisterAll(); studio?.dispose(); fileTools?.dispose(); shelf?.dispose(); adminPanel?.dispose(); browser?.dispose(); });
+  app.on("will-quit", () => { crashes?.markCleanExit(); globalShortcut.unregisterAll(); studio?.dispose(); fileTools?.dispose(); shelf?.dispose(); adminPanel?.dispose(); browser?.dispose(); });
   app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
   app.on("web-contents-created", (_e, contents) => contents.on("will-attach-webview", (event) => event.preventDefault()));
 }

@@ -538,6 +538,36 @@ odaklı; her yerden) ve Araç Takımı → **Ekran Görüntüleri ve Pano** küt
   Hiçbir şey sunucuya gönderilmez. Görseldeki metni tanıma (OCR) bu sürümde yok.
 - Başka modüller rafları `shelf:show` IPC kanalıyla açabilir (`window.elitlig.shelf.show({ search })`).
 
+## Elitlig Stüdyo (bağımsız yayın uygulaması, 2.36)
+
+Yayın Stüdyosu aynı depodan, aynı sürümle **ayrı bir uygulama** olarak da derlenir: Elitlig Stüdyo
+(`app/studio-app/main.js`, arayüz `renderer/studio.html`, paket `build/studio-builder.config.js`).
+
+- **İçerik.** Oturum (aynı sunucu ve giriş), API köprüsü, Yayın Stüdyosu ana süreci (`app/studio`:
+  ffmpeg, motor, açılar, tekrarlar, öne çıkanlar, röportaj, LED çıkışı, canlı girişler, müzik
+  penceresi, panorama ağı), `elitlig-media://`, görsel yükleme. Araç takımı, yapılacaklar, ajanda,
+  tablolar, tarayıcı, yönetim paneli, hızlı geçiş, raflar, widget'lar, hatırlatıcılar, menü çubuğu
+  simgesi ve sohbet soketi YOKTUR (pakete de girmez; `app/test/studio-app.test.js` korur).
+- **Çıktılar.** `Elitlig-Studyo-<sürüm>.dmg`, `Elitlig-Studyo-<sürüm>-universal.zip`,
+  `Elitlig-Studyo-Setup-<sürüm>.exe`, `Elitlig-Studyo-<sürüm>-win-x64.zip` (`npm run dist:studio`,
+  `npm run dist:studio:win`; `dist-studio/`). appId `com.elitlig.studyo`, protokol `elitlig-studyo://`,
+  veri klasörü `<appData>/Elitlig Studyo`. İki uygulama yan yana çalışır (ayrı tek örnek kilidi, ayrı
+  geçici klasör). Otomatik güncelleme yok (Elitlig Araçlar'da da yok); yeni sürüm sürüm sayfasından kurulur.
+- **Açma.** Elitlig Araçlar'da Yayın Stüdyosu → **Elitlig Stüdyo'yu aç**: kuruluysa oturum şifreli
+  devirle verilir (giriş gerekmez), değilse indirme bağlantısı. Geçiş için yerleşik stüdyo bu sürümde
+  durur ("Bu sefer yerleşik stüdyoyu aç" / "Her zaman yerleşik stüdyoyu kullan"); stüdyo ana süreç
+  kodu Elitlig Araçlar'da yalnız açılınca yüklenir.
+- **Ayar aktarımı.** Elitlig Araçlar her açılışta ve "Aç"tan önce stüdyo ayarlarını (localStorage
+  `studio.*` / `elitlig.studio.*`: sahneler, yerleşim, kısayol panosu, klavye kısayolları, makrolar,
+  ön ayarlar, LED, ses, grafik paketleri; ayrıca `studio-settings.json`, `studio-media.json`)
+  `<appData>/Elitlig Ortak/studio-export.json`'a yazar. Elitlig Stüdyo ilk açılışta (henüz kendi
+  sahnesi yokken) bunları alır; menüde **Yardım → Elitlig Araçlar'dan stüdyo ayarlarını içe aktar…**.
+- **Performans ve güvenli mod (iki uygulamada).** Ayarlar › Performans: güçlü ekran kartı (Windows,
+  varsayılan açık), ffmpeg yüksek öncelik (Windows, varsayılan kapalı), donanım hızlandırma, güvenli
+  mod (`--safe-mode` / `--guvenli-mod`). Grafik / arayüz süreci çökmeleri `logs/crashes.log`'a ve
+  açık yayın tanılama günlüğüne yazılır, bildirim gösterilir; 10 dakikada 3 grafik çökmesinde güvenli
+  mod önerilir.
+
 ## Yayın Stüdyosu
 
 Maçı Mac'ten canlı yayınlama (OBS benzeri): kameralar, ekran / pencere, skorbord ve tekrar tek bir

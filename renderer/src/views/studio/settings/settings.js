@@ -98,6 +98,21 @@ export const UI_THEMES = [
 ];
 /** Temanın tonu: "light" | "dark" (<html data-st-tone>; açık temada görüntü adaları koyu kalır). */
 export const themeTone = (key) => (UI_THEMES.find((t) => t.key === key)?.tone === "light" ? "light" : "dark");
+/** 2.36.0 · Kamera açısı kaydı kalitesi (kaynak başına bit hızı). */
+export const ANGLE_QUALITIES = [
+  { key: "high", label: "Yüksek", kbps: 6000, hint: "6 Mbps (eski varsayılan): en net ağır çekim" },
+  { key: "balanced", label: "Dengeli", kbps: 3500, hint: "3,5 Mbps: çoğu tekrar için yeterli, kodlayıcı yükü daha az" },
+  { key: "light", label: "Hafif", kbps: 2000, hint: "2 Mbps: zayıf makinede ya da çok kamerada" },
+];
+export const ANGLE_MAX_CHOICES = [0, 1, 2, 3, 4, 6];
+export const angleKbps = (q) => (ANGLE_QUALITIES.find((x) => x.key === q) || ANGLE_QUALITIES[0]).kbps;
+/** Kaydedilecek kaynak açıları: kapalıysa hiç, sınır varsa ilk N (sıra: Ayarlar › Tekrar'daki seçim). */
+export function limitAngleSources(ids, replay) {
+  if (replay && replay.anglesOn === false) return [];
+  const max = Number(replay?.angleMax) || 0;
+  return max > 0 ? ids.slice(0, max) : ids;
+}
+
 export const DEFAULT_SETTINGS = {
   v: 3,
   // pipeline: kodlama yolu — "auto" | "webcodecs" (tek kodlama) | "legacy" (MediaRecorder + ffmpeg)
@@ -107,7 +122,9 @@ export const DEFAULT_SETTINGS = {
   record: { enabled: false, dir: null, quality: "stream", customKbps: 10000, customHeight: 1080 },
   // tekrar klibi 15 sn: önizlemede giriş–çıkışla istenen bölüm seçilir. directTake: R kısayolu
   // son tekrarı önizlemeye yükleyip AYNI GEÇİŞ yoluyla hemen yayına alır [önizleme-geçiş]
-  replay: { seconds: 15, directTake: false, postSeconds: 4, uploadDelaySec: 60 },
+  // 2.36.0: kamera açısı kayıtları (her kaynak ayrı H.264 MediaRecorder): kapatılabilir, kalite
+  // (bit hızı) ve aynı anda en çok kaç kaynak (0 = sınırsız) seçilir.
+  replay: { seconds: 15, directTake: false, postSeconds: 4, uploadDelaySec: 60, anglesOn: true, angleQuality: "high", angleMax: 0 },
   view: { hints: true, tooltips: true, scale: 100, theme: "gece", panelTools: false },
   hotkeys: DEFAULT_HOTKEYS,
   notify: { micOpen: true, lowBitrate: true, silence: true, silenceSec: 30 },
@@ -189,6 +206,9 @@ export function normalizeSettings(raw) {
       // [gol-klip] butondan SONRA kaydedilen süre (0–15 sn) ve gol klibi yükleme gecikmesi (0–600 sn)
       postSeconds: clamp(Math.round(num(r.replay?.postSeconds, d.replay.postSeconds)), 0, 15),
       uploadDelaySec: clamp(Math.round(num(r.replay?.uploadDelaySec, d.replay.uploadDelaySec)), 0, 600),
+      anglesOn: bool(r.replay?.anglesOn, d.replay.anglesOn),
+      angleQuality: pick(r.replay?.angleQuality, ANGLE_QUALITIES.map((q) => q.key), d.replay.angleQuality),
+      angleMax: pick(Number(r.replay?.angleMax), ANGLE_MAX_CHOICES, d.replay.angleMax),
     },
     view: {
       hints: bool(r.view?.hints, d.view.hints),

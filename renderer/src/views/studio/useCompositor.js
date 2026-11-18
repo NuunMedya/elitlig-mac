@@ -33,6 +33,7 @@ import { drawVar } from "./var/drawVar";
 import { MODE_TARGET, composeBase, composeTop, drawFtb, drawProgramFx, ftbLevel, needsMainBase, transitionTouchesMode } from "./compositor/composeProgram";
 import { createWorkerCompositor, gpuRendererName, softwareGpu, workerCompositorSupported } from "./compositor/workerHost";
 import { canvasLoop, loadSnapshot, startRenderLoadMonitor, trackDraw } from "./perf/renderLoad";
+import { readPerfPrefs } from "./perf/perfPrefs";
 
 export { MODE_TARGET, ftbLevel, drawSlate } from "./compositor/composeProgram";
 
@@ -295,6 +296,8 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
     let alive = true;
     const interval = 1000 / Math.max(1, fps);
     const base = { last: 0, on: false, oc: null };
+    // 2.36.0: kip tabanındaki videolar işçide (Ayarlar › Performans › Çizim).
+    const holesOn = readPerfPrefs().baseVideoWorker !== false;
     const runBase = (now) => {
       const modes = modesRef?.current || null;
       const tr = transitionRef.current;
@@ -307,11 +310,17 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       // Kip tabanı ekran dışı tuvale çizilir; transferToImageBitmap kopyasız aktarır (VideoFrame
       // okuması gibi ana iş parçacığını bekletmez; işçide de ana iş parçacığına bağlı değildir).
       if (!base.oc || base.oc.width !== W || base.oc.height !== H) base.oc = typeof OffscreenCanvas === "function" ? new OffscreenCanvas(W, H) : null;
-      const ctx = (base.oc || program).getContext("2d", { alpha: false });
+      // 2.36.0: videolar işçide (holeCtx): taban saydam tuvalde, video bölgeleri delik.
+      const holes = holesOn && base.oc && typeof host.holeCtx === "function";
+      const ctx = (base.oc || program).getContext("2d", { alpha: Boolean(holes) });
       if (ctx.imageSmoothingQuality !== "high") { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; }
-      const out = composeBase(ctx, baseEnv(now, W, H, tr));
+      const videos = [];
+      // Silme yok (ölçüm: yazılım çiziminde ~40 ms/sn): kip çizimleri tuvali zaten baştan doldurur;
+      // örtülmeyen eski delik işçide siyah görünür (eski yolda da önceki kare kalırdı).
+      const out = composeBase(holes ? host.holeCtx(ctx, now, videos) : ctx, baseEnv(now, W, H, tr));
       if (out.done) { transitionRef.current = null; sync(); }
-      host.pushBase(base.oc || program, { graphics: out.graphics, gSceneId: out.gSceneId, stingerP: out.stingerP, stingerKind: out.stingerKind }, now);
+      host.pushBase(base.oc || program, { graphics: out.graphics, gSceneId: out.gSceneId, stingerP: out.stingerP, stingerKind: out.stingerKind, videos, bw: W, bh: H, alpha: Boolean(holes) }, now);
+      if (holes) host.gcVideos(now);
       trackDraw("Kip tabanı (ana iş parçacığı)", performance.now() - t0);
     };
     const baseGate = createFrameGate(fps);
@@ -338,7 +347,7 @@ export function useCompositor({ width, height, fps, configRef, runtimeRef, overl
       if (g.changed) { stopPreview.setFps(g.fps); host.setMirrorFps(g.fps); }
       lateSum += s.late || 0;
       statsRef.current = {
-        fps: s.fps || 0, drawMs: s.drawMs || 0, avgMs: s.avgMs || 0, stalls: s.late || 0, totalStalls: lateSum, engine: "worker", unique: s.unique, mainBase: s.mainBase, basesIn: s.basesIn, baseMs: s.baseMs, gfxMs: s.gfxMs, encSubmitMs: s.encSubmitMs, srcFps: s.srcFps, sources: s.sources, mirrorAgeMs: s.mirrorAgeMs,
+        fps: s.fps || 0, drawMs: s.drawMs || 0, avgMs: s.avgMs || 0, stalls: s.late || 0, totalStalls: lateSum, engine: "worker", unique: s.unique, mainBase: s.mainBase, baseVideos: s.baseVideos ?? 0, basesIn: s.basesIn, baseMs: s.baseMs, gfxMs: s.gfxMs, encSubmitMs: s.encSubmitMs, srcFps: s.srcFps, sources: s.sources, mirrorAgeMs: s.mirrorAgeMs,
         // 2.25.2 tanılama: işçi uyanma / sn, kare kopyası, açık kamera karesi, ayna hızı, ekran sınırlayıcısı.
         lateMaxMs: s.lateMaxMs, wakes: s.wakes, copyMs: s.copyMs, copyMaxMs: s.copyMaxMs, openFrames: s.openFrames, queueMax: s.queueMax, mirrorFps: s.mirrorFps, copyFrames: s.copyFrames,
         ...monitorDiag(g, snap),

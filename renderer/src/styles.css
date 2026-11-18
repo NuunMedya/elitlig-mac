@@ -1939,3 +1939,18 @@ button.team-badge--lg:not(:disabled):hover { background: color-mix(in srgb, var(
 .bud-free small { font-size: 11px; }
 /* Onay pencereleri her zaman en üstte: düzenleyici / önizleme katmanlarının (z 70–80) arkasında kalmasın. */
 .modal-backdrop:has(> .modal--confirm) { z-index: 120 !important; }
+
+/* 2.36.0 · Yayın Stüdyosu girişi (Elitlig Araçlar → Elitlig Stüdyo) */
+.studio-gate { position: relative; height: 100%; display: grid; place-items: center; padding: 48px 16px; background: var(--bg); overflow: auto; }
+.studio-gate__back { position: absolute; top: 14px; left: 16px; }
+html.platform-darwin .studio-gate__back { top: 40px; }
+.studio-gate__card { max-width: 560px; width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding: 28px; border-radius: 14px; background: var(--surface, var(--bg)); border: 1px solid var(--border, rgba(127,127,127,.25)); }
+.studio-gate__card h1 { margin: 0; font-size: 22px; line-height: 1.25; }
+.studio-gate__card p { margin: 0; line-height: 1.5; }
+.studio-gate__alt { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 6px; }
+.studio-gate__check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.studio-gate__fine { font-size: 12px; opacity: .7; }
+/* Elitlig Stüdyo (bağımsız uygulama): stüdyo tüm pencereyi kaplar. */
+html[data-app="studio"] body, html[data-app="studio"] #root { height: 100%; }
+:root .content.studio-app { height: 100vh; border-radius: 0; }
+.content.studio-app > * { flex: 1 1 auto; min-height: 0; }

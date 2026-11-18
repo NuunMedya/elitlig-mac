@@ -1,9 +1,9 @@
 // Yayın Stüdyosu — tarayıcıda (Playwright) stüdyoyu açmak için sahte window.elitlig köprüsü,
 // örnek maç / kaynak / sahne / tekrar verisi. page.addInitScript(studioMock, { YT: false, scale, layout }).
-// scale: arayüz ölçeği (%; Ayarlar › Görünüm) · layout: studio.layout.v1 kaydı (nesne).
+// scale: arayüz ölçeği (%; Ayarlar › Görünüm) · layout: studio.layout.v1 kaydı (nesne) · clipMs: örnek tekrar süresi (ms).
 "use strict";
 
-module.exports = function studioMock({ YT = false, scale = null, layout = null } = {}) {
+module.exports = function studioMock({ YT = false, scale = null, layout = null, clipMs = 1600 } = {}) {
     localStorage.setItem('route', 'studio');
     localStorage.setItem('studio.match', '7');
     localStorage.removeItem('studio.v3');
@@ -41,7 +41,7 @@ module.exports = function studioMock({ YT = false, scale = null, layout = null }
     ];
     window.__unmatched = [];
     // Gerçek oynatılabilir kısa klipler (tuval → MediaRecorder → blob).
-    const makeClip = (bg, label, ms = 1600) => new Promise((resolve) => {
+    const makeClip = (bg, label, ms = clipMs) => new Promise((resolve) => {
       const c = document.createElement('canvas'); c.width = 640; c.height = 360;
       const x = c.getContext('2d');
       const st = c.captureStream(30);

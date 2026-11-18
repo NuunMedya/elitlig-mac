@@ -7,6 +7,7 @@
 //   ana iş parçacığı meşguliyeti ve uzun kareler, rAF kare süresi (p50 / p95 / p99), React
 //   çizim hızı ve panel başına çizim, etkin zamanlayıcı / kaydedici / tuval / video sayıları,
 //   süreç başına işlemci (gömülü tarayıcı / yönetim paneli ayrı süreçler).
+import { angleStats } from "./angleStats";
 import { runtimeCounts, sampleReact } from "../../../lib/perf/reactStats";
 import { loadSnapshot } from "./renderLoad";
 import { clockSubscribers } from "./clock";
@@ -92,6 +93,8 @@ export async function buildPerfReport(src = {}, { sampleMs = 5000 } = {}) {
   const studio = typeof window !== "undefined" ? window.elitlig?.studio : null;
   const t0 = Date.now();
   const sysP = Promise.resolve(studio?.perfInfo?.()).catch(() => null);
+  // 2.36.0: güvenli mod / bayraklar / son çökmeler (app/perfFlags.js, app/crashMonitor.js).
+  const perfP = Promise.resolve(typeof window !== "undefined" ? window.elitlig?.perf?.state?.() : null).catch(() => null);
   try { loadSnapshot(); } catch { /* pencere başlasın */ }
   const drawSamples = [];
   const sampler = setInterval(() => { try { const d = src.getStats?.(); if (d) drawSamples.push({ fps: d.fps, unique: d.unique, stalls: d.stalls, drawMs: d.drawMs }); } catch { /* yoksay */ } }, 1000);
@@ -100,6 +103,7 @@ export async function buildPerfReport(src = {}, { sampleMs = 5000 } = {}) {
   let load = null;
   try { load = loadSnapshot(); } catch { load = null; }
   const sys = await sysP;
+  const perfState = await perfP;
   let draw = null; let engineInfo = null; let enc = null; let status = null;
   try { draw = src.getStats?.() || null; } catch { /* yoksay */ }
   try { engineInfo = src.getEngineInfo?.() || null; } catch { /* yoksay */ }
@@ -116,14 +120,15 @@ export async function buildPerfReport(src = {}, { sampleMs = 5000 } = {}) {
     output: {
       targetFps: src.targetFps ?? null, encoding: Boolean(src.encoding),
       drawFps: avg("fps"), uniqueFps: avg("unique"), stallsPerSec: avg("stalls"), drawMsMax: draw?.drawMs ?? null,
-      worker: draw ? { srcFps: draw.srcFps, sources: draw.sources, copyMs: draw.copyMs, lateMaxMs: draw.lateMaxMs, wakes: draw.wakes, mainBase: draw.mainBase, mirrorFps: draw.mirrorFps, pvwFps: draw.pvwFps, limiter: draw.limiter } : null,
+      worker: draw ? { srcFps: draw.srcFps, sources: draw.sources, copyMs: draw.copyMs, lateMaxMs: draw.lateMaxMs, wakes: draw.wakes, mainBase: draw.mainBase, baseVideos: draw.baseVideos ?? null, mirrorFps: draw.mirrorFps, pvwFps: draw.pvwFps, limiter: draw.limiter } : null,
       encoder: enc ? { pipeline: enc.pipeline, hardware: enc.hardware, codec: enc.codec, encodedFps: enc.encodedFps, queue: enc.queue, latencyMs: enc.latencyMs, encodeDropped: enc.encodeDropped, gaps: enc.gaps, outKbps: enc.outKbps } : null,
       ffmpeg: status && status.state !== "idle" ? { state: status.state, encoder: status.encoder || null, fps: status.fps ?? null, speed: status.speed ?? null, bitrateKbps: status.bitrateKbps ?? null, dropped: status.droppedFrames ?? null } : null,
     },
     mainThread: load ? { busyPct: load.busyPct, longMsPerSec: load.long?.msPerSec, longBlockingMsPerSec: load.long?.blockingMsPerSec, longMaxMs: load.long?.maxMs, loops: (load.loops || []).slice(0, 10), scripts: load.scripts || [], offenders: load.offenders || [] } : null,
     frames,
     react,
-    runtime: { ...runtimeCounts(), canvasLoops: load?.activeLoops ?? null, clockSubscribers: clockSubscribers(), dom: domCounts() },
+    runtime: { ...runtimeCounts(), canvasLoops: load?.activeLoops ?? null, clockSubscribers: clockSubscribers(), dom: domCounts(), angles: angleStats(), app: document?.documentElement?.dataset?.app || "araclar" },
+    launch: perfState ? { ...perfState.launch, flags: perfState.flags ? { highPerfGpu: perfState.flags.highPerfGpu, ffmpegAboveNormal: perfState.flags.ffmpegAboveNormal, hardwareAcceleration: perfState.flags.hardwareAcceleration, safeMode: perfState.flags.safeMode } : null, crashes: (perfState.crashes || []).slice(0, 8), uncleanExit: perfState.uncleanExit || null } : null,
     processes: sys?.processes || null,
   };
   return { report, text: reportText(report) };
@@ -148,7 +153,7 @@ export function reportText(r) {
   if (e) L.push(`Çizim motoru: ${e.engine === "worker" ? "AYRI İŞ PARÇACIĞI" : "ANA İŞ PARÇACIĞI"} (${e.why || "?"}) · ayar ${e.setting} · yazılım GPU ${yes(e.softwareGpu)}${e.fallback ? ` · geri dönüş: ${e.fallback.reason}` : ""}`);
   const o = r.output || {};
   L.push(`Çıkış: hedef ${o.targetFps ?? "?"} fps · çizim ${o.drawFps ?? "?"} fps · yeni kare ${o.uniqueFps ?? "?"} · takılma/sn ${o.stallsPerSec ?? 0} · yayında ${yes(o.encoding)}`);
-  if (o.worker) L.push(`  işçi: kaynak ${o.worker.srcFps ?? "?"} fps (${o.worker.sources ?? 0}) · kopya ${o.worker.copyMs ?? "?"} ms · en geç tik ${o.worker.lateMaxMs ?? "?"} ms · ayna ${o.worker.mirrorFps ?? "?"} · önizleme ${o.worker.pvwFps ?? "?"} fps${o.worker.limiter && o.worker.limiter !== "yok" ? ` · kısıldı: ${o.worker.limiter}` : ""}${o.worker.mainBase ? " · kip tabanı ana iş parçacığında" : ""}`);
+  if (o.worker) L.push(`  işçi: kaynak ${o.worker.srcFps ?? "?"} fps (${o.worker.sources ?? 0}) · kopya ${o.worker.copyMs ?? "?"} ms · en geç tik ${o.worker.lateMaxMs ?? "?"} ms · ayna ${o.worker.mirrorFps ?? "?"} · önizleme ${o.worker.pvwFps ?? "?"} fps${o.worker.limiter && o.worker.limiter !== "yok" ? ` · kısıldı: ${o.worker.limiter}` : ""}${o.worker.mainBase ? ` · kip tabanı ana iş parçacığında${o.worker.baseVideos ? ` (videolar işçide ${o.worker.baseVideos}/sn)` : ""}` : ""}`);
   if (o.encoder) L.push(`  kodlayıcı: ${o.encoder.pipeline} ${o.encoder.hardware ? "donanım" : "yazılım"} ${o.encoder.codec || ""} · ${o.encoder.encodedFps} fps · kuyruk ${o.encoder.queue} · gecikme ${o.encoder.latencyMs} ms · atlanan ${o.encoder.encodeDropped}`);
   if (o.ffmpeg) L.push(`  ffmpeg: ${o.ffmpeg.state} ${o.ffmpeg.encoder || ""} · ${o.ffmpeg.fps ?? "?"} fps · hız ${o.ffmpeg.speed ?? "?"}× · ${o.ffmpeg.bitrateKbps ?? "?"} kbps`);
   const m = r.mainThread;
@@ -164,6 +169,14 @@ export function reportText(r) {
   }
   const rt = r.runtime || {};
   L.push(`Etkin: zamanlayıcı ${rt.intervals ?? "?"} · MediaRecorder ${rt.mediaRecorders ?? "?"} · ikincil çizim döngüsü ${rt.canvasLoops ?? "?"} · tuval ${rt.dom?.canvases ?? "?"} (büyük: ${(rt.dom?.bigCanvases || []).join(", ") || "—"}) · video ${rt.dom?.videos ?? "?"} (oynayan ${rt.dom?.videosPlaying ?? "?"}) · animasyon ${rt.dom?.runningAnimations ?? "?"} · DOM öğesi ${rt.dom?.elements ?? "?"}`);
+  const an = rt.angles;
+  if (an) L.push(`Kamera açısı kaydı: ${an.active ?? 0} MediaRecorder · kaynak başına ${an.bitrateKbps || 0} kbps (toplam ${an.totalKbps || 0} kbps)${an.hardware ? ` · donanım kodlama ${an.hardware.powerEfficient ? "olası" : "yok / bilinmiyor"}` : ""}`);
+  const la = r.launch;
+  if (la) {
+    L.push(`Açılış: ${la.safeMode ? `GÜVENLİ MOD (${la.reason || "?"})` : "normal"} · donanım hızlandırma ${la.hardwareAcceleration === false ? "kapalı" : "açık"} · güçlü ekran kartı ${la.highPerfGpu ? "isteniyor" : "istenmiyor"} · ffmpeg önceliği ${la.ffmpegAboveNormal ? "normalin üstü" : "normal"} · uygulama ${rt.app || "?"}`);
+    if (la.uncleanExit) L.push(`  önceki oturum düzgün kapanmadı (${la.uncleanExit.startedAt || "?"})`);
+    if (la.crashes?.length) L.push(`  son çökmeler: ${la.crashes.slice(0, 5).map((c) => `${c.at} ${c.type || c.kind} ${c.reason}${c.exitCode != null ? `/${c.exitCode}` : ""}`).join(" · ")}`);
+  }
   const p = r.processes;
   if (p?.byType) L.push(`Süreçler: ${Object.entries(p.byType).map(([k, v]) => `${k}×${v.count} %${v.cpuPct} ${v.memMB} MB`).join(" · ")}`);
   return L.join("\n");

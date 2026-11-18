@@ -12,7 +12,16 @@ const FEATURES = [
   ["bank", "Kasa, banka ve virman"],
 ];
 
-export default function Login({ expired, onSignedIn }) {
+// 2.36.0: Elitlig Stüdyo (bağımsız yayın uygulaması) aynı giriş ekranını kendi metinleriyle kullanır.
+const STUDIO_FEATURES = [
+  ["broadcast", "YouTube / RTMP canlı yayın, çok kamera"],
+  ["repeat", "Tekrar, VAR, röportaj, gol klipleri"],
+  ["overview", "LED çıkışı ve Elitlig Panorama"],
+  ["layers", "Elitlig Araçlar'daki sahneler ve yerleşim aktarılır"],
+];
+
+export default function Login({ expired, onSignedIn, product = null }) {
+  const studio = product === "studio";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
@@ -35,10 +44,10 @@ export default function Login({ expired, onSignedIn }) {
       <div className="login__drag" />
       <section className="login__brand">
         <img src={logo} alt="Elitlig" />
-        <h1>Lig yönetiminin günlük işleri, {MAC ? "Mac'inizde" : "bilgisayarınızda"}.</h1>
-        <p>Yapılacaklar, maç masası, ajanda, muhasebe, tablolar ve rehber — internet yokken bile.</p>
+        <h1>{studio ? "Elitlig Stüdyo: maç yayını, tek uygulamada." : <>Lig yönetiminin günlük işleri, {MAC ? "Mac'inizde" : "bilgisayarınızda"}.</>}</h1>
+        <p>{studio ? "Yayın Stüdyosu artık ayrı, hafif bir uygulama. Elitlig Araçlar'dan açarsanız giriş gerekmez." : "Yapılacaklar, maç masası, ajanda, muhasebe, tablolar ve rehber — internet yokken bile."}</p>
         <ul>
-          {FEATURES.map(([icon, text]) => <li key={text}><Icon name={icon} size={16} />{text}</li>)}
+          {(studio ? STUDIO_FEATURES : FEATURES).map(([icon, text]) => <li key={text}><Icon name={icon} size={16} />{text}</li>)}
         </ul>
       </section>
       <form className="login__form" onSubmit={submit}>

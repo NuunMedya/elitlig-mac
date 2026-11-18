@@ -12,6 +12,11 @@ export default defineConfig({
   worker: { format: "es" },
   // Ses AudioWorklet modülü (views/studio/audioTap.worklet.js) ayrı dosya kalmalı: küçük
   // dosyalar data: adresine gömülür, CSP (script-src 'self') data: betiğini yasaklar.
-  build: { outDir: "dist", emptyOutDir: true, target: "chrome120", sourcemap: false, assetsInlineLimit: (file) => (/\.worklet\.js$/.test(file) ? false : undefined) },
+  // 2.36.0: iki sayfa — index.html (Elitlig Araçlar) ve studio.html (Elitlig Stüdyo: yalnız Yayın
+  // Stüdyosu). Ortak parçalar paylaşılır; stüdyo sayfası Araçlar'ın görünümlerini yüklemez.
+  build: {
+    outDir: "dist", emptyOutDir: true, target: "chrome120", sourcemap: false, assetsInlineLimit: (file) => (/\.worklet\.js$/.test(file) ? false : undefined),
+    rollupOptions: { input: { index: fileURLToPath(new URL("./index.html", import.meta.url)), studio: fileURLToPath(new URL("./studio.html", import.meta.url)) } },
+  },
   test: { globals: true, environment: "node", include: ["test/**/*.test.js"] },
 });

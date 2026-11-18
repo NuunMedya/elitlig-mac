@@ -1,4 +1,7 @@
 # Mac (.dmg) ve Windows (.exe kurulum) uygulamalarını üretir ve GitHub Releases'e yükler.
+# 2.36.0: aynı depodan İKİ uygulama, aynı sürüm: Elitlig Araçlar (package.json "build") ve
+# bağımsız yayın uygulaması Elitlig Stüdyo (build/studio-builder.config.js → dist-studio/).
+# Otomatik güncelleme yok; güncelleme dosyaları (latest*.yml) üretilmez/yüklenmez.
 #
 # Her push'ta üç iş çalışır:
 #   mac      macOS üzerinde Apple Silicon + Intel'de çalışan evrensel (universal) uygulama
@@ -71,6 +74,27 @@ jobs:
         run: for i in 1 2 3; do npm run dist && exit 0; echo "Derleme $i. denemede başarısız; 30 sn sonra yeniden"; sleep 30; done; exit 1
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Elitlig Stüdyo derle (.dmg + .zip, universal)
+        shell: bash
+        run: for i in 1 2 3; do npm run pack:studio && exit 0; echo "Derleme $i. denemede başarısız; 30 sn sonra yeniden"; sleep 30; done; exit 1
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Elitlig Stüdyo açılış testi (25 sn çökmeden çalışmalı)
+        run: |
+          ls -la dist-studio
+          test -s "dist-studio/Elitlig-Studyo-$(node -p "require('./package.json').version").dmg"
+          test -s "dist-studio/Elitlig-Studyo-$(node -p "require('./package.json').version")-universal.zip"
+          APP=$(ls -d dist-studio/mac-universal/*.app)
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          test -x "$APP/Contents/Resources/ffmpeg/ffmpeg"
+          BIN=$(ls "$APP"/Contents/MacOS/* | head -1)
+          ELITLIG_USER_DATA="$RUNNER_TEMP/studyo-userdata" "$BIN" --enable-logging=stderr > launch-studio.log 2>&1 &
+          PID=$!
+          sleep 25
+          if kill -0 $PID 2>/dev/null; then echo "Elitlig Stüdyo çalışıyor"; kill $PID; else echo "ELİTLİG STÜDYO ÇÖKTÜ"; cat launch-studio.log; exit 1; fi
+          grep -iE "error|fatal|crash" launch-studio.log | head -40 || true
 
       - name: Açılış testi (uygulama 25 sn çökmeden çalışmalı)
         run: |
@@ -145,6 +169,14 @@ jobs:
             dist/*.zip
           if-no-files-found: error
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Elitlig-Studyo-${{ steps.version.outputs.version }}-mac
+          path: |
+            dist-studio/*.dmg
+            dist-studio/*.zip
+          if-no-files-found: error
+
   windows:
     name: Windows (x64 .exe kurulum)
     runs-on: windows-latest
@@ -201,9 +233,18 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
+      - name: Elitlig Stüdyo derle (NSIS kurulum .exe + .zip, x64)
+        shell: bash
+        run: for i in 1 2 3; do npm run pack:studio:win && exit 0; echo "Derleme $i. denemede başarısız; 30 sn sonra yeniden"; sleep 30; done; exit 1
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
       - name: Çıktılar
         run: |
-          ls -la dist
+          ls -la dist dist-studio
+          test -s "dist-studio/Elitlig-Studyo-Setup-$(node -p "require('./package.json').version" | tr -d '\r').exe"
+          test -s "dist-studio/Elitlig-Studyo-$(node -p "require('./package.json').version" | tr -d '\r')-win-x64.zip"
+          test -f "dist-studio/win-unpacked/resources/ffmpeg/ffmpeg.exe"
           test -s "dist/Elitlig-Araclar-Setup-$(node -p "require('./package.json').version" | tr -d '\r').exe"
           test -f "dist/win-unpacked/resources/ffmpeg/ffmpeg.exe"
 
@@ -248,6 +289,26 @@ jobs:
           Write-Host "Uygulama çalışıyor (PID $($p.Id))"
           taskkill /PID $p.Id /T /F | Out-Null
           Select-String -Path launch.err.log -Pattern "error|fatal|crash" -ErrorAction SilentlyContinue | Select-Object -First 40 | ForEach-Object { $_.Line }
+          exit 0
+
+      - name: Elitlig Stüdyo sessiz kurulum + açılış testi (20 sn)
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $setup = "dist-studio/Elitlig-Studyo-Setup-$version.exe"
+          $p = Start-Process -FilePath $setup -ArgumentList "/S" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Kurulum çıkış kodu: $($p.ExitCode)" }
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter "Elitlig Studyo.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw "Kurulan Elitlig Stüdyo bulunamadı ($env:LOCALAPPDATA\Programs)" }
+          Write-Host "Kuruldu: $($exe.FullName)"
+          $ff = Join-Path $exe.DirectoryName "resources\ffmpeg\ffmpeg.exe"
+          if (-not (Test-Path $ff)) { throw "Kurulumda ffmpeg.exe yok: $ff" }
+          $env:ELITLIG_USER_DATA = Join-Path $env:RUNNER_TEMP "studyo-userdata"
+          $q = Start-Process -FilePath $exe.FullName -ArgumentList "--enable-logging=stderr" -RedirectStandardError studio.err.log -RedirectStandardOutput studio.out.log -PassThru
+          Start-Sleep -Seconds 20
+          if ($q.HasExited) { Write-Host "ELİTLİG STÜDYO ÇÖKTÜ (çıkış kodu $($q.ExitCode))"; Get-Content studio.err.log, studio.out.log -ErrorAction SilentlyContinue; exit 1 }
+          Write-Host "Elitlig Stüdyo çalışıyor (PID $($q.Id))"
+          taskkill /PID $q.Id /T /F | Out-Null
           exit 0
 
       - name: Yayın Stüdyosu ffmpeg testi (paketli ffmpeg.exe)
@@ -301,6 +362,14 @@ jobs:
             dist/*.zip
           if-no-files-found: error
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Elitlig-Studyo-${{ steps.version.outputs.version }}-windows
+          path: |
+            dist-studio/*.exe
+            dist-studio/*.zip
+          if-no-files-found: error
+
   release:
     name: GitHub Releases
     needs: [mac, windows]
@@ -313,7 +382,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: Elitlig-Araclar-${{ needs.mac.outputs.version || needs.windows.outputs.version }}-*
+          # İki uygulama: Elitlig-Araclar-<sürüm>-* ve Elitlig-Studyo-<sürüm>-*
+          pattern: Elitlig-*-${{ needs.mac.outputs.version || needs.windows.outputs.version }}-*
           path: dist
           merge-multiple: true
 
@@ -325,7 +395,7 @@ jobs:
           VERSION: ${{ needs.mac.outputs.version || needs.windows.outputs.version }}
         with:
           tag_name: v${{ env.VERSION }}
-          name: Elitlig Araçlar ${{ env.VERSION }}
+          name: Elitlig Araçlar ve Elitlig Stüdyo ${{ env.VERSION }}
           target_commitish: ${{ github.sha }}
           make_latest: true
           fail_on_unmatched_files: false
@@ -354,6 +424,15 @@ jobs:
             Windows 10 ve 11 (64 bit). Kurulumsuz kullanım için: `Elitlig-Araclar-${{ env.VERSION }}-win-x64.zip`.
             Yayın Stüdyosu NVIDIA (NVENC), Intel (Quick Sync), AMD (AMF) donanım kodlayıcılarını
             kendiliğinden kullanır; yoksa yazılım kodlayıcıya (x264) geçer.
+
+            ### Elitlig Stüdyo (bağımsız yayın uygulaması)
+            Yayın Stüdyosu artık ayrı, hafif bir uygulama olarak da kurulabilir; Elitlig Araçlar ile yan yana çalışır.
+            - Mac: `Elitlig-Studyo-${{ env.VERSION }}.dmg` (ya da `Elitlig-Studyo-${{ env.VERSION }}-universal.zip`)
+            - Windows: `Elitlig-Studyo-Setup-${{ env.VERSION }}.exe` (kurulumsuz: `Elitlig-Studyo-${{ env.VERSION }}-win-x64.zip`)
+
+            Elitlig Araçlar'da **Yayın Stüdyosu → Elitlig Stüdyo'yu aç** ile açılır: giriş gerekmez, sahneler,
+            yerleşim, kısayollar ve ön ayarlar ilk açılışta aktarılır. Sorun gidermek için Stüdyo menüsünde
+            **Yardım → Güvenli modda yeniden başlat** (donanım hızlandırma kapalı).
 
             ### İlk açılış
             Yönetim hesabınızla bir kez giriş yapın; oturum 3 ay boyunca açık kalır.

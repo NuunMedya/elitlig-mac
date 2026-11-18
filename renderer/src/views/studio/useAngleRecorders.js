@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { VIDEO_ONLY_MIME_PREFERENCE, pickMimeType } from "../../lib/studio/broadcast";
 import { effectiveFx } from "../../lib/studio/videoFx";
 import { createFxFeed } from "./fx/fxFeed";
+import { setAngleStats } from "./perf/angleStats";
 
 const studio = () => window.elitlig?.studio;
 export const ANGLE_BITRATE_KBPS = 6000;
@@ -38,7 +39,8 @@ function videoTrackOf(rt) {
   return null;
 }
 
-export function useAngleRecorders({ active, sourceIds, sources, runtimeRef, version, onError }) {
+// 2.36.0: bitrateKbps (Ayarlar › Tekrar › Açı kaydı kalitesi); sayaçlar Performans raporuna (perf/angleStats).
+export function useAngleRecorders({ active, sourceIds, sources, runtimeRef, version, onError, bitrateKbps = ANGLE_BITRATE_KBPS }) {
   const api = studio()?.angles;
   const available = Boolean(api?.start && api?.pushChunk);
   const recs = useRef(new Map()); // sourceId → { rec, gen, chain, trackId }
@@ -53,8 +55,14 @@ export function useAngleRecorders({ active, sourceIds, sources, runtimeRef, vers
   const feeds = useRef(new Map()); // sourceId → { feed, base } görüntü ayarlı akış
   // Görüntü ayarı açık kaynaklar (değişince ilgili kaydedici yenilenir).
   const fxSig = (sources || []).filter((s) => effectiveFx(s, null)).map((s) => s.id).sort().join(",");
-  const key = active && available ? [...sourceIds].sort().join(",") : "";
+  const kbps = Math.max(500, Math.min(20000, Math.round(Number(bitrateKbps) || ANGLE_BITRATE_KBPS)));
+  const key = active && available && sourceIds.length ? `${[...sourceIds].sort().join(",")}@${kbps}` : "";
 
+  const publishStats = () => {
+    let n = 0;
+    for (const r of recs.current.values()) if (r.rec && r.rec.state !== "inactive") n += 1;
+    setAngleStats({ active: n, bitrateKbps: kbps, totalKbps: n * kbps, sources: recs.current.size });
+  };
   const stopOne = useCallback((id) => {
     const r = recs.current.get(id);
     if (!r) return;
@@ -63,7 +71,8 @@ export function useAngleRecorders({ active, sourceIds, sources, runtimeRef, vers
     recs.current.delete(id);
     const f = feeds.current.get(id);
     if (f) { f.feed.stop(); feeds.current.delete(id); }
-  }, []);
+    publishStats();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Kaydedilecek iz: görüntü ayarı varsa işlenmiş akış, yoksa kaynağın kendi izi. */
   const trackFor = useCallback((id) => {
@@ -89,7 +98,7 @@ export function useAngleRecorders({ active, sourceIds, sources, runtimeRef, vers
     try {
       rec = new MediaRecorder(new MediaStream([track]), {
         mimeType: mimeType || undefined,
-        videoBitsPerSecond: ANGLE_BITRATE_KBPS * 1000,
+        videoBitsPerSecond: kbps * 1000,
         // 1 sn'de bir anahtar kare: ana süreç H.264 açıları yeniden kodlamadan
         // (copy) 1 sn'lik parçalara böler; tekrar penceresi bu sayede hassas olur.
         videoKeyFrameIntervalDuration: 1000,
@@ -125,20 +134,21 @@ export function useAngleRecorders({ active, sourceIds, sources, runtimeRef, vers
     };
     rec.start(250);
     recs.current.set(id, entry);
+    publishStats();
     return true;
-  }, [stopOne, trackFor]);
+  }, [stopOne, trackFor, kbps]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stopAll = useCallback(() => { for (const id of [...recs.current.keys()]) stopOne(id); }, [stopOne]);
 
   // Başlat / durdur (seçim ya da kodlayıcı durumu değişince baştan).
   useEffect(() => {
     if (!key) return undefined;
-    const ids = key.split(",").filter(Boolean);
+    const ids = key.split("@")[0].split(",").filter(Boolean);
     if (!ids.length) return undefined;
     let cancelled = false;
     const list = ids.map((id) => ({ id, name: namesRef.current.get(id) || id }));
     const mimeType = typeof MediaRecorder !== "undefined" ? pickMimeType((t) => MediaRecorder.isTypeSupported(t), VIDEO_ONLY_MIME_PREFERENCE) : "";
-    Promise.resolve(studio()?.angles?.start?.({ sources: list, mimeType, videoBitrateKbps: ANGLE_BITRATE_KBPS }))
+    Promise.resolve(studio()?.angles?.start?.({ sources: list, mimeType, videoBitrateKbps: kbps }))
       .then((res) => {
         if (cancelled) return;
         if (res && res.ok === false) { errRef.current?.(res.error?.message || "Açı kaydı başlatılamadı."); return; }

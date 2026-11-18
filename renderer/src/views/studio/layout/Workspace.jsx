@@ -36,6 +36,7 @@ import "./layout.css";
 import "./tabs.css";
 
 import { LayoutCtx } from "./ctx";
+import { readPerfPrefs } from "../perf/perfPrefs";
 
 export { LayoutCtx, useLayoutCtx } from "./ctx";
 
@@ -116,6 +117,38 @@ class Boundary extends React.Component {
 
 /* ───────────────────────── panel gövdesi ───────────────────────── */
 
+// 2.36.0 · GİZLİ SEKMELER BEDAVA: grubun arkadaki sekmesi (ya da küçültülmüş grup) görünmezken
+//   - hemen DONDURULUR: Studio'dan gelen yeniden çizimler (Frozen) gövdeye inmez;
+//   - PARK_MS sonra, güvenli paneller (UNMOUNT_SAFE) tamamen kaldırılır: zamanlayıcıları,
+//     yoklamaları, ölçer / küçük resim döngüleri durur. Görünür olunca yeniden kurulur.
+// Ekranlar (önizleme / program / LED), kip panelleri (tekrar / röportaj / özet) ve müzik panelleri
+// kaldırılmaz (oynatıcı / tuval / kip durumu tutarlar).
+export const PARK_MS = 10_000;
+export const UNMOUNT_SAFE = new Set(["sahne", "ses", "olaylar", "bolumler", "yukleme", "acilar", "olcer", "saat", "sahneSerit", "sceneCell", "board", "comp", "yayin", "gecis", "yonetim", "yonetimMaclar", "yonetimReji", "yonetimKadro", "yonetimMacsonu", "yonetimTakimlar"]);
+/** Panel gizliyken kaldırılabilir mi. */
+export const parkable = (kind, meta = panelMeta(kind)) => UNMOUNT_SAFE.has(kind) && !meta?.monitor && !meta?.mode;
+let parkPref = null;
+const parkHiddenOn = () => { if (parkPref === null) parkPref = readPerfPrefs().parkHidden !== false; return parkPref; };
+const Frozen = React.memo(({ children }) => children, (_prev, next) => next.frozen);
+
+/** dockview paneli görünür mü (sekme önde ve grup görünür) + PARK_MS'dir gizli mi. */
+function usePanelVisibility(api, kind) {
+  const [visible, setVisible] = useState(() => api?.isVisible !== false);
+  const [parked, setParked] = useState(false);
+  useEffect(() => {
+    const d = api?.onDidVisibilityChange?.((e) => setVisible(Boolean(e?.isVisible ?? api.isVisible)));
+    setVisible(api?.isVisible !== false);
+    return () => d?.dispose?.();
+  }, [api]);
+  useEffect(() => {
+    if (visible) { setParked(false); return undefined; }
+    if (!parkable(kind)) return undefined;
+    const t = setTimeout(() => setParked(true), PARK_MS);
+    return () => clearTimeout(t);
+  }, [visible, kind]);
+  return { visible, parked };
+}
+
 function StudioPanel({ params, api }) {
   const ctx = useContext(LayoutCtx);
   const kind = params?.kind;
@@ -124,19 +157,24 @@ function StudioPanel({ params, api }) {
   const deact = useRef(ctx.onDeactivate);
   deact.current = ctx.onDeactivate;
   useEffect(() => () => deact.current?.(kind), [kind]);
+  const vis = usePanelVisibility(api, kind);
+  const park = parkHiddenOn();
+  const parked = park && vis.parked;
+  const frozen = park && !vis.visible && !meta?.monitor;
+  if (parked) return <div className="lw-z" data-parked={kind} />;
   if (kind === "board") {
-    return <div className="lw-z"><div className="lw-panel is-board"><Boundary><Board boardId={opts.board} panelId={api.id} /></Boundary></div></div>;
+    return <div className="lw-z"><div className="lw-panel is-board"><Boundary><Frozen frozen={frozen}><Board boardId={opts.board} panelId={api.id} /></Frozen></Boundary></div></div>;
   }
   if (kind === "comp") {
     // Tek bileşen panel olarak (Sekmelere ayır): pano öğesi gibi çizilir.
     const item = { i: api.id, t: opts.t, x: 0, y: 0, w: 12, h: 12 };
-    return <div className="lw-z"><div className="lw-panel is-comp" data-comp={opts.t}><Boundary>{ctx.renderComponent(item, {})}</Boundary></div></div>;
+    return <div className="lw-z"><div className="lw-panel is-comp" data-comp={opts.t}><Boundary><Frozen frozen={frozen}>{ctx.renderComponent(item, {})}</Frozen></Boundary></div></div>;
   }
-  const body = ctx.renderPanel(kind, opts, api.id);
+  const body = frozen ? null : ctx.renderPanel(kind, opts, api.id);
   return (
     <div className="lw-z">
     <div className={`lw-panel is-${kind} ${meta?.monitor ? "is-monitor" : ""} ${ctx.panelInfo(kind)?.flash ? "is-flash" : ""}`} data-dock-panel={kind} onPointerDownCapture={() => ctx.onActivate?.(kind)}>
-      <PanelScope panel={kind}><Boundary>{body ?? <p className="st-hint st-pad">Bu panel bu sürümde yok.</p>}</Boundary></PanelScope>
+      <PanelScope panel={kind}><Boundary><Frozen frozen={frozen}>{body ?? <p className="st-hint st-pad">Bu panel bu sürümde yok.</p>}</Frozen></Boundary></PanelScope>
     </div>
     </div>
   );

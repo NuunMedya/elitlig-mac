@@ -1,8 +1,8 @@
 {
   "name": "elitlig-araclar",
   "productName": "Elitlig Araclar",
-  "version": "2.35.0",
-  "description": "Elitlig Araçlar — Mac ve Windows için bağımsız masaüstü uygulaması: Yayın Stüdyosu (kamera, ekran ve skorbordla YouTube/RTMP canlı yayın, gol klipleri), Mesajlar (üye mesajları dahil), Talepler, Yapılacaklar, Ajanda, Not Defteri, Projeler, Saha ve maç planlama, Muhasebe (Ön Muhasebe, Düzenli Ödemeler, Bütçe), Tablolar, Rehber, Hesap Araçları ve Odak Sayacı.",
+  "version": "2.36.0",
+  "description": "Elitlig Araçlar — Mac ve Windows için bağımsız masaüstü uygulaması: Yayın Stüdyosu (ayrıca bağımsız Elitlig Stüdyo uygulaması olarak; kamera, ekran ve skorbordla YouTube/RTMP canlı yayın, gol klipleri), Mesajlar (üye mesajları dahil), Talepler, Yapılacaklar, Ajanda, Not Defteri, Projeler, Saha ve maç planlama, Muhasebe (Ön Muhasebe, Düzenli Ödemeler, Bütçe), Tablolar, Rehber, Hesap Araçları ve Odak Sayacı.",
   "main": "app/main.js",
   "author": "Nuun Medya <nuunmedya@gmail.com>",
   "license": "UNLICENSED",
@@ -17,7 +17,12 @@
     "dist:win": "npm run build && npm run ffmpeg:win && npm run ytdlp:win && electron-builder --win nsis zip --x64 --publish never",
     "ffmpeg:win": "node build/fetch-ffmpeg.js --platform win32",
     "ytdlp": "node build/fetch-ytdlp.js --platform darwin",
-    "ytdlp:win": "node build/fetch-ytdlp.js --platform win32"
+    "ytdlp:win": "node build/fetch-ytdlp.js --platform win32",
+    "dist:studio": "npm run build && npm run ffmpeg && npm run pack:studio",
+    "dist:studio:win": "npm run build && npm run ffmpeg:win && npm run pack:studio:win",
+    "pack:studio": "electron-builder --config build/studio-builder.config.js --mac dmg zip --universal --publish never",
+    "pack:studio:win": "electron-builder --config build/studio-builder.config.js --win nsis zip --x64 --publish never",
+    "start:studio": "npm run build && electron app/studio-app/main.js"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "4.3.4",
@@ -50,6 +55,7 @@
     "files": [
       "app/**/*",
       "!app/test/**",
+      "!app/studio-app/**",
       "renderer/dist/**/*",
       "package.json"
     ],

@@ -13,6 +13,7 @@ import { resolveScene } from "../../../lib/studio/scenes";
 import { STUDIO_FONT_FACES } from "../../../lib/studio/fonts";
 import { getImage, snapshotImageUrls } from "../../../lib/studio/graphics";
 import { createTimestampSync, monitorFps, pickDue } from "../../../lib/studio/framePacing";
+import { createHoleCtx } from "./videoHoles";
 
 const isVideo = (el) => typeof HTMLVideoElement !== "undefined" && el instanceof HTMLVideoElement;
 const isImg = (el) => typeof HTMLImageElement !== "undefined" && el instanceof HTMLImageElement;
@@ -160,6 +161,7 @@ export function createWorkerCompositor({ width, height, fps, mirrorCanvas, onFai
       else if (m.type === "encReady") enc.handlers.onReady?.();
       return;
     }
+    if (m.type === "srcFirst") { for (const v of vids.values()) if (v.id === m.id && v.gen === m.gen) v.ready = true; return; }
     if (m.type === "drawError") console.warn("çizim işçisi", m.message);
   };
   worker.onerror = (e) => { e.preventDefault?.(); fail(String(e.message || "WORKER_ERROR")); };
@@ -286,6 +288,60 @@ export function createWorkerCompositor({ width, height, fps, mirrorCanvas, onFai
     if (sentImages.size > 200) sentImages.clear();
   }
 
+  /* ─────────────── kip tabanı: videolar işçide (2.36.0) ─────────────── */
+  // Tekrar / VAR / röportaj / özet tabanı ana iş parçacığında çizilir (React durumuna bağlı
+  // katmanlar, izler, rozetler). İçindeki VİDEO kareleri ise artık işçide çizilir: ana taraf
+  // drawImage(video) çağrısını yakalar, videonun yerini / dönüşümünü / saydamlığını bildirir ve
+  // tabanda o bölgeyi deler (destination-out). İşçi her tikte EN SON video karesini (kendi
+  // beslemesinden; MediaStreamTrackProcessor) çizer, tabanı üstüne koyar. Böylece ana iş
+  // parçacığı takılsa da (panel açma, GC) tekrar görüntüsü akmaya devam eder; ana taraf piksel
+  // kopyalamaz. Kırpma (clip), süzgeç (filter) ya da başka birleştirme kipiyle çizilen video,
+  // ya da beslemesi henüz ilk karesini vermemiş video eski yolla (ana iş parçacığında) çizilir.
+  const vids = new Map(); // video öğesi → { id, key, gen, ready, lastUsed, stop }
+  let vidSeq = 0;
+  const elTrack = (el) => {
+    const own = el.srcObject?.getVideoTracks?.()[0];
+    if (own) return own.readyState === "live" ? own : null;
+    if (typeof el.captureStream !== "function" || !el.currentSrc) return null;
+    let st = captured.get(el);
+    if (!st) { try { st = el.captureStream(); captured.set(el, st); } catch { return null; } }
+    const t = st.getVideoTracks()[0];
+    return t && t.readyState === "live" ? t : null;
+  };
+  function stopVid(el) {
+    const v = vids.get(el);
+    if (!v) return;
+    vids.delete(el);
+    try { v.stop?.(); } catch { /* yoksay */ }
+    post({ type: "srcOff", id: v.id });
+  }
+  function vidFeed(el, now) {
+    const track = elTrack(el);
+    const key = track ? track.id : null;
+    let v = vids.get(el);
+    if (v && v.key === key) { v.lastUsed = now; return v; }
+    if (v) stopVid(el);
+    if (!track || dead) return null;
+    const id = `vid:${++vidSeq}`;
+    const g = ++gen;
+    v = { id, key, gen: g, ready: false, lastUsed: now, stop: null };
+    const t = track.clone();
+    try {
+      const proc = new MediaStreamTrackProcessor({ track: t });
+      if (!post({ type: "srcStream", id, gen: g, readable: proc.readable, notify: true }, [proc.readable])) { t.stop(); return null; }
+      v.stop = () => t.stop();
+    } catch { t.stop(); return null; }
+    vids.set(el, v);
+    return v;
+  }
+  /** 3 sn kullanılmayan video beslemeleri bırakılır. */
+  function gcVideos(now) { for (const [el, v] of vids) if (now - v.lastUsed > 3000) stopVid(el); }
+
+  /** Tabanın çizim bağlamı: drawImage(video) yerine yer bildirimi (./videoHoles). */
+  function holeCtx(ctx, now, placements) {
+    return createHoleCtx(ctx, { placements, isVideo, feedFor: (el) => vidFeed(el, now) });
+  }
+
   /* ─────────────── kip tabanı ─────────────── */
 
   let baseOn = false;
@@ -339,6 +395,9 @@ export function createWorkerCompositor({ width, height, fps, mirrorCanvas, onFai
     syncImages,
     pushBase,
     baseOff,
+    holeCtx,
+    gcVideos,
+    baseVideos: () => vids.size,
     videoTrack,
     stats: () => ({ ...(stats.draw || {}), enc: stats.enc, ageMs: stats.at ? Math.round(performance.now() - stats.at) : null, mirrorAgeMs: lastMirrorAt ? Math.round(performance.now() - lastMirrorAt) : null, mirrors: mirrorN, feeds: feeds.size }),
     alive: () => !dead,
@@ -349,6 +408,8 @@ export function createWorkerCompositor({ width, height, fps, mirrorCanvas, onFai
       if (dead) return;
       for (const id of [...feeds.keys()]) { try { feeds.get(id)?.stop?.(); } catch { /* yoksay */ } }
       feeds.clear();
+      for (const v of vids.values()) { try { v.stop?.(); } catch { /* yoksay */ } }
+      vids.clear();
       try { tap?.writer.close().catch(() => {}); tap?.track.stop(); } catch { /* yoksay */ }
       post({ type: "stop" });
       dead = true;

@@ -255,7 +255,7 @@ export const CONTROL_SECTIONS = [
 export const SETTINGS_TARGETS = [
   ["yayin", "Yayın", "broadcast"], ["kayit", "Kayıt", "download"], ["kapak", "YouTube kapağı", "image"], ["tekrar", "Tekrar", "repeat"], ["gecis", "Geçiş", "swap"],
   ["led", "LED ekran", "overview"], ["roportaj", "Röportaj", "users"], ["ozet", "Özet", "sparkles"], ["mac", "Reji / Maç", "board"], ["makro", "Makrolar", "zap"],
-  ["gorunum", "Görünüm", "grid"], ["bildirim", "Bildirimler", "bell"], ["serit", "Kısayollar panosu", "zap"], ["panel", "Panel parçaları", "eye"], ["kisayol", "Klavye kısayolları", "command"],
+  ["gorunum", "Görünüm", "grid"], ["bildirim", "Bildirimler", "bell"], ["performans", "Performans", "activity"], ["serit", "Kısayollar panosu", "zap"], ["panel", "Panel parçaları", "eye"], ["kisayol", "Klavye kısayolları", "command"],
   ["sablon", "Ayar şablonları", "copy"], ["gelismis", "Gelişmiş", "sliders"], ["ses", "Ses (ayarlar)", "mic"], ["yerlesim", "Ekran yerleşimi", "board"],
   ["skorbord", "Skorbord", "trophy", true], ["altyazi", "Altyazı", "list", true], ["marka", "Marka & ön ayarlar", "palette", true], ["sponsor", "Sponsor & linkler", "handshake", true], ["paketler", "Grafik paketleri", "palette", true], ["var", "VAR teması", "palette", true],
 ].map(([key, label, icon, grafik]) => ({ key, label, icon, grafik: Boolean(grafik) }));

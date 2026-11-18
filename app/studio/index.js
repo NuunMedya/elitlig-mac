@@ -70,6 +70,7 @@ const { createOutMute } = require("./outmute");
 const { createMusicHost } = require("./musichost");
 const { createPanoramaNet } = require("./panoramaNet");
 const perfInfo = require("./perfinfo");
+const { installMediaPermissions } = require("./permissions");
 
 const DAY_MS = 24 * 3600 * 1000;
 const LIVE_UPLOAD_BYTES_PER_SEC = 250 * 1024; // ≈ 2 Mbit/sn: yayın sürerken gol klibi yüklemesi
@@ -86,30 +87,8 @@ function replayAsClip(replay) {
   };
 }
 
-/**
- * Chromium bayrakları (app hazır olmadan, main.js'in başında): pencere arkada,
- * örtülü ya da küçültülmüşken çizim / zamanlayıcı kısılmasın. Aksi halde
- * canvas.captureStream() kare üretmeyi bırakır, MediaRecorder parça yollamaz,
- * motor "takıldı" deyip ffmpeg'i yeniden başlatır ve YouTube yayını kopar.
- * Windows'ta örtülen pencerelerin çizimi ayrıca CalculateNativeWinOcclusion ile durur.
- */
-const STUDIO_SWITCHES = Object.freeze(["disable-renderer-backgrounding", "disable-background-timer-throttling", "disable-backgrounding-occluded-windows"]);
-const STUDIO_DISABLED_FEATURES = Object.freeze(["CalculateNativeWinOcclusion"]);
-/**
- * Windows: iki ekran kartlı dizüstülerde (Intel + NVIDIA / AMD) Chromium çoğu zaman tümleşik
- * kartı seçer — tuval / VideoFrame kopyaları ve kodlama zayıf karta biner. Yayın uygulaması
- * olduğu için güçlü kart istenir (tek kartlı makinede etkisiz).
- */
-const STUDIO_WIN_SWITCHES = Object.freeze(["force_high_performance_gpu"]);
-function applyStudioSwitches(app, platform = process.platform) {
-  const cl = app?.commandLine;
-  if (!cl) return;
-  for (const sw of STUDIO_SWITCHES) cl.appendSwitch(sw);
-  if (platform === "win32") for (const sw of STUDIO_WIN_SWITCHES) cl.appendSwitch(sw);
-  const existing = typeof cl.getSwitchValue === "function" ? cl.getSwitchValue("disable-features") : "";
-  const features = [...new Set([...String(existing || "").split(",").filter(Boolean), ...STUDIO_DISABLED_FEATURES])];
-  cl.appendSwitch("disable-features", features.join(","));
-}
+// Chromium bayrakları ve şema adı: ./switches (main.js stüdyo kodunu yüklemeden çağırır).
+const { applyStudioSwitches, STUDIO_SWITCHES, STUDIO_WIN_SWITCHES } = require("./switches");
 
 const MEDIA_STATES = new Set(["granted", "denied", "not-determined", "restricted"]);
 
@@ -118,9 +97,16 @@ function registerStudio({
   powerSaveBlocker, protocol, shell, isOwnUrl, isSignedIn = () => true, log = () => {},
   dialog = null, screen = null, BrowserWindow = null, loadRenderer = null, preloadPath = null, powerMonitor = null,
   siteOrigin = "https://elitlig.com", apiOrigin = null, globalShortcut = null,
+  // 2.36.0: Elitlig Stüdyo ile Elitlig Araçlar yan yana çalışabilir: geçici parça klasörleri ayrı
+  // olmalı (açılışta eski parçalar silinir — öbür uygulamanınkiler silinmesin).
+  tempDirName = "elitlig-studio",
+  // 2.36.0: canlı ffmpeg önceliği Ayarlar › Performans'tan: "above-normal" | null (normal). İşlev de olabilir.
+  ffmpegPriority = null,
+  // Çökme / grafik süreci olayları tanılama günlüğüne (crashMonitor): (fn) => kayıt.
+  onDiagnostics = null,
 }) {
   const appRoot = path.join(__dirname, "..", "..");
-  const tempRoot = path.join(app.getPath("temp"), "elitlig-studio");
+  const tempRoot = path.join(app.getPath("temp"), String(tempDirName || "elitlig-studio"));
   const clipsDir = path.join(app.getPath("userData"), "clips");
   const replaysDir = path.join(app.getPath("userData"), "replays");
   const highlightsDir = path.join(app.getPath("userData"), "highlights");
@@ -175,7 +161,9 @@ function registerStudio({
   const engine = createStudioEngine({
     getFfmpeg, tempRoot: path.join(tempRoot, "program"), log, diag: diagnostics,
     qualityTuning: true,
-    priority: "above-normal", // 2.35.0: Windows'ta canlı kodlayıcı normalin üstü öncelikte
+    // 2.35.0: Windows'ta canlı kodlayıcı normalin üstü öncelikteydi; 2.36.0: Ayarlar › Performans'ta
+    // seçilir, varsayılan NORMAL (bazı sistemlerde yüksek öncelikli kodlayıcı arayüzü / masaüstünü aç bırakabilir).
+    priority: ffmpegPriority,
     // 2.21.0: RTMP(S) Node yayıncısıyla (rtmppub.js; 4096 baytlık parçalar, tek yazma). Bağlanamazsa ffmpeg'e döner.
     relayOptions: { publisher: "node" },
     remuxLocal: ({ parts, outFile, ffmpegPath: bin }) => remuxParts({ parts, outFile, ffmpegPath: bin || ffmpegPath() }),
@@ -259,23 +247,8 @@ function registerStudio({
     try { return Boolean(wc) && !wc.isDestroyed() && isOwnUrl(wc.getURL()); } catch { return false; }
   };
   const ses = electronSession.defaultSession;
-  // Kendi arayüzümüz: önceki varsayılan davranış (izin ver) korunur; kamera /
-  // mikrofon ("media") yalnız video+ses türleri için. Dış kaynaklara izin yok.
-  ses.setPermissionRequestHandler((wc, permission, callback, details = {}) => {
-    const own = isOwnUrl(details.requestingUrl || "") || ownContents(wc);
-    if (!own) return callback(false);
-    if (permission === "media") {
-      const types = Array.isArray(details.mediaTypes) ? details.mediaTypes : [];
-      return callback(types.every((t) => t === "video" || t === "audio"));
-    }
-    return callback(true);
-  });
-  ses.setPermissionCheckHandler((wc, permission, requestingOrigin, details = {}) => {
-    const own = isOwnUrl(requestingOrigin || "") || isOwnUrl(details.requestingUrl || "") || ownContents(wc);
-    if (!own) return false;
-    if (permission === "media") return !details.mediaType || details.mediaType === "video" || details.mediaType === "audio" || details.mediaType === "unknown";
-    return true;
-  });
+  // Kendi arayüzümüz: kamera / mikrofon ("media") yalnız video+ses türleri için; dış kaynaklara izin yok (./permissions).
+  installMediaPermissions(ses, { isOwnUrl });
 
   // getDisplayMedia: arayüz kaynağı kendisi seçer (studio.selectScreen), sistem seçicisi açılmaz.
   let selectedSource = null;

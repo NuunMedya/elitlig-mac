@@ -13,6 +13,8 @@ import logo from "./assets/logo-white.png";
 // Uygulama geneli müzik çalar (kabuk kökünde yaşar) ve kenar çubuğundaki mini çalar.
 import MusicProvider from "./music/MusicProvider";
 import MiniPlayer from "./music/MiniPlayer";
+// 2.36.0: grafik / arayüz süreci çökmesi bildirimi (ana süreç crashMonitor).
+import { useProcessGoneToasts } from "./studioApp/useProcessGoneToasts";
 
 const Today = lazy(() => import("./views/Today"));
 const Messages = lazy(() => import("./views/messages/Messages"));
@@ -26,7 +28,8 @@ const Ledger = lazy(() => import("./views/accounting/Accounting"));
 const Sheets = lazy(() => import("./views/Sheets"));
 const Contacts = lazy(() => import("./views/Contacts"));
 const Account = lazy(() => import("./views/Account"));
-const Studio = lazy(() => import("./views/studio/Studio"));
+// 2.36.0: Yayın Stüdyosu girişi → Elitlig Stüdyo (ayrı uygulama) ya da yerleşik stüdyo (views/studio/StudioGate).
+const Studio = lazy(() => import("./views/studio/StudioGate"));
 const Equipment = lazy(() => import("./views/equipment/Equipment"));
 // Birleşik Araç Takımı (⇧⌘A): Dosya Araçları, Ekran Görüntüleri ve Pano, Hesap Araçları, Odak,
 // Müzik, Masaüstü ayarları, Widget'lar ve tüm araçlar tek girişte (views/toolkit/hub).
@@ -93,6 +96,7 @@ export default function App() {
 
 function Shell({ auth }) {
   const toast = useToast();
+  useProcessGoneToasts();
   const [palette, setPalette] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
   // Daraltılmış kenar çubuğu: yalnız simgeler (ipucu balonuyla). Tercih hatırlanır.

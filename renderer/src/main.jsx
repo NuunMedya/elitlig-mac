@@ -42,6 +42,15 @@ document.documentElement.dataset.window = quick ? "quick" : ledOutput ? "led" : 
 // çerçeve — üst boşluklar ve kaydırma çubukları buna göre ayarlanır (styles.css).
 document.documentElement.classList.add(`platform-${String(window.elitlig.platform || "darwin").replace(/[^a-z0-9]/gi, "")}`);
 
+// 2.36.0: stüdyo ayarları (sahneler, yerleşim, kısayollar …) ortak klasöre yazılır; Elitlig Stüdyo
+// (bağımsız uygulama) ilk açılışta bunları alır. Yalnız ana pencerede, açılış bittikten sonra boşta.
+if (document.documentElement.dataset.window === "main" && window.elitlig?.studioLink?.exportState) {
+  setTimeout(() => {
+    const run = () => import("./lib/studioMigration").then(({ collectStudioEntries }) => window.elitlig.studioLink.exportState(collectStudioEntries(window.localStorage))).catch(() => {});
+    if (typeof requestIdleCallback === "function") requestIdleCallback(run, { timeout: 10000 }); else run();
+  }, 8000);
+}
+
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     {browserPip ? (
