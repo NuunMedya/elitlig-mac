@@ -3,7 +3,10 @@
 # bağımsız yayın uygulaması Elitlig Stüdyo (build/studio-builder.config.js → dist-studio/).
 # Otomatik güncelleme yok; güncelleme dosyaları (latest*.yml) üretilmez/yüklenmez.
 #
-# Her push'ta üç iş çalışır:
+# Her push'ta mac ve windows işleri çalışır (derleme + denetim). release işi YALNIZ
+# varsayılan dala yapılan push'ta, v* etiketinde ya da varsayılan daldan elle
+# başlatılan çalıştırmada çalışır. Diğer dallar derlenir ve çıktıları "Artifacts"
+# bölümünde kalır ama yayımlanmış sürümün dosyalarına dokunmaz.
 #   mac      macOS üzerinde Apple Silicon + Intel'de çalışan evrensel (universal) uygulama
 #   windows  Windows x64 üzerinde NSIS kurulum dosyası + taşınabilir zip
 #   release  ikisinin çıktısını tek seferde package.json sürümüyle adlanan sürüm
@@ -374,7 +377,8 @@ jobs:
     name: GitHub Releases
     needs: [mac, windows]
     # Bir platform başarısız olsa da diğerinin dosyaları yayımlanır.
-    if: ${{ !cancelled() && (needs.mac.result == 'success' || needs.windows.result == 'success') }}
+    # Yalnız varsayılan dal ve v* etiketleri yayımlar; özellik dalları sürüm sayfasını ezmez.
+    if: ${{ !cancelled() && (needs.mac.result == 'success' || needs.windows.result == 'success') && (github.ref_type == 'tag' || github.ref_name == github.event.repository.default_branch) }}
     runs-on: ubuntu-latest
     concurrency:
       group: release-v${{ needs.mac.outputs.version || needs.windows.outputs.version }}
